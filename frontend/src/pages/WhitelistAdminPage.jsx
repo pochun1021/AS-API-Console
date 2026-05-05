@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
+import AddIcon from "@mui/icons-material/Add";
 import SaveIcon from "@mui/icons-material/Save";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
@@ -18,10 +19,12 @@ import {
   Stack,
   TextField,
   Tooltip,
-  Typography
+  Typography,
+  useMediaQuery
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { zhTW } from "@mui/x-data-grid/locales";
+import { useTheme } from "@mui/material/styles";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 
@@ -49,11 +52,25 @@ export default function WhitelistAdminPage({ auth }) {
   const [keyword, setKeyword] = useState("");
   const [candidates, setCandidates] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [searchMessage, setSearchMessage] = useState("");
+  const [dialogMessage, setDialogMessage] = useState("");
   const [editingRemark, setEditingRemark] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
   const [pendingStatusChange, setPendingStatusChange] = useState(null);
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
+
+  function closeSearchDialog() {
+    setSearchDialogOpen(false);
+    setKeyword("");
+    setSearching(false);
+    setCandidates([]);
+    setSearchMessage("");
+    setDialogMessage("");
+  }
 
   async function load() {
     setLoading(true);
@@ -69,16 +86,16 @@ export default function WhitelistAdminPage({ auth }) {
   }
 
   async function searchCandidates() {
-    setBanner("");
+    setSearchMessage("");
     setSearching(true);
     try {
       const response = await apiClient.searchUsers(keyword, auth);
       setCandidates(response.items);
       if (response.items.length === 0) {
-        setBanner("查無符合人員。");
+        setSearchMessage("查無符合人員。");
       }
     } catch (e) {
-      setBanner(e?.payload?.error?.message || "查詢人員失敗");
+      setSearchMessage(e?.payload?.error?.message || "查詢人員失敗");
       setCandidates([]);
     } finally {
       setSearching(false);
@@ -86,16 +103,16 @@ export default function WhitelistAdminPage({ auth }) {
   }
 
   async function createItem(candidate) {
-    setBanner("");
+    setDialogMessage("");
     try {
       await apiClient.createWhitelist(
         { email: candidate.email, account: candidate.account, sysid: candidate.sysid, name: candidate.name },
         auth
       );
-      setBanner("白名單已新增。");
+      setDialogMessage("白名單已新增。");
       await load();
     } catch (e) {
-      setBanner(e?.payload?.error?.message || "新增白名單失敗");
+      setDialogMessage(e?.payload?.error?.message || "新增白名單失敗");
     }
   }
 
@@ -242,38 +259,16 @@ export default function WhitelistAdminPage({ auth }) {
       <Typography variant="h4">白名單管理</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
-      <Card>
-        <CardContent>
-          <Stack spacing={2}>
-            <Typography variant="h6">新增白名單人員</Typography>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-              <TextField
-                label="查詢關鍵字（sysid / 帳號 / 姓名 / email）"
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                fullWidth
-              />
-              <Button variant="contained" onClick={searchCandidates} disabled={searching} sx={{ whiteSpace: "nowrap" }}>
-                {searching ? "查詢中..." : "查詢人員"}
-              </Button>
-            </Stack>
-            {candidates.length > 0 ? (
-              <Box sx={{ height: 360 }}>
-                <DataGrid
-                  rows={candidates}
-                  columns={candidateColumns}
-                  getRowId={(row) => row.id}
-                  pageSizeOptions={[5, 10, 20]}
-                  initialState={{ pagination: { paginationModel: { pageSize: 5, page: 0 } } }}
-                  disableRowSelectionOnClick
-                  rowHeight={56}
-                  localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
-                />
-              </Box>
-            ) : null}
-          </Stack>
-        </CardContent>
-      </Card>
+      <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          aria-label="開啟新增白名單人員"
+          onClick={() => setSearchDialogOpen(true)}
+        >
+          新增
+        </Button>
+      </Box>
 
       <Card>
         <CardContent>
@@ -316,6 +311,54 @@ export default function WhitelistAdminPage({ auth }) {
           >
             確認
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={searchDialogOpen} onClose={closeSearchDialog} fullWidth maxWidth="lg" fullScreen={fullScreen}>
+        <DialogTitle>查詢人員</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 0.5 }}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="查詢關鍵字"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || e.nativeEvent.isComposing) {
+                    return;
+                  }
+                  e.preventDefault();
+                  searchCandidates();
+                }}
+                fullWidth
+              />
+              <Button variant="contained" onClick={searchCandidates} disabled={searching} sx={{ whiteSpace: "nowrap" }}>
+                {searching ? "查詢中..." : "查詢人員"}
+              </Button>
+            </Stack>
+            <Typography component="p" variant="body2" color="text.secondary">
+              可用 sysid / 帳號 / 姓名 / email
+            </Typography>
+            {searchMessage ? <Alert severity="info">{searchMessage}</Alert> : null}
+            {dialogMessage ? <Alert severity="info">{dialogMessage}</Alert> : null}
+            {candidates.length > 0 ? (
+              <Box sx={{ height: 420 }}>
+                <DataGrid
+                  rows={candidates}
+                  columns={candidateColumns}
+                  getRowId={(row) => row.id}
+                  pageSizeOptions={[5, 10, 20]}
+                  initialState={{ pagination: { paginationModel: { pageSize: 5, page: 0 } } }}
+                  disableRowSelectionOnClick
+                  rowHeight={56}
+                  localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
+                />
+              </Box>
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeSearchDialog}>關閉</Button>
         </DialogActions>
       </Dialog>
     </Stack>

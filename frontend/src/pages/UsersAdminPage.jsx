@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import AddIcon from "@mui/icons-material/Add";
 import AddModeratorIcon from "@mui/icons-material/AddModerator";
 import RemoveModeratorIcon from "@mui/icons-material/RemoveModerator";
 import {
@@ -16,10 +17,12 @@ import {
   Stack,
   TextField,
   Tooltip,
-  Typography
+  Typography,
+  useMediaQuery
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { zhTW } from "@mui/x-data-grid/locales";
+import { useTheme } from "@mui/material/styles";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 
@@ -39,12 +42,25 @@ function roleColor(role) {
 
 export default function UsersAdminPage({ auth }) {
   const [items, setItems] = useState([]);
-  const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(true);
-  const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
   const [pendingRevokeUser, setPendingRevokeUser] = useState(null);
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchMessage, setSearchMessage] = useState("");
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
+
+  function closeSearchDialog() {
+    setSearchDialogOpen(false);
+    setSearchKeyword("");
+    setSearching(false);
+    setSearchResults([]);
+    setSearchMessage("");
+  }
 
   async function load() {
     setLoading(true);
@@ -60,20 +76,22 @@ export default function UsersAdminPage({ auth }) {
   }
 
   async function search() {
-    setBanner("");
+    setSearchMessage("");
     setSearching(true);
     try {
-      if (!keyword.trim()) {
-        await load();
+      if (!searchKeyword.trim()) {
+        setSearchResults([]);
+        setSearchMessage("請輸入查詢關鍵字。");
         return;
       }
-      const response = await apiClient.searchUsers(keyword, auth);
-      setItems(response.items);
+      const response = await apiClient.searchUsers(searchKeyword, auth);
+      setSearchResults(response.items);
       if (response.items.length === 0) {
-        setBanner("查無符合人員。");
+        setSearchMessage("查無符合人員。");
       }
     } catch (e) {
-      setBanner(e?.payload?.error?.message || "查詢使用者失敗");
+      setSearchMessage(e?.payload?.error?.message || "查詢使用者失敗");
+      setSearchResults([]);
     } finally {
       setSearching(false);
     }
@@ -179,21 +197,17 @@ export default function UsersAdminPage({ auth }) {
       <Typography variant="h4">使用者管理</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
-      <Card>
-        <CardContent>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-            <TextField
-              label="查詢關鍵字（sysid / 帳號 / 姓名 / email）"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              fullWidth
-            />
-            <Button variant="contained" onClick={search} disabled={searching} sx={{ whiteSpace: "nowrap" }}>
-              {searching ? "查詢中..." : "查詢使用者"}
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
+      <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          aria-label="開啟新增使用者查詢"
+          sx={{ backgroundColor: "transparent" }}
+          onClick={() => setSearchDialogOpen(true)}
+        >
+          新增
+        </Button>
+      </Box>
 
       <Card>
         <CardContent>
@@ -236,6 +250,53 @@ export default function UsersAdminPage({ auth }) {
           >
             確認
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={searchDialogOpen} onClose={closeSearchDialog} fullWidth maxWidth="lg" fullScreen={fullScreen}>
+        <DialogTitle>查詢使用者</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 0.5 }}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="查詢關鍵字"
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || e.nativeEvent.isComposing) {
+                    return;
+                  }
+                  e.preventDefault();
+                  search();
+                }}
+                fullWidth
+              />
+              <Button variant="contained" onClick={search} disabled={searching} sx={{ whiteSpace: "nowrap" }}>
+                {searching ? "查詢中..." : "查詢使用者"}
+              </Button>
+            </Stack>
+            <Typography component="p" variant="body2" color="text.secondary">
+              可用 sysid / 帳號 / 姓名 / email
+            </Typography>
+            {searchMessage ? <Alert severity="info">{searchMessage}</Alert> : null}
+            {searchResults.length > 0 ? (
+              <Box sx={{ height: 420 }}>
+                <DataGrid
+                  rows={searchResults}
+                  columns={columns}
+                  getRowId={(row) => row.id}
+                  pageSizeOptions={[5, 10, 20]}
+                  initialState={{ pagination: { paginationModel: { pageSize: 5, page: 0 } } }}
+                  disableRowSelectionOnClick
+                  rowHeight={56}
+                  localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
+                />
+              </Box>
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeSearchDialog}>關閉</Button>
         </DialogActions>
       </Dialog>
     </Stack>
