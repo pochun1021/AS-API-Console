@@ -69,7 +69,10 @@ export default function WhitelistAdminPage({ auth }) {
   async function createItem(candidate) {
     setBanner("");
     try {
-      await apiClient.createWhitelist({ email: candidate.email, sysid: candidate.sysid, name: candidate.name }, auth);
+      await apiClient.createWhitelist(
+        { email: candidate.email, account: candidate.account, sysid: candidate.sysid, name: candidate.name },
+        auth
+      );
       setBanner("白名單已新增。");
       await load();
     } catch (e) {
@@ -112,7 +115,7 @@ export default function WhitelistAdminPage({ auth }) {
             <Typography variant="h6">新增白名單人員</Typography>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
-                label="查詢關鍵字（sysid / 姓名 / email）"
+                label="查詢關鍵字（sysid / 帳號 / 姓名 / email）"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 fullWidth
@@ -126,6 +129,7 @@ export default function WhitelistAdminPage({ auth }) {
                 <TableHead>
                   <TableRow>
                     <TableCell>SysID</TableCell>
+                    <TableCell>帳號</TableCell>
                     <TableCell>姓名</TableCell>
                     <TableCell>Email</TableCell>
                     <TableCell align="right">操作</TableCell>
@@ -135,6 +139,7 @@ export default function WhitelistAdminPage({ auth }) {
                   {candidates.map((candidate) => (
                     <TableRow key={candidate.id}>
                       <TableCell>{candidate.sysid}</TableCell>
+                      <TableCell>{candidate.account || "-"}</TableCell>
                       <TableCell>{candidate.name}</TableCell>
                       <TableCell>{candidate.email}</TableCell>
                       <TableCell align="right">
@@ -161,6 +166,7 @@ export default function WhitelistAdminPage({ auth }) {
               <TableHead>
                 <TableRow>
                   <TableCell>SysID</TableCell>
+                  <TableCell>帳號</TableCell>
                   <TableCell>姓名</TableCell>
                   <TableCell>Email</TableCell>
                   <TableCell>狀態</TableCell>
@@ -174,6 +180,7 @@ export default function WhitelistAdminPage({ auth }) {
                 {items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell>{item.sysid || "-"}</TableCell>
+                    <TableCell>{item.account || "-"}</TableCell>
                     <TableCell>{item.name || "-"}</TableCell>
                     <TableCell>{item.email}</TableCell>
                     <TableCell>

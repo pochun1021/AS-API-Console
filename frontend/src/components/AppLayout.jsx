@@ -4,7 +4,8 @@ import { Link as RouterLink, useLocation } from "react-router-dom";
 const navItems = [
   { label: "申請", path: "/apply", roles: ["user", "admin"] },
   { label: "API Keys", path: "/api-keys", roles: ["user", "admin"] },
-  { label: "白名單管理", path: "/whitelists", roles: ["admin"] }
+  { label: "白名單管理", path: "/whitelists", roles: ["admin"] },
+  { label: "使用者管理", path: "/users", roles: ["admin"] }
 ];
 
 export default function AppLayout({ children, auth }) {

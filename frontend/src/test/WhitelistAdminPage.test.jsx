@@ -30,14 +30,14 @@ test("admin can search user and add whitelist item, then sees duplicated error",
   render(<WhitelistAdminPage auth={adminAuth} />);
 
   expect(await screen.findByText("白名單管理")).toBeInTheDocument();
-  await user.type(screen.getByLabelText("查詢關鍵字（sysid / 姓名 / email）"), "alice");
+  await user.type(screen.getByLabelText("查詢關鍵字（sysid / 帳號 / 姓名 / email）"), "alice");
   await user.click(screen.getByRole("button", { name: "查詢人員" }));
   expect(await screen.findByText("alice.wang@company.com")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "加入白名單" }));
   expect(await screen.findByText("白名單已新增。")).toBeInTheDocument();
 
-  await user.clear(screen.getByLabelText("查詢關鍵字（sysid / 姓名 / email）"));
-  await user.type(screen.getByLabelText("查詢關鍵字（sysid / 姓名 / email）"), "jane");
+  await user.clear(screen.getByLabelText("查詢關鍵字（sysid / 帳號 / 姓名 / email）"));
+  await user.type(screen.getByLabelText("查詢關鍵字（sysid / 帳號 / 姓名 / email）"), "jane");
   await user.click(screen.getByRole("button", { name: "查詢人員" }));
   await user.click((await screen.findAllByRole("button", { name: "加入白名單" }))[0]);
   expect(await screen.findByText("Email 已存在於白名單")).toBeInTheDocument();
@@ -62,9 +62,18 @@ test("admin can search by sysid", async () => {
   const user = userEvent.setup();
   render(<WhitelistAdminPage auth={adminAuth} />);
 
-  await user.type(screen.getByLabelText("查詢關鍵字（sysid / 姓名 / email）"), "user_456");
+  await user.type(screen.getByLabelText("查詢關鍵字（sysid / 帳號 / 姓名 / email）"), "user_456");
   await user.click(screen.getByRole("button", { name: "查詢人員" }));
   expect(await screen.findByText("Alice Wang")).toBeInTheDocument();
+});
+
+test("admin can search by account", async () => {
+  const user = userEvent.setup();
+  render(<WhitelistAdminPage auth={adminAuth} />);
+
+  await user.type(screen.getByLabelText("查詢關鍵字（sysid / 帳號 / 姓名 / email）"), "alice.wang");
+  await user.click(screen.getByRole("button", { name: "查詢人員" }));
+  expect(await screen.findByText("alice.wang")).toBeInTheDocument();
 });
 
 test("non-admin user is blocked", async () => {

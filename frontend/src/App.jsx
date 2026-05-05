@@ -4,6 +4,7 @@ import { mockAuthContext } from "./authContext";
 import ApiKeyDetailPage from "./pages/ApiKeyDetailPage";
 import ApplyPage from "./pages/ApplyPage";
 import MyApiKeysPage from "./pages/MyApiKeysPage";
+import UsersAdminPage from "./pages/UsersAdminPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 
 export default function App() {
@@ -19,6 +20,16 @@ export default function App() {
           element={
             mockAuthContext.role === "admin" ? (
               <WhitelistAdminPage auth={mockAuthContext} />
+            ) : (
+              <Navigate to="/apply" replace />
+            )
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            mockAuthContext.role === "admin" ? (
+              <UsersAdminPage auth={mockAuthContext} />
             ) : (
               <Navigate to="/apply" replace />
             )

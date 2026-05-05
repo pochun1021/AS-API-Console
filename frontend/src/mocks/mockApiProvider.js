@@ -40,6 +40,7 @@ const initialWhitelists = [
   {
     id: "wl_001",
     email: "jane.doe@company.com",
+    account: "jane.doe",
     sysid: "user_123",
     name: "Jane Doe",
     status: "active",
@@ -50,6 +51,7 @@ const initialWhitelists = [
   {
     id: "wl_002",
     email: "legacy.user@company.com",
+    account: "legacy.user",
     sysid: "user_999",
     name: "Legacy User",
     status: "inactive",
@@ -62,21 +64,27 @@ const initialWhitelists = [
 const initialUsers = [
   {
     id: "usr_001",
+    account: "jane.doe",
     sysid: "user_123",
     name: "Jane Doe",
-    email: "jane.doe@company.com"
+    email: "jane.doe@company.com",
+    role: "user"
   },
   {
     id: "usr_002",
+    account: "john.admin",
     sysid: "admin_001",
     name: "John Admin",
-    email: "john.admin@company.com"
+    email: "john.admin@company.com",
+    role: "admin"
   },
   {
     id: "usr_003",
+    account: "alice.wang",
     sysid: "user_456",
     name: "Alice Wang",
-    email: "alice.wang@company.com"
+    email: "alice.wang@company.com",
+    role: "user"
   }
 ];
 
@@ -132,6 +140,10 @@ function generatePlainKey() {
 
 function findApiKeyById(id) {
   return apiKeys.find((item) => item.id === id);
+}
+
+function findUserById(id) {
+  return users.find((item) => item.id === id);
 }
 
 export const mockApiProvider = {
@@ -226,10 +238,41 @@ export const mockApiProvider = {
     }
 
     const items = users.filter((item) =>
-      [item.sysid, item.name, item.email].some((value) => value.toLowerCase().includes(q))
+      [item.sysid, item.account, item.name, item.email].some((value) => value.toLowerCase().includes(q))
     );
 
     return { items };
+  },
+
+  async listUsers(auth) {
+    await delay();
+    ensureAdmin(auth);
+    return { items: users };
+  },
+
+  async grantAdmin(id, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const user = findUserById(id);
+    if (!user) {
+      throw createError("USER_NOT_FOUND", "使用者不存在", 404);
+    }
+    user.role = "admin";
+    return { item: user };
+  },
+
+  async revokeAdmin(id, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const user = findUserById(id);
+    if (!user) {
+      throw createError("USER_NOT_FOUND", "使用者不存在", 404);
+    }
+    if (user.sysid === auth.sysid) {
+      throw createError("VALIDATION_ERROR", "不可取消自己的管理者權限");
+    }
+    user.role = "user";
+    return { item: user };
   },
 
   async createWhitelist(payload, auth) {
@@ -249,6 +292,7 @@ export const mockApiProvider = {
     const item = {
       id: `wl_${String(whitelists.length + 1).padStart(3, "0")}`,
       email,
+      account: payload.account || "",
       status: "active",
       remark: payload.remark?.trim() || "",
       sysid: payload.sysid || "",

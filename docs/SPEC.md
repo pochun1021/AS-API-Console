@@ -56,11 +56,18 @@
 - 不可再次顯示 key 明文。
 
 ### 4) Whitelist Admin Page（白名單管理頁）
-- 可用 `sysid`、`name`、`email` 查詢使用者後加入白名單。
+- 可用 `sysid`、`account`、`name`、`email` 查詢使用者後加入白名單。
 - 可查詢白名單與狀態。
 - 可停用/啟用白名單條目。
 
-### 5) 狀態頁/元件
+### 5) Users Admin Page（使用者管理頁）
+- 僅 `admin` 可使用。
+- 可用 `sysid`、`account`、`name`、`email` 查詢使用者。
+- 可授權一般使用者為管理者（`grant-admin`）。
+- 可取消其他管理者權限（`revoke-admin`）。
+- 前端需阻擋管理者對自己執行 `revoke-admin`（避免誤鎖管理權限）。
+
+### 6) 狀態頁/元件
 - Loading
 - Empty
 - Error（含重試）
@@ -213,8 +220,8 @@ Base path：`/api/v1`
 
 ### 5-1) 白名單新增前使用者查詢 API
 - `GET /api/v1/users?q={keyword}`
-- 用途：供管理者以 `sysid`、`name`、`email` 查詢可加入白名單的人員。
-- 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`name`、`email`。
+- 用途：供管理者以 `sysid`、`account`、`name`、`email` 查詢可加入白名單的人員。
+- 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`。
 
 ### 6) 管理者授權 API
 - `POST /api/v1/users/{id}/grant-admin`：授權指定使用者為管理者
@@ -262,6 +269,7 @@ Base path：`/api/v1`
 16. 管理者可成功授權/取消其他使用者的管理者身分（`/api/v1/users/{id}/grant-admin|revoke-admin`）。
 17. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
 18. 若 auth context 缺少 `sysid`，申請 API 回傳 `VALIDATION_ERROR` 且不得建立申請紀錄。
+19. 管理者不可在前端將自己的角色由 `admin` 降為 `user`。
 
 ## Roadmap
 ### Phase 1：Foundation
