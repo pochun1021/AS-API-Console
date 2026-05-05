@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Frontend build/deps
+frontend/node_modules/
+frontend/dist/
