@@ -80,44 +80,50 @@ export default function MyApiKeysPage({ auth }) {
   }, []);
 
   const columns = useMemo(
-    () => [
-      { field: "application_date", headerName: "申請日期", flex: 1, minWidth: 120 },
-      {
-        field: "duration_months",
-        headerName: "生效時長",
-        flex: 1,
-        minWidth: 120,
-        valueFormatter: (value) => `${value} 個月`
-      },
-      {
-        field: "status",
-        headerName: "狀態",
-        flex: 1,
-        minWidth: 120,
-        renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
-      },
-      {
-        field: "created_at",
-        headerName: "建立時間",
-        flex: 1.5,
-        minWidth: 180,
-        valueFormatter: (value) => formatDateTime(value)
-      },
-      {
-        field: "expires_at",
-        headerName: "到期時間",
-        flex: 1.5,
-        minWidth: 180,
-        valueFormatter: (value) => formatDateTime(value)
-      },
-      {
-        field: "masked_key",
-        headerName: "遮罩金鑰 / 前綴",
-        flex: 1.5,
-        minWidth: 180,
-        valueGetter: (_value, row) => `${row.masked_key} (${row.key_prefix})`
-      },
-      {
+    () => {
+      const baseColumns = [
+        { field: "application_date", headerName: "申請日期", flex: 1, minWidth: 120 },
+        {
+          field: "duration_months",
+          headerName: "生效時長",
+          flex: 1,
+          minWidth: 120,
+          valueFormatter: (value) => `${value} 個月`
+        },
+        {
+          field: "status",
+          headerName: "狀態",
+          flex: 1,
+          minWidth: 120,
+          renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
+        },
+        {
+          field: "expires_at",
+          headerName: "到期時間",
+          flex: 1.5,
+          minWidth: 180,
+          valueFormatter: (value) => formatDateTime(value)
+        },
+        {
+          field: "masked_key",
+          headerName: "遮罩金鑰 / 前綴",
+          flex: 1.5,
+          minWidth: 180,
+          valueGetter: (_value, row) => `${row.masked_key} (${row.key_prefix})`
+        }
+      ];
+
+      if (auth.role === "admin") {
+        baseColumns.push({
+          field: "owner",
+          headerName: "申請人",
+          flex: 1.5,
+          minWidth: 180,
+          valueGetter: (_value, row) => `${row.owner_account || "-"} / ${row.owner_name || "-"}`
+        });
+      }
+
+      baseColumns.push({
         field: "actions",
         headerName: "操作",
         sortable: false,
@@ -152,9 +158,11 @@ export default function MyApiKeysPage({ auth }) {
             ) : null}
           </Box>
         )
-      }
-    ],
-    []
+      });
+
+      return baseColumns;
+    },
+    [auth.role]
   );
 
   return (

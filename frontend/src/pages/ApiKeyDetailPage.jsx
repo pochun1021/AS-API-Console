@@ -65,14 +65,18 @@ export default function ApiKeyDetailPage({ auth }) {
               <Box>
                 狀態: <Chip size="small" label={item.status} color={statusColor(item.status)} />
               </Box>
+              <Typography>
+                申請人: {item.owner_account || "-"} / {item.owner_name || "-"}
+              </Typography>
+              <Typography>單位: {item.department || "-"}</Typography>
               <Typography>申請日期: {item.application_date}</Typography>
               <Typography>生效時長: {item.duration_months} 個月</Typography>
-              <Typography>建立時間: {formatDateTime(item.created_at)}</Typography>
-              <Typography>到期時間: {formatDateTime(item.expires_at)}</Typography>
               <Typography>
                 遮罩金鑰 / 前綴: {item.masked_key} ({item.key_prefix})
               </Typography>
-              {auth.role === "admin" ? <Typography>擁有者: {item.owner_account || "-"}</Typography> : null}
+              <Typography>建立時間: {formatDateTime(item.created_at)}</Typography>
+              <Typography>到期時間: {formatDateTime(item.expires_at)}</Typography>
+              <Typography>用途: {item.purpose || "-"}</Typography>
               <Stack direction="row" spacing={1}>
                 <Button variant="outlined" onClick={() => navigate("/api-keys")}>
                   返回清單

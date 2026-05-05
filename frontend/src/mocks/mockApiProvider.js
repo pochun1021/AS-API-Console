@@ -8,9 +8,12 @@ const initialApiKeys = [
     key_prefix: "AS-",
     application_date: today,
     duration_months: 6,
+    purpose: "integration test for platform service",
+    department: "Platform Engineering",
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString(),
-    owner_account: "jane.doe"
+    owner_account: "jane.doe",
+    owner_name: "Jane Doe"
   },
   {
     id: "key_002",
@@ -19,9 +22,12 @@ const initialApiKeys = [
     key_prefix: "AS-",
     application_date: today,
     duration_months: 1,
+    purpose: "legacy integration",
+    department: "Platform Engineering",
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
-    owner_account: "jane.doe"
+    owner_account: "jane.doe",
+    owner_name: "Jane Doe"
   },
   {
     id: "key_003",
@@ -30,9 +36,24 @@ const initialApiKeys = [
     key_prefix: "AS-",
     application_date: today,
     duration_months: 12,
+    purpose: "admin automation",
+    department: "Security",
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
-    owner_account: "john.admin"
+    owner_account: "john.admin",
+    owner_name: "John Admin"
+  },
+  {
+    id: "key_004",
+    status: "expired",
+    masked_key: "AS-****pq78",
+    key_prefix: "AS-",
+    application_date: "2025-04-01",
+    duration_months: 1,
+    created_at: "2025-04-01T08:00:00.000Z",
+    expires_at: "2025-05-01T08:00:00.000Z",
+    owner_account: "john.admin",
+    owner_name: "John Admin"
   }
 ];
 
@@ -166,9 +187,12 @@ export const mockApiProvider = {
         key_prefix: prefix,
         application_date: payload.application_date,
         duration_months: payload.duration_months,
+        purpose: payload.purpose.trim(),
+        department: auth.department,
         created_at: now.toISOString(),
         expires_at: expires.toISOString(),
-        owner_account: auth.account
+        owner_account: auth.account,
+        owner_name: auth.name
       },
       ...apiKeys
     ];

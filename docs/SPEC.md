@@ -46,11 +46,13 @@
 
 ### 2) My API Keys Page（一般使用者我的紀錄頁）
 - 顯示範圍：僅本人帳號的全部歷史紀錄（`active|revoked|expired`）。
-- 顯示欄位：申請日期、生效時長、狀態、建立時間、到期時間、遮罩 key（或前綴）。
+- 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（或前綴）。
+- 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
 - 操作：僅對本人 `active` key 顯示「停用」按鈕。
 
 ### 3) Detail Page（詳情頁）
 - 顯示完整申請資訊與狀態。
+- 顯示欄位至少包含：申請日期、生效時長、用途（`purpose`）、單位（`department`）、建立時間、到期時間、遮罩 key。
 - 一般使用者僅可查本人資料。
 - 一般使用者可停用本人 `active` key。
 - 不可再次顯示 key 明文。
@@ -196,6 +198,8 @@ Base path：`/api/v1`
       "status": "active",
       "masked_key": "AS-****wxyz",
       "key_prefix": "AS-",
+      "owner_account": "jane.doe",
+      "owner_name": "Jane Doe",
       "expires_at": "..."
     }
   ],
@@ -208,6 +212,9 @@ Base path：`/api/v1`
 ### 3) 查詢單筆 API Key 紀錄
 - `GET /api/v1/api-keys/{id}`
 - 規則：`user` 僅可查本人資料；`admin` 可查任意資料；不可回傳明文 key。
+- 回傳可包含申請人識別欄位 `owner_account`、`owner_name`（供管理者辨識申請來源）。
+- 回傳應包含 `purpose` 供詳情頁顯示；若歷史資料未留存用途，前端顯示 `-`。
+- 回傳應包含 `department` 供詳情頁顯示；若歷史資料未留存單位，前端顯示 `-`。
 
 ### 4) 停用 API Key
 - `POST /api/v1/api-keys/{id}/revoke`
@@ -271,6 +278,11 @@ Base path：`/api/v1`
 17. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
 18. 若 auth context 缺少 `sysid`，申請 API 回傳 `VALIDATION_ERROR` 且不得建立申請紀錄。
 19. 管理者不可在前端將自己的角色由 `admin` 降為 `user`。
+20. `admin` 呼叫 `GET /api/v1/api-keys` 時，每筆資料需可辨識申請人（至少包含 `owner_account`、`owner_name`）。
+21. 調整申請人識別欄位後，既有受保護 API 路徑與角色模型（`user|admin`）不得改動。
+22. API Keys 清單頁不得顯示建立時間；建立時間僅顯示於單筆詳情頁。
+23. API Key 詳情頁需顯示用途（`purpose`）；若無資料則顯示 `-`。
+24. API Key 詳情頁需顯示單位（`department`）；若無資料則顯示 `-`。
 
 ## Roadmap
 ### Phase 1：Foundation
