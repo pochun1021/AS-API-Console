@@ -12,8 +12,12 @@
 
 重點是先提供最小可用流程，並保留後續 SSO/OAuth、審核流程與安全等級擴充能力。
 
+## 資料儲存策略
+- MVP 階段採用 SQLite 作為主要資料庫。
+- ORM 與 migration 層維持 SQLAlchemy + Alembic，確保後續可平滑擴充至 PostgreSQL。
+
 ## 使用者流程
-1. 使用者登入系統後進入申請頁，系統自動帶入帳號資訊。
+1. 使用者透過 SSO/OAuth 登入後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`。
 2. 使用者填寫姓名、Email、單位、申請日期、用途與 API 生效時長。
 3. 送出申請後，系統先以 `email` 驗證白名單（僅 `active` 可通過）。
 4. 白名單通過後系統立即核發 API Key。
@@ -25,15 +29,14 @@
 ## 頁面規格
 ### 1) Apply Page（申請頁）
 - 欄位：
-  - `account`（必填，唯讀，自登入系統帶入）
-  - `name`（必填）
-  - `email`（必填）
-  - `department`（必填）
+  - `account`（必填，唯讀，自 SSO/OAuth 登入帶入）
+  - `name`（必填，唯讀，自 SSO/OAuth 登入帶入）
+  - `email`（必填，唯讀，自 SSO/OAuth 登入帶入）
+  - `department`（必填，唯讀，自 SSO/OAuth 登入帶入）
+  - `sysid`（必填，唯讀，自 SSO/OAuth 登入帶入）
   - `application_date`（必填，使用者可選）
   - `duration_months`（必填，選單：`1|6|12`）
   - `purpose`（必填）
-  - `subject_type`（選填，預留 SSO/OAuth）
-  - `subject_id`（選填，預留 SSO/OAuth）
 - 驗證：
   - `email` 格式檢查
   - `email` 需存在於白名單且狀態為 `active`
@@ -64,6 +67,7 @@
 
 ## 功能需求
 ### Must Have（MVP）
+- 權限模型僅區分 `user` 與 `admin`
 - 僅白名單人員可申請 API Key（以 `email` 比對）
 - 白名單管理能力（新增、查詢、停用/啟用）
 - 申請後自動核發 API Key
@@ -75,14 +79,26 @@
 - 一般使用者查詢時 API Key 必須遮罩顯示
 - 一般使用者可自行停用本人已生效 key（軟停用）
 - 支援撤銷與狀態管理（`active|revoked|expired`）
+- 管理者可查看全部 API Key 與申請紀錄
+- 管理者可授權/取消其他使用者的管理者身分
 
 ### Nice to Have（後續）
-- OAuth/SSO 串接（由 `subject_type/subject_id` 擴充）
+- OAuth/SSO 串接優化（完善 `sysid` 對接與身分映射）
 - 多安全等級與長度策略（24-30 碼可配置）
 - 申請審核流程
 - 使用量監控與配額管理
 
 ## 資料模型草案
+### Entity: `users`
+- `id` (string/uuid)
+- `account` (string, required, unique)
+- `email` (string, required, unique, lowercase)
+- `name` (string, required)
+- `role` (enum: `user` | `admin`, default: `user`)
+- `status` (enum: `active` | `inactive`)
+- `created_at` (datetime)
+- `updated_at` (datetime)
+
 ### Entity: `api_key_whitelist`
 - `id` (string/uuid)
 - `email` (string, required, unique, lowercase)
@@ -96,6 +112,7 @@
 ### Entity: `api_key_applications`
 - `id` (string/uuid)
 - `account` (string, required)
+- `user_id` (fk -> users.id, required)
 - `name` (string, required)
 - `email` (string, required)
 - `department` (string, required)
@@ -106,8 +123,7 @@
 - `issued_at` (datetime)
 - `expires_at` (datetime)
 - `revoked_at` (datetime, nullable)
-- `subject_type` (string, nullable)
-- `subject_id` (string, nullable)
+- `sysid` (string, required, SSO/OAuth 主體唯一識別碼)
 - `created_at` (datetime)
 - `updated_at` (datetime)
 
@@ -122,25 +138,26 @@
 - `status` (enum: `active` | `revoked` | `expired`)
 - `created_at` (datetime)
 
+## 權限規則（MVP）
+- `user`：僅可查詢本人資料（`/api/v1/my/*`），僅可停用本人 `active` key。
+- `admin`：可查詢全部資料（`/api/v1/api-keys*`），可管理白名單（`/api/v1/admin/api-key-whitelist*`），可授權/取消其他使用者管理者身分。
+- 金鑰啟用狀態以 `api_keys.status` 為唯一判斷來源：`active`=啟用，`revoked|expired`=不可用。
+
 ## API 草案
 Base path：`/api/v1`
 
 ### 1) 申請並核發 API Key
 - `POST /api/v1/api-keys/applications`
 - 前置條件：
-  - 請求必須為已登入使用者（`account` 由 auth context 提供）
+  - 請求必須為已登入使用者（`account`、`name`、`email`、`department`、`sysid` 由 auth context 提供，並以 auth context 為準）
   - `email` 必須存在於 `active` 白名單
 - Request：
 ```json
 {
-  "name": "Jane Doe",
-  "email": "jane@example.com",
-  "department": "Platform Team",
   "application_date": "2026-05-04",
   "duration_months": 6,
   "purpose": "integration for internal service",
-  "subject_type": "oauth_user",
-  "subject_id": "user_123"
+  "sysid": "user_123"
 }
 ```
 - Response（201）：
@@ -190,17 +207,26 @@ Base path：`/api/v1`
 
 ### 5) 管理端查詢 API Key（既有）
 - `GET /api/v1/api-keys`
+- 規則：僅 `admin` 可使用。
 
 ### 6) 管理端查詢單筆 API Key/申請紀錄（既有）
 - `GET /api/v1/api-keys/{id}`
+- 規則：僅 `admin` 可使用。
 
 ### 7) 管理端撤銷 API Key（既有）
 - `POST /api/v1/api-keys/{id}/revoke`
+- 規則：僅 `admin` 可使用。
 
 ### 8) 白名單管理 API（Admin）
 - `POST /api/v1/admin/api-key-whitelist`：新增白名單 email
 - `GET /api/v1/admin/api-key-whitelist`：查詢白名單列表
 - `PATCH /api/v1/admin/api-key-whitelist/{id}`：更新狀態（`active/inactive`）與備註
+- 規則：僅 `admin` 可使用。
+
+### 9) 管理者授權 API（Admin）
+- `POST /api/v1/admin/users/{id}/grant-admin`：授權指定使用者為管理者
+- `POST /api/v1/admin/users/{id}/revoke-admin`：取消指定使用者管理者身分
+- 規則：僅 `admin` 可使用，且需記錄操作稽核資訊（操作者、時間）。
 
 ### 錯誤回應格式（建議）
 ```json
@@ -236,6 +262,11 @@ Base path：`/api/v1`
 10. 一般使用者停用非本人 key 時，API 回傳 `KEY_NOT_OWNED_BY_USER`。
 11. 一般使用者停用非 `active` key 時，API 回傳 `KEY_NOT_ACTIVE`。
 12. 非白名單或驗證失敗請求不得建立 `api_key_applications` 或 `api_keys` 紀錄。
+13. 一般使用者存取任一 `/api/v1/admin/*` API 時，回傳 `403`。
+14. 管理者可查詢全域 API Key 清單與單筆資料。
+15. 管理者可成功授權/取消其他使用者的管理者身分。
+16. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
+17. 若 auth context 缺少 `sysid`，申請 API 回傳 `VALIDATION_ERROR` 且不得建立申請紀錄。
 
 ## Roadmap
 ### Phase 1：Foundation
@@ -256,6 +287,6 @@ Base path：`/api/v1`
 - 完成端到端流程驗收
 
 ### Phase 4：Expansion
-- 串接 OAuth/SSO（填入 `subject_type/subject_id`）
+- 串接 OAuth/SSO（完善 `sysid` 與外部身分系統整合）
 - 增加多安全等級策略與可配置 key 長度
 - 規劃審核流程與配額管理
