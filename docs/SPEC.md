@@ -139,8 +139,8 @@
 - `created_at` (datetime)
 
 ## 權限規則（MVP）
-- `user`：僅可查詢本人資料（`/api/v1/my/*`），僅可停用本人 `active` key。
-- `admin`：可查詢全部資料（`/api/v1/api-keys*`），可管理白名單（`/api/v1/admin/api-key-whitelist*`），可授權/取消其他使用者管理者身分。
+- `user`：可使用 `GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`POST /api/v1/api-keys/{id}/revoke`，但僅可查詢/停用本人 `active` key。
+- `admin`：可查詢全部 API Key 與申請紀錄，可管理白名單（`/api/v1/whitelists*`），可授權/取消其他使用者管理者身分（`/api/v1/users/{id}/grant-admin|revoke-admin`）。
 - 金鑰啟用狀態以 `api_keys.status` 為唯一判斷來源：`active`=啟用，`revoked|expired`=不可用。
 
 ## API 草案
@@ -175,9 +175,9 @@ Base path：`/api/v1`
 }
 ```
 
-### 2) 一般使用者查詢本人 API Key 清單
-- `GET /api/v1/my/api-keys`
-- 規則：僅回傳 auth 使用者本人的資料。
+### 2) 查詢 API Key 清單
+- `GET /api/v1/api-keys`
+- 規則：`user` 僅回傳 auth 使用者本人的資料；`admin` 可查全部資料。
 - Query（草案）：`page`, `page_size`, `status`, `q`
 - Response（200）：
 ```json
@@ -197,35 +197,23 @@ Base path：`/api/v1`
 }
 ```
 
-### 3) 一般使用者查詢本人單筆紀錄
-- `GET /api/v1/my/api-keys/{id}`
-- 規則：僅可查本人資料；不可回傳明文 key。
-
-### 4) 一般使用者停用本人已生效 Key
-- `POST /api/v1/my/api-keys/{id}/revoke`
-- 規則：僅可停用本人 `active` key，停用為軟停用（`status=revoked`）。
-
-### 5) 管理端查詢 API Key（既有）
-- `GET /api/v1/api-keys`
-- 規則：僅 `admin` 可使用。
-
-### 6) 管理端查詢單筆 API Key/申請紀錄（既有）
+### 3) 查詢單筆 API Key 紀錄
 - `GET /api/v1/api-keys/{id}`
-- 規則：僅 `admin` 可使用。
+- 規則：`user` 僅可查本人資料；`admin` 可查任意資料；不可回傳明文 key。
 
-### 7) 管理端撤銷 API Key（既有）
+### 4) 停用 API Key
 - `POST /api/v1/api-keys/{id}/revoke`
+- 規則：`user` 僅可停用本人 `active` key；`admin` 可停用任意 `active` key；停用為軟停用（`status=revoked`）。
+
+### 5) 白名單管理 API
+- `POST /api/v1/whitelists`：新增白名單 email
+- `GET /api/v1/whitelists`：查詢白名單列表
+- `PATCH /api/v1/whitelists/{id}`：更新狀態（`active/inactive`）與備註
 - 規則：僅 `admin` 可使用。
 
-### 8) 白名單管理 API（Admin）
-- `POST /api/v1/admin/api-key-whitelist`：新增白名單 email
-- `GET /api/v1/admin/api-key-whitelist`：查詢白名單列表
-- `PATCH /api/v1/admin/api-key-whitelist/{id}`：更新狀態（`active/inactive`）與備註
-- 規則：僅 `admin` 可使用。
-
-### 9) 管理者授權 API（Admin）
-- `POST /api/v1/admin/users/{id}/grant-admin`：授權指定使用者為管理者
-- `POST /api/v1/admin/users/{id}/revoke-admin`：取消指定使用者管理者身分
+### 6) 管理者授權 API
+- `POST /api/v1/users/{id}/grant-admin`：授權指定使用者為管理者
+- `POST /api/v1/users/{id}/revoke-admin`：取消指定使用者管理者身分
 - 規則：僅 `admin` 可使用，且需記錄操作稽核資訊（操作者、時間）。
 
 ### 錯誤回應格式（建議）
@@ -262,11 +250,12 @@ Base path：`/api/v1`
 10. 一般使用者停用非本人 key 時，API 回傳 `KEY_NOT_OWNED_BY_USER`。
 11. 一般使用者停用非 `active` key 時，API 回傳 `KEY_NOT_ACTIVE`。
 12. 非白名單或驗證失敗請求不得建立 `api_key_applications` 或 `api_keys` 紀錄。
-13. 一般使用者存取任一 `/api/v1/admin/*` API 時，回傳 `403`。
-14. 管理者可查詢全域 API Key 清單與單筆資料。
-15. 管理者可成功授權/取消其他使用者的管理者身分。
-16. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
-17. 若 auth context 缺少 `sysid`，申請 API 回傳 `VALIDATION_ERROR` 且不得建立申請紀錄。
+13. `user` 呼叫 `GET /api/v1/api-keys` 時僅可看到本人資料；`admin` 可看到全域資料。
+14. `user` 查詢或停用非本人 key 時，API 回傳 `403`（或既有錯誤碼）。
+15. 非 `admin` 使用白名單管理 API（`/api/v1/whitelists*`）時，回傳 `403`。
+16. 管理者可成功授權/取消其他使用者的管理者身分（`/api/v1/users/{id}/grant-admin|revoke-admin`）。
+17. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
+18. 若 auth context 缺少 `sysid`，申請 API 回傳 `VALIDATION_ERROR` 且不得建立申請紀錄。
 
 ## Roadmap
 ### Phase 1：Foundation
