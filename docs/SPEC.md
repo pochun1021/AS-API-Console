@@ -71,6 +71,7 @@
 - Loading
 - Empty
 - Error（含重試）
+- 列表資料以 Data Table 呈現（支援排序與分頁）；僅「操作」欄位不可排序與不可 filter。
 
 ## 功能需求
 ### Must Have（MVP）

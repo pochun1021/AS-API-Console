@@ -1,21 +1,37 @@
 import { useEffect, useMemo, useState } from "react";
+import AddModeratorIcon from "@mui/icons-material/AddModerator";
+import RemoveModeratorIcon from "@mui/icons-material/RemoveModerator";
 import {
   Alert,
+  Box,
   Button,
   Card,
   CardContent,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   TextField,
+  Tooltip,
   Typography
 } from "@mui/material";
+import { DataGrid } from "@mui/x-data-grid";
+import { zhTW } from "@mui/x-data-grid/locales";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
+
+const actionCellSx = {
+  display: "flex",
+  justifyContent: "flex-start",
+  alignItems: "center",
+  width: "100%",
+  height: "100%",
+  gap: 0.5,
+  whiteSpace: "nowrap"
+};
 
 function roleColor(role) {
   return role === "admin" ? "warning" : "default";
@@ -28,6 +44,7 @@ export default function UsersAdminPage({ auth }) {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
+  const [pendingRevokeUser, setPendingRevokeUser] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -93,6 +110,61 @@ export default function UsersAdminPage({ auth }) {
     [items, auth.sysid]
   );
 
+  const columns = useMemo(
+    () => [
+      { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
+      { field: "account", headerName: "帳號", flex: 1, minWidth: 140 },
+      { field: "name", headerName: "姓名", flex: 1, minWidth: 140 },
+      { field: "email", headerName: "Email", flex: 1.5, minWidth: 220 },
+      {
+        field: "role",
+        headerName: "角色",
+        flex: 1,
+        minWidth: 120,
+        renderCell: (params) => <Chip size="small" label={params.value} color={roleColor(params.value)} />
+      },
+      {
+        field: "actions",
+        headerName: "操作",
+        sortable: false,
+        filterable: false,
+        align: "left",
+        headerAlign: "left",
+        flex: 1,
+        minWidth: 110,
+        renderCell: (params) => {
+          const isSelf = params.row.sysid === auth.sysid || currentUserBySysid?.id === params.row.id;
+          return (
+            <Box sx={actionCellSx}>
+              {params.row.role === "user" ? (
+                <Tooltip title="授權管理者">
+                  <IconButton aria-label="授權管理者" size="small" onClick={() => grant(params.row.id)}>
+                    <AddModeratorIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              ) : (
+                <Tooltip title="取消管理者">
+                  <span>
+                    <IconButton
+                      aria-label="取消管理者"
+                      size="small"
+                      color="warning"
+                      onClick={() => setPendingRevokeUser({ id: params.row.id, name: params.row.name })}
+                      disabled={isSelf}
+                    >
+                      <RemoveModeratorIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+            </Box>
+          );
+        }
+      }
+    ],
+    [auth.sysid, currentUserBySysid]
+  );
+
   if (auth.role !== "admin") {
     return (
       <Stack spacing={3}>
@@ -129,53 +201,43 @@ export default function UsersAdminPage({ auth }) {
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && items.length === 0 ? <EmptyBlock text="目前沒有使用者資料。" /> : null}
           {!loading && !error && items.length > 0 ? (
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>SysID</TableCell>
-                  <TableCell>帳號</TableCell>
-                  <TableCell>姓名</TableCell>
-                  <TableCell>Email</TableCell>
-                  <TableCell>角色</TableCell>
-                  <TableCell align="right">操作</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {items.map((item) => {
-                  const isSelf = item.sysid === auth.sysid || currentUserBySysid?.id === item.id;
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell>{item.sysid}</TableCell>
-                      <TableCell>{item.account || "-"}</TableCell>
-                      <TableCell>{item.name}</TableCell>
-                      <TableCell>{item.email}</TableCell>
-                      <TableCell>
-                        <Chip size="small" label={item.role} color={roleColor(item.role)} />
-                      </TableCell>
-                      <TableCell align="right">
-                        {item.role === "user" ? (
-                          <Button variant="outlined" onClick={() => grant(item.id)}>
-                            授權管理者
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="outlined"
-                            color="warning"
-                            onClick={() => revoke(item.id)}
-                            disabled={isSelf}
-                          >
-                            取消管理者
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <Box sx={{ height: 480 }}>
+              <DataGrid
+                rows={items}
+                columns={columns}
+                getRowId={(row) => row.id}
+                pageSizeOptions={[10, 20, 50]}
+                initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
+                disableRowSelectionOnClick
+                rowHeight={56}
+                localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
+              />
+            </Box>
           ) : null}
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(pendingRevokeUser)} onClose={() => setPendingRevokeUser(null)}>
+        <DialogTitle>確認取消管理者</DialogTitle>
+        <DialogContent>
+          確認取消 {pendingRevokeUser?.name || "此使用者"} 的管理者權限？
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingRevokeUser(null)}>取消</Button>
+          <Button
+            color="warning"
+            onClick={async () => {
+              const target = pendingRevokeUser;
+              setPendingRevokeUser(null);
+              if (target) {
+                await revoke(target.id);
+              }
+            }}
+          >
+            確認
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

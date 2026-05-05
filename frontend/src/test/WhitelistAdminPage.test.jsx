@@ -43,12 +43,14 @@ test("admin can search user and add whitelist item, then sees duplicated error",
   expect(await screen.findByText("Email 已存在於白名單")).toBeInTheDocument();
 });
 
-test("admin can toggle status and update remark", async () => {
+test("admin can toggle status with confirm and update remark", async () => {
   const user = userEvent.setup();
   render(<WhitelistAdminPage auth={adminAuth} />);
 
   expect(await screen.findByText("jane.doe@company.com")).toBeInTheDocument();
-  await user.click((await screen.findAllByRole("button", { name: "停用" }))[0]);
+  await user.click((await screen.findAllByRole("button", { name: "停用白名單" }))[0]);
+  expect(await screen.findByText("確認變更狀態")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "確認" }));
   expect(await screen.findByText("白名單已更新。")).toBeInTheDocument();
 
   const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];

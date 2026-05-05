@@ -32,8 +32,10 @@ export default function AppLayout({ children, auth }) {
           ))}
         </Toolbar>
       </AppBar>
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        {children}
+      <Container maxWidth={false} sx={{ py: 4, px: { xs: 2, md: 4 } }}>
+        <Box sx={{ maxWidth: 1840, mx: "auto", width: "100%" }}>
+          {children}
+        </Box>
       </Container>
     </Box>
   );

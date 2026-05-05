@@ -10,7 +10,7 @@ const auth = {
   sysid: "user_123"
 };
 
-test("shows revoke button only for active rows", async () => {
+test("shows revoke icon only for active rows", async () => {
   render(
     <MemoryRouter>
       <MyApiKeysPage auth={auth} />
@@ -18,7 +18,7 @@ test("shows revoke button only for active rows", async () => {
   );
 
   expect(await screen.findByText("API Keys")).toBeInTheDocument();
-  const revokeButtons = await screen.findAllByRole("button", { name: "停用" });
+  const revokeButtons = await screen.findAllByRole("button", { name: "停用金鑰" });
   expect(revokeButtons).toHaveLength(1);
-  expect(await screen.findAllByRole("link", { name: "詳情" })).toHaveLength(2);
+  expect(await screen.findAllByRole("link", { name: "查看詳情" })).toHaveLength(2);
 });

@@ -1,21 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import PersonAddIcon from "@mui/icons-material/PersonAdd";
+import SaveIcon from "@mui/icons-material/Save";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import StopIcon from "@mui/icons-material/Stop";
 import {
   Alert,
+  Box,
   Button,
   Card,
   CardContent,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   TextField,
+  Tooltip,
   Typography
 } from "@mui/material";
+import { DataGrid } from "@mui/x-data-grid";
+import { zhTW } from "@mui/x-data-grid/locales";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
+
+const actionCellSx = {
+  display: "flex",
+  justifyContent: "flex-start",
+  alignItems: "center",
+  width: "100%",
+  height: "100%",
+  gap: 0.5,
+  whiteSpace: "nowrap"
+};
 
 function formatDateTime(value) {
   const dt = new Date(value);
@@ -35,6 +53,7 @@ export default function WhitelistAdminPage({ auth }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
+  const [pendingStatusChange, setPendingStatusChange] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -95,6 +114,120 @@ export default function WhitelistAdminPage({ auth }) {
     load();
   }, []);
 
+  const candidateColumns = useMemo(
+    () => [
+      { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
+      { field: "account", headerName: "帳號", flex: 1, minWidth: 140 },
+      { field: "name", headerName: "姓名", flex: 1, minWidth: 140 },
+      { field: "email", headerName: "Email", flex: 1.5, minWidth: 220 },
+      {
+        field: "actions",
+        headerName: "操作",
+        sortable: false,
+        filterable: false,
+        align: "left",
+        headerAlign: "left",
+        flex: 1,
+        minWidth: 110,
+        renderCell: (params) => (
+          <Box sx={actionCellSx}>
+            <Tooltip title="加入白名單">
+              <IconButton aria-label="加入白名單" size="small" onClick={() => createItem(params.row)}>
+                <PersonAddIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )
+      }
+    ],
+    []
+  );
+
+  const whitelistColumns = useMemo(
+    () => [
+      { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
+      { field: "account", headerName: "帳號", flex: 1, minWidth: 140 },
+      { field: "name", headerName: "姓名", flex: 1, minWidth: 140 },
+      { field: "email", headerName: "Email", flex: 1.5, minWidth: 220 },
+      {
+        field: "status",
+        headerName: "狀態",
+        flex: 1,
+        minWidth: 120,
+        renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
+      },
+      {
+        field: "remark",
+        headerName: "備註",
+        flex: 1.5,
+        minWidth: 220,
+        renderCell: (params) => (
+          <Box sx={{ display: "flex", alignItems: "center", height: "100%", width: "100%" }}>
+            <TextField
+              size="small"
+              value={editingRemark[params.row.id] ?? params.row.remark}
+              onChange={(e) => setEditingRemark((prev) => ({ ...prev, [params.row.id]: e.target.value }))}
+            />
+          </Box>
+        )
+      },
+      {
+        field: "created_at",
+        headerName: "建立時間",
+        flex: 1.5,
+        minWidth: 180,
+        valueFormatter: (value) => formatDateTime(value)
+      },
+      {
+        field: "updated_at",
+        headerName: "更新時間",
+        flex: 1.5,
+        minWidth: 180,
+        valueFormatter: (value) => formatDateTime(value)
+      },
+      {
+        field: "actions",
+        headerName: "操作",
+        sortable: false,
+        filterable: false,
+        align: "left",
+        headerAlign: "left",
+        flex: 1.2,
+        minWidth: 140,
+        renderCell: (params) => (
+          <Box sx={actionCellSx}>
+            <Tooltip title="儲存備註">
+              <IconButton
+                aria-label="儲存備註"
+                size="small"
+                color="primary"
+                onClick={() => updateItem(params.row.id, { remark: editingRemark[params.row.id] ?? params.row.remark })}
+              >
+                <SaveIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={params.row.status === "active" ? "停用白名單" : "啟用白名單"}>
+              <IconButton
+                aria-label={params.row.status === "active" ? "停用白名單" : "啟用白名單"}
+                size="small"
+                color={params.row.status === "active" ? "warning" : "success"}
+                onClick={() =>
+                  setPendingStatusChange({
+                    id: params.row.id,
+                    nextStatus: params.row.status === "active" ? "inactive" : "active"
+                  })
+                }
+              >
+                {params.row.status === "active" ? <StopIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )
+      }
+    ],
+    [editingRemark]
+  );
+
   if (auth.role !== "admin") {
     return (
       <Stack spacing={3}>
@@ -125,32 +258,18 @@ export default function WhitelistAdminPage({ auth }) {
               </Button>
             </Stack>
             {candidates.length > 0 ? (
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>SysID</TableCell>
-                    <TableCell>帳號</TableCell>
-                    <TableCell>姓名</TableCell>
-                    <TableCell>Email</TableCell>
-                    <TableCell align="right">操作</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {candidates.map((candidate) => (
-                    <TableRow key={candidate.id}>
-                      <TableCell>{candidate.sysid}</TableCell>
-                      <TableCell>{candidate.account || "-"}</TableCell>
-                      <TableCell>{candidate.name}</TableCell>
-                      <TableCell>{candidate.email}</TableCell>
-                      <TableCell align="right">
-                        <Button variant="outlined" onClick={() => createItem(candidate)}>
-                          加入白名單
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <Box sx={{ height: 360 }}>
+                <DataGrid
+                  rows={candidates}
+                  columns={candidateColumns}
+                  getRowId={(row) => row.id}
+                  pageSizeOptions={[5, 10, 20]}
+                  initialState={{ pagination: { paginationModel: { pageSize: 5, page: 0 } } }}
+                  disableRowSelectionOnClick
+                  rowHeight={56}
+                  localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
+                />
+              </Box>
             ) : null}
           </Stack>
         </CardContent>
@@ -162,64 +281,43 @@ export default function WhitelistAdminPage({ auth }) {
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && items.length === 0 ? <EmptyBlock text="目前沒有白名單資料。" /> : null}
           {!loading && !error && items.length > 0 ? (
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>SysID</TableCell>
-                  <TableCell>帳號</TableCell>
-                  <TableCell>姓名</TableCell>
-                  <TableCell>Email</TableCell>
-                  <TableCell>狀態</TableCell>
-                  <TableCell>備註</TableCell>
-                  <TableCell>建立時間</TableCell>
-                  <TableCell>更新時間</TableCell>
-                  <TableCell align="right">操作</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{item.sysid || "-"}</TableCell>
-                    <TableCell>{item.account || "-"}</TableCell>
-                    <TableCell>{item.name || "-"}</TableCell>
-                    <TableCell>{item.email}</TableCell>
-                    <TableCell>
-                      <Chip size="small" label={item.status} color={statusColor(item.status)} />
-                    </TableCell>
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        value={editingRemark[item.id] ?? item.remark}
-                        onChange={(e) => setEditingRemark((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                      />
-                    </TableCell>
-                    <TableCell>{formatDateTime(item.created_at)}</TableCell>
-                    <TableCell>{formatDateTime(item.updated_at)}</TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={1} justifyContent="flex-end">
-                        <Button
-                          variant="outlined"
-                          onClick={() =>
-                            updateItem(item.id, { status: item.status === "active" ? "inactive" : "active" })
-                          }
-                        >
-                          {item.status === "active" ? "停用" : "啟用"}
-                        </Button>
-                        <Button
-                          variant="contained"
-                          onClick={() => updateItem(item.id, { remark: editingRemark[item.id] ?? item.remark })}
-                        >
-                          儲存備註
-                        </Button>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <Box sx={{ height: 520 }}>
+              <DataGrid
+                rows={items}
+                columns={whitelistColumns}
+                getRowId={(row) => row.id}
+                pageSizeOptions={[10, 20, 50]}
+                initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
+                disableRowSelectionOnClick
+                rowHeight={56}
+                localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
+              />
+            </Box>
           ) : null}
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(pendingStatusChange)} onClose={() => setPendingStatusChange(null)}>
+        <DialogTitle>確認變更狀態</DialogTitle>
+        <DialogContent>
+          確認將此白名單設為 {pendingStatusChange?.nextStatus === "active" ? "啟用" : "停用"}？
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingStatusChange(null)}>取消</Button>
+          <Button
+            color="warning"
+            onClick={async () => {
+              const target = pendingStatusChange;
+              setPendingStatusChange(null);
+              if (target) {
+                await updateItem(target.id, { status: target.nextStatus });
+              }
+            }}
+          >
+            確認
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
