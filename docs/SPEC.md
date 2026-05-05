@@ -42,7 +42,9 @@
   - `email` 需存在於白名單且狀態為 `active`
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
   - `duration_months` 僅允許 `1|6|12`
-- 成功送出後顯示一次性 key。
+- 成功送出後顯示一次性 key，並提供複製操作；複製成功需有明確視覺回饋（check icon 後恢復）。
+- 複製流程以 Clipboard API 為唯一可驗證複製路徑；若不可用或複製失敗，需提示使用者手動複製。
+- 透過複製 icon 觸發時不得要求使用者先反白金鑰文字，系統需直接完成複製。
 
 ### 2) My API Keys Page（一般使用者我的紀錄頁）
 - 顯示範圍：僅本人帳號的全部歷史紀錄（`active|revoked|expired`）。
@@ -283,6 +285,7 @@ Base path：`/api/v1`
 22. API Keys 清單頁不得顯示建立時間；建立時間僅顯示於單筆詳情視窗。
 23. API Key 詳情視窗需顯示用途（`purpose`）；若無資料則顯示 `-`。
 24. API Key 詳情視窗需顯示單位（`department`）；若無資料則顯示 `-`。
+25. 申請成功彈窗需提供明文 key 複製功能，點擊後 icon 應由複製狀態切換為成功 check，並可自動恢復。
 
 ## Roadmap
 ### Phase 1：Foundation
