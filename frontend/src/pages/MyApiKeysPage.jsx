@@ -19,7 +19,6 @@ import {
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { zhTW } from "@mui/x-data-grid/locales";
-import { Link as RouterLink } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 
@@ -49,6 +48,11 @@ export default function MyApiKeysPage({ auth }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailId, setDetailId] = useState("");
+  const [detailItem, setDetailItem] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
   const [pendingRevokeId, setPendingRevokeId] = useState("");
 
   async function load() {
@@ -70,9 +74,39 @@ export default function MyApiKeysPage({ auth }) {
       await apiClient.revokeApiKey(id, auth);
       setBanner("金鑰已停用。");
       await load();
+      if (detailOpen && detailId === id) {
+        closeDetail();
+      }
     } catch (e) {
       setBanner(e?.payload?.error?.message || "停用金鑰失敗");
     }
+  }
+
+  async function loadDetail(id) {
+    setDetailLoading(true);
+    setDetailError("");
+    try {
+      const response = await apiClient.getApiKeyById(id, auth);
+      setDetailItem(response.item);
+    } catch (e) {
+      setDetailItem(null);
+      setDetailError(e?.payload?.error?.message || "載入 API Key 詳情失敗");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function openDetail(id) {
+    setDetailId(id);
+    setDetailOpen(true);
+    await loadDetail(id);
+  }
+
+  function closeDetail() {
+    setDetailOpen(false);
+    setDetailId("");
+    setDetailItem(null);
+    setDetailError("");
   }
 
   useEffect(() => {
@@ -135,12 +169,7 @@ export default function MyApiKeysPage({ auth }) {
         renderCell: (params) => (
           <Box sx={actionCellSx}>
             <Tooltip title="查看詳情">
-              <IconButton
-                aria-label="查看詳情"
-                size="small"
-                component={RouterLink}
-                to={`/api-keys/${params.row.id}`}
-              >
+              <IconButton aria-label="查看詳情" size="small" onClick={() => openDetail(params.row.id)}>
                 <VisibilityIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -206,6 +235,44 @@ export default function MyApiKeysPage({ auth }) {
           >
             確認
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={detailOpen} onClose={closeDetail} fullWidth maxWidth="sm">
+        <DialogTitle>API Key 詳情</DialogTitle>
+        <DialogContent>
+          {detailLoading ? <LoadingBlock text="載入單筆 API Key 中..." /> : null}
+          {!detailLoading && detailError ? <ErrorBlock message={detailError} onRetry={() => loadDetail(detailId)} /> : null}
+          {!detailLoading && !detailError && detailItem ? (
+            <Stack spacing={2} sx={{ mt: 0.5 }}>
+              <Typography>ID: {detailItem.id}</Typography>
+              <Box>
+                狀態: <Chip size="small" label={detailItem.status} color={statusColor(detailItem.status)} />
+              </Box>
+              {auth.role === "admin" ? (
+                <Typography>
+                  申請人: {detailItem.owner_account || "-"} / {detailItem.owner_name || "-"}
+                </Typography>
+              ) : null}
+              <Typography>單位: {detailItem.department || "-"}</Typography>
+              <Typography>申請日期: {detailItem.application_date}</Typography>
+              <Typography>生效時長: {detailItem.duration_months} 個月</Typography>
+              <Typography>
+                遮罩金鑰 / 前綴: {detailItem.masked_key} ({detailItem.key_prefix})
+              </Typography>
+              <Typography>建立時間: {formatDateTime(detailItem.created_at)}</Typography>
+              <Typography>到期時間: {formatDateTime(detailItem.expires_at)}</Typography>
+              <Typography>用途: {detailItem.purpose || "-"}</Typography>
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDetail}>關閉</Button>
+          {detailItem?.status === "active" ? (
+            <Button color="warning" variant="contained" onClick={() => setPendingRevokeId(detailItem.id)}>
+              停用金鑰
+            </Button>
+          ) : null}
         </DialogActions>
       </Dialog>
     </Stack>

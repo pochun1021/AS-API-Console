@@ -1,7 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "./components/AppLayout";
 import { mockAuthContext } from "./authContext";
-import ApiKeyDetailPage from "./pages/ApiKeyDetailPage";
 import ApplyPage from "./pages/ApplyPage";
 import MyApiKeysPage from "./pages/MyApiKeysPage";
 import UsersAdminPage from "./pages/UsersAdminPage";
@@ -14,7 +13,6 @@ export default function App() {
         <Route path="/" element={<Navigate to="/apply" replace />} />
         <Route path="/apply" element={<ApplyPage auth={mockAuthContext} />} />
         <Route path="/api-keys" element={<MyApiKeysPage auth={mockAuthContext} />} />
-        <Route path="/api-keys/:id" element={<ApiKeyDetailPage auth={mockAuthContext} />} />
         <Route
           path="/whitelists"
           element={
