@@ -27,6 +27,8 @@ test("shows plaintext key once after successful submit", async () => {
   await user.click(screen.getByRole("button", { name: "送出申請" }));
 
   expect(await screen.findByText("此明文金鑰只會顯示一次，請立即保存。")).toBeInTheDocument();
+  const plaintext = screen.getByText((content) => content.startsWith("AS-"));
+  expect(plaintext.textContent).toHaveLength(33);
   await user.click(screen.getByRole("button", { name: "我已保存" }));
   await waitFor(() => {
     expect(screen.queryByText("此明文金鑰只會顯示一次，請立即保存。")).not.toBeInTheDocument();

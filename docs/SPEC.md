@@ -72,7 +72,7 @@
 - 白名單管理能力（新增、查詢、停用/啟用）
 - 申請後自動核發 API Key
 - API 生效時長固定月數選單（`1|6|12`）
-- API Key 長度固定 30 碼（MVP 先採最高安全等級）
+- API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
 - API Key 明文只顯示一次
 - 系統僅儲存 `key_hash`，不儲存明文
 - 一般使用者可查看本人全部申請紀錄
@@ -84,7 +84,7 @@
 
 ### Nice to Have（後續）
 - OAuth/SSO 串接優化（完善 `sysid` 對接與身分映射）
-- 多安全等級與長度策略（24-30 碼可配置）
+- 多安全等級與長度策略（隨機段長度 24-30 碼可配置）
 - 申請審核流程
 - 使用量監控與配額管理
 
@@ -131,9 +131,9 @@
 - `id` (string/uuid)
 - `application_id` (fk -> api_key_applications.id)
 - `key_hash` (string, required)
-- `key_prefix` (string, required)
+- `key_prefix` (string, required, MVP 固定 `AS-`)
 - `masked_key` (string, computed/response only)
-- `length` (int, MVP 固定 30)
+- `length` (int, MVP 固定 30，表示隨機段長度，不含 `AS-` 前綴)
 - `security_level` (enum, MVP 固定 `high`)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `created_at` (datetime)
@@ -170,8 +170,8 @@ Base path：`/api/v1`
     "issued_at": "...",
     "expires_at": "..."
   },
-  "api_key_plaintext": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "api_key_prefix": "xxxxxx"
+  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "api_key_prefix": "AS-"
 }
 ```
 
@@ -186,8 +186,8 @@ Base path：`/api/v1`
     {
       "id": "...",
       "status": "active",
-      "masked_key": "abcd****wxyz",
-      "key_prefix": "abcd12",
+      "masked_key": "AS-****wxyz",
+      "key_prefix": "AS-",
       "expires_at": "..."
     }
   ],
@@ -238,7 +238,7 @@ Base path：`/api/v1`
 - `INTERNAL_ERROR`
 
 ## 驗收標準
-1. 白名單 `active` email 可成功核發 API Key，且 key 長度為 30 碼。
+1. 白名單 `active` email 可成功核發 API Key，格式為 `AS-` + 30 碼隨機字元（總長 33）。
 2. 非白名單 email 申請時，API 回傳 `403` 與 `APPLICANT_NOT_WHITELISTED`。
 3. `duration_months` 非 `1|6|12` 時，API 回傳 `INVALID_DURATION_MONTHS`。
 4. `application_date` 非法或晚於申請當日，API 回傳 `INVALID_APPLICATION_DATE`。

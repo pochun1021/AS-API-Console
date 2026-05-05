@@ -4,8 +4,8 @@ let apiKeys = [
   {
     id: "key_001",
     status: "active",
-    masked_key: "ab12****xy90",
-    key_prefix: "ab12cd",
+    masked_key: "AS-****xy90",
+    key_prefix: "AS-",
     application_date: today,
     duration_months: 6,
     created_at: new Date().toISOString(),
@@ -15,8 +15,8 @@ let apiKeys = [
   {
     id: "key_002",
     status: "revoked",
-    masked_key: "cd34****mn56",
-    key_prefix: "cd34ef",
+    masked_key: "AS-****mn56",
+    key_prefix: "AS-",
     application_date: today,
     duration_months: 1,
     created_at: new Date().toISOString(),
@@ -55,12 +55,13 @@ function validateApplication(payload, auth) {
 }
 
 function generatePlainKey() {
+  const keyPrefix = "AS-";
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let key = "";
+  let randomPart = "";
   for (let i = 0; i < 30; i += 1) {
-    key += chars[Math.floor(Math.random() * chars.length)];
+    randomPart += chars[Math.floor(Math.random() * chars.length)];
   }
-  return key;
+  return `${keyPrefix}${randomPart}`;
 }
 
 export const mockApiProvider = {
@@ -69,7 +70,7 @@ export const mockApiProvider = {
     validateApplication(payload, auth);
 
     const plain = generatePlainKey();
-    const prefix = plain.slice(0, 6);
+    const prefix = "AS-";
     const id = `key_${String(apiKeys.length + 1).padStart(3, "0")}`;
     const now = new Date();
     const expires = new Date(now);
@@ -79,7 +80,7 @@ export const mockApiProvider = {
       {
         id,
         status: "active",
-        masked_key: `${plain.slice(0, 4)}****${plain.slice(-4)}`,
+        masked_key: `AS-****${plain.slice(-4)}`,
         key_prefix: prefix,
         application_date: payload.application_date,
         duration_months: payload.duration_months,
