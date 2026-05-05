@@ -56,7 +56,7 @@
 - 不可再次顯示 key 明文。
 
 ### 4) Whitelist Admin Page（白名單管理頁）
-- 可新增白名單 email。
+- 可用 `sysid`、`name`、`email` 查詢使用者後加入白名單。
 - 可查詢白名單與狀態。
 - 可停用/啟用白名單條目。
 
@@ -211,6 +211,11 @@ Base path：`/api/v1`
 - `PATCH /api/v1/whitelists/{id}`：更新狀態（`active/inactive`）與備註
 - 規則：僅 `admin` 可使用。
 
+### 5-1) 白名單新增前使用者查詢 API
+- `GET /api/v1/users?q={keyword}`
+- 用途：供管理者以 `sysid`、`name`、`email` 查詢可加入白名單的人員。
+- 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`name`、`email`。
+
 ### 6) 管理者授權 API
 - `POST /api/v1/users/{id}/grant-admin`：授權指定使用者為管理者
 - `POST /api/v1/users/{id}/revoke-admin`：取消指定使用者管理者身分
@@ -232,6 +237,7 @@ Base path：`/api/v1`
 - `INVALID_DURATION_MONTHS`
 - `APPLICANT_NOT_WHITELISTED`
 - `WHITELIST_EMAIL_DUPLICATED`
+- `USER_NOT_FOUND`
 - `KEY_NOT_OWNED_BY_USER`
 - `KEY_NOT_ACTIVE`
 - `RATE_LIMITED`

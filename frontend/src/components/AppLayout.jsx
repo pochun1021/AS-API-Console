@@ -2,14 +2,14 @@ import { AppBar, Box, Button, Container, Toolbar, Typography } from "@mui/materi
 import { Link as RouterLink, useLocation } from "react-router-dom";
 
 const navItems = [
-  { label: "申請", path: "/apply" },
-  { label: "API Keys", path: "/api-keys" },
-  { label: "詳情", path: "/api-keys/:id", disabled: true },
-  { label: "白名單管理", path: "/whitelists", disabled: true }
+  { label: "申請", path: "/apply", roles: ["user", "admin"] },
+  { label: "API Keys", path: "/api-keys", roles: ["user", "admin"] },
+  { label: "白名單管理", path: "/whitelists", roles: ["admin"] }
 ];
 
-export default function AppLayout({ children }) {
+export default function AppLayout({ children, auth }) {
   const location = useLocation();
+  const visibleNavItems = navItems.filter((item) => item.roles.includes(auth.role));
 
   return (
     <Box sx={{ minHeight: "100vh", background: "linear-gradient(180deg, #f4f7fb 0%, #e9eef7 100%)" }}>
@@ -18,12 +18,11 @@ export default function AppLayout({ children }) {
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             AS API Console
           </Typography>
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <Button
               key={item.label}
-              component={item.disabled ? "button" : RouterLink}
-              to={item.disabled ? undefined : item.path}
-              disabled={item.disabled}
+              component={RouterLink}
+              to={item.path}
               color={location.pathname.startsWith(item.path.replace(":id", "")) ? "secondary" : "inherit"}
               sx={{ ml: 1 }}
             >
@@ -32,7 +31,7 @@ export default function AppLayout({ children }) {
           ))}
         </Toolbar>
       </AppBar>
-      <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Container maxWidth="xl" sx={{ py: 4 }}>
         {children}
       </Container>
     </Box>

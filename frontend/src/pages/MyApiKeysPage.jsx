@@ -13,6 +13,7 @@ import {
   TableRow,
   Typography
 } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 
@@ -93,11 +94,16 @@ export default function MyApiKeysPage({ auth }) {
                     <TableCell>{formatDateTime(item.expires_at)}</TableCell>
                     <TableCell>{item.masked_key} ({item.key_prefix})</TableCell>
                     <TableCell align="right">
-                      {item.status === "active" ? (
-                        <Button variant="outlined" color="warning" onClick={() => revoke(item.id)}>停用</Button>
-                      ) : (
-                        "-"
-                      )}
+                      <Stack direction="row" spacing={1} justifyContent="flex-end">
+                        <Button component={RouterLink} to={`/api-keys/${item.id}`} variant="text">
+                          詳情
+                        </Button>
+                        {item.status === "active" ? (
+                          <Button variant="outlined" color="warning" onClick={() => revoke(item.id)}>
+                            停用
+                          </Button>
+                        ) : null}
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))}

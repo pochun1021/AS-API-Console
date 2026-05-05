@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import MyApiKeysPage from "../pages/MyApiKeysPage";
 
 const auth = {
@@ -10,9 +11,14 @@ const auth = {
 };
 
 test("shows revoke button only for active rows", async () => {
-  render(<MyApiKeysPage auth={auth} />);
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={auth} />
+    </MemoryRouter>
+  );
 
   expect(await screen.findByText("API Keys")).toBeInTheDocument();
   const revokeButtons = await screen.findAllByRole("button", { name: "停用" });
   expect(revokeButtons).toHaveLength(1);
+  expect(await screen.findAllByRole("link", { name: "詳情" })).toHaveLength(2);
 });
