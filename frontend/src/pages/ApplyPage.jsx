@@ -71,51 +71,53 @@ export default function ApplyPage({ auth }) {
   return (
     <Stack spacing={3}>
       <Typography variant="h4">申請 API Key</Typography>
-      <Card>
-        <CardContent>
-          <Box component="form" onSubmit={onSubmit}>
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="帳號" value={auth.account} InputProps={{ readOnly: true }} /></Grid>
-              <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="姓名" value={auth.name} InputProps={{ readOnly: true }} /></Grid>
-              <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Email" value={auth.email} InputProps={{ readOnly: true }} /></Grid>
-              <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="單位" value={auth.department} InputProps={{ readOnly: true }} /></Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
-                  fullWidth
-                  label="申請日期"
-                  type="date"
-                  value={form.application_date}
-                  onChange={onChange("application_date")}
-                  slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: today } }}
-                />
+      <Box sx={{ width: { xs: "100%", md: "1024px" }, ml: "auto !important", mr: "auto !important" }}>
+        <Card>
+          <CardContent>
+            <Box component="form" onSubmit={onSubmit}>
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="帳號" value={auth.account} InputProps={{ readOnly: true }} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="姓名" value={auth.name} InputProps={{ readOnly: true }} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Email" value={auth.email} InputProps={{ readOnly: true }} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="單位" value={auth.department} InputProps={{ readOnly: true }} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <TextField
+                    fullWidth
+                    label="申請日期"
+                    type="date"
+                    value={form.application_date}
+                    onChange={onChange("application_date")}
+                    slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: today } }}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <FormControl>
+                    <FormLabel id="duration-months-label">生效時長（月）</FormLabel>
+                    <RadioGroup
+                      row
+                      aria-labelledby="duration-months-label"
+                      name="duration_months"
+                      value={String(form.duration_months)}
+                      onChange={onChange("duration_months")}
+                    >
+                      <FormControlLabel value="1" control={<Radio />} label="1 個月" />
+                      <FormControlLabel value="6" control={<Radio />} label="6 個月" />
+                      <FormControlLabel value="12" control={<Radio />} label="12 個月" />
+                    </RadioGroup>
+                  </FormControl>
+                </Grid>
+                <Grid size={12}>
+                  <TextField fullWidth multiline minRows={3} label="用途" value={form.purpose} onChange={onChange("purpose")} />
+                </Grid>
+                {error && <Grid size={12}><Alert severity="error">{error}</Alert></Grid>}
+                <Grid size={12}>
+                  <Button variant="contained" type="submit" disabled={submitting}>{submitting ? "送出中..." : "送出申請"}</Button>
+                </Grid>
               </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <FormControl>
-                  <FormLabel id="duration-months-label">生效時長（月）</FormLabel>
-                  <RadioGroup
-                    row
-                    aria-labelledby="duration-months-label"
-                    name="duration_months"
-                    value={String(form.duration_months)}
-                    onChange={onChange("duration_months")}
-                  >
-                    <FormControlLabel value="1" control={<Radio />} label="1 個月" />
-                    <FormControlLabel value="6" control={<Radio />} label="6 個月" />
-                    <FormControlLabel value="12" control={<Radio />} label="12 個月" />
-                  </RadioGroup>
-                </FormControl>
-              </Grid>
-              <Grid size={12}>
-                <TextField fullWidth multiline minRows={3} label="用途" value={form.purpose} onChange={onChange("purpose")} />
-              </Grid>
-              {error && <Grid size={12}><Alert severity="error">{error}</Alert></Grid>}
-              <Grid size={12}>
-                <Button variant="contained" type="submit" disabled={submitting}>{submitting ? "送出中..." : "送出申請"}</Button>
-              </Grid>
-            </Grid>
-          </Box>
-        </CardContent>
-      </Card>
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
 
       <Dialog open={Boolean(issued)} onClose={() => setIssued(null)}>
         <DialogTitle>API Key 已建立</DialogTitle>

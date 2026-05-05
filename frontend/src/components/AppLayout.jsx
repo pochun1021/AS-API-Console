@@ -25,7 +25,12 @@ export default function AppLayout({ children, auth }) {
               component={RouterLink}
               to={item.path}
               color={location.pathname.startsWith(item.path.replace(":id", "")) ? "secondary" : "inherit"}
-              sx={{ ml: 1 }}
+              sx={{
+                ml: { xs: 0.5, sm: 1 },
+                px: { xs: 1, sm: 1.5 },
+                fontSize: { xs: "16px", sm: "18px" },
+                whiteSpace: "nowrap"
+              }}
             >
               {item.label}
             </Button>
