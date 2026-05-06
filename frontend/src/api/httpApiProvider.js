@@ -84,11 +84,11 @@ export const httpApiProvider = {
   },
 
   grantAdmin(id, auth) {
-    return request(`/api/v1/users/${id}/grant-admin`, { method: "POST", auth });
+    return request(`/api/v1/admins/${id}/grant-admin`, { method: "POST", auth });
   },
 
   revokeAdmin(id, auth) {
-    return request(`/api/v1/users/${id}/revoke-admin`, { method: "POST", auth });
+    return request(`/api/v1/admins/${id}/revoke-admin`, { method: "POST", auth });
   },
 
   async listWhitelists(auth) {
