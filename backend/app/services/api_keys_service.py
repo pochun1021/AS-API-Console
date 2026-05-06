@@ -1,0 +1,167 @@
+import hashlib
+import secrets
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+
+from sqlalchemy.orm import Session
+
+from app.core.auth import CurrentUser
+from app.core.errors import ApiError
+from db.repositories.types import ApiKeyCreateInput, ApplicationCreateInput, AuthIdentity
+from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyUserRepository, SQLAlchemyWhitelistRepository
+
+
+@dataclass(slots=True)
+class Pagination:
+    page: int = 1
+    page_size: int = 20
+
+
+def _generate_api_key() -> str:
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    suffix = "".join(secrets.choice(alphabet) for _ in range(30))
+    return f"AS-{suffix}"
+
+
+def _hash_key(plaintext: str) -> str:
+    return hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+
+
+def _mask_key(prefix: str) -> str:
+    return f"{prefix}****"
+
+
+def _calc_expiration(issued_at: datetime, duration_months: int) -> datetime:
+    # MVP constraint guarantees 1/6/12 only; keep simple month offset without external libs
+    month = issued_at.month - 1 + duration_months
+    year = issued_at.year + month // 12
+    month = month % 12 + 1
+    day = min(issued_at.day, 28)
+    return issued_at.replace(year=year, month=month, day=day)
+
+
+class ApiKeysService:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.user_repo = SQLAlchemyUserRepository(session)
+        self.whitelist_repo = SQLAlchemyWhitelistRepository(session)
+        self.key_repo = SQLAlchemyApiKeyRepository(session)
+
+    def create_application(self, current_user: CurrentUser, application_date: date, duration_months: int, purpose: str) -> dict:
+        if application_date > date.today():
+            raise ApiError("INVALID_APPLICATION_DATE", "application_date cannot be in the future", 422)
+        if duration_months not in {1, 6, 12}:
+            raise ApiError("INVALID_DURATION_MONTHS", "duration_months must be one of 1, 6, 12", 422)
+
+        if self.whitelist_repo.find_active_by_email(current_user.email) is None:
+            raise ApiError("APPLICANT_NOT_WHITELISTED", "email is not in active whitelist", 403)
+
+        identity = AuthIdentity(
+            account=current_user.account,
+            name=current_user.name,
+            email=current_user.email,
+            department=current_user.department,
+            sysid=current_user.sysid,
+        )
+        user = self.user_repo.upsert_from_auth(identity)
+
+        issued_at = datetime.now(UTC)
+        expires_at = _calc_expiration(issued_at, duration_months)
+        application = self.key_repo.create_application(
+            ApplicationCreateInput(
+                user_id=user.id,
+                identity=identity,
+                application_date=application_date,
+                duration_months=duration_months,
+                purpose=purpose,
+                issued_at=issued_at,
+                expires_at=expires_at,
+            )
+        )
+
+        plaintext = _generate_api_key()
+        self.key_repo.create_key(ApiKeyCreateInput(application_id=application.id, key_hash=_hash_key(plaintext)))
+        self.session.commit()
+
+        return {
+            "application": {
+                "id": application.id,
+                "account": application.account,
+                "status": application.status,
+                "issued_at": application.issued_at,
+                "expires_at": application.expires_at,
+            },
+            "api_key_plaintext": plaintext,
+            "api_key_prefix": "AS-",
+        }
+
+    def list_keys(self, current_user: CurrentUser, page: int, page_size: int, status: str | None = None) -> dict:
+        page = max(page, 1)
+        page_size = min(max(page_size, 1), 100)
+        offset = (page - 1) * page_size
+
+        items = self.key_repo.list_keys(
+            requester_role=current_user.role,
+            requester_account=current_user.account,
+            status=status,
+            limit=page_size,
+            offset=offset,
+        )
+
+        return {
+            "items": [
+                {
+                    "id": item.id,
+                    "status": item.status,
+                    "masked_key": _mask_key(item.key_prefix),
+                    "key_prefix": item.key_prefix,
+                    "owner_account": item.owner_account,
+                    "owner_name": item.owner_name,
+                    "expires_at": item.expires_at,
+                }
+                for item in items
+            ],
+            "page": page,
+            "page_size": page_size,
+            "total": len(items),
+        }
+
+    def get_key_detail(self, current_user: CurrentUser, key_id: str) -> dict:
+        detail = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
+        if detail is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+
+        scoped = self.key_repo.get_key_detail(key_id, current_user.role, current_user.account)
+        if scoped is None:
+            raise ApiError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403)
+
+        return {
+            "id": scoped.id,
+            "status": scoped.status,
+            "masked_key": _mask_key(scoped.key_prefix),
+            "key_prefix": scoped.key_prefix,
+            "owner_account": scoped.owner_account,
+            "owner_name": scoped.owner_name,
+            "purpose": scoped.purpose,
+            "department": scoped.department,
+            "application_date": scoped.application_date,
+            "duration_months": scoped.duration_months,
+            "created_at": scoped.created_at,
+            "expires_at": scoped.expires_at,
+        }
+
+    def revoke_key(self, current_user: CurrentUser, key_id: str) -> dict:
+        exists = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
+        if exists is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+
+        allowed = self.key_repo.get_key_detail(key_id, current_user.role, current_user.account)
+        if allowed is None:
+            raise ApiError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403)
+
+        key = self.key_repo.revoke_key(key_id, current_user.role, current_user.account)
+        if key is None:
+            raise ApiError("KEY_NOT_ACTIVE", "key is not active", 409)
+
+        self.session.commit()
+        return {"id": key.id, "status": key.status}
