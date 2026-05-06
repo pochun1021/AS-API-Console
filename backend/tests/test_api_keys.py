@@ -89,3 +89,67 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
     second = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user1)
     assert second.status_code == 409
     assert second.json()["error"]["code"] == "KEY_NOT_ACTIVE"
+
+
+def test_admin_can_list_global_keys(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="user-2")
+    _create_whitelist(client, admin_headers, user1["x-email"])
+    _create_whitelist(client, admin_headers, user2["x-email"])
+
+    resp1 = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+    )
+    resp2 = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user2,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u2"},
+    )
+    assert resp1.status_code == 201
+    assert resp2.status_code == 201
+
+    admin_list = client.get("/api/v1/api-keys", headers=admin_headers)
+    assert admin_list.status_code == 200
+    owners = {item["owner_account"] for item in admin_list.json()["items"]}
+    assert "user1" in owners
+    assert "user2" in owners
+
+
+def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
+    _create_whitelist(client, admin_headers, "no-sysid@example.com")
+    bad_headers = {
+        "x-account": "nosys",
+        "x-name": "No Sysid",
+        "x-email": "no-sysid@example.com",
+        "x-department": "IT",
+        "x-role": "user",
+    }
+    before = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=bad_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+    after = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert before == after
+
+
+def test_error_response_shape_consistency(client, admin_headers, user_headers):
+    # non-whitelist application error
+    e1 = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+    # non-admin whitelist management error
+    e2 = client.get("/api/v1/whitelists", headers=user_headers)
+
+    for resp in (e1, e2):
+        body = resp.json()
+        assert "error" in body
+        assert "code" in body["error"]
+        assert "message" in body["error"]
