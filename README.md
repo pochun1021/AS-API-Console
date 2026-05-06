@@ -60,6 +60,18 @@ npm run build
 ## 開發備註
 - 前端在開發模式提供 `Dev 身份切換`（admin/user），用於模擬 header 身份。
 - Vite dev server 已設定 `/api` proxy 到 `http://127.0.0.1:8000`（若需 `npm run dev` 分離開發可直接使用）。
+- 前端資料來源由 `VITE_API_PROVIDER` 控制：
+  - 預設（`frontend/.env.development`）：`mock`
+  - 切換 real API：
+    ```bash
+    cd frontend
+    VITE_API_PROVIDER=real npm run dev
+    ```
+  - 使用 mock：
+    ```bash
+    cd frontend
+    VITE_API_PROVIDER=mock npm run dev
+    ```
 
 ## 測試
 Backend：

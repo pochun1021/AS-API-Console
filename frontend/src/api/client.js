@@ -1,6 +1,25 @@
 import { httpApiProvider } from "./httpApiProvider";
+import { mockApiProvider } from "../mocks/mockApiProvider";
 
-let provider = httpApiProvider;
+const providerByKey = {
+  real: httpApiProvider,
+  mock: mockApiProvider
+};
+
+function resolveProvider() {
+  const key = (import.meta.env.VITE_API_PROVIDER || "mock").toLowerCase();
+  const resolved = providerByKey[key];
+  if (resolved) {
+    return resolved;
+  }
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.warn(`[apiClient] Unknown VITE_API_PROVIDER="${key}", fallback to mock`);
+  }
+  return mockApiProvider;
+}
+
+let provider = resolveProvider();
 
 export function setApiProvider(nextProvider) {
   provider = nextProvider;
