@@ -41,11 +41,14 @@ cd frontend
 npm run build
 ```
 
-3. 設定後端資料庫連線（MariaDB）
+3. 設定後端環境變數
 ```bash
 cd backend
-export DATABASE_URL='mariadb+mariadbconnector://<user>:<password>@<host>:3306/as_api_console'
+cp .env.example .env
 ```
+- `APP_DOMAIN`：後端對外基底網址（預設 `http://localhost:8000`，方便後續部署調整）
+- `DATABASE_URL`：MariaDB 主資料庫連線
+- `TEST_DATABASE_URL`：測試資料庫連線
 
 4. 啟動後端（同時提供 API + 前端頁面）
 ```bash
@@ -85,7 +88,6 @@ npm run build
 Backend：
 ```bash
 cd backend
-export TEST_DATABASE_URL='mariadb+mariadbconnector://<user>:<password>@<host>:3306/as_api_console_test'
 uv run pytest
 ```
 
