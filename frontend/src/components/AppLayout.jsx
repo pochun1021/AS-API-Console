@@ -38,7 +38,7 @@ export default function AppLayout({ children, auth }) {
         </Toolbar>
       </AppBar>
       <Container maxWidth={false} sx={{ py: 4, px: { xs: 2, md: 4 } }}>
-        <Box sx={{ maxWidth: 1840, mx: "auto", width: "100%" }}>
+        <Box sx={{ maxWidth: 1840, mx: "auto", width: "100%", display: "flex", flexDirection: "column", gap: 3 }}>
           {children}
         </Box>
       </Container>

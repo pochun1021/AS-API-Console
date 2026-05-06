@@ -25,6 +25,8 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert list_resp.status_code == 200
     item = list_resp.json()["items"][0]
     assert "api_key_plaintext" not in item
+    assert "application_date" in item
+    assert "duration_months" in item
     key_id = item["id"]
 
     detail_resp = client.get(f"/api/v1/api-keys/{key_id}", headers=user_headers)

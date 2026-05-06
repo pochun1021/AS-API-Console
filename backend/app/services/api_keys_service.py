@@ -115,6 +115,8 @@ class ApiKeysService:
                     "status": item.status,
                     "masked_key": _mask_key(item.key_prefix),
                     "key_prefix": item.key_prefix,
+                    "application_date": item.application_date,
+                    "duration_months": item.duration_months,
                     "owner_account": item.owner_account,
                     "owner_name": item.owner_name,
                     "expires_at": item.expires_at,

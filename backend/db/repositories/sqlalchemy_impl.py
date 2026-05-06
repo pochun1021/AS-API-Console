@@ -198,6 +198,8 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
                 id=row.ApiKey.id,
                 status=row.ApiKey.status,
                 key_prefix=row.ApiKey.key_prefix,
+                application_date=row.ApiKeyApplication.application_date,
+                duration_months=row.ApiKeyApplication.duration_months,
                 owner_account=row.ApiKeyApplication.account,
                 owner_name=row.ApiKeyApplication.name,
                 expires_at=row.ApiKeyApplication.expires_at,

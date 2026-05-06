@@ -1,6 +1,6 @@
-import { mockApiProvider } from "../mocks/mockApiProvider";
+import { httpApiProvider } from "./httpApiProvider";
 
-let provider = mockApiProvider;
+let provider = httpApiProvider;
 
 export function setApiProvider(nextProvider) {
   provider = nextProvider;

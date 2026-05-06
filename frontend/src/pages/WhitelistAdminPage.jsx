@@ -218,7 +218,12 @@ export default function WhitelistAdminPage({ auth }) {
                 aria-label="儲存備註"
                 size="small"
                 color="primary"
-                onClick={() => updateItem(params.row.id, { remark: editingRemark[params.row.id] ?? params.row.remark })}
+                onClick={() =>
+                  updateItem(params.row.id, {
+                    status: params.row.status,
+                    remark: editingRemark[params.row.id] ?? params.row.remark
+                  })
+                }
               >
                 <SaveIcon fontSize="small" />
               </IconButton>

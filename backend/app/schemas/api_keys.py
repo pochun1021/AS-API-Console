@@ -28,6 +28,8 @@ class ApiKeyListItemResponse(BaseModel):
     status: str
     masked_key: str
     key_prefix: str
+    application_date: date
+    duration_months: int
     owner_account: str
     owner_name: str
     expires_at: datetime
