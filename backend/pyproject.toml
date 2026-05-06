@@ -8,7 +8,9 @@ dependencies = [
     "alembic>=1.16.0",
     "email-validator>=2.3.0",
     "fastapi>=0.121.0",
+    "httpx>=0.28.1",
     "pydantic-settings>=2.11.0",
+    "pytest>=8.4.2",
     "sqlalchemy>=2.0.44",
     "uvicorn>=0.38.0",
 ]
