@@ -37,7 +37,10 @@ def test_users_admin_role_endpoints(client, admin_headers):
     users = client.get("/api/v1/users?q=u1", headers=admin_headers)
     assert users.status_code == 200
     assert users.json()["total"] >= 1
-    user_id = users.json()["items"][0]["id"]
+    user_item = users.json()["items"][0]
+    user_id = user_item["id"]
+    assert "sysid" in user_item
+    assert user_item["sysid"] == user_item["id"]
 
     grant = client.post(f"/api/v1/users/{user_id}/grant-admin", headers=admin_headers)
     assert grant.status_code == 200

@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class UserListItemResponse(BaseModel):
     id: str
+    sysid: str
     account: str
     name: str
     email: str

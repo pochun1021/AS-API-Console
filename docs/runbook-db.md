@@ -21,6 +21,7 @@
 
 ### `users`
 - 核心欄位：`id`, `account`, `email`, `name`, `role`, `status`, `created_at`, `updated_at`
+- `id` 直接使用 auth context 的 `sysid`（MVP 唯一身分鍵）；API `GET /api/v1/users` 回傳 `sysid` 時，值等於 `id`
 - 約束：
   - `account` unique
   - `email` unique

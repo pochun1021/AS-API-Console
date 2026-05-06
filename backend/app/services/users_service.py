@@ -15,6 +15,7 @@ class UsersService:
             "items": [
                 {
                     "id": user.id,
+                    "sysid": user.id,
                     "account": user.account,
                     "name": user.name,
                     "email": user.email,
