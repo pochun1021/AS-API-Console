@@ -42,28 +42,40 @@
   - `email` 需存在於白名單且狀態為 `active`
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
   - `duration_months` 僅允許 `1|6|12`
-- 成功送出後顯示一次性 key。
+- 成功送出後顯示一次性 key，並提供複製操作；複製成功需有明確視覺回饋（check icon 後恢復）。
+- 複製流程以 Clipboard API 為唯一可驗證複製路徑；若不可用或複製失敗，需提示使用者手動複製。
+- 透過複製 icon 觸發時不得要求使用者先反白金鑰文字，系統需直接完成複製。
 
 ### 2) My API Keys Page（一般使用者我的紀錄頁）
 - 顯示範圍：僅本人帳號的全部歷史紀錄（`active|revoked|expired`）。
-- 顯示欄位：申請日期、生效時長、狀態、建立時間、到期時間、遮罩 key（或前綴）。
+- 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（或前綴）。
+- 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
 - 操作：僅對本人 `active` key 顯示「停用」按鈕。
 
-### 3) Detail Page（詳情頁）
+### 3) API Key Detail Dialog（詳情視窗）
 - 顯示完整申請資訊與狀態。
+- 顯示欄位至少包含：申請日期、生效時長、用途（`purpose`）、單位（`department`）、建立時間、到期時間、遮罩 key。
 - 一般使用者僅可查本人資料。
 - 一般使用者可停用本人 `active` key。
 - 不可再次顯示 key 明文。
 
 ### 4) Whitelist Admin Page（白名單管理頁）
-- 可新增白名單 email。
+- 可用 `sysid`、`account`、`name`、`email` 查詢使用者後加入白名單。
 - 可查詢白名單與狀態。
 - 可停用/啟用白名單條目。
 
-### 5) 狀態頁/元件
+### 5) Users Admin Page（使用者管理頁）
+- 僅 `admin` 可使用。
+- 可用 `sysid`、`account`、`name`、`email` 查詢使用者。
+- 可授權一般使用者為管理者（`grant-admin`）。
+- 可取消其他管理者權限（`revoke-admin`）。
+- 前端需阻擋管理者對自己執行 `revoke-admin`（避免誤鎖管理權限）。
+
+### 6) 狀態頁/元件
 - Loading
 - Empty
 - Error（含重試）
+- 列表資料以 Data Table 呈現（支援排序與分頁）；僅「操作」欄位不可排序與不可 filter。
 
 ## 功能需求
 ### Must Have（MVP）
@@ -72,7 +84,7 @@
 - 白名單管理能力（新增、查詢、停用/啟用）
 - 申請後自動核發 API Key
 - API 生效時長固定月數選單（`1|6|12`）
-- API Key 長度固定 30 碼（MVP 先採最高安全等級）
+- API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
 - API Key 明文只顯示一次
 - 系統僅儲存 `key_hash`，不儲存明文
 - 一般使用者可查看本人全部申請紀錄
@@ -84,7 +96,7 @@
 
 ### Nice to Have（後續）
 - OAuth/SSO 串接優化（完善 `sysid` 對接與身分映射）
-- 多安全等級與長度策略（24-30 碼可配置）
+- 多安全等級與長度策略（隨機段長度 24-30 碼可配置）
 - 申請審核流程
 - 使用量監控與配額管理
 
@@ -131,9 +143,9 @@
 - `id` (string/uuid)
 - `application_id` (fk -> api_key_applications.id)
 - `key_hash` (string, required)
-- `key_prefix` (string, required)
+- `key_prefix` (string, required, MVP 固定 `AS-`)
 - `masked_key` (string, computed/response only)
-- `length` (int, MVP 固定 30)
+- `length` (int, MVP 固定 30，表示隨機段長度，不含 `AS-` 前綴)
 - `security_level` (enum, MVP 固定 `high`)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `created_at` (datetime)
@@ -170,8 +182,8 @@ Base path：`/api/v1`
     "issued_at": "...",
     "expires_at": "..."
   },
-  "api_key_plaintext": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "api_key_prefix": "xxxxxx"
+  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "api_key_prefix": "AS-"
 }
 ```
 
@@ -186,8 +198,10 @@ Base path：`/api/v1`
     {
       "id": "...",
       "status": "active",
-      "masked_key": "abcd****wxyz",
-      "key_prefix": "abcd12",
+      "masked_key": "AS-****wxyz",
+      "key_prefix": "AS-",
+      "owner_account": "jane.doe",
+      "owner_name": "Jane Doe",
       "expires_at": "..."
     }
   ],
@@ -200,6 +214,9 @@ Base path：`/api/v1`
 ### 3) 查詢單筆 API Key 紀錄
 - `GET /api/v1/api-keys/{id}`
 - 規則：`user` 僅可查本人資料；`admin` 可查任意資料；不可回傳明文 key。
+- 回傳可包含申請人識別欄位 `owner_account`、`owner_name`（供管理者辨識申請來源）。
+- 回傳應包含 `purpose` 供詳情頁顯示；若歷史資料未留存用途，前端顯示 `-`。
+- 回傳應包含 `department` 供詳情頁顯示；若歷史資料未留存單位，前端顯示 `-`。
 
 ### 4) 停用 API Key
 - `POST /api/v1/api-keys/{id}/revoke`
@@ -210,6 +227,11 @@ Base path：`/api/v1`
 - `GET /api/v1/whitelists`：查詢白名單列表
 - `PATCH /api/v1/whitelists/{id}`：更新狀態（`active/inactive`）與備註
 - 規則：僅 `admin` 可使用。
+
+### 5-1) 白名單新增前使用者查詢 API
+- `GET /api/v1/users?q={keyword}`
+- 用途：供管理者以 `sysid`、`account`、`name`、`email` 查詢可加入白名單的人員。
+- 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`。
 
 ### 6) 管理者授權 API
 - `POST /api/v1/users/{id}/grant-admin`：授權指定使用者為管理者
@@ -232,13 +254,14 @@ Base path：`/api/v1`
 - `INVALID_DURATION_MONTHS`
 - `APPLICANT_NOT_WHITELISTED`
 - `WHITELIST_EMAIL_DUPLICATED`
+- `USER_NOT_FOUND`
 - `KEY_NOT_OWNED_BY_USER`
 - `KEY_NOT_ACTIVE`
 - `RATE_LIMITED`
 - `INTERNAL_ERROR`
 
 ## 驗收標準
-1. 白名單 `active` email 可成功核發 API Key，且 key 長度為 30 碼。
+1. 白名單 `active` email 可成功核發 API Key，格式為 `AS-` + 30 碼隨機字元（總長 33）。
 2. 非白名單 email 申請時，API 回傳 `403` 與 `APPLICANT_NOT_WHITELISTED`。
 3. `duration_months` 非 `1|6|12` 時，API 回傳 `INVALID_DURATION_MONTHS`。
 4. `application_date` 非法或晚於申請當日，API 回傳 `INVALID_APPLICATION_DATE`。
@@ -256,6 +279,13 @@ Base path：`/api/v1`
 16. 管理者可成功授權/取消其他使用者的管理者身分（`/api/v1/users/{id}/grant-admin|revoke-admin`）。
 17. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
 18. 若 auth context 缺少 `sysid`，申請 API 回傳 `VALIDATION_ERROR` 且不得建立申請紀錄。
+19. 管理者不可在前端將自己的角色由 `admin` 降為 `user`。
+20. `admin` 呼叫 `GET /api/v1/api-keys` 時，每筆資料需可辨識申請人（至少包含 `owner_account`、`owner_name`）。
+21. 調整申請人識別欄位後，既有受保護 API 路徑與角色模型（`user|admin`）不得改動。
+22. API Keys 清單頁不得顯示建立時間；建立時間僅顯示於單筆詳情視窗。
+23. API Key 詳情視窗需顯示用途（`purpose`）；若無資料則顯示 `-`。
+24. API Key 詳情視窗需顯示單位（`department`）；若無資料則顯示 `-`。
+25. 申請成功彈窗需提供明文 key 複製功能，點擊後 icon 應由複製狀態切換為成功 check，並可自動恢復。
 
 ## Roadmap
 ### Phase 1：Foundation
@@ -271,7 +301,7 @@ Base path：`/api/v1`
 - 補齊 API 測試（成功、驗證失敗、安全性、權限）
 
 ### Phase 3：MVP Console UI
-- 完成 Apply/My API Keys/Detail/Whitelist Admin 頁面
+- 完成 Apply/My API Keys/API Key Detail Dialog/Whitelist Admin 頁面
 - 串接 API 與錯誤提示
 - 完成端到端流程驗收
 
