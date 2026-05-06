@@ -107,6 +107,10 @@ class SQLAlchemyWhitelistRepository(WhitelistRepository):
     def get_by_id(self, whitelist_id: str) -> ApiKeyWhitelist | None:
         return self.session.get(ApiKeyWhitelist, whitelist_id)
 
+    def get_by_email(self, email: str) -> ApiKeyWhitelist | None:
+        stmt = select(ApiKeyWhitelist).where(ApiKeyWhitelist.email == email.lower())
+        return self.session.scalar(stmt)
+
     def find_active_by_email(self, email: str) -> ApiKeyWhitelist | None:
         stmt = select(ApiKeyWhitelist).where(
             ApiKeyWhitelist.email == email.lower(), ApiKeyWhitelist.status == "active"
