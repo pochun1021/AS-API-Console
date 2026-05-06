@@ -54,6 +54,48 @@ const initialApiKeys = [
     expires_at: "2025-05-01T08:00:00.000Z",
     owner_account: "john.admin",
     owner_name: "John Admin"
+  },
+  {
+    id: "key_005",
+    status: "active",
+    masked_key: "AS-****cd34",
+    key_prefix: "AS-",
+    application_date: "2026-04-15",
+    duration_months: 6,
+    purpose: "reporting service integration",
+    department: "Data Platform",
+    created_at: "2026-04-15T09:30:00.000Z",
+    expires_at: "2026-10-15T09:30:00.000Z",
+    owner_account: "alice.wang",
+    owner_name: "Alice Wang"
+  },
+  {
+    id: "key_006",
+    status: "revoked",
+    masked_key: "AS-****ef56",
+    key_prefix: "AS-",
+    application_date: "2026-03-10",
+    duration_months: 12,
+    purpose: "security scanner",
+    department: "Security",
+    created_at: "2026-03-10T02:20:00.000Z",
+    expires_at: "2027-03-10T02:20:00.000Z",
+    owner_account: "sam.chen",
+    owner_name: "Sam Chen"
+  },
+  {
+    id: "key_007",
+    status: "expired",
+    masked_key: "AS-****gh78",
+    key_prefix: "AS-",
+    application_date: "2025-12-01",
+    duration_months: 1,
+    purpose: "legacy webhook client",
+    department: "Operations",
+    created_at: "2025-12-01T05:00:00.000Z",
+    expires_at: "2026-01-01T05:00:00.000Z",
+    owner_account: "mike.li",
+    owner_name: "Mike Li"
   }
 ];
 
@@ -77,6 +119,28 @@ const initialWhitelists = [
     name: "Legacy User",
     status: "inactive",
     remark: "offboarded",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: "wl_003",
+    email: "bob.lin@company.com",
+    account: "bob.lin",
+    sysid: "user_654",
+    name: "Bob Lin",
+    status: "active",
+    remark: "qa team",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: "wl_004",
+    email: "sam.chen@company.com",
+    account: "sam.chen",
+    sysid: "user_789",
+    name: "Sam Chen",
+    status: "active",
+    remark: "secops automation",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }
@@ -105,6 +169,22 @@ const initialUsers = [
     sysid: "user_456",
     name: "Alice Wang",
     email: "alice.wang@company.com",
+    role: "user"
+  },
+  {
+    id: "usr_004",
+    account: "sam.chen",
+    sysid: "user_789",
+    name: "Sam Chen",
+    email: "sam.chen@company.com",
+    role: "user"
+  },
+  {
+    id: "usr_005",
+    account: "mike.li",
+    sysid: "user_999",
+    name: "Mike Li",
+    email: "mike.li@company.com",
     role: "user"
   }
 ];

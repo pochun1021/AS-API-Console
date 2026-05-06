@@ -15,6 +15,7 @@
 ## 資料儲存策略
 - MVP 階段採用 SQLite 作為主要資料庫。
 - ORM 與 migration 層維持 SQLAlchemy + Alembic，確保後續可平滑擴充至 PostgreSQL。
+- DB schema/migration 操作與驗證流程請見 `docs/runbook-db.md`。
 
 ## 使用者流程
 1. 使用者透過 SSO/OAuth 登入後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`。
@@ -71,7 +72,15 @@
 - 可取消其他管理者權限（`revoke-admin`）。
 - 前端需阻擋管理者對自己執行 `revoke-admin`（避免誤鎖管理權限）。
 
-### 6) 狀態頁/元件
+### 6) Admin Dashboard Page（管理者統計頁）
+- 僅 `admin` 可使用。
+- 以 Data Table 呈現每位申請人的統計資料，欄位至少包含：`account`、`name`、`email`、`total_applications`、`active_count`、`revoked_count`、`expired_count`、`last_applied_at`。
+- 支援口徑切換 `scope`：`all|active|revoked|expired`（預設 `all`）。
+- 支援日期區間篩選：`from`、`to`（`YYYY-MM-DD`），統計基準為 `application_date`。
+- 支援 `q`（`account`、`name`、`email`）查詢、分頁與排序。
+- 預設排序為 `total_applications desc`。
+
+### 7) 狀態頁/元件
 - Loading
 - Empty
 - Error（含重試）
@@ -92,6 +101,7 @@
 - 一般使用者可自行停用本人已生效 key（軟停用）
 - 支援撤銷與狀態管理（`active|revoked|expired`）
 - 管理者可查看全部 API Key 與申請紀錄
+- 管理者可查看每位申請人的 API Key 申請統計（含狀態分佈）
 - 管理者可授權/取消其他使用者的管理者身分
 
 ### Nice to Have（後續）
@@ -211,6 +221,34 @@ Base path：`/api/v1`
 }
 ```
 
+### 2-1) 查詢每位使用者 API Key 申請統計（Admin Dashboard）
+- `GET /api/v1/api-keys/statistics/users`
+- 規則：僅 `admin` 可使用；回傳為申請人維度聚合結果，不得包含明文 key。
+- Query（草案）：`page`, `page_size`, `q`, `scope`, `from`, `to`, `sort_by`, `sort_dir`
+  - `scope` allowed: `all|active|revoked|expired`（預設 `all`）
+  - `from`、`to` 格式為 `YYYY-MM-DD`，基準欄位為 `application_date`
+  - `sort_by` 預設 `total_applications`；`sort_dir` 預設 `desc`
+- Response（200）：
+```json
+{
+  "items": [
+    {
+      "owner_account": "jane.doe",
+      "owner_name": "Jane Doe",
+      "owner_email": "jane.doe@example.com",
+      "total_applications": 12,
+      "active_count": 3,
+      "revoked_count": 7,
+      "expired_count": 2,
+      "last_applied_at": "2026-05-04"
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "total": 1
+}
+```
+
 ### 3) 查詢單筆 API Key 紀錄
 - `GET /api/v1/api-keys/{id}`
 - 規則：`user` 僅可查本人資料；`admin` 可查任意資料；不可回傳明文 key。
@@ -286,6 +324,11 @@ Base path：`/api/v1`
 23. API Key 詳情視窗需顯示用途（`purpose`）；若無資料則顯示 `-`。
 24. API Key 詳情視窗需顯示單位（`department`）；若無資料則顯示 `-`。
 25. 申請成功彈窗需提供明文 key 複製功能，點擊後 icon 應由複製狀態切換為成功 check，並可自動恢復。
+26. `admin` 可呼叫 `GET /api/v1/api-keys/statistics/users` 取得每位申請人的統計資料，且預設依 `total_applications desc` 排序。
+27. `scope=all|active|revoked|expired` 切換時，統計結果需符合對應狀態口徑。
+28. 統計 API `from`、`to` 應以 `application_date` 篩選，且日期格式需為 `YYYY-MM-DD`。
+29. 非 `admin` 呼叫 `GET /api/v1/api-keys/statistics/users` 時，API 回傳 `403`。
+30. 統計 API 回傳不得包含 `api_key_plaintext`，且不得改變既有受保護 API 路徑與角色模型。
 
 ## Roadmap
 ### Phase 1：Foundation
