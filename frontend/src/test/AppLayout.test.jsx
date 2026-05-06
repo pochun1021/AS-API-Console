@@ -27,7 +27,7 @@ test("user sees apply and api keys nav only", () => {
 
   expect(screen.getByRole("link", { name: "申請" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "API Keys" })).toBeInTheDocument();
-  expect(screen.queryByRole("link", { name: "白名單管理" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "特殊人員名單管理" })).not.toBeInTheDocument();
 });
 
 test("admin sees whitelist nav", () => {
@@ -39,6 +39,6 @@ test("admin sees whitelist nav", () => {
     </MemoryRouter>
   );
 
-  expect(screen.getByRole("link", { name: "白名單管理" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "使用者管理" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "特殊人員名單管理" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "管理者名單" })).toBeInTheDocument();
 });

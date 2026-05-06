@@ -225,7 +225,7 @@ function validateApplication(payload, auth) {
 
   const activeWhitelist = whitelists.find((item) => item.email === auth.email && item.status === "active");
   if (!activeWhitelist) {
-    throw createError("APPLICANT_NOT_WHITELISTED", "Email 不在可申請白名單中", 403);
+    throw createError("APPLICANT_NOT_WHITELISTED", "Email 不在可申請特殊人員名單中", 403);
   }
 }
 
@@ -389,7 +389,7 @@ export const mockApiProvider = {
     }
 
     if (whitelists.some((item) => item.email.toLowerCase() === email)) {
-      throw createError("WHITELIST_EMAIL_DUPLICATED", "Email 已存在於白名單");
+      throw createError("WHITELIST_EMAIL_DUPLICATED", "Email 已存在於特殊人員名單");
     }
 
     const now = new Date().toISOString();

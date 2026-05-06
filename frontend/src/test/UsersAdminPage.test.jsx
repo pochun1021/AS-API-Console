@@ -29,8 +29,8 @@ test("admin can search users and grant admin role", async () => {
   const user = userEvent.setup();
   render(<UsersAdminPage auth={adminAuth} />);
 
-  expect(await screen.findByText("使用者管理")).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "開啟新增使用者查詢" }));
+  expect(await screen.findByText("管理者名單")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
   const searchDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
   expect(within(searchDialog).getByText("可用 sysid / 帳號 / 姓名 / email")).toBeInTheDocument();
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "alice");
@@ -64,14 +64,14 @@ test("admin can revoke other admin role with confirm but cannot revoke self", as
 
 test("non-admin user is blocked", async () => {
   render(<UsersAdminPage auth={userAuth} />);
-  expect(await screen.findByText("僅管理者可使用使用者管理功能。")).toBeInTheDocument();
+  expect(await screen.findByText("僅管理者可使用管理者名單功能。")).toBeInTheDocument();
 });
 
 test("admin can search users by account", async () => {
   const user = userEvent.setup();
   render(<UsersAdminPage auth={adminAuth} />);
 
-  await user.click(screen.getByRole("button", { name: "開啟新增使用者查詢" }));
+  await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
   const searchDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "john.admin");
   await user.click(within(searchDialog).getByRole("button", { name: "查詢使用者" }));
@@ -82,15 +82,15 @@ test("search dialog resets keyword and results after close", async () => {
   const user = userEvent.setup();
   render(<UsersAdminPage auth={adminAuth} />);
 
-  await user.click(screen.getByRole("button", { name: "開啟新增使用者查詢" }));
+  await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
   const firstDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
   await user.type(within(firstDialog).getByLabelText("查詢關鍵字"), "alice");
   await user.click(within(firstDialog).getByRole("button", { name: "查詢使用者" }));
   expect(await within(firstDialog).findByText("Alice Wang")).toBeInTheDocument();
   await user.click(within(firstDialog).getByRole("button", { name: "關閉" }));
-  await screen.findByRole("button", { name: "開啟新增使用者查詢" });
+  await screen.findByRole("button", { name: "開啟新增管理者查詢" });
 
-  await user.click(screen.getByRole("button", { name: "開啟新增使用者查詢" }));
+  await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
   const secondDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
   expect(within(secondDialog).getByLabelText("查詢關鍵字")).toHaveValue("");
   expect(within(secondDialog).queryByText("Alice Wang")).not.toBeInTheDocument();
@@ -100,7 +100,7 @@ test("admin can search users by pressing enter in dialog input", async () => {
   const user = userEvent.setup();
   render(<UsersAdminPage auth={adminAuth} />);
 
-  await user.click(screen.getByRole("button", { name: "開啟新增使用者查詢" }));
+  await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
   const searchDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "alice{enter}");
   expect(await within(searchDialog).findByText("Alice Wang")).toBeInTheDocument();

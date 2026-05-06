@@ -69,7 +69,7 @@ export default function UsersAdminPage({ auth }) {
       const response = await apiClient.listUsers(auth);
       setItems(response.items);
     } catch (e) {
-      setError(e?.payload?.error?.message || "載入使用者失敗");
+      setError(e?.payload?.error?.message || "載入管理者名單失敗");
     } finally {
       setLoading(false);
     }
@@ -90,7 +90,7 @@ export default function UsersAdminPage({ auth }) {
         setSearchMessage("查無符合人員。");
       }
     } catch (e) {
-      setSearchMessage(e?.payload?.error?.message || "查詢使用者失敗");
+      setSearchMessage(e?.payload?.error?.message || "查詢人員失敗");
       setSearchResults([]);
     } finally {
       setSearching(false);
@@ -186,22 +186,22 @@ export default function UsersAdminPage({ auth }) {
   if (auth.role !== "admin") {
     return (
       <Stack spacing={3}>
-        <Typography variant="h4">使用者管理</Typography>
-        <ErrorBlock message="僅管理者可使用使用者管理功能。" />
+        <Typography variant="h4">管理者名單</Typography>
+        <ErrorBlock message="僅管理者可使用管理者名單功能。" />
       </Stack>
     );
   }
 
   return (
     <Stack spacing={3}>
-      <Typography variant="h4">使用者管理</Typography>
+      <Typography variant="h4">管理者名單</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
       <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
         <Button
           variant="outlined"
           startIcon={<AddIcon />}
-          aria-label="開啟新增使用者查詢"
+          aria-label="開啟新增管理者查詢"
           sx={{ backgroundColor: "transparent" }}
           onClick={() => setSearchDialogOpen(true)}
         >
@@ -211,9 +211,9 @@ export default function UsersAdminPage({ auth }) {
 
       <Card>
         <CardContent>
-          {loading ? <LoadingBlock text="載入使用者中..." /> : null}
+          {loading ? <LoadingBlock text="載入管理者名單中..." /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
-          {!loading && !error && items.length === 0 ? <EmptyBlock text="目前沒有使用者資料。" /> : null}
+          {!loading && !error && items.length === 0 ? <EmptyBlock text="目前沒有管理者名單資料。" /> : null}
           {!loading && !error && items.length > 0 ? (
             <Box sx={{ height: 480 }}>
               <DataGrid

@@ -26,7 +26,7 @@ import {
 import { apiClient } from "../api/client";
 
 const APPLY_ERROR_MESSAGE_MAP = {
-  APPLICANT_NOT_WHITELISTED: "你的 Email 不在白名單中，無法申請 API Key。",
+  APPLICANT_NOT_WHITELISTED: "你的 Email 不在特殊人員名單中，無法申請 API Key。",
   INVALID_APPLICATION_DATE: "申請日期格式需為 YYYY-MM-DD，且不可晚於今天",
   INVALID_DURATION_MONTHS: "生效時長僅允許 1、6、12 個月",
   VALIDATION_ERROR: "申請資料格式不正確，請檢查後再試。"
