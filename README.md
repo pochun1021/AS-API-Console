@@ -107,6 +107,7 @@ npm run test
 
 ## 規格文件
 - 產品與功能規格：`docs/SPEC.md`
+- DB 操作與 migration runbook：`docs/runbook-db.md`
 
 ## 後續規劃
 1. Foundation

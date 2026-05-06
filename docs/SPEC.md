@@ -15,6 +15,7 @@
 ## 資料儲存策略
 - MVP 階段採用 SQLite 作為主要資料庫。
 - ORM 與 migration 層維持 SQLAlchemy + Alembic，確保後續可平滑擴充至 PostgreSQL。
+- DB schema/migration 操作與驗證流程請見 `docs/runbook-db.md`。
 
 ## 使用者流程
 1. 使用者透過 SSO/OAuth 登入後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`。
