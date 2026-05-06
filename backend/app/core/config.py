@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_env: str = "dev"
-    database_url: str = "sqlite:///./as_api_console.db"
+    database_url: str
 
 
 @lru_cache

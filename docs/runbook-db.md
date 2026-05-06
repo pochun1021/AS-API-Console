@@ -12,7 +12,8 @@
 ## 技術與版本現況
 - ORM：SQLAlchemy 2.x
 - Migration：Alembic
-- MVP 資料庫：SQLite（保留 PostgreSQL 相容設計）
+- MVP 資料庫：MariaDB（保留 PostgreSQL 相容設計）
+- Python MariaDB driver：`mariadb`（需先安裝 MariaDB Connector/C，確保 `mariadb_config` 可用）
 - Alembic path：`backend/alembic.ini`
 - Migration 目錄：`backend/db/migrations/versions`
 - 目前 head revision：`0002_create_core_tables`
@@ -56,6 +57,7 @@
 ```bash
 cd backend
 . .venv/bin/activate
+export DATABASE_URL='mariadb+mariadbconnector://<user>:<password>@<host>:3306/as_api_console'
 
 alembic current
 alembic history
@@ -69,6 +71,7 @@ alembic downgrade -1
 ```bash
 cd backend
 . .venv/bin/activate
+export DATABASE_URL='mariadb+mariadbconnector://<user>:<password>@<host>:3306/as_api_console'
 alembic revision -m "your message"
 ```
 3. 編輯 revision 內容（建表/索引/約束/資料修補）。
@@ -85,14 +88,14 @@ alembic current
 ```bash
 cd backend
 . .venv/bin/activate
+export DATABASE_URL='mariadb+mariadbconnector://<user>:<password>@<host>:3306/as_api_console'
 alembic current
 ```
 預期：顯示 `0002_create_core_tables (head)` 或更新後最新 head。
 
-### 2) 表存在檢查（SQLite）
+### 2) 表存在檢查（MariaDB）
 ```bash
-cd backend
-sqlite3 as_api_console.db ".tables"
+mariadb -h <host> -u <user> -p as_api_console -e "SHOW TABLES;"
 ```
 預期至少包含：
 - `users`

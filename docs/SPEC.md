@@ -13,7 +13,7 @@
 重點是先提供最小可用流程，並保留後續 SSO/OAuth、審核流程與安全等級擴充能力。
 
 ## 資料儲存策略
-- MVP 階段採用 SQLite 作為主要資料庫。
+- MVP 階段採用 MariaDB 作為主要資料庫。
 - ORM 與 migration 層維持 SQLAlchemy + Alembic，確保後續可平滑擴充至 PostgreSQL。
 - DB schema/migration 操作與驗證流程請見 `docs/runbook-db.md`。
 

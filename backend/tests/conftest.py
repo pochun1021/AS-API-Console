@@ -1,4 +1,5 @@
 from collections.abc import Generator
+import os
 from pathlib import Path
 import sys
 
@@ -16,10 +17,14 @@ from db.session import get_db
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> Generator[TestClient, None, None]:
-    db_path = tmp_path / "test.db"
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+def client() -> Generator[TestClient, None, None]:
+    db_url = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if not db_url:
+        pytest.skip("Set TEST_DATABASE_URL or DATABASE_URL to run tests.")
+
+    engine = create_engine(db_url, future=True)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=Session)
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
     def override_get_db() -> Generator[Session, None, None]:
@@ -32,6 +37,7 @@ def client(tmp_path: Path) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
         yield test_client
+    Base.metadata.drop_all(bind=engine)
     app.dependency_overrides.clear()
 
 
