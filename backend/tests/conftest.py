@@ -1,5 +1,4 @@
 from collections.abc import Generator
-import os
 from pathlib import Path
 import sys
 
@@ -11,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.main import app
+from app.core.config import get_settings
 from db.base import Base
 from db import models  # noqa: F401
 from db.session import get_db
@@ -18,9 +18,10 @@ from db.session import get_db
 
 @pytest.fixture()
 def client() -> Generator[TestClient, None, None]:
-    db_url = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
     if not db_url:
-        pytest.skip("Set TEST_DATABASE_URL or DATABASE_URL to run tests.")
+        pytest.skip("Set TEST_DATABASE_URL, TEST_DB_*, DATABASE_URL, or DB_* to run tests.")
 
     engine = create_engine(db_url, future=True)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=Session)

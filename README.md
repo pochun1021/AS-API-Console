@@ -49,7 +49,8 @@ cp .env.example .env
 - `APP_DOMAIN`：後端對外基底網址（預設 `http://localhost:8000`，方便後續部署調整）
 - `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME`：MariaDB 連線組件（程式會自動組成 `DATABASE_URL`）
 - `DATABASE_URL`：可選，若提供會覆蓋 `DB_*` 組合結果
-- `TEST_DATABASE_URL`：測試資料庫連線
+- `TEST_DB_USER` / `TEST_DB_PASSWORD` / `TEST_DB_HOST` / `TEST_DB_PORT` / `TEST_DB_NAME`：測試資料庫連線組件（程式會自動組成 `TEST_DATABASE_URL`）
+- `TEST_DATABASE_URL`：可選，若提供會覆蓋 `TEST_DB_*` 組合結果
 
 4. 啟動後端（同時提供 API + 前端頁面）
 ```bash
