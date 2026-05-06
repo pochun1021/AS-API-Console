@@ -42,16 +42,16 @@ def test_users_admin_role_endpoints(client, admin_headers):
     assert "sysid" in user_item
     assert user_item["sysid"] == user_item["id"]
 
-    grant = client.post(f"/api/v1/users/{user_id}/grant-admin", headers=admin_headers)
+    grant = client.post(f"/api/v1/admins/{user_id}/grant-admin", headers=admin_headers)
     assert grant.status_code == 200
     assert grant.json()["role"] == "admin"
 
-    revoke = client.post(f"/api/v1/users/{user_id}/revoke-admin", headers=admin_headers)
+    revoke = client.post(f"/api/v1/admins/{user_id}/revoke-admin", headers=admin_headers)
     assert revoke.status_code == 200
     assert revoke.json()["role"] == "user"
 
 
 def test_user_not_found_for_role_mutation(client, admin_headers):
-    resp = client.post("/api/v1/users/not-exist/grant-admin", headers=admin_headers)
+    resp = client.post("/api/v1/admins/not-exist/grant-admin", headers=admin_headers)
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "USER_NOT_FOUND"

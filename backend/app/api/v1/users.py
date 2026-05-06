@@ -26,7 +26,7 @@ def list_users(
     return service.search(q=q)
 
 
-@router.post("/users/{user_id}/grant-admin", response_model=UserRoleMutationResponse)
+@router.post("/admins/{user_id}/grant-admin", response_model=UserRoleMutationResponse)
 def grant_admin(
     user_id: str,
     current_user: CurrentUser = Depends(get_current_user),
@@ -37,7 +37,7 @@ def grant_admin(
     return service.grant_admin(user_id)
 
 
-@router.post("/users/{user_id}/revoke-admin", response_model=UserRoleMutationResponse)
+@router.post("/admins/{user_id}/revoke-admin", response_model=UserRoleMutationResponse)
 def revoke_admin(
     user_id: str,
     current_user: CurrentUser = Depends(get_current_user),
