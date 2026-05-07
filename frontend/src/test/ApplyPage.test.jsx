@@ -116,8 +116,8 @@ test("shows Chinese error message when API returns English message", async () =>
       const error = new Error("email is not in active whitelist");
       error.payload = {
         error: {
-          code: "APPLICANT_NOT_WHITELISTED",
-          message: "email is not in active whitelist"
+          code: "APPLICANT_NOT_ELIGIBLE",
+          message: "applicant is not eligible"
         }
       };
       throw error;
@@ -128,5 +128,5 @@ test("shows Chinese error message when API returns English message", async () =>
   render(<ApplyPage auth={auth} />);
   await user.type(screen.getByLabelText("用途"), "integration test");
   await user.click(screen.getByRole("button", { name: "送出申請" }));
-  expect(await screen.findByText("你的 Email 不在特殊人員名單中，無法申請 API Key。")).toBeInTheDocument();
+  expect(await screen.findByText("你目前不符合申請資格，無法申請 API Key。")).toBeInTheDocument();
 });

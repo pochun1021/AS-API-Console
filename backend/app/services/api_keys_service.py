@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
 from app.core.errors import ApiError
+from app.services.research_eligibility_service import ResearchEligibilityService
 from db.repositories.types import ApiKeyCreateInput, ApplicationCreateInput, AuthIdentity
 from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyUserRepository, SQLAlchemyWhitelistRepository
 
@@ -46,6 +47,7 @@ class ApiKeysService:
         self.user_repo = SQLAlchemyUserRepository(session)
         self.whitelist_repo = SQLAlchemyWhitelistRepository(session)
         self.key_repo = SQLAlchemyApiKeyRepository(session)
+        self.research_eligibility = ResearchEligibilityService()
 
     def create_application(self, current_user: CurrentUser, application_date: date, duration_months: int, purpose: str) -> dict:
         if application_date > date.today():
@@ -53,8 +55,24 @@ class ApiKeysService:
         if duration_months not in {1, 6, 12}:
             raise ApiError("INVALID_DURATION_MONTHS", "duration_months must be one of 1, 6, 12", 422)
 
-        if self.whitelist_repo.find_active_by_email(current_user.email) is None:
-            raise ApiError("APPLICANT_NOT_WHITELISTED", "email is not in active whitelist", 403)
+        research_eligible = False
+        if self.research_eligibility.is_configured():
+            try:
+                result = self.research_eligibility.check_eligibility(
+                    email=current_user.email,
+                    sysid=current_user.sysid,
+                )
+                research_eligible = result.eligible
+            except RuntimeError as exc:
+                raise ApiError(
+                    "RESEARCH_LIST_SERVICE_UNAVAILABLE",
+                    "research list service unavailable",
+                    503,
+                ) from exc
+
+        whitelist_eligible = self.whitelist_repo.find_active_by_email(current_user.email) is not None
+        if not research_eligible and not whitelist_eligible:
+            raise ApiError("APPLICANT_NOT_ELIGIBLE", "applicant is not eligible", 403)
 
         identity = AuthIdentity(
             account=current_user.account,

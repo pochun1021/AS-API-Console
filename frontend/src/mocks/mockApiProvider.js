@@ -230,7 +230,7 @@ function validateApplication(payload, auth) {
 
   const activeWhitelist = whitelists.find((item) => item.email === auth.email && item.status === "active");
   if (!activeWhitelist) {
-    throw createError("APPLICANT_NOT_WHITELISTED", "Email 不在可申請特殊人員名單中", 403);
+    throw createError("APPLICANT_NOT_ELIGIBLE", "申請者不符合資格", 403);
   }
 }
 

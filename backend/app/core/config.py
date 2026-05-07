@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     test_db_host: str | None = None
     test_db_port: int | None = None
     test_db_name: str = "as_api_console_test"
+    research_list_api_url: str | None = None
+    research_list_timeout_seconds: float = 3.0
+    research_list_allowed_title_codes: str = ""
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

@@ -1,5 +1,6 @@
 from datetime import date
 
+from app.services.research_eligibility_service import ResearchEligibilityResult
 from tests.conftest import build_headers
 
 
@@ -41,7 +42,54 @@ def test_application_rejects_non_whitelisted(client, user_headers):
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
     )
     assert resp.status_code == 403
-    assert resp.json()["error"]["code"] == "APPLICANT_NOT_WHITELISTED"
+    assert resp.json()["error"]["code"] == "APPLICANT_NOT_ELIGIBLE"
+
+
+def test_application_success_for_research_eligible_without_whitelist(client, user_headers, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.api_keys_service.ResearchEligibilityService.is_configured",
+        lambda self: True,
+    )
+    monkeypatch.setattr(
+        "app.services.api_keys_service.ResearchEligibilityService.check_eligibility",
+        lambda self, email, sysid: ResearchEligibilityResult(eligible=True, title_code="RS01"),
+    )
+
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+    assert create_resp.status_code == 201
+    assert create_resp.json()["api_key_plaintext"].startswith("AS-")
+
+
+def test_application_research_service_unavailable_returns_503_and_no_records(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    monkeypatch.setattr(
+        "app.services.api_keys_service.ResearchEligibilityService.is_configured",
+        lambda self: True,
+    )
+
+    def _raise_unavailable(self, email, sysid):
+        raise RuntimeError("timeout")
+
+    monkeypatch.setattr(
+        "app.services.api_keys_service.ResearchEligibilityService.check_eligibility",
+        _raise_unavailable,
+    )
+
+    before = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+    after = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
+
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "RESEARCH_LIST_SERVICE_UNAVAILABLE"
+    assert before == after
 
 
 def test_application_rejects_invalid_duration(client, admin_headers, user_headers):
