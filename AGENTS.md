@@ -43,6 +43,7 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 ## Change Rules
 - Terminology must stay consistent across files (`sysid`, `user/admin`, resource-oriented routes).
 - Do not silently introduce new roles, duplicate status flags, or parallel auth truth sources.
+- Because not all environments have `uv`, Python dependency management must provide both `pyproject.toml` and `requirements.txt`; dependency changes must keep them in sync.
 - Do not revert unrelated local changes.
 - If unexpected dirty changes are found, stop and ask for direction.
 
@@ -50,6 +51,7 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - No leftover old terms: `subject_type`, `subject_id`, `/api/v1/my/`, `/api/v1/admin/`.
 - `README.md` and `docs/SPEC.md` use consistent route/identity/role wording when touched.
 - Acceptance criteria are updated when behavior or contract changes.
+- If Python dependencies changed, ensure `requirements.txt` exists and is updated consistently with `pyproject.toml`.
 - If frontend files were modified, `npm run build` has been executed in `frontend` successfully.
 
 ## Commit Guidance
