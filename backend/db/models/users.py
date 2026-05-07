@@ -19,6 +19,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    preferred_locale: Mapped[str | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

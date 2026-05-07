@@ -3,7 +3,12 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.errors import ApiError
-from app.schemas.users import UserListResponse, UserRoleMutationResponse
+from app.schemas.users import (
+    UserListResponse,
+    UserLocalePreferenceResponse,
+    UserLocalePreferenceUpdateRequest,
+    UserRoleMutationResponse,
+)
 from app.services.users_service import UsersService
 from db.session import get_db
 
@@ -46,3 +51,22 @@ def disable_admin(
     _require_admin(current_user)
     service = UsersService(db)
     return service.disable_admin(user_id)
+
+
+@router.get("/users/preferences/locale", response_model=UserLocalePreferenceResponse)
+def get_locale_preference(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    service = UsersService(db)
+    return service.get_locale_preference(current_user)
+
+
+@router.patch("/users/preferences/locale", response_model=UserLocalePreferenceResponse)
+def update_locale_preference(
+    payload: UserLocalePreferenceUpdateRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    service = UsersService(db)
+    return service.update_locale_preference(current_user=current_user, preferred_locale=payload.preferred_locale)

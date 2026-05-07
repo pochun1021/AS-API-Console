@@ -20,3 +20,11 @@ class UserRoleMutationResponse(BaseModel):
     id: str
     role: str
     status: str
+
+
+class UserLocalePreferenceResponse(BaseModel):
+    preferred_locale: str | None
+
+
+class UserLocalePreferenceUpdateRequest(BaseModel):
+    preferred_locale: str

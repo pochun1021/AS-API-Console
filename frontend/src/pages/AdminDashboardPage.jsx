@@ -13,24 +13,26 @@ import {
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { DataGrid } from "@mui/x-data-grid";
-import { zhTW } from "@mui/x-data-grid/locales";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
-
-const scopeOptions = ["all", "active", "revoked", "expired"];
-const topNOptions = [5, 10, 20];
-const xAxisOptions = [
-  { value: "account", label: "帳號" },
-  { value: "department", label: "單位" }
-];
-const yAxisOptions = [
-  { value: "total_applications", label: "總申請數" },
-  { value: "active_count", label: "啟用中" },
-  { value: "revoked_count", label: "已停用" },
-  { value: "expired_count", label: "已到期" }
-];
+import { useLocale } from "../i18n/locale";
 
 export default function AdminDashboardPage({ auth }) {
+  const { gridLocaleText, locale, t } = useLocale();
+  const scopeOptions = ["all", "active", "revoked", "expired"];
+  const topNOptions = [5, 10, 20];
+  const xAxisOptions = [
+    { value: "account", label: t("dashboard_x_account") },
+    { value: "department", label: t("dashboard_x_department") }
+  ];
+  const yAxisOptions = [
+    { value: "total_applications", label: t("dashboard_y_total_applications") },
+    { value: "active_count", label: t("dashboard_y_active_count") },
+    { value: "revoked_count", label: t("dashboard_y_revoked_count") },
+    { value: "expired_count", label: t("dashboard_y_expired_count") }
+  ];
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(20);
@@ -50,17 +52,17 @@ export default function AdminDashboardPage({ auth }) {
 
   const columns = useMemo(
     () => [
-      { field: "owner_account", headerName: "帳號", flex: 1, minWidth: 140 },
-      { field: "owner_name", headerName: "姓名", flex: 1, minWidth: 140 },
-      { field: "owner_email", headerName: "Email", flex: 1.6, minWidth: 220 },
-      { field: "owner_department", headerName: "單位", flex: 1, minWidth: 140 },
-      { field: "total_applications", headerName: "總申請數", type: "number", flex: 0.8, minWidth: 120 },
-      { field: "active_count", headerName: "啟用中", type: "number", flex: 0.8, minWidth: 120 },
-      { field: "revoked_count", headerName: "已停用", type: "number", flex: 0.8, minWidth: 120 },
-      { field: "expired_count", headerName: "已到期", type: "number", flex: 0.8, minWidth: 120 },
-      { field: "last_applied_at", headerName: "最後申請日", flex: 1, minWidth: 140 }
+      { field: "owner_account", headerName: t("dashboard_col_owner_account"), flex: 1, minWidth: 140 },
+      { field: "owner_name", headerName: t("dashboard_col_owner_name"), flex: 1, minWidth: 140 },
+      { field: "owner_email", headerName: t("dashboard_col_owner_email"), flex: 1.6, minWidth: 220 },
+      { field: "owner_department", headerName: t("dashboard_col_owner_department"), flex: 1, minWidth: 140 },
+      { field: "total_applications", headerName: t("dashboard_col_total_applications"), type: "number", flex: 0.8, minWidth: 120 },
+      { field: "active_count", headerName: t("dashboard_col_active_count"), type: "number", flex: 0.8, minWidth: 120 },
+      { field: "revoked_count", headerName: t("dashboard_col_revoked_count"), type: "number", flex: 0.8, minWidth: 120 },
+      { field: "expired_count", headerName: t("dashboard_col_expired_count"), type: "number", flex: 0.8, minWidth: 120 },
+      { field: "last_applied_at", headerName: t("dashboard_col_last_applied_at"), flex: 1, minWidth: 140 }
     ],
-    []
+    [t]
   );
 
   const chartItems = useMemo(() => {
@@ -98,12 +100,12 @@ export default function AdminDashboardPage({ auth }) {
       setItems(response.items.map((item) => ({ ...item, id: item.owner_account })));
       setTotal(response.total);
       if (response.total === 0) {
-        setBanner("查無符合條件的統計資料。");
+        setBanner(t("dashboard_empty_filtered"));
       } else {
         setBanner("");
       }
     } catch (e) {
-      setError(e?.payload?.error?.message || "載入統計資料失敗");
+      setError(e?.payload?.error?.message || t("dashboard_load_failed"));
       setBanner("");
     } finally {
       setLoading(false);
@@ -117,26 +119,26 @@ export default function AdminDashboardPage({ auth }) {
   if (auth.role !== "admin") {
     return (
       <Stack spacing={3}>
-        <Typography variant="h4">管理者統計</Typography>
-        <ErrorBlock message="僅管理者可使用管理者統計功能。" />
+        <Typography variant="h4">{t("dashboard_title")}</Typography>
+        <ErrorBlock message={t("dashboard_forbidden")} />
       </Stack>
     );
   }
 
   return (
     <Stack spacing={3}>
-      <Typography variant="h4">管理者統計</Typography>
+      <Typography variant="h4">{t("dashboard_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
-      <Tabs value={view} onChange={(_, value) => setView(value)} aria-label="統計視圖切換">
-        <Tab value="table" label="表格" />
-        <Tab value="chart" label="圖表" />
+      <Tabs value={view} onChange={(_, value) => setView(value)} aria-label={t("dashboard_view_toggle")}>
+        <Tab value="table" label={t("dashboard_tab_table")} />
+        <Tab value="chart" label={t("dashboard_tab_chart")} />
       </Tabs>
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
         <TextField
           select
-          label="口徑"
+          label={t("dashboard_scope")}
           value={scope}
           onChange={(event) => {
             setScope(event.target.value);
@@ -146,45 +148,43 @@ export default function AdminDashboardPage({ auth }) {
         >
           {scopeOptions.map((option) => (
             <MenuItem key={option} value={option}>
-              {option}
+              {t(`dashboard_scope_${option}`)}
             </MenuItem>
           ))}
         </TextField>
-        <TextField
-          type="date"
-          label="From"
-          InputLabelProps={{ shrink: true }}
-          value={fromDate}
-          onChange={(event) => {
-            setFromDate(event.target.value);
+        <DatePicker
+          label={t("dashboard_from")}
+          value={fromDate ? dayjs(fromDate) : null}
+          onChange={(value) => {
+            setFromDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
             setPage(0);
           }}
+          slotProps={{ textField: { sx: { minWidth: 180 } } }}
         />
-        <TextField
-          type="date"
-          label="To"
-          InputLabelProps={{ shrink: true }}
-          value={toDate}
-          onChange={(event) => {
-            setToDate(event.target.value);
+        <DatePicker
+          label={t("dashboard_to")}
+          value={toDate ? dayjs(toDate) : null}
+          onChange={(value) => {
+            setToDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
             setPage(0);
           }}
+          slotProps={{ textField: { sx: { minWidth: 180 } } }}
         />
         <TextField
-          label="關鍵字"
+          label={t("common_keyword")}
           value={q}
           onChange={(event) => {
             setQ(event.target.value);
             setPage(0);
           }}
-          placeholder="account / name / email"
+          placeholder={t("dashboard_keyword_placeholder")}
           sx={{ minWidth: 260 }}
         />
       </Stack>
 
-      {loading ? <LoadingBlock message="統計資料載入中..." /> : null}
+      {loading ? <LoadingBlock text={t("dashboard_loading")} /> : null}
       {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
-      {!loading && !error && items.length === 0 ? <EmptyBlock message="目前沒有統計資料" /> : null}
+      {!loading && !error && items.length === 0 ? <EmptyBlock text={t("dashboard_no_data")} /> : null}
 
       {!loading && !error && items.length > 0 && view === "table" ? (
         <Box sx={{ width: "100%", backgroundColor: "white", borderRadius: 2, p: 1 }}>
@@ -210,7 +210,7 @@ export default function AdminDashboardPage({ auth }) {
               setSortModel(model);
             }}
             disableRowSelectionOnClick
-            localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
+            localeText={gridLocaleText}
           />
         </Box>
       ) : null}
@@ -222,7 +222,7 @@ export default function AdminDashboardPage({ auth }) {
               <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                 <TextField
                   select
-                  label="X 軸"
+                  label={t("dashboard_axis_x")}
                   value={xAxisField}
                   onChange={(event) => setXAxisField(event.target.value)}
                   sx={{ minWidth: 180 }}
@@ -235,7 +235,7 @@ export default function AdminDashboardPage({ auth }) {
                 </TextField>
                 <TextField
                   select
-                  label="Y 軸"
+                  label={t("dashboard_axis_y")}
                   value={yAxisField}
                   onChange={(event) => setYAxisField(event.target.value)}
                   sx={{ minWidth: 180 }}
@@ -248,7 +248,7 @@ export default function AdminDashboardPage({ auth }) {
                 </TextField>
                 <TextField
                   select
-                  label="Top N"
+                  label={t("dashboard_top_n")}
                   value={topN}
                   onChange={(event) => setTopN(Number(event.target.value))}
                   sx={{ minWidth: 180 }}

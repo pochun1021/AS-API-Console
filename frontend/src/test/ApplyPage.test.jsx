@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { vi } from "vitest";
 import { setApiProvider } from "../api/client";
 import ApplyPage from "../pages/ApplyPage";
@@ -12,9 +14,13 @@ const auth = {
   sysid: "user_123"
 };
 
+function renderPage(ui) {
+  return render(<LocalizationProvider dateAdapter={AdapterDayjs}>{ui}</LocalizationProvider>);
+}
+
 test("validates purpose is required", async () => {
   const user = userEvent.setup();
-  render(<ApplyPage auth={auth} />);
+  renderPage(<ApplyPage auth={auth} />);
 
   await user.click(screen.getByRole("button", { name: "送出申請" }));
 
@@ -23,7 +29,7 @@ test("validates purpose is required", async () => {
 
 test("shows plaintext key once after successful submit", async () => {
   const user = userEvent.setup();
-  render(<ApplyPage auth={auth} />);
+  renderPage(<ApplyPage auth={auth} />);
 
   await user.type(screen.getByLabelText("用途"), "integration test");
   await user.click(screen.getByRole("button", { name: "送出申請" }));
@@ -47,7 +53,7 @@ test("copies plaintext key and shows check icon feedback", async () => {
 
   try {
     const user = userEvent.setup();
-    render(<ApplyPage auth={auth} />);
+    renderPage(<ApplyPage auth={auth} />);
     await user.type(screen.getByLabelText("用途"), "integration test");
     await user.click(screen.getByRole("button", { name: "送出申請" }));
     await screen.findByText("此明文金鑰只會顯示一次，請立即保存。");
@@ -77,7 +83,7 @@ test("copies key by icon click even when key text is already selected", async ()
 
   try {
     const user = userEvent.setup();
-    render(<ApplyPage auth={auth} />);
+    renderPage(<ApplyPage auth={auth} />);
     await user.type(screen.getByLabelText("用途"), "integration test");
     await user.click(screen.getByRole("button", { name: "送出申請" }));
     const plaintext = await screen.findByText((content) => content.startsWith("AS-"));
@@ -100,7 +106,7 @@ test("copies key by icon click even when key text is already selected", async ()
 
 test("hides SysID and uses radio for duration", async () => {
   const user = userEvent.setup();
-  render(<ApplyPage auth={auth} />);
+  renderPage(<ApplyPage auth={auth} />);
 
   expect(screen.queryByLabelText("SysID")).not.toBeInTheDocument();
   expect(screen.getByRole("radio", { name: "6 個月" })).toBeChecked();
@@ -125,7 +131,7 @@ test("shows Chinese error message when API returns English message", async () =>
   };
   setApiProvider(provider);
 
-  render(<ApplyPage auth={auth} />);
+  renderPage(<ApplyPage auth={auth} />);
   await user.type(screen.getByLabelText("用途"), "integration test");
   await user.click(screen.getByRole("button", { name: "送出申請" }));
   expect(await screen.findByText("你目前不符合申請資格，無法申請 API Key。")).toBeInTheDocument();

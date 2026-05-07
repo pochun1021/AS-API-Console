@@ -154,7 +154,8 @@ const initialUsers = [
     name: "Jane Doe",
     email: "jane.doe@company.com",
     role: "user",
-    status: "active"
+    status: "active",
+    preferred_locale: null
   },
   {
     id: "usr_002",
@@ -163,7 +164,8 @@ const initialUsers = [
     name: "John Admin",
     email: "john.admin@company.com",
     role: "admin",
-    status: "active"
+    status: "active",
+    preferred_locale: null
   },
   {
     id: "usr_003",
@@ -172,7 +174,8 @@ const initialUsers = [
     name: "Alice Wang",
     email: "alice.wang@company.com",
     role: "user",
-    status: "active"
+    status: "active",
+    preferred_locale: null
   },
   {
     id: "usr_004",
@@ -181,7 +184,8 @@ const initialUsers = [
     name: "Sam Chen",
     email: "sam.chen@company.com",
     role: "user",
-    status: "active"
+    status: "active",
+    preferred_locale: null
   },
   {
     id: "usr_005",
@@ -190,7 +194,8 @@ const initialUsers = [
     name: "Mike Li",
     email: "mike.li@company.com",
     role: "user",
-    status: "active"
+    status: "active",
+    preferred_locale: null
   }
 ];
 
@@ -250,6 +255,24 @@ function findApiKeyById(id) {
 
 function findUserById(id) {
   return users.find((item) => item.id === id);
+}
+
+function findOrCreateUserByAuth(auth) {
+  let user = users.find((item) => item.account === auth.account);
+  if (user) return user;
+
+  user = {
+    id: `usr_${String(users.length + 1).padStart(3, "0")}`,
+    account: auth.account,
+    sysid: auth.sysid,
+    name: auth.name,
+    email: auth.email,
+    role: auth.role || "user",
+    status: "active",
+    preferred_locale: null
+  };
+  users = [user, ...users];
+  return user;
 }
 
 function mapUserForAdminPage(user) {
@@ -461,6 +484,22 @@ export const mockApiProvider = {
     user.role = "admin";
     user.status = "inactive";
     return { item: mapUserForAdminPage(user) };
+  },
+
+  async getLocalePreference(auth) {
+    await delay();
+    const user = findOrCreateUserByAuth(auth);
+    return { preferred_locale: user.preferred_locale || null };
+  },
+
+  async updateLocalePreference(preferredLocale, auth) {
+    await delay();
+    if (!["zh-TW", "en"].includes(preferredLocale)) {
+      throw createError("VALIDATION_ERROR", "preferred_locale must be one of: zh-TW, en");
+    }
+    const user = findOrCreateUserByAuth(auth);
+    user.preferred_locale = preferredLocale;
+    return { preferred_locale: user.preferred_locale };
   },
 
   async createWhitelist(payload, auth) {

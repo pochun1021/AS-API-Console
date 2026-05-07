@@ -23,10 +23,10 @@ import {
   useMediaQuery
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { zhTW } from "@mui/x-data-grid/locales";
 import { useTheme } from "@mui/material/styles";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
+import { useLocale } from "../i18n/locale";
 
 const actionCellSx = {
   display: "flex",
@@ -48,6 +48,7 @@ function statusColor(status) {
 }
 
 export default function WhitelistAdminPage({ auth }) {
+  const { gridLocaleText, locale, t } = useLocale();
   const [items, setItems] = useState([]);
   const [keyword, setKeyword] = useState("");
   const [candidates, setCandidates] = useState([]);
@@ -79,7 +80,7 @@ export default function WhitelistAdminPage({ auth }) {
       const response = await apiClient.listWhitelists(auth);
       setItems(response.items);
     } catch (e) {
-      setError(e?.payload?.error?.message || "載入特殊人員名單失敗");
+      setError(e?.payload?.error?.message || t("whitelist_load_failed"));
     } finally {
       setLoading(false);
     }
@@ -92,10 +93,10 @@ export default function WhitelistAdminPage({ auth }) {
       const response = await apiClient.searchUsers(keyword, auth);
       setCandidates(response.items);
       if (response.items.length === 0) {
-        setSearchMessage("查無符合人員。");
+        setSearchMessage(t("whitelist_search_empty"));
       }
     } catch (e) {
-      setSearchMessage(e?.payload?.error?.message || "查詢人員失敗");
+      setSearchMessage(e?.payload?.error?.message || t("whitelist_search_failed"));
       setCandidates([]);
     } finally {
       setSearching(false);
@@ -109,10 +110,10 @@ export default function WhitelistAdminPage({ auth }) {
         { email: candidate.email, account: candidate.account, sysid: candidate.sysid, name: candidate.name },
         auth
       );
-      setDialogMessage("特殊人員名單已新增。");
+      setDialogMessage(t("whitelist_created_done"));
       await load();
     } catch (e) {
-      setDialogMessage(e?.payload?.error?.message || "新增特殊人員名單失敗");
+      setDialogMessage(e?.payload?.error?.message || t("whitelist_created_failed"));
     }
   }
 
@@ -120,10 +121,10 @@ export default function WhitelistAdminPage({ auth }) {
     setBanner("");
     try {
       await apiClient.updateWhitelist(id, payload, auth);
-      setBanner("特殊人員名單已更新。");
+      setBanner(t("whitelist_updated_done"));
       await load();
     } catch (e) {
-      setBanner(e?.payload?.error?.message || "更新特殊人員名單失敗");
+      setBanner(e?.payload?.error?.message || t("whitelist_updated_failed"));
     }
   }
 
@@ -134,12 +135,12 @@ export default function WhitelistAdminPage({ auth }) {
   const candidateColumns = useMemo(
     () => [
       { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
-      { field: "account", headerName: "帳號", flex: 1, minWidth: 140 },
-      { field: "name", headerName: "姓名", flex: 1, minWidth: 140 },
-      { field: "email", headerName: "Email", flex: 1.5, minWidth: 220 },
+      { field: "account", headerName: t("common_account"), flex: 1, minWidth: 140 },
+      { field: "name", headerName: t("common_name"), flex: 1, minWidth: 140 },
+      { field: "email", headerName: t("common_email"), flex: 1.5, minWidth: 220 },
       {
         field: "actions",
-        headerName: "操作",
+        headerName: t("common_actions"),
         sortable: false,
         filterable: false,
         align: "left",
@@ -148,8 +149,8 @@ export default function WhitelistAdminPage({ auth }) {
         minWidth: 110,
         renderCell: (params) => (
           <Box sx={actionCellSx}>
-            <Tooltip title="加入特殊人員名單">
-              <IconButton aria-label="加入特殊人員名單" size="small" onClick={() => createItem(params.row)}>
+            <Tooltip title={locale === "zh-TW" ? "加入特殊人員名單" : t("common_add")}>
+              <IconButton aria-label={locale === "zh-TW" ? "加入特殊人員名單" : t("common_add")} size="small" onClick={() => createItem(params.row)}>
                 <PersonAddIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -157,25 +158,25 @@ export default function WhitelistAdminPage({ auth }) {
         )
       }
     ],
-    []
+    [t]
   );
 
   const whitelistColumns = useMemo(
     () => [
       { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
-      { field: "account", headerName: "帳號", flex: 1, minWidth: 140 },
-      { field: "name", headerName: "姓名", flex: 1, minWidth: 140 },
-      { field: "email", headerName: "Email", flex: 1.5, minWidth: 220 },
+      { field: "account", headerName: t("common_account"), flex: 1, minWidth: 140 },
+      { field: "name", headerName: t("common_name"), flex: 1, minWidth: 140 },
+      { field: "email", headerName: t("common_email"), flex: 1.5, minWidth: 220 },
       {
         field: "status",
-        headerName: "狀態",
+        headerName: t("common_status"),
         flex: 1,
         minWidth: 120,
         renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
       },
       {
         field: "remark",
-        headerName: "備註",
+        headerName: t("whitelist_col_remark"),
         flex: 1.5,
         minWidth: 220,
         renderCell: (params) => (
@@ -190,21 +191,21 @@ export default function WhitelistAdminPage({ auth }) {
       },
       {
         field: "created_at",
-        headerName: "建立時間",
+        headerName: t("common_created_at"),
         flex: 1.5,
         minWidth: 180,
         valueFormatter: (value) => formatDateTime(value)
       },
       {
         field: "updated_at",
-        headerName: "更新時間",
+        headerName: t("common_updated_at"),
         flex: 1.5,
         minWidth: 180,
         valueFormatter: (value) => formatDateTime(value)
       },
       {
         field: "actions",
-        headerName: "操作",
+        headerName: t("common_actions"),
         sortable: false,
         filterable: false,
         align: "left",
@@ -213,9 +214,9 @@ export default function WhitelistAdminPage({ auth }) {
         minWidth: 140,
         renderCell: (params) => (
           <Box sx={actionCellSx}>
-            <Tooltip title="儲存備註">
+            <Tooltip title={locale === "zh-TW" ? "儲存備註" : t("common_save")}>
               <IconButton
-                aria-label="儲存備註"
+                aria-label={locale === "zh-TW" ? "儲存備註" : t("common_save")}
                 size="small"
                 color="primary"
                 onClick={() =>
@@ -228,9 +229,9 @@ export default function WhitelistAdminPage({ auth }) {
                 <SaveIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title={params.row.status === "active" ? "停用特殊人員名單" : "啟用特殊人員名單"}>
+            <Tooltip title={params.row.status === "active" ? (locale === "zh-TW" ? "停用特殊人員名單" : t("common_disable")) : (locale === "zh-TW" ? "啟用特殊人員名單" : t("common_enable"))}>
               <IconButton
-                aria-label={params.row.status === "active" ? "停用特殊人員名單" : "啟用特殊人員名單"}
+                aria-label={params.row.status === "active" ? (locale === "zh-TW" ? "停用特殊人員名單" : t("common_disable")) : (locale === "zh-TW" ? "啟用特殊人員名單" : t("common_enable"))}
                 size="small"
                 color={params.row.status === "active" ? "warning" : "success"}
                 onClick={() =>
@@ -247,21 +248,21 @@ export default function WhitelistAdminPage({ auth }) {
         )
       }
     ],
-    [editingRemark]
+    [editingRemark, t, locale]
   );
 
   if (auth.role !== "admin") {
     return (
       <Stack spacing={3}>
-        <Typography variant="h4">特殊人員名單管理</Typography>
-        <ErrorBlock message="僅管理者可使用特殊人員名單管理功能。" />
+        <Typography variant="h4">{t("whitelist_title")}</Typography>
+        <ErrorBlock message={t("whitelist_forbidden")} />
       </Stack>
     );
   }
 
   return (
     <Stack spacing={3}>
-      <Typography variant="h4">特殊人員名單管理</Typography>
+      <Typography variant="h4">{t("whitelist_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
       <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
@@ -271,15 +272,15 @@ export default function WhitelistAdminPage({ auth }) {
           aria-label="開啟新增特殊人員名單人員"
           onClick={() => setSearchDialogOpen(true)}
         >
-          新增
+          {t("common_add")}
         </Button>
       </Box>
 
       <Card>
         <CardContent>
-          {loading ? <LoadingBlock text="載入特殊人員名單中..." /> : null}
+          {loading ? <LoadingBlock text={t("whitelist_loading")} /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
-          {!loading && !error && items.length === 0 ? <EmptyBlock text="目前沒有特殊人員名單資料。" /> : null}
+          {!loading && !error && items.length === 0 ? <EmptyBlock text={t("whitelist_empty")} /> : null}
           {!loading && !error && items.length > 0 ? (
             <Box sx={{ height: 520 }}>
               <DataGrid
@@ -290,7 +291,7 @@ export default function WhitelistAdminPage({ auth }) {
                 initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
                 disableRowSelectionOnClick
                 rowHeight={56}
-                localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
+                localeText={gridLocaleText}
               />
             </Box>
           ) : null}
@@ -298,12 +299,15 @@ export default function WhitelistAdminPage({ auth }) {
       </Card>
 
       <Dialog open={Boolean(pendingStatusChange)} onClose={() => setPendingStatusChange(null)}>
-        <DialogTitle>確認變更狀態</DialogTitle>
+        <DialogTitle>{t("whitelist_dialog_status_title")}</DialogTitle>
         <DialogContent>
-          確認將此特殊人員名單設為 {pendingStatusChange?.nextStatus === "active" ? "啟用" : "停用"}？
+          {t("whitelist_dialog_status_body").replace(
+            "{status}",
+            pendingStatusChange?.nextStatus === "active" ? t("whitelist_status_active") : t("whitelist_status_inactive")
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPendingStatusChange(null)}>取消</Button>
+          <Button onClick={() => setPendingStatusChange(null)}>{locale === "zh-TW" ? "取消" : "Cancel"}</Button>
           <Button
             color="warning"
             onClick={async () => {
@@ -314,18 +318,18 @@ export default function WhitelistAdminPage({ auth }) {
               }
             }}
           >
-            確認
+            {locale === "zh-TW" ? "確認" : "Confirm"}
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={searchDialogOpen} onClose={closeSearchDialog} fullWidth maxWidth="lg" fullScreen={fullScreen}>
-        <DialogTitle>查詢人員</DialogTitle>
+        <DialogTitle>{t("whitelist_search_title")}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 0.5 }}>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
-                label="查詢關鍵字"
+                label={locale === "zh-TW" ? "查詢關鍵字" : t("common_keyword")}
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 onKeyDown={(e) => {
@@ -338,11 +342,11 @@ export default function WhitelistAdminPage({ auth }) {
                 fullWidth
               />
               <Button variant="contained" onClick={searchCandidates} disabled={searching} sx={{ whiteSpace: "nowrap" }}>
-                {searching ? "查詢中..." : "查詢人員"}
+                {searching ? t("common_searching") : (locale === "zh-TW" ? "查詢人員" : t("common_search_users"))}
               </Button>
             </Stack>
             <Typography component="p" variant="body2" color="text.secondary">
-              可用 sysid / 帳號 / 姓名 / email
+              {t("admin_search_hint")}
             </Typography>
             {searchMessage ? <Alert severity="info">{searchMessage}</Alert> : null}
             {dialogMessage ? <Alert severity="info">{dialogMessage}</Alert> : null}
@@ -356,14 +360,14 @@ export default function WhitelistAdminPage({ auth }) {
                   initialState={{ pagination: { paginationModel: { pageSize: 5, page: 0 } } }}
                   disableRowSelectionOnClick
                   rowHeight={56}
-                  localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
+                  localeText={gridLocaleText}
                 />
               </Box>
             ) : null}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeSearchDialog}>關閉</Button>
+          <Button onClick={closeSearchDialog}>{locale === "zh-TW" ? "關閉" : "Close"}</Button>
         </DialogActions>
       </Dialog>
     </Stack>
