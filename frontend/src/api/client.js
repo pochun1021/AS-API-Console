@@ -6,24 +6,30 @@ const providerByKey = {
   mock: mockApiProvider
 };
 
+function resolveProviderKey() {
+  const raw = import.meta.env.VITE_API_PROVIDER;
+  return (raw || "real").toLowerCase();
+}
+
 function resolveProvider() {
-  const key = (import.meta.env.VITE_API_PROVIDER || "mock").toLowerCase();
+  const key = resolveProviderKey();
   const resolved = providerByKey[key];
   if (resolved) {
     return resolved;
   }
   if (import.meta.env.DEV) {
     // eslint-disable-next-line no-console
-    console.warn(`[apiClient] Unknown VITE_API_PROVIDER="${key}", fallback to mock`);
+    console.warn(`[apiClient] Unknown VITE_API_PROVIDER="${key}", fallback to real`);
   }
-  return mockApiProvider;
+  return httpApiProvider;
 }
 
 let provider = resolveProvider();
 
-// Debug current provider selection at runtime.
-// eslint-disable-next-line no-console
-console.log("[apiClient] VITE_API_PROVIDER =", import.meta.env.VITE_API_PROVIDER || "(unset)");
+if (import.meta.env.DEV) {
+  // eslint-disable-next-line no-console
+  console.log(`[apiClient] provider=${resolveProviderKey()}`);
+}
 
 export function setApiProvider(nextProvider) {
   provider = nextProvider;

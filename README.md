@@ -86,6 +86,18 @@ npm run build
     VITE_API_PROVIDER=mock npm run dev
     ```
 
+## 測試資料生成（本機 DB）
+- 產生小型測試資料集（預設會先清除既有 seed 範圍再重建）：
+```bash
+cd backend
+uv run python scripts/seed_test_data.py
+```
+- 若要保留既有 seed 資料並追加：
+```bash
+cd backend
+uv run python scripts/seed_test_data.py --no-reset
+```
+
 ## 測試
 Backend：
 ```bash

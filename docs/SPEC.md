@@ -16,6 +16,8 @@
 - MVP 階段採用 MariaDB 作為主要資料庫。
 - ORM 與 migration 層維持 SQLAlchemy + Alembic，確保後續可平滑擴充至 PostgreSQL。
 - DB schema/migration 操作與驗證流程請見 `docs/runbook-db.md`。
+- 開發/測試可使用 `backend/scripts/seed_test_data.py` 產生本機測試資料；此腳本僅供開發驗證，不屬正式 API contract。
+- 測試資料流程不得新增任何可回查明文 API Key 的查詢能力；明文 key 仍僅允許在建立當下回傳一次。
 
 ## 使用者流程
 1. 使用者透過 SSO/OAuth 登入時，系統先檢查進入資格：優先查外部研究人員名單（以職稱代碼判斷），未命中再檢查本系統特殊人員名單（原白名單，僅 `active` 可通過）。
