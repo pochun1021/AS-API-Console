@@ -26,23 +26,23 @@ def list_users(
     return service.search(q=q)
 
 
-@router.post("/users/{user_id}/grant-admin", response_model=UserRoleMutationResponse)
-def grant_admin(
+@router.post("/admins/{user_id}/enable", response_model=UserRoleMutationResponse)
+def enable_admin(
     user_id: str,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     _require_admin(current_user)
     service = UsersService(db)
-    return service.grant_admin(user_id)
+    return service.enable_admin(user_id)
 
 
-@router.post("/users/{user_id}/revoke-admin", response_model=UserRoleMutationResponse)
-def revoke_admin(
+@router.post("/admins/{user_id}/disable", response_model=UserRoleMutationResponse)
+def disable_admin(
     user_id: str,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     _require_admin(current_user)
     service = UsersService(db)
-    return service.revoke_admin(user_id)
+    return service.disable_admin(user_id)

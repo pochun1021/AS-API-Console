@@ -28,15 +28,16 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - `POST /api/v1/whitelists`
 - `GET /api/v1/whitelists`
 - `PATCH /api/v1/whitelists/{id}`
-- `POST /api/v1/admins/{id}/grant-admin`
-- `POST /api/v1/admins/{id}/revoke-admin`
+- `POST /api/v1/admins/{id}/enable`
+- `POST /api/v1/admins/{id}/disable`
 
 ## Required Workflow For Agents
 1. Read relevant sections in `docs/SPEC.md` before proposing/implementing changes.
 2. Check whether requested changes touch protected contract or protected API surface.
 3. If yes, update `docs/SPEC.md` in the same task and keep acceptance criteria consistent.
 4. Keep changes scoped; do not mix unrelated edits.
-5. Report what changed, which spec rules were affected, and any residual risk.
+5. After any frontend code change, run `npm run build` in `frontend` and report the result.
+6. Report what changed, which spec rules were affected, and any residual risk.
 
 ## Change Rules
 - Terminology must stay consistent across files (`sysid`, `user/admin`, resource-oriented routes).
@@ -48,6 +49,7 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - No leftover old terms: `subject_type`, `subject_id`, `/api/v1/my/`, `/api/v1/admin/`.
 - `README.md` and `docs/SPEC.md` use consistent route/identity/role wording when touched.
 - Acceptance criteria are updated when behavior or contract changes.
+- If frontend files were modified, `npm run build` has been executed in `frontend` successfully.
 
 ## Commit Guidance
 - Use focused commit messages like:

@@ -1,8 +1,11 @@
 from dataclasses import dataclass
 
-from fastapi import Header
+from fastapi import Depends, Header
+from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
+from db.repositories import SQLAlchemyUserRepository
+from db.session import get_db
 
 
 @dataclass(slots=True)
@@ -22,6 +25,7 @@ def get_current_user(
     x_department: str | None = Header(default=None),
     x_sysid: str | None = Header(default=None),
     x_role: str | None = Header(default="user"),
+    db: Session = Depends(get_db),
 ) -> CurrentUser:
     missing = [
         key
@@ -40,6 +44,10 @@ def get_current_user(
     role = (x_role or "user").lower()
     if role not in {"user", "admin"}:
         raise ApiError("VALIDATION_ERROR", "invalid role", 422)
+
+    user = SQLAlchemyUserRepository(db).get_by_account(x_account or "")
+    if user is not None and user.status == "inactive":
+        raise ApiError("FORBIDDEN", "user is disabled", 403)
 
     return CurrentUser(
         account=x_account or "",

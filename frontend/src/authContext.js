@@ -1,18 +1,18 @@
 export const devAuthProfiles = {
   admin: {
-    account: "john.admin",
-    name: "John Admin",
-    email: "john.admin@company.com",
+    account: "admin.seed",
+    name: "Admin Seed",
+    email: "admin.seed@example.com",
     department: "Security",
-    sysid: "admin_001",
+    sysid: "admin-seed-001",
     role: "admin"
   },
   user: {
-    account: "jane.doe",
-    name: "Jane Doe",
-    email: "jane.doe@company.com",
-    department: "Platform Engineering",
-    sysid: "user_123",
+    account: "user1",
+    name: "User 1",
+    email: "user1@example.com",
+    department: "R&D",
+    sysid: "user-seed-001",
     role: "user"
   }
 };

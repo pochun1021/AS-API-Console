@@ -15,7 +15,7 @@ export function WhitelistAdminPlaceholder() {
   return (
     <Card>
       <CardContent>
-        <Typography variant="h6">白名單管理頁（預留）</Typography>
+        <Typography variant="h6">特殊人員名單管理頁（預留）</Typography>
         <Typography color="text.secondary">管理者介面將於下一個迭代實作。</Typography>
       </CardContent>
     </Card>

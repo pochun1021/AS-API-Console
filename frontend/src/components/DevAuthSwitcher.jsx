@@ -15,8 +15,8 @@ export default function DevAuthSwitcher({ profileKey, onChange, auth }) {
           label="Dev 身份"
           onChange={(event) => onChange(event.target.value)}
         >
-          <MenuItem value="admin">Admin - john.admin</MenuItem>
-          <MenuItem value="user">User - jane.doe</MenuItem>
+          <MenuItem value="admin">Admin - admin.seed</MenuItem>
+          <MenuItem value="user">User - user1</MenuItem>
         </Select>
       </FormControl>
       <Typography variant="body2" color="text.secondary">

@@ -153,7 +153,8 @@ const initialUsers = [
     sysid: "user_123",
     name: "Jane Doe",
     email: "jane.doe@company.com",
-    role: "user"
+    role: "user",
+    status: "active"
   },
   {
     id: "usr_002",
@@ -161,7 +162,8 @@ const initialUsers = [
     sysid: "admin_001",
     name: "John Admin",
     email: "john.admin@company.com",
-    role: "admin"
+    role: "admin",
+    status: "active"
   },
   {
     id: "usr_003",
@@ -169,7 +171,8 @@ const initialUsers = [
     sysid: "user_456",
     name: "Alice Wang",
     email: "alice.wang@company.com",
-    role: "user"
+    role: "user",
+    status: "active"
   },
   {
     id: "usr_004",
@@ -177,7 +180,8 @@ const initialUsers = [
     sysid: "user_789",
     name: "Sam Chen",
     email: "sam.chen@company.com",
-    role: "user"
+    role: "user",
+    status: "active"
   },
   {
     id: "usr_005",
@@ -185,7 +189,8 @@ const initialUsers = [
     sysid: "user_999",
     name: "Mike Li",
     email: "mike.li@company.com",
-    role: "user"
+    role: "user",
+    status: "active"
   }
 ];
 
@@ -225,7 +230,7 @@ function validateApplication(payload, auth) {
 
   const activeWhitelist = whitelists.find((item) => item.email === auth.email && item.status === "active");
   if (!activeWhitelist) {
-    throw createError("APPLICANT_NOT_WHITELISTED", "Email 不在可申請白名單中", 403);
+    throw createError("APPLICANT_NOT_WHITELISTED", "Email 不在可申請特殊人員名單中", 403);
   }
 }
 
@@ -245,6 +250,17 @@ function findApiKeyById(id) {
 
 function findUserById(id) {
   return users.find((item) => item.id === id);
+}
+
+function mapUserForAdminPage(user) {
+  return {
+    id: user.id,
+    account: user.account,
+    sysid: user.sysid,
+    name: user.name,
+    email: user.email,
+    status: user.status || "active"
+  };
 }
 
 export const mockApiProvider = {
@@ -345,16 +361,16 @@ export const mockApiProvider = {
       [item.sysid, item.account, item.name, item.email].some((value) => value.toLowerCase().includes(q))
     );
 
-    return { items };
+    return { items: items.map(mapUserForAdminPage) };
   },
 
   async listUsers(auth) {
     await delay();
     ensureAdmin(auth);
-    return { items: users };
+    return { items: users.filter((item) => item.role === "admin").map(mapUserForAdminPage) };
   },
 
-  async grantAdmin(id, auth) {
+  async enableAdmin(id, auth) {
     await delay();
     ensureAdmin(auth);
     const user = findUserById(id);
@@ -362,10 +378,11 @@ export const mockApiProvider = {
       throw createError("USER_NOT_FOUND", "使用者不存在", 404);
     }
     user.role = "admin";
-    return { item: user };
+    user.status = "active";
+    return { item: mapUserForAdminPage(user) };
   },
 
-  async revokeAdmin(id, auth) {
+  async disableAdmin(id, auth) {
     await delay();
     ensureAdmin(auth);
     const user = findUserById(id);
@@ -375,8 +392,9 @@ export const mockApiProvider = {
     if (user.sysid === auth.sysid) {
       throw createError("VALIDATION_ERROR", "不可取消自己的管理者權限");
     }
-    user.role = "user";
-    return { item: user };
+    user.role = "admin";
+    user.status = "inactive";
+    return { item: mapUserForAdminPage(user) };
   },
 
   async createWhitelist(payload, auth) {
@@ -389,7 +407,7 @@ export const mockApiProvider = {
     }
 
     if (whitelists.some((item) => item.email.toLowerCase() === email)) {
-      throw createError("WHITELIST_EMAIL_DUPLICATED", "Email 已存在於白名單");
+      throw createError("WHITELIST_EMAIL_DUPLICATED", "Email 已存在於特殊人員名單");
     }
 
     const now = new Date().toISOString();

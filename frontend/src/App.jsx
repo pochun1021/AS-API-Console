@@ -5,7 +5,7 @@ import DevAuthSwitcher from "./components/DevAuthSwitcher";
 import { devAuthProfiles } from "./authContext";
 import ApplyPage from "./pages/ApplyPage";
 import MyApiKeysPage from "./pages/MyApiKeysPage";
-import UsersAdminPage from "./pages/UsersAdminPage";
+import AdminPage from "./pages/AdminPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 
 const STORAGE_KEY = "as-api-console-dev-auth-profile";
@@ -55,7 +55,7 @@ export default function App() {
           path="/users"
           element={
             auth.role === "admin" ? (
-              <UsersAdminPage auth={auth} />
+              <AdminPage auth={auth} />
             ) : (
               <Navigate to="/apply" replace />
             )

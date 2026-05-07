@@ -79,7 +79,7 @@ export default function WhitelistAdminPage({ auth }) {
       const response = await apiClient.listWhitelists(auth);
       setItems(response.items);
     } catch (e) {
-      setError(e?.payload?.error?.message || "載入白名單失敗");
+      setError(e?.payload?.error?.message || "載入特殊人員名單失敗");
     } finally {
       setLoading(false);
     }
@@ -109,10 +109,10 @@ export default function WhitelistAdminPage({ auth }) {
         { email: candidate.email, account: candidate.account, sysid: candidate.sysid, name: candidate.name },
         auth
       );
-      setDialogMessage("白名單已新增。");
+      setDialogMessage("特殊人員名單已新增。");
       await load();
     } catch (e) {
-      setDialogMessage(e?.payload?.error?.message || "新增白名單失敗");
+      setDialogMessage(e?.payload?.error?.message || "新增特殊人員名單失敗");
     }
   }
 
@@ -120,10 +120,10 @@ export default function WhitelistAdminPage({ auth }) {
     setBanner("");
     try {
       await apiClient.updateWhitelist(id, payload, auth);
-      setBanner("白名單已更新。");
+      setBanner("特殊人員名單已更新。");
       await load();
     } catch (e) {
-      setBanner(e?.payload?.error?.message || "更新白名單失敗");
+      setBanner(e?.payload?.error?.message || "更新特殊人員名單失敗");
     }
   }
 
@@ -148,8 +148,8 @@ export default function WhitelistAdminPage({ auth }) {
         minWidth: 110,
         renderCell: (params) => (
           <Box sx={actionCellSx}>
-            <Tooltip title="加入白名單">
-              <IconButton aria-label="加入白名單" size="small" onClick={() => createItem(params.row)}>
+            <Tooltip title="加入特殊人員名單">
+              <IconButton aria-label="加入特殊人員名單" size="small" onClick={() => createItem(params.row)}>
                 <PersonAddIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -228,9 +228,9 @@ export default function WhitelistAdminPage({ auth }) {
                 <SaveIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title={params.row.status === "active" ? "停用白名單" : "啟用白名單"}>
+            <Tooltip title={params.row.status === "active" ? "停用特殊人員名單" : "啟用特殊人員名單"}>
               <IconButton
-                aria-label={params.row.status === "active" ? "停用白名單" : "啟用白名單"}
+                aria-label={params.row.status === "active" ? "停用特殊人員名單" : "啟用特殊人員名單"}
                 size="small"
                 color={params.row.status === "active" ? "warning" : "success"}
                 onClick={() =>
@@ -253,22 +253,22 @@ export default function WhitelistAdminPage({ auth }) {
   if (auth.role !== "admin") {
     return (
       <Stack spacing={3}>
-        <Typography variant="h4">白名單管理</Typography>
-        <ErrorBlock message="僅管理者可使用白名單管理功能。" />
+        <Typography variant="h4">特殊人員名單管理</Typography>
+        <ErrorBlock message="僅管理者可使用特殊人員名單管理功能。" />
       </Stack>
     );
   }
 
   return (
     <Stack spacing={3}>
-      <Typography variant="h4">白名單管理</Typography>
+      <Typography variant="h4">特殊人員名單管理</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
       <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
         <Button
           variant="outlined"
           startIcon={<AddIcon />}
-          aria-label="開啟新增白名單人員"
+          aria-label="開啟新增特殊人員名單人員"
           onClick={() => setSearchDialogOpen(true)}
         >
           新增
@@ -277,9 +277,9 @@ export default function WhitelistAdminPage({ auth }) {
 
       <Card>
         <CardContent>
-          {loading ? <LoadingBlock text="載入白名單中..." /> : null}
+          {loading ? <LoadingBlock text="載入特殊人員名單中..." /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
-          {!loading && !error && items.length === 0 ? <EmptyBlock text="目前沒有白名單資料。" /> : null}
+          {!loading && !error && items.length === 0 ? <EmptyBlock text="目前沒有特殊人員名單資料。" /> : null}
           {!loading && !error && items.length > 0 ? (
             <Box sx={{ height: 520 }}>
               <DataGrid
@@ -300,7 +300,7 @@ export default function WhitelistAdminPage({ auth }) {
       <Dialog open={Boolean(pendingStatusChange)} onClose={() => setPendingStatusChange(null)}>
         <DialogTitle>確認變更狀態</DialogTitle>
         <DialogContent>
-          確認將此白名單設為 {pendingStatusChange?.nextStatus === "active" ? "啟用" : "停用"}？
+          確認將此特殊人員名單設為 {pendingStatusChange?.nextStatus === "active" ? "啟用" : "停用"}？
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPendingStatusChange(null)}>取消</Button>
