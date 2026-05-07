@@ -28,8 +28,8 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - `POST /api/v1/whitelists`
 - `GET /api/v1/whitelists`
 - `PATCH /api/v1/whitelists/{id}`
-- `POST /api/v1/admins/{id}/grant-admin`
-- `POST /api/v1/admins/{id}/revoke-admin`
+- `POST /api/v1/admins/{id}/enable`
+- `POST /api/v1/admins/{id}/disable`
 
 ## Required Workflow For Agents
 1. Read relevant sections in `docs/SPEC.md` before proposing/implementing changes.

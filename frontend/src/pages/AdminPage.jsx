@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import AddIcon from "@mui/icons-material/Add";
-import AddModeratorIcon from "@mui/icons-material/AddModerator";
-import RemoveModeratorIcon from "@mui/icons-material/RemoveModerator";
+import DoNotDisturbIcon from "@mui/icons-material/DoNotDisturb";
 import {
   Alert,
   Box,
   Button,
   Card,
   CardContent,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -18,6 +16,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  Chip,
   useMediaQuery
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
@@ -36,11 +35,7 @@ const actionCellSx = {
   whiteSpace: "nowrap"
 };
 
-function roleColor(role) {
-  return role === "admin" ? "warning" : "default";
-}
-
-export default function UsersAdminPage({ auth }) {
+export default function AdminPage({ auth }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -97,25 +92,25 @@ export default function UsersAdminPage({ auth }) {
     }
   }
 
-  async function grant(userId) {
+  async function grant(userId, userName = "") {
     setBanner("");
     try {
-      await apiClient.grantAdmin(userId, auth);
-      setBanner("已授權為管理者。");
+      await apiClient.enableAdmin(userId, auth);
+      setBanner(`${userName || "此使用者"} 已加入管理者權限。`);
       await load();
     } catch (e) {
-      setBanner(e?.payload?.error?.message || "授權失敗");
+      setBanner(e?.payload?.error?.message || "啟用失敗");
     }
   }
 
   async function revoke(userId) {
     setBanner("");
     try {
-      await apiClient.revokeAdmin(userId, auth);
-      setBanner("已取消管理者權限。");
+      await apiClient.disableAdmin(userId, auth);
+      setBanner("已停用管理者權限。");
       await load();
     } catch (e) {
-      setBanner(e?.payload?.error?.message || "取消授權失敗");
+      setBanner(e?.payload?.error?.message || "停用失敗");
     }
   }
 
@@ -127,19 +122,27 @@ export default function UsersAdminPage({ auth }) {
     () => items.find((item) => item.sysid === auth.sysid),
     [items, auth.sysid]
   );
+  const adminItems = items;
+  const adminStatusById = useMemo(() => new Map(items.map((item) => [item.id, item.status])), [items]);
 
-  const columns = useMemo(
+  const adminColumns = useMemo(
     () => [
       { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
       { field: "account", headerName: "帳號", flex: 1, minWidth: 140 },
       { field: "name", headerName: "姓名", flex: 1, minWidth: 140 },
       { field: "email", headerName: "Email", flex: 1.5, minWidth: 220 },
       {
-        field: "role",
-        headerName: "角色",
-        flex: 1,
+        field: "status",
+        headerName: "狀態",
+        flex: 0.8,
         minWidth: 120,
-        renderCell: (params) => <Chip size="small" label={params.value} color={roleColor(params.value)} />
+        renderCell: (params) => (
+          <Chip
+            size="small"
+            color={params.value === "active" ? "success" : "default"}
+            label={params.value === "active" ? "啟用中" : "已停用"}
+          />
+        )
       },
       {
         field: "actions",
@@ -152,28 +155,35 @@ export default function UsersAdminPage({ auth }) {
         minWidth: 110,
         renderCell: (params) => {
           const isSelf = params.row.sysid === auth.sysid || currentUserBySysid?.id === params.row.id;
+          const isInactive = params.row.status === "inactive";
           return (
             <Box sx={actionCellSx}>
-              {params.row.role === "user" ? (
-                <Tooltip title="授權管理者">
-                  <IconButton aria-label="授權管理者" size="small" onClick={() => grant(params.row.id)}>
-                    <AddModeratorIcon fontSize="small" />
+              {isInactive ? (
+                <Tooltip title="啟用管理者">
+                  <IconButton
+                    aria-label="啟用管理者"
+                    size="small"
+                    onClick={async () => {
+                      await grant(params.row.id, params.row.name);
+                    }}
+                  >
+                    <AddIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
               ) : (
-                <Tooltip title="取消管理者">
+                <Tooltip title="停用管理者">
                   <span>
                     <IconButton
-                      aria-label="取消管理者"
+                      aria-label="停用管理者"
                       size="small"
                       color="warning"
-                      onClick={() => setPendingRevokeUser({ id: params.row.id, name: params.row.name })}
-                      disabled={isSelf}
-                    >
-                      <RemoveModeratorIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
+                    onClick={() => setPendingRevokeUser({ id: params.row.id, name: params.row.name })}
+                    disabled={isSelf}
+                  >
+                    <DoNotDisturbIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
               )}
             </Box>
           );
@@ -181,6 +191,46 @@ export default function UsersAdminPage({ auth }) {
       }
     ],
     [auth.sysid, currentUserBySysid]
+  );
+
+  const searchColumns = useMemo(
+    () => [
+      { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
+      { field: "account", headerName: "帳號", flex: 1, minWidth: 140 },
+      { field: "name", headerName: "姓名", flex: 1, minWidth: 140 },
+      { field: "email", headerName: "Email", flex: 1.5, minWidth: 220 },
+      {
+        field: "actions",
+        headerName: "操作",
+        sortable: false,
+        filterable: false,
+        align: "left",
+        headerAlign: "left",
+        flex: 1,
+        minWidth: 110,
+        renderCell: (params) =>
+          adminStatusById.get(params.row.id) === "active" ? (
+            <Box sx={{ display: "flex", alignItems: "center", height: "100%" }}>
+              <Typography variant="body2" color="text.secondary">
+                已啟用
+              </Typography>
+            </Box>
+          ) : (
+            <Tooltip title="加入管理者">
+              <IconButton
+                aria-label="加入管理者"
+                size="small"
+                onClick={async () => {
+                  await grant(params.row.id, params.row.name);
+                }}
+              >
+                <AddIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )
+      }
+    ],
+    [adminStatusById]
   );
 
   if (auth.role !== "admin") {
@@ -213,12 +263,12 @@ export default function UsersAdminPage({ auth }) {
         <CardContent>
           {loading ? <LoadingBlock text="載入管理者名單中..." /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
-          {!loading && !error && items.length === 0 ? <EmptyBlock text="目前沒有管理者名單資料。" /> : null}
-          {!loading && !error && items.length > 0 ? (
+          {!loading && !error && adminItems.length === 0 ? <EmptyBlock text="目前沒有管理者名單資料。" /> : null}
+          {!loading && !error && adminItems.length > 0 ? (
             <Box sx={{ height: 480 }}>
               <DataGrid
-                rows={items}
-                columns={columns}
+                rows={adminItems}
+                columns={adminColumns}
                 getRowId={(row) => row.id}
                 pageSizeOptions={[10, 20, 50]}
                 initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
@@ -232,9 +282,9 @@ export default function UsersAdminPage({ auth }) {
       </Card>
 
       <Dialog open={Boolean(pendingRevokeUser)} onClose={() => setPendingRevokeUser(null)}>
-        <DialogTitle>確認取消管理者</DialogTitle>
+        <DialogTitle>確認停用管理者</DialogTitle>
         <DialogContent>
-          確認取消 {pendingRevokeUser?.name || "此使用者"} 的管理者權限？
+          確認停用 {pendingRevokeUser?.name || "此使用者"} 的管理者權限？
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPendingRevokeUser(null)}>取消</Button>
@@ -248,7 +298,7 @@ export default function UsersAdminPage({ auth }) {
               }
             }}
           >
-            確認
+            確認停用
           </Button>
         </DialogActions>
       </Dialog>
@@ -283,7 +333,7 @@ export default function UsersAdminPage({ auth }) {
               <Box sx={{ height: 420 }}>
                 <DataGrid
                   rows={searchResults}
-                  columns={columns}
+                  columns={searchColumns}
                   getRowId={(row) => row.id}
                   pageSizeOptions={[5, 10, 20]}
                   initialState={{ pagination: { paginationModel: { pageSize: 5, page: 0 } } }}

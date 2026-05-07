@@ -19,3 +19,4 @@ class UserListResponse(BaseModel):
 class UserRoleMutationResponse(BaseModel):
     id: str
     role: str
+    status: str

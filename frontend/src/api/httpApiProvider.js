@@ -83,12 +83,12 @@ export const httpApiProvider = {
     return request(`/api/v1/users?q=${q}`, { auth });
   },
 
-  grantAdmin(id, auth) {
-    return request(`/api/v1/admins/${id}/grant-admin`, { method: "POST", auth });
+  enableAdmin(id, auth) {
+    return request(`/api/v1/admins/${id}/enable`, { method: "POST", auth });
   },
 
-  revokeAdmin(id, auth) {
-    return request(`/api/v1/admins/${id}/revoke-admin`, { method: "POST", auth });
+  disableAdmin(id, auth) {
+    return request(`/api/v1/admins/${id}/disable`, { method: "POST", auth });
   },
 
   async listWhitelists(auth) {

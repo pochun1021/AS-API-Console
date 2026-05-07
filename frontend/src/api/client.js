@@ -21,6 +21,10 @@ function resolveProvider() {
 
 let provider = resolveProvider();
 
+// Debug current provider selection at runtime.
+// eslint-disable-next-line no-console
+console.log("[apiClient] VITE_API_PROVIDER =", import.meta.env.VITE_API_PROVIDER || "(unset)");
+
 export function setApiProvider(nextProvider) {
   provider = nextProvider;
 }
@@ -32,8 +36,8 @@ export const apiClient = {
   revokeApiKey: (id, auth) => provider.revokeApiKey(id, auth),
   listUsers: (auth) => provider.listUsers(auth),
   searchUsers: (keyword, auth) => provider.searchUsers(keyword, auth),
-  grantAdmin: (id, auth) => provider.grantAdmin(id, auth),
-  revokeAdmin: (id, auth) => provider.revokeAdmin(id, auth),
+  enableAdmin: (id, auth) => provider.enableAdmin(id, auth),
+  disableAdmin: (id, auth) => provider.disableAdmin(id, auth),
   listWhitelists: (auth) => provider.listWhitelists(auth),
   createWhitelist: (payload, auth) => provider.createWhitelist(payload, auth),
   updateWhitelist: (id, payload, auth) => provider.updateWhitelist(id, payload, auth)

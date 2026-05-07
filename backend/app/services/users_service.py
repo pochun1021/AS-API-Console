@@ -27,16 +27,19 @@ class UsersService:
             "total": len(users),
         }
 
-    def grant_admin(self, user_id: str) -> dict:
+    def enable_admin(self, user_id: str) -> dict:
         user = self.repo.update_role(user_id, "admin")
         if user is None:
             raise ApiError("USER_NOT_FOUND", "user not found", 404)
-        self.session.commit()
-        return {"id": user.id, "role": user.role}
-
-    def revoke_admin(self, user_id: str) -> dict:
-        user = self.repo.update_role(user_id, "user")
+        user = self.repo.update_status(user_id, "active")
         if user is None:
             raise ApiError("USER_NOT_FOUND", "user not found", 404)
         self.session.commit()
-        return {"id": user.id, "role": user.role}
+        return {"id": user.id, "role": user.role, "status": user.status}
+
+    def disable_admin(self, user_id: str) -> dict:
+        user = self.repo.update_status(user_id, "inactive")
+        if user is None:
+            raise ApiError("USER_NOT_FOUND", "user not found", 404)
+        self.session.commit()
+        return {"id": user.id, "role": user.role, "status": user.status}

@@ -42,16 +42,23 @@ def test_users_admin_role_endpoints(client, admin_headers):
     assert "sysid" in user_item
     assert user_item["sysid"] == user_item["id"]
 
-    grant = client.post(f"/api/v1/admins/{user_id}/grant-admin", headers=admin_headers)
-    assert grant.status_code == 200
-    assert grant.json()["role"] == "admin"
+    enable = client.post(f"/api/v1/admins/{user_id}/enable", headers=admin_headers)
+    assert enable.status_code == 200
+    assert enable.json()["role"] == "admin"
+    assert enable.json()["status"] == "active"
 
-    revoke = client.post(f"/api/v1/admins/{user_id}/revoke-admin", headers=admin_headers)
-    assert revoke.status_code == 200
-    assert revoke.json()["role"] == "user"
+    disable = client.post(f"/api/v1/admins/{user_id}/disable", headers=admin_headers)
+    assert disable.status_code == 200
+    assert disable.json()["role"] == "admin"
+    assert disable.json()["status"] == "inactive"
+
+    disabled_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid="u1-sys")
+    disabled_list = client.get("/api/v1/api-keys", headers=disabled_headers)
+    assert disabled_list.status_code == 403
+    assert disabled_list.json()["error"]["code"] == "FORBIDDEN"
 
 
 def test_user_not_found_for_role_mutation(client, admin_headers):
-    resp = client.post("/api/v1/admins/not-exist/grant-admin", headers=admin_headers)
+    resp = client.post("/api/v1/admins/not-exist/enable", headers=admin_headers)
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "USER_NOT_FOUND"

@@ -54,6 +54,16 @@ class SQLAlchemyUserRepository(UserRepository):
         self.session.flush()
         return user
 
+    def update_status(self, user_id: str, status: str) -> User | None:
+        user = self.get_by_id(user_id)
+        if not user:
+            return None
+        user.status = status
+        user.updated_at = datetime.now(timezone.utc)
+        self.session.add(user)
+        self.session.flush()
+        return user
+
     def upsert_from_auth(self, identity: AuthIdentity) -> User:
         user = self.get_by_account(identity.account)
         now = datetime.now(timezone.utc)

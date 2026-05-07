@@ -68,10 +68,12 @@
 
 ### 5) Admin List Page（管理者名單頁）
 - 僅 `admin` 可使用。
+- 列表僅顯示目前已啟用管理權限（`role=admin`）的人員。
+- 列表需顯示管理者狀態（`active`/`inactive`），停用後不得自動從名單移除。
 - 可用 `sysid`、`account`、`name`、`email` 查詢使用者。
-- 可授權一般使用者為管理者（`grant-admin`）。
-- 可取消其他管理者權限（`revoke-admin`）。
-- 前端需阻擋管理者對自己執行 `revoke-admin`（避免誤鎖管理權限）。
+- 可啟用一般使用者的管理者權限（對應 `enable`）。
+- 可停用其他管理者的管理者權限（對應 `disable`）。
+- 前端需阻擋管理者對自己執行管理者停用（避免誤鎖管理權限）。
 
 ### 6) Admin Dashboard Page（管理者統計頁）
 - 僅 `admin` 可使用。
@@ -105,7 +107,7 @@
 - 支援撤銷與狀態管理（`active|revoked|expired`）
 - 管理者可查看全部 API Key 與申請紀錄
 - 管理者可查看每位申請人的 API Key 申請統計（含狀態分佈）
-- 管理者可授權/取消其他使用者的管理者身分
+- 管理者可啟用/停用其他使用者的管理者身分
 
 ### Nice to Have（後續）
 - OAuth/SSO 串接優化（完善 `sysid` 對接與身分映射）
@@ -114,13 +116,26 @@
 - 使用量監控與配額管理
 
 ## 資料模型草案
-### Entity: `users`
+### Entity: `users`（身分來源）
 - `id` (string/uuid)
 - `account` (string, required, unique)
 - `email` (string, required, unique, lowercase)
 - `name` (string, required)
-- `role` (enum: `user` | `admin`, default: `user`)
 - `status` (enum: `active` | `inactive`)
+- `created_at` (datetime)
+- `updated_at` (datetime)
+
+### Entity: `admins`（管理者名單來源）
+- `id` (string/uuid)
+- `user_id` (string/uuid, unique, 對應使用者主鍵)
+- `account` (string, required, unique)
+- `email` (string, required, unique, lowercase)
+- `name` (string, required)
+- `department` (string, nullable)
+- `sysid` (string, required)
+- `status` (enum: `active` | `inactive`)
+- `created_by` (string)
+- `updated_by` (string)
 - `created_at` (datetime)
 - `updated_at` (datetime)
 
@@ -165,7 +180,7 @@
 
 ## 權限規則（MVP）
 - `user`：可使用 `GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`POST /api/v1/api-keys/{id}/revoke`，但僅可查詢/停用本人 `active` key。
-- `admin`：可查詢全部 API Key 與申請紀錄，可管理特殊人員名單（沿用受保護路徑 `/api/v1/whitelists*`），可授權/取消其他使用者管理者身分（`/api/v1/admins/{id}/grant-admin|revoke-admin`）。
+- `admin`：可查詢全部 API Key 與申請紀錄，可管理特殊人員名單（沿用受保護路徑 `/api/v1/whitelists*`），可啟用/停用其他使用者管理者身分（沿用受保護路徑 `/api/v1/admins/{id}/enable|disable`）。
 - 金鑰啟用狀態以 `api_keys.status` 為唯一判斷來源：`active`=啟用，`revoked|expired`=不可用。
 
 ## API 草案
@@ -283,9 +298,9 @@ Base path：`/api/v1`
   - 未命中：需再檢查特殊人員名單是否為 `active`。
   - timeout/5xx：允許進入系統，但阻擋申請 API。
 
-### 6) 管理者授權 API
-- `POST /api/v1/admins/{id}/grant-admin`：授權指定使用者為管理者
-- `POST /api/v1/admins/{id}/revoke-admin`：取消指定使用者管理者身分
+### 6) 管理者啟用/停用 API
+- `POST /api/v1/admins/{id}/enable`：啟用指定使用者管理者身分
+- `POST /api/v1/admins/{id}/disable`：停用指定使用者管理者身分
 - 規則：僅 `admin` 可使用，且需記錄操作稽核資訊（操作者、時間）。
 
 ### 錯誤回應格式（建議）
@@ -329,10 +344,11 @@ Base path：`/api/v1`
 15. `user` 呼叫 `GET /api/v1/api-keys` 時僅可看到本人資料；`admin` 可看到全域資料。
 16. `user` 查詢或停用非本人 key 時，API 回傳 `403`（或既有錯誤碼）。
 17. 非 `admin` 使用特殊人員名單管理 API（`/api/v1/whitelists*`）時，回傳 `403`。
-18. 管理者可成功授權/取消其他使用者的管理者身分（`/api/v1/admins/{id}/grant-admin|revoke-admin`）。
+18. 管理者可成功啟用/停用其他使用者的管理者身分（`/api/v1/admins/{id}/enable|disable`）。
+18-1. 管理者名單需顯示狀態欄位；停用後該管理者仍保留於名單，狀態改為 `inactive`。
 19. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
 20. 若 auth context 缺少 `sysid`，申請 API 回傳 `VALIDATION_ERROR` 且不得建立申請紀錄。
-21. 管理者不可在前端將自己的角色由 `admin` 降為 `user`。
+21. 管理者不可在前端停用自己的管理者權限（不可將自己的角色由 `admin` 降為 `user`）。
 22. `admin` 呼叫 `GET /api/v1/api-keys` 時，每筆資料需可辨識申請人（至少包含 `owner_account`、`owner_name`）。
 23. 調整申請人識別欄位後，既有受保護 API 路徑與角色模型（`user|admin`）不得改動。
 24. API Keys 清單頁不得顯示建立時間；建立時間僅顯示於單筆詳情視窗。
