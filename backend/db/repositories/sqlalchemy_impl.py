@@ -13,6 +13,7 @@ from db.repositories.types import (
     ApiKeyCreateInput,
     ApiKeyDetail,
     ApiKeyListItem,
+    ApiKeySecretMaterial,
     ApiKeyUserStatisticsItem,
     ApplicationCreateInput,
     AuthIdentity,
@@ -185,6 +186,9 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             application_id=data.application_id,
             key_hash=data.key_hash,
             key_prefix="AS-",
+            masked_key=data.masked_key,
+            key_ciphertext=data.key_ciphertext,
+            key_kek_version=data.key_kek_version,
             length=30,
             security_level="high",
             status=data.status,
@@ -220,6 +224,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
                 id=row.ApiKey.id,
                 status=row.ApiKey.status,
                 key_prefix=row.ApiKey.key_prefix,
+                masked_key=row.ApiKey.masked_key,
                 application_date=row.ApiKeyApplication.application_date,
                 duration_months=row.ApiKeyApplication.duration_months,
                 owner_account=row.ApiKeyApplication.account,
@@ -245,6 +250,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             id=row.ApiKey.id,
             status=row.ApiKey.status,
             key_prefix=row.ApiKey.key_prefix,
+            masked_key=row.ApiKey.masked_key,
             owner_account=row.ApiKeyApplication.account,
             owner_name=row.ApiKeyApplication.name,
             purpose=row.ApiKeyApplication.purpose,
@@ -253,6 +259,28 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             duration_months=row.ApiKeyApplication.duration_months,
             created_at=row.ApiKey.created_at,
             expires_at=row.ApiKeyApplication.expires_at,
+        )
+
+    def get_key_secret_material(
+        self, key_id: str, requester_role: str, requester_account: str
+    ) -> ApiKeySecretMaterial | None:
+        stmt = select(ApiKey, ApiKeyApplication).join(
+            ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id
+        )
+        stmt = stmt.where(ApiKey.id == key_id)
+        if requester_role == "user":
+            stmt = stmt.where(ApiKeyApplication.account == requester_account)
+
+        row = self.session.execute(stmt).first()
+        if row is None:
+            return None
+
+        return ApiKeySecretMaterial(
+            id=row.ApiKey.id,
+            status=row.ApiKey.status,
+            owner_account=row.ApiKeyApplication.account,
+            key_ciphertext=row.ApiKey.key_ciphertext,
+            key_kek_version=row.ApiKey.key_kek_version,
         )
 
     def revoke_key(self, key_id: str, requester_role: str, requester_account: str) -> ApiKey | None:

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     research_list_api_url: str | None = None
     research_list_timeout_seconds: float = 3.0
     research_list_allowed_title_codes: str = ""
+    api_key_encryption_secret: str = "dev-only-change-me"
+    api_key_kek_version: str = "v1"
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

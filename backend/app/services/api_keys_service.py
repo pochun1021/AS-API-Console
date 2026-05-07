@@ -6,7 +6,9 @@ from datetime import UTC, date, datetime
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
+from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.services.crypto_service import CryptoService
 from app.services.research_eligibility_service import ResearchEligibilityService
 from db.repositories.types import ApiKeyCreateInput, ApplicationCreateInput, AuthIdentity
 from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyUserRepository, SQLAlchemyWhitelistRepository
@@ -28,8 +30,8 @@ def _hash_key(plaintext: str) -> str:
     return hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
 
 
-def _mask_key(prefix: str) -> str:
-    return f"{prefix}****"
+def _mask_key(plaintext: str) -> str:
+    return f"{plaintext[:7]}****{plaintext[-4:]}"
 
 
 def _calc_expiration(issued_at: datetime, duration_months: int) -> datetime:
@@ -44,10 +46,12 @@ def _calc_expiration(issued_at: datetime, duration_months: int) -> datetime:
 class ApiKeysService:
     def __init__(self, session: Session) -> None:
         self.session = session
+        self.settings = get_settings()
         self.user_repo = SQLAlchemyUserRepository(session)
         self.whitelist_repo = SQLAlchemyWhitelistRepository(session)
         self.key_repo = SQLAlchemyApiKeyRepository(session)
         self.research_eligibility = ResearchEligibilityService()
+        self.crypto = CryptoService(self.settings.api_key_encryption_secret)
 
     def create_application(self, current_user: CurrentUser, application_date: date, duration_months: int, purpose: str) -> dict:
         if application_date > date.today():
@@ -98,7 +102,15 @@ class ApiKeysService:
         )
 
         plaintext = _generate_api_key()
-        self.key_repo.create_key(ApiKeyCreateInput(application_id=application.id, key_hash=_hash_key(plaintext)))
+        self.key_repo.create_key(
+            ApiKeyCreateInput(
+                application_id=application.id,
+                key_hash=_hash_key(plaintext),
+                masked_key=_mask_key(plaintext),
+                key_ciphertext=self.crypto.encrypt(plaintext),
+                key_kek_version=self.settings.api_key_kek_version,
+            )
+        )
         self.session.commit()
 
         return {
@@ -131,7 +143,7 @@ class ApiKeysService:
                 {
                     "id": item.id,
                     "status": item.status,
-                    "masked_key": _mask_key(item.key_prefix),
+                    "masked_key": item.masked_key,
                     "key_prefix": item.key_prefix,
                     "application_date": item.application_date,
                     "duration_months": item.duration_months,
@@ -158,7 +170,7 @@ class ApiKeysService:
         return {
             "id": scoped.id,
             "status": scoped.status,
-            "masked_key": _mask_key(scoped.key_prefix),
+            "masked_key": scoped.masked_key,
             "key_prefix": scoped.key_prefix,
             "owner_account": scoped.owner_account,
             "owner_name": scoped.owner_name,
@@ -185,6 +197,23 @@ class ApiKeysService:
 
         self.session.commit()
         return {"id": key.id, "status": key.status}
+
+    def reveal_key_plaintext(self, current_user: CurrentUser, key_id: str) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+
+        material = self.key_repo.get_key_secret_material(key_id, current_user.role, current_user.account)
+        if material is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+        if not material.key_ciphertext or not material.key_kek_version:
+            raise ApiError("KEY_NOT_REVEALABLE", "key plaintext is not available", 409)
+
+        plaintext = self.crypto.decrypt(material.key_ciphertext)
+        return {
+            "id": material.id,
+            "api_key_plaintext": plaintext,
+            "key_kek_version": material.key_kek_version,
+        }
 
     def list_user_statistics(
         self,

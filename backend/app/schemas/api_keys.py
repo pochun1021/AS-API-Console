@@ -62,6 +62,12 @@ class RevokeResponse(BaseModel):
     status: str
 
 
+class ApiKeyRevealResponse(BaseModel):
+    id: str
+    api_key_plaintext: str
+    key_kek_version: str
+
+
 class ApiKeyUserStatisticsItemResponse(BaseModel):
     owner_account: str
     owner_name: str

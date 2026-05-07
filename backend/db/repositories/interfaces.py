@@ -9,6 +9,7 @@ from db.repositories.types import (
     ApiKeyCreateInput,
     ApiKeyDetail,
     ApiKeyListItem,
+    ApiKeySecretMaterial,
     ApiKeyUserStatisticsItem,
     ApplicationCreateInput,
     AuthIdentity,
@@ -65,6 +66,10 @@ class ApiKeyRepository(Protocol):
     ) -> list[ApiKeyListItem]: ...
 
     def get_key_detail(self, key_id: str, requester_role: str, requester_account: str) -> ApiKeyDetail | None: ...
+    
+    def get_key_secret_material(
+        self, key_id: str, requester_role: str, requester_account: str
+    ) -> ApiKeySecretMaterial | None: ...
 
     def revoke_key(self, key_id: str, requester_role: str, requester_account: str) -> ApiKey | None: ...
 

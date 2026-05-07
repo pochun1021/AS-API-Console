@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import secrets
 from pathlib import Path
 import sys
 import uuid
@@ -18,10 +19,22 @@ from db.models.applications import ApiKeyApplication
 from db.models.users import User
 from db.models.whitelist import ApiKeyWhitelist
 from db.session import SessionLocal
+from app.core.config import get_settings
+from app.services.crypto_service import CryptoService
 
 
 def _hash_key(plaintext: str) -> str:
     return hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+
+
+def _mask_key(plaintext: str) -> str:
+    return f"{plaintext[:7]}****{plaintext[-4:]}"
+
+
+def _generate_seed_api_key() -> str:
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    suffix = "".join(secrets.choice(alphabet) for _ in range(30))
+    return f"AS-{suffix}"
 
 
 def _build_users(now: datetime) -> list[User]:
@@ -109,6 +122,8 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
 
     applications: list[ApiKeyApplication] = []
     keys: list[ApiKey] = []
+    settings = get_settings()
+    crypto = CryptoService(settings.api_key_encryption_secret)
 
     for idx, status in enumerate(statuses, start=1):
         user_no = ((idx - 1) % 6) + 1
@@ -140,12 +155,15 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
             created_at=issued_at,
             updated_at=issued_at,
         )
-        key_plain = f"AS-TESTSEED{idx:04d}ABCDEFGHIJKLMNOPQRS"[:33]
+        key_plain = _generate_seed_api_key()
         key = ApiKey(
             id=str(uuid.uuid4()),
             application_id=application_id,
             key_hash=_hash_key(key_plain),
             key_prefix="AS-",
+            masked_key=_mask_key(key_plain),
+            key_ciphertext=crypto.encrypt(key_plain),
+            key_kek_version=settings.api_key_kek_version,
             length=30,
             security_level="high",
             status=status,

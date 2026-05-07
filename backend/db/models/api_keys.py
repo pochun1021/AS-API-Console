@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -20,6 +20,9 @@ class ApiKey(Base):
     )
     key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     key_prefix: Mapped[str] = mapped_column(String(10), default="AS-", nullable=False)
+    masked_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    key_ciphertext: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    key_kek_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
     length: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     security_level: Mapped[str] = mapped_column(String(20), default="high", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)

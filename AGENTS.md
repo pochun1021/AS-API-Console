@@ -18,13 +18,14 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - Role model is only `user` and `admin`.
 - API paths must stay resource-oriented (no `/my/*`, no `/admin/*` route naming).
 - Key status source of truth: `api_keys.status` (`active|revoked|expired`).
-- Plaintext API key must only be returned at creation time; never from later query endpoints.
+- Plaintext API key must only be returned at creation time by default; later retrieval is only allowed through explicit reveal endpoint with strict admin authorization and audit-ready handling.
 
 ## Protected API Surface
 - `POST /api/v1/api-keys/applications`
 - `GET /api/v1/api-keys`
 - `GET /api/v1/api-keys/{id}`
 - `POST /api/v1/api-keys/{id}/revoke`
+- `POST /api/v1/api-keys/{id}/reveal`
 - `POST /api/v1/whitelists`
 - `GET /api/v1/whitelists`
 - `PATCH /api/v1/whitelists/{id}`

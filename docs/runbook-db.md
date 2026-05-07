@@ -45,13 +45,13 @@
   - `status in ('active', 'revoked', 'expired')`
 
 ### `api_keys`
-- 核心欄位：`id`, `application_id`, `key_hash`, `key_prefix`, `length`, `security_level`, `status`, `created_at`
+- 核心欄位：`id`, `application_id`, `key_hash`, `masked_key`, `key_ciphertext`, `key_kek_version`, `key_prefix`, `length`, `security_level`, `status`, `created_at`
 - 關聯：`application_id -> api_key_applications.id`（unique）
 - 約束：
   - `status in ('active', 'revoked', 'expired')`
   - `length = 30`
   - `security_level = 'high'`
-- 注意：資料庫僅保存 `key_hash`，不保存明文 API key。
+- 注意：資料庫保存 `key_hash` 與加密密文（`key_ciphertext`），不保存明文 API key。
 
 ## Migration 操作
 
@@ -107,7 +107,7 @@ mariadb -h <host> -u <user> -p as_api_console -e "SHOW TABLES;"
 
 ### 3) 明文 key 安全檢查
 - `api_keys` 表不應存在 plaintext 欄位。
-- 僅可有 `key_hash` 作為金鑰儲存欄位。
+- 僅可有 `key_hash` 與加密密文欄位（`key_ciphertext`）作為金鑰儲存欄位。
 
 ## 測試資料（seed）操作
 
@@ -132,7 +132,7 @@ uv run python scripts/seed_test_data.py --no-reset
 - `users`：8 筆（含 2 位 admin seed + 6 位 user seed）
 - `api_key_whitelist`：8 筆（含 active/inactive）
 - `api_key_applications`：20 筆（含 `active|revoked|expired`）
-- `api_keys`：20 筆（僅 `key_hash`，不含明文）
+- `api_keys`：20 筆（僅 `key_hash`，不含明文；`masked_key` 為真實 key 前4後4遮罩）
 
 ### 執行結果判讀
 - 成功時輸出：
@@ -162,7 +162,16 @@ SELECT status, COUNT(*) FROM api_keys GROUP BY status ORDER BY status;
 "
 ```
 3. 安全驗證：
-- `api_keys` 僅保存 `key_hash`，不得新增任何明文 key 欄位或查詢路徑。
+- `api_keys` 僅保存 `key_hash` 與 `key_ciphertext`，不得新增任何明文 key 欄位；一般查詢路徑不得回傳明文。
+4. 遮罩格式驗證：
+```bash
+mariadb -h <host> -u <user> -p as_api_console -e "
+SELECT COUNT(*) AS placeholder_cnt
+FROM api_keys
+WHERE masked_key = 'AS-xxxx****xxxx';
+"
+```
+- `placeholder_cnt` 應為 `0`；若大於 0 代表仍有舊資料未重發。
 
 ### 注意事項
 - 不加 `--no-reset` 時，腳本會清除既有 seed 範圍（指定 seed users 對應的 applications/keys 與 seed whitelist/users）後重建。
@@ -196,3 +205,8 @@ alembic upgrade head
 ### seed 追加模式出現唯一鍵衝突
 - 若無需保留既有 seed，改用預設模式（不帶 `--no-reset`）重建。
 - 若需保留資料，先清理衝突資料再重跑 `--no-reset`。
+
+### 舊資料仍出現樣板遮罩（`AS-xxxx****xxxx`）
+- 原因：歷史 key 無法從 `key_hash` 反推 plaintext，無法直接補齊真實前後4碼。
+- 處理方式：移除舊 key 並透過正常申請流程重發，讓系統在建立當下寫入真實 `masked_key`。
+- 開發環境建議：直接使用 `uv run python scripts/seed_test_data.py`（reset 模式）重建資料。

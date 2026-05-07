@@ -7,6 +7,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.schemas.api_keys import (
     ApiKeyDetailResponse,
     ApiKeyListResponse,
+    ApiKeyRevealResponse,
     ApiKeyUserStatisticsResponse,
     ApplicationCreateRequest,
     ApplicationCreateResponse,
@@ -98,3 +99,13 @@ def revoke_api_key(
     except Exception:
         db.rollback()
         raise
+
+
+@router.post("/api-keys/{key_id}/reveal", response_model=ApiKeyRevealResponse)
+def reveal_api_key(
+    key_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    service = ApiKeysService(db)
+    return service.reveal_key_plaintext(current_user=current_user, key_id=key_id)

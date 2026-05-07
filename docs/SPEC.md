@@ -17,7 +17,7 @@
 - ORM 與 migration 層維持 SQLAlchemy + Alembic，確保後續可平滑擴充至 PostgreSQL。
 - DB schema/migration 操作與驗證流程請見 `docs/runbook-db.md`。
 - 開發/測試可使用 `backend/scripts/seed_test_data.py` 產生本機測試資料；此腳本僅供開發驗證，不屬正式 API contract。
-- 測試資料流程不得新增任何可回查明文 API Key 的查詢能力；明文 key 仍僅允許在建立當下回傳一次。
+- 測試資料流程不得新增一般查詢端點回傳明文 API Key 的能力；明文 key 預設僅允許在建立當下回傳一次。
 
 ## 使用者流程
 1. 使用者透過 SSO/OAuth 登入時，系統先檢查進入資格：優先查外部研究人員名單（以職稱代碼判斷），未命中再檢查本系統特殊人員名單（原白名單，僅 `active` 可通過）。
@@ -26,7 +26,7 @@
 4. 送出申請前再次檢查資格：優先查外部研究人員名單（職稱代碼），未命中再檢查特殊人員名單（`active`）。
 5. 資格檢查通過後系統立即核發 API Key。
 6. 系統只顯示一次明文 API Key，使用者需立即保存。
-7. 一般使用者可在「我的 API Key 紀錄」查看本人全部歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩。
+7. 一般使用者可在「我的 API Key 紀錄」查看本人全部歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩（前 4 碼 + `****` + 後 4 碼）。
 8. 一般使用者可自行停用本人已生效（`active`）的 Key。
 9. 使用者可於列表/詳情查看狀態、到期時間與 key 前綴。
 
@@ -52,7 +52,7 @@
 
 ### 2) My API Keys Page（一般使用者我的紀錄頁）
 - 顯示範圍：僅本人帳號的全部歷史紀錄（`active|revoked|expired`）。
-- 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（或前綴）。
+- 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（前 4 碼 + `****` + 後 4 碼）。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
 - 操作：僅對本人 `active` key 顯示「停用」按鈕。
 
@@ -61,7 +61,7 @@
 - 顯示欄位至少包含：申請日期、生效時長、用途（`purpose`）、單位（`department`）、建立時間、到期時間、遮罩 key。
 - 一般使用者僅可查本人資料。
 - 一般使用者可停用本人 `active` key。
-- 不可再次顯示 key 明文。
+- 一般查詢/詳情不可再次顯示 key 明文（僅受控 reveal 流程可回取）。
 
 ### 4) Whitelist Admin Page（特殊人員名單管理頁）
 - 可用 `sysid`、`account`、`name`、`email` 查詢使用者後加入特殊人員名單。
@@ -108,7 +108,7 @@
 - API 生效時長固定月數選單（`1|6|12`）
 - API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
 - API Key 明文只顯示一次
-- 系統僅儲存 `key_hash`，不儲存明文
+- 系統儲存 `key_hash` 與加密密文（`key_ciphertext`），不直接儲存明文
 - 一般使用者可查看本人全部申請紀錄
 - 一般使用者查詢時 API Key 必須遮罩顯示
 - 一般使用者可自行停用本人已生效 key（軟停用）
@@ -183,7 +183,9 @@
 - `application_id` (fk -> api_key_applications.id)
 - `key_hash` (string, required)
 - `key_prefix` (string, required, MVP 固定 `AS-`)
-- `masked_key` (string, computed/response only)
+- `masked_key` (string, 遮罩格式固定為前 4 碼 + `****` + 後 4 碼；response only)
+- `key_ciphertext` (string, encrypted at rest, nullable for legacy rows)
+- `key_kek_version` (string, key-encryption-key version tag)
 - `length` (int, MVP 固定 30，表示隨機段長度，不含 `AS-` 前綴)
 - `security_level` (enum, MVP 固定 `high`)
 - `status` (enum: `active` | `revoked` | `expired`)
@@ -237,7 +239,7 @@ Base path：`/api/v1`
     {
       "id": "...",
       "status": "active",
-      "masked_key": "AS-****wxyz",
+      "masked_key": "AS-abcd****wxyz",
       "key_prefix": "AS-",
       "owner_account": "jane.doe",
       "owner_name": "Jane Doe",
@@ -289,6 +291,18 @@ Base path：`/api/v1`
 ### 4) 停用 API Key
 - `POST /api/v1/api-keys/{id}/revoke`
 - 規則：`user` 僅可停用本人 `active` key；`admin` 可停用任意 `active` key；停用為軟停用（`status=revoked`）。
+
+### 4-1) 受控回取 API Key 明文（Reveal）
+- `POST /api/v1/api-keys/{id}/reveal`
+- 規則：僅 `admin` 可使用；此端點為受控流程，不屬一般列表/詳情查詢。
+- Response（200）：
+```json
+{
+  "id": "...",
+  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "key_kek_version": "v1"
+}
+```
 
 ### 5) 特殊人員名單管理 API（沿用受保護路徑）
 - `POST /api/v1/whitelists`：新增特殊人員名單 email
@@ -364,10 +378,11 @@ Base path：`/api/v1`
 4. 研究人員名單服務失敗（timeout/5xx）時，允許進入系統，但申請 API 回傳 `503` 與 `RESEARCH_LIST_SERVICE_UNAVAILABLE`。
 5. `duration_months` 非 `1|6|12` 時，API 回傳 `INVALID_DURATION_MONTHS`。
 6. `application_date` 非法或晚於申請當日，API 回傳 `INVALID_APPLICATION_DATE`。
-7. 明文 key 僅於建立成功當下回傳一次；後續查詢不得回傳明文。
-8. 資料庫僅存 `key_hash`，不得存 API Key 明文。
+7. 明文 key 預設僅於建立成功當下回傳一次；一般查詢端點不得回傳明文。
+8. 資料庫不得存 API Key 明文；需存 `key_hash`，並可存加密密文欄位供受控 reveal 流程使用。
 9. 一般使用者登入後只能看到自己的全部歷史紀錄。
 10. 一般使用者查詢 API Key 時僅能看到 `masked_key`/`key_prefix`，不得看到明文。
+10-1. `POST /api/v1/api-keys/{id}/reveal` 僅 `admin` 可使用，且可回傳明文 key。
 11. 一般使用者可停用本人 `active` key，停用後狀態轉為 `revoked`。
 12. 一般使用者停用非本人 key 時，API 回傳 `KEY_NOT_OWNED_BY_USER`。
 13. 一般使用者停用非 `active` key 時，API 回傳 `KEY_NOT_ACTIVE`。

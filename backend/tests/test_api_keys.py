@@ -167,6 +167,26 @@ def test_admin_can_list_global_keys(client, admin_headers):
     assert "user2" in owners
 
 
+def test_reveal_plaintext_admin_only(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
+    _create_whitelist(client, admin_headers, user1["x-email"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+    )
+    assert create_resp.status_code == 201
+    created_plaintext = create_resp.json()["api_key_plaintext"]
+    key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
+
+    forbidden = client.post(f"/api/v1/api-keys/{key_id}/reveal", headers=user1)
+    assert forbidden.status_code == 403
+
+    reveal_resp = client.post(f"/api/v1/api-keys/{key_id}/reveal", headers=admin_headers)
+    assert reveal_resp.status_code == 200
+    assert reveal_resp.json()["api_key_plaintext"] == created_plaintext
+
+
 def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
     _create_whitelist(client, admin_headers, "no-sysid@example.com")
     bad_headers = {

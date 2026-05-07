@@ -61,6 +61,8 @@ cp .env.example .env
 - `RESEARCH_LIST_API_URL`：可選，外部研究人員資格查詢 API URL（設定後申請會即時查詢）
 - `RESEARCH_LIST_TIMEOUT_SECONDS`：可選，外部查詢 timeout 秒數（預設 `3.0`）
 - `RESEARCH_LIST_ALLOWED_TITLE_CODES`：可選，允許通過的職稱代碼清單（逗號分隔，例如 `RS01,RS02`）
+- `API_KEY_ENCRYPTION_SECRET`：必填（正式環境），用於 API key 密文加解密的主密鑰來源
+- `API_KEY_KEK_VERSION`：可選，金鑰版本標記（預設 `v1`）
 
 4. 啟動後端（同時提供 API + 前端頁面）
 ```bash

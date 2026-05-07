@@ -26,6 +26,9 @@ class ApplicationCreateInput:
 class ApiKeyCreateInput:
     application_id: str
     key_hash: str
+    masked_key: str
+    key_ciphertext: str
+    key_kek_version: str
     status: str = "active"
 
 
@@ -34,6 +37,7 @@ class ApiKeyListItem:
     id: str
     status: str
     key_prefix: str
+    masked_key: str
     application_date: date
     duration_months: int
     owner_account: str
@@ -46,6 +50,7 @@ class ApiKeyDetail:
     id: str
     status: str
     key_prefix: str
+    masked_key: str
     owner_account: str
     owner_name: str
     purpose: str
@@ -67,6 +72,15 @@ class ApiKeyUserStatisticsItem:
     revoked_count: int
     expired_count: int
     last_applied_at: date
+
+
+@dataclass(slots=True)
+class ApiKeySecretMaterial:
+    id: str
+    status: str
+    owner_account: str
+    key_ciphertext: str | None
+    key_kek_version: str | None
 
 
 @dataclass(slots=True)
