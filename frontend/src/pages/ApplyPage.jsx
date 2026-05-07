@@ -197,9 +197,9 @@ export default function ApplyPage({ auth }) {
                       value={String(form.duration_months)}
                       onChange={onChange("duration_months")}
                     >
-                      <FormControlLabel value="1" control={<Radio />} label="1 個月" />
-                      <FormControlLabel value="6" control={<Radio />} label="6 個月" />
-                      <FormControlLabel value="12" control={<Radio />} label="12 個月" />
+                      <FormControlLabel value="1" control={<Radio />} label={t("apply_duration_1_month")} />
+                      <FormControlLabel value="6" control={<Radio />} label={t("apply_duration_6_months")} />
+                      <FormControlLabel value="12" control={<Radio />} label={t("apply_duration_12_months")} />
                     </RadioGroup>
                   </FormControl>
                 </Grid>
