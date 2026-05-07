@@ -50,6 +50,30 @@ test("admin can load and filter statistics", async () => {
   });
 });
 
+test("admin can switch to chart view and change axes", async () => {
+  const user = userEvent.setup();
+  const { container } = render(<AdminDashboardPage auth={adminAuth} />);
+
+  expect(await screen.findByText("管理者統計")).toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "圖表" }));
+
+  expect(await screen.findByLabelText("X 軸")).toBeInTheDocument();
+  expect(screen.getByLabelText("Y 軸")).toBeInTheDocument();
+  expect(screen.getByLabelText("Top N")).toBeInTheDocument();
+
+  await user.click(screen.getByLabelText("X 軸"));
+  await user.click(screen.getByRole("option", { name: "單位" }));
+
+  await user.click(screen.getByLabelText("Y 軸"));
+  await user.click(screen.getByRole("option", { name: "已停用" }));
+
+  await user.click(screen.getByLabelText("Top N"));
+  await user.click(screen.getByRole("option", { name: "5" }));
+
+  expect(container.querySelectorAll(".MuiChartsAxis-tickLabel").length).toBeGreaterThanOrEqual(5);
+  expect(screen.getByRole("tab", { name: "圖表", selected: true })).toBeInTheDocument();
+});
+
 test("non-admin user is blocked", async () => {
   render(<AdminDashboardPage auth={userAuth} />);
   expect(await screen.findByText("僅管理者可使用管理者統計功能。")).toBeInTheDocument();

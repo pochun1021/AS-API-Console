@@ -206,8 +206,12 @@ def test_error_response_shape_consistency(client, admin_headers, user_headers):
 
 
 def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin_headers):
-    user1 = build_headers(role="user", account="alice", email="alice@example.com", sysid="user-alice", name="Alice")
-    user2 = build_headers(role="user", account="bob", email="bob@example.com", sysid="user-bob", name="Bob")
+    user1 = build_headers(
+        role="user", account="alice", email="alice@example.com", sysid="user-alice", name="Alice", department="R&D"
+    )
+    user2 = build_headers(
+        role="user", account="bob", email="bob@example.com", sysid="user-bob", name="Bob", department="Security"
+    )
     _create_whitelist(client, admin_headers, user1["x-email"])
     _create_whitelist(client, admin_headers, user2["x-email"])
 
@@ -230,6 +234,7 @@ def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin
     body = stats_resp.json()
     assert body["total"] == 2
     assert body["items"][0]["owner_account"] == "alice"
+    assert body["items"][0]["owner_department"] == "R&D"
     assert body["items"][0]["total_applications"] == 2
     assert "api_key_plaintext" not in body["items"][0]
 

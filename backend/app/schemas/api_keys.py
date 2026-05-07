@@ -66,6 +66,7 @@ class ApiKeyUserStatisticsItemResponse(BaseModel):
     owner_account: str
     owner_name: str
     owner_email: str
+    owner_department: str
     total_applications: int
     active_count: int
     revoked_count: int

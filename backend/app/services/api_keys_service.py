@@ -233,6 +233,7 @@ class ApiKeysService:
                     "owner_account": item.owner_account,
                     "owner_name": item.owner_name,
                     "owner_email": item.owner_email,
+                    "owner_department": item.owner_department,
                     "total_applications": item.total_applications,
                     "active_count": item.active_count,
                     "revoked_count": item.revoked_count,

@@ -283,6 +283,7 @@ function buildUserStatistics(items, { q = "", scope = "all", from, to }) {
         owner_account: item.owner_account,
         owner_name: item.owner_name,
         owner_email: `${item.owner_account}@example.com`,
+        owner_department: item.department || "",
         total_applications: 0,
         active_count: 0,
         revoked_count: 0,
