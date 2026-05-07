@@ -248,22 +248,22 @@ export default function MyApiKeysPage({ auth }) {
             <Stack spacing={2} sx={{ mt: 0.5 }}>
               <Typography>ID: {detailItem.id}</Typography>
               <Box>
-                狀態: <Chip size="small" label={detailItem.status} color={statusColor(detailItem.status)} />
+                {t("mykeys_detail_status")}: <Chip size="small" label={detailItem.status} color={statusColor(detailItem.status)} />
               </Box>
               {auth.role === "admin" ? (
                 <Typography>
-                  申請人: {detailItem.owner_account || "-"} / {detailItem.owner_name || "-"}
+                  {t("mykeys_col_owner")}: {detailItem.owner_account || "-"} / {detailItem.owner_name || "-"}
                 </Typography>
               ) : null}
-              <Typography>單位: {detailItem.department || "-"}</Typography>
-              <Typography>申請日期: {detailItem.application_date}</Typography>
-              <Typography>生效時長: {detailItem.duration_months} 個月</Typography>
+              <Typography>{t("mykeys_detail_department")}: {detailItem.department || "-"}</Typography>
+              <Typography>{t("mykeys_detail_application_date")}: {detailItem.application_date}</Typography>
+              <Typography>{t("mykeys_detail_duration")}: {detailItem.duration_months} {t("mykeys_duration_suffix")}</Typography>
               <Typography>
-                遮罩金鑰 / 前綴: {detailItem.masked_key} ({detailItem.key_prefix})
+                {t("mykeys_detail_masked_key")}: {detailItem.masked_key} ({detailItem.key_prefix})
               </Typography>
-              <Typography>建立時間: {formatDateTime(detailItem.created_at)}</Typography>
-              <Typography>到期時間: {formatDateTime(detailItem.expires_at)}</Typography>
-              <Typography>用途: {detailItem.purpose || "-"}</Typography>
+              <Typography>{t("mykeys_detail_created_at")}: {formatDateTime(detailItem.created_at)}</Typography>
+              <Typography>{t("mykeys_detail_expires_at")}: {formatDateTime(detailItem.expires_at)}</Typography>
+              <Typography>{t("mykeys_detail_purpose")}: {detailItem.purpose || "-"}</Typography>
             </Stack>
           ) : null}
         </DialogContent>

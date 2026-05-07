@@ -13,6 +13,8 @@ import {
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { DataGrid } from "@mui/x-data-grid";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
@@ -150,25 +152,23 @@ export default function AdminDashboardPage({ auth }) {
             </MenuItem>
           ))}
         </TextField>
-        <TextField
-          type="date"
+        <DatePicker
           label={t("dashboard_from")}
-          InputLabelProps={{ shrink: true }}
-          value={fromDate}
-          onChange={(event) => {
-            setFromDate(event.target.value);
+          value={fromDate ? dayjs(fromDate) : null}
+          onChange={(value) => {
+            setFromDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
             setPage(0);
           }}
+          slotProps={{ textField: { sx: { minWidth: 180 } } }}
         />
-        <TextField
-          type="date"
+        <DatePicker
           label={t("dashboard_to")}
-          InputLabelProps={{ shrink: true }}
-          value={toDate}
-          onChange={(event) => {
-            setToDate(event.target.value);
+          value={toDate ? dayjs(toDate) : null}
+          onChange={(value) => {
+            setToDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
             setPage(0);
           }}
+          slotProps={{ textField: { sx: { minWidth: 180 } } }}
         />
         <TextField
           label={t("common_keyword")}

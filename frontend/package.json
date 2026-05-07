@@ -17,6 +17,8 @@
     "@mui/material": "^7.0.2",
     "@mui/x-charts": "^9.0.4",
     "@mui/x-data-grid": "^9.0.4",
+    "@mui/x-date-pickers": "^9.0.4",
+    "dayjs": "^1.11.20",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.0"

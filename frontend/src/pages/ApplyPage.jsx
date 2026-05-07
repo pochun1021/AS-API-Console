@@ -23,23 +23,22 @@ import {
   Tooltip,
   Typography
 } from "@mui/material";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { useLocale } from "../i18n/locale";
 
-const APPLY_ERROR_MESSAGE_MAP = {
-  APPLICANT_NOT_ELIGIBLE: "你目前不符合申請資格，無法申請 API Key。",
-  RESEARCH_LIST_SERVICE_UNAVAILABLE: "研究人員資格服務暫時不可用，請稍後再試。",
-  INVALID_APPLICATION_DATE: "申請日期格式需為 YYYY-MM-DD，且不可晚於今天",
-  INVALID_DURATION_MONTHS: "生效時長僅允許 1、6、12 個月",
-  VALIDATION_ERROR: "申請資料格式不正確，請檢查後再試。"
-};
-
-function toErrorMessage(error) {
+function toErrorMessage(error, t) {
   const code = error?.payload?.error?.code;
-  if (code && APPLY_ERROR_MESSAGE_MAP[code]) {
-    return APPLY_ERROR_MESSAGE_MAP[code];
-  }
-  return error?.payload?.error?.message || "請求失敗";
+  const map = {
+    APPLICANT_NOT_ELIGIBLE: t("apply_error_not_eligible"),
+    RESEARCH_LIST_SERVICE_UNAVAILABLE: t("apply_error_research_unavailable"),
+    INVALID_APPLICATION_DATE: t("apply_error_invalid_date"),
+    INVALID_DURATION_MONTHS: t("apply_error_invalid_duration"),
+    VALIDATION_ERROR: t("apply_error_validation")
+  };
+  if (code && map[code]) return map[code];
+  return error?.payload?.error?.message || t("error_request_failed");
 }
 
 async function copyText(text) {
@@ -64,7 +63,7 @@ async function copyText(text) {
 }
 
 export default function ApplyPage({ auth }) {
-  const { locale } = useLocale();
+  const { locale, t } = useLocale();
   const isZh = locale === "zh-TW";
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [form, setForm] = useState({ application_date: today, duration_months: 6, purpose: "" });
@@ -91,17 +90,17 @@ export default function ApplyPage({ auth }) {
     setError("");
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(form.application_date) || form.application_date > today) {
-      setError("申請日期格式需為 YYYY-MM-DD，且不可晚於今天");
+      setError(t("apply_error_invalid_date"));
       return;
     }
 
     if (![1, 6, 12].includes(form.duration_months)) {
-      setError("生效時長僅允許 1、6、12 個月");
+      setError(t("apply_error_invalid_duration"));
       return;
     }
 
     if (!form.purpose.trim()) {
-      setError("請填寫用途");
+      setError(t("apply_error_required_purpose"));
       return;
     }
 
@@ -113,7 +112,7 @@ export default function ApplyPage({ auth }) {
       setCopySucceeded(false);
       setCopyError("");
     } catch (e) {
-      setError(toErrorMessage(e));
+      setError(toErrorMessage(e, t));
     } finally {
       setSubmitting(false);
     }
@@ -173,13 +172,19 @@ export default function ApplyPage({ auth }) {
                 <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Email" value={auth.email} InputProps={{ readOnly: true }} /></Grid>
                 <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isZh ? "單位" : "Department"} value={auth.department} InputProps={{ readOnly: true }} /></Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField
-                    fullWidth
+                  <DatePicker
                     label={isZh ? "申請日期" : "Application Date"}
-                    type="date"
-                    value={form.application_date}
-                    onChange={onChange("application_date")}
-                    slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: today } }}
+                    value={form.application_date ? dayjs(form.application_date) : null}
+                    onChange={(value) => {
+                      const next = value && value.isValid() ? value.format("YYYY-MM-DD") : "";
+                      setForm((prev) => ({ ...prev, application_date: next }));
+                    }}
+                    maxDate={dayjs(today)}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true
+                      }
+                    }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>

@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import AdminDashboardPage from "../pages/AdminDashboardPage";
 import { mockApiProvider } from "../mocks/mockApiProvider";
 
@@ -25,9 +27,13 @@ beforeEach(() => {
   mockApiProvider.resetForTests();
 });
 
+function renderPage(ui) {
+  return render(<LocalizationProvider dateAdapter={AdapterDayjs}>{ui}</LocalizationProvider>);
+}
+
 test("admin can load and filter statistics", async () => {
   const user = userEvent.setup();
-  render(<AdminDashboardPage auth={adminAuth} />);
+  renderPage(<AdminDashboardPage auth={adminAuth} />);
 
   expect(await screen.findByText("管理者統計")).toBeInTheDocument();
   expect(await screen.findByText("jane.doe")).toBeInTheDocument();
@@ -52,7 +58,7 @@ test("admin can load and filter statistics", async () => {
 
 test("admin can switch to chart view and change axes", async () => {
   const user = userEvent.setup();
-  const { container } = render(<AdminDashboardPage auth={adminAuth} />);
+  const { container } = renderPage(<AdminDashboardPage auth={adminAuth} />);
 
   expect(await screen.findByText("管理者統計")).toBeInTheDocument();
   await user.click(screen.getByRole("tab", { name: "圖表" }));
@@ -75,6 +81,6 @@ test("admin can switch to chart view and change axes", async () => {
 });
 
 test("non-admin user is blocked", async () => {
-  render(<AdminDashboardPage auth={userAuth} />);
+  renderPage(<AdminDashboardPage auth={userAuth} />);
   expect(await screen.findByText("僅管理者可使用管理者統計功能。")).toBeInTheDocument();
 });
