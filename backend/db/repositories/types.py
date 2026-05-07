@@ -57,6 +57,19 @@ class ApiKeyDetail:
 
 
 @dataclass(slots=True)
+class ApiKeyUserStatisticsItem:
+    owner_account: str
+    owner_name: str
+    owner_email: str
+    owner_department: str
+    total_applications: int
+    active_count: int
+    revoked_count: int
+    expired_count: int
+    last_applied_at: date
+
+
+@dataclass(slots=True)
 class WhitelistCreateInput:
     id: str
     email: str

@@ -80,10 +80,15 @@
 ### 6) Admin Dashboard Page（管理者統計頁）
 - 僅 `admin` 可使用。
 - 以 Data Table 呈現每位申請人的統計資料，欄位至少包含：`account`、`name`、`email`、`total_applications`、`active_count`、`revoked_count`、`expired_count`、`last_applied_at`。
+- 提供「圖表 / 表格」視圖切換；圖表以長條圖呈現。
+- 圖表支援 X 軸切換：`account|department`，Y 軸切換：`total_applications|active_count|revoked_count|expired_count`，與 Top N（`5|10|20`）切換。
+- 圖表 X 軸分類文字需直接顯示在圖下方，不可僅依賴滑鼠 hover tooltip 才能辨識帳號/單位。
+- X 軸刻度文字在圖表視圖中不得被自動省略為僅部分可見（需可直接辨識每個可見柱狀分類）。
 - 支援口徑切換 `scope`：`all|active|revoked|expired`（預設 `all`）。
 - 支援日期區間篩選：`from`、`to`（`YYYY-MM-DD`），統計基準為 `application_date`。
 - 支援 `q`（`account`、`name`、`email`）查詢、分頁與排序。
 - 預設排序為 `total_applications desc`。
+- 圖表口徑需與目前篩選條件一致（`scope`、`from`、`to`、`q`、`sort`）。
 
 ### 7) 狀態頁/元件
 - Loading
@@ -258,6 +263,7 @@ Base path：`/api/v1`
       "owner_account": "jane.doe",
       "owner_name": "Jane Doe",
       "owner_email": "jane.doe@example.com",
+      "owner_department": "R&D",
       "total_applications": 12,
       "active_count": 3,
       "revoked_count": 7,
@@ -364,6 +370,7 @@ Base path：`/api/v1`
 30. 統計 API `from`、`to` 應以 `application_date` 篩選，且日期格式需為 `YYYY-MM-DD`。
 31. 非 `admin` 呼叫 `GET /api/v1/api-keys/statistics/users` 時，API 回傳 `403`。
 32. 統計 API 回傳不得包含 `api_key_plaintext`，且不得改變既有受保護 API 路徑與角色模型。
+33. 統計 API 每筆資料需包含 `owner_department`（可為空值），供管理者統計圖表 X 軸切換使用。
 
 ## Roadmap
 ### Phase 1：Foundation

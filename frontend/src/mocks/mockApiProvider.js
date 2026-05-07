@@ -263,6 +263,46 @@ function mapUserForAdminPage(user) {
   };
 }
 
+function buildUserStatistics(items, { q = "", scope = "all", from, to }) {
+  const keyword = q.trim().toLowerCase();
+  const filtered = items.filter((item) => {
+    if (scope !== "all" && item.status !== scope) return false;
+    if (from && item.application_date < from) return false;
+    if (to && item.application_date > to) return false;
+    if (!keyword) return true;
+    return [item.owner_account, item.owner_name, `${item.owner_account}@example.com`]
+      .join(" ")
+      .toLowerCase()
+      .includes(keyword);
+  });
+
+  const byOwner = new Map();
+  for (const item of filtered) {
+    if (!byOwner.has(item.owner_account)) {
+      byOwner.set(item.owner_account, {
+        owner_account: item.owner_account,
+        owner_name: item.owner_name,
+        owner_email: `${item.owner_account}@example.com`,
+        owner_department: item.department || "",
+        total_applications: 0,
+        active_count: 0,
+        revoked_count: 0,
+        expired_count: 0,
+        last_applied_at: item.application_date
+      });
+    }
+    const stat = byOwner.get(item.owner_account);
+    stat.total_applications += 1;
+    if (item.status === "active") stat.active_count += 1;
+    if (item.status === "revoked") stat.revoked_count += 1;
+    if (item.status === "expired") stat.expired_count += 1;
+    if (item.application_date > stat.last_applied_at) {
+      stat.last_applied_at = item.application_date;
+    }
+  }
+  return Array.from(byOwner.values());
+}
+
 export const mockApiProvider = {
   async createApplication(payload, auth) {
     await delay();
@@ -310,6 +350,32 @@ export const mockApiProvider = {
     await delay();
     const items = auth.role === "admin" ? apiKeys : apiKeys.filter((item) => item.owner_account === auth.account);
     return { items, page: 1, page_size: 20, total: items.length };
+  },
+
+  async listApiKeyUserStatistics(params, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const page = Number(params.page || 1);
+    const pageSize = Number(params.page_size || 20);
+    const sortBy = params.sort_by || "total_applications";
+    const sortDir = params.sort_dir === "asc" ? "asc" : "desc";
+    const stats = buildUserStatistics(apiKeys, params);
+    const sorted = stats.sort((a, b) => {
+      const av = a[sortBy];
+      const bv = b[sortBy];
+      if (av === bv) return a.owner_account.localeCompare(b.owner_account);
+      if (sortDir === "asc") return av > bv ? 1 : -1;
+      return av < bv ? 1 : -1;
+    });
+
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize;
+    return {
+      items: sorted.slice(start, end),
+      page,
+      page_size: pageSize,
+      total: sorted.length
+    };
   },
 
   async getApiKeyById(id, auth) {

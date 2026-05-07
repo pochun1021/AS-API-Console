@@ -74,6 +74,19 @@ export const httpApiProvider = {
     return request(`/api/v1/api-keys/${id}/revoke`, { method: "POST", auth });
   },
 
+  listApiKeyUserStatistics(params, auth) {
+    const query = new URLSearchParams();
+    if (params.page) query.set("page", String(params.page));
+    if (params.page_size) query.set("page_size", String(params.page_size));
+    if (params.q) query.set("q", params.q);
+    if (params.scope) query.set("scope", params.scope);
+    if (params.from) query.set("from", params.from);
+    if (params.to) query.set("to", params.to);
+    if (params.sort_by) query.set("sort_by", params.sort_by);
+    if (params.sort_dir) query.set("sort_dir", params.sort_dir);
+    return request(`/api/v1/api-keys/statistics/users?${query.toString()}`, { auth });
+  },
+
   listUsers(auth) {
     return request("/api/v1/users", { auth });
   },

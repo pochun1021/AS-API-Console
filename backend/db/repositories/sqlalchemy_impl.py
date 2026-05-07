@@ -1,7 +1,7 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, case, func, select
 from sqlalchemy.orm import Session
 
 from db.models.api_keys import ApiKey
@@ -13,6 +13,7 @@ from db.repositories.types import (
     ApiKeyCreateInput,
     ApiKeyDetail,
     ApiKeyListItem,
+    ApiKeyUserStatisticsItem,
     ApplicationCreateInput,
     AuthIdentity,
     WhitelistCreateInput,
@@ -267,3 +268,94 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         self.session.add(row.ApiKeyApplication)
         self.session.flush()
         return key
+
+    def list_user_statistics(
+        self,
+        *,
+        scope: str,
+        q: str | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        sort_by: str = "total_applications",
+        sort_dir: str = "desc",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[ApiKeyUserStatisticsItem], int]:
+        active_count = func.sum(case((ApiKey.status == "active", 1), else_=0)).label("active_count")
+        revoked_count = func.sum(case((ApiKey.status == "revoked", 1), else_=0)).label("revoked_count")
+        expired_count = func.sum(case((ApiKey.status == "expired", 1), else_=0)).label("expired_count")
+        total_applications = func.count(ApiKeyApplication.id).label("total_applications")
+        last_applied_at = func.max(ApiKeyApplication.application_date).label("last_applied_at")
+
+        stmt = (
+            select(
+                ApiKeyApplication.account.label("owner_account"),
+                ApiKeyApplication.name.label("owner_name"),
+                ApiKeyApplication.email.label("owner_email"),
+                func.max(ApiKeyApplication.department).label("owner_department"),
+                total_applications,
+                active_count,
+                revoked_count,
+                expired_count,
+                last_applied_at,
+            )
+            .join(ApiKey, ApiKey.application_id == ApiKeyApplication.id)
+        )
+
+        if scope != "all":
+            stmt = stmt.where(ApiKey.status == scope)
+        if from_date is not None:
+            stmt = stmt.where(ApiKeyApplication.application_date >= from_date)
+        if to_date is not None:
+            stmt = stmt.where(ApiKeyApplication.application_date <= to_date)
+        if q:
+            like = f"%{q}%"
+            stmt = stmt.where(
+                ApiKeyApplication.account.like(like)
+                | ApiKeyApplication.name.like(like)
+                | ApiKeyApplication.email.like(like)
+            )
+
+        stmt = stmt.group_by(ApiKeyApplication.account, ApiKeyApplication.name, ApiKeyApplication.email)
+
+        allowed_sort_columns = {
+            "owner_account": "owner_account",
+            "owner_name": "owner_name",
+            "owner_email": "owner_email",
+            "owner_department": "owner_department",
+            "total_applications": "total_applications",
+            "active_count": "active_count",
+            "revoked_count": "revoked_count",
+            "expired_count": "expired_count",
+            "last_applied_at": "last_applied_at",
+        }
+        sort_key = allowed_sort_columns.get(sort_by, "total_applications")
+        sort_expr = stmt.selected_columns[sort_key]
+        if sort_dir == "asc":
+            stmt = stmt.order_by(sort_expr.asc(), stmt.selected_columns["owner_account"].asc())
+        else:
+            stmt = stmt.order_by(sort_expr.desc(), stmt.selected_columns["owner_account"].asc())
+
+        total_stmt = select(func.count()).select_from(stmt.subquery())
+        total = int(self.session.scalar(total_stmt) or 0)
+
+        stmt = stmt.limit(limit).offset(offset)
+        rows = self.session.execute(stmt).all()
+
+        return (
+            [
+                ApiKeyUserStatisticsItem(
+                    owner_account=row.owner_account,
+                    owner_name=row.owner_name,
+                    owner_email=row.owner_email,
+                    owner_department=row.owner_department or "",
+                    total_applications=int(row.total_applications),
+                    active_count=int(row.active_count or 0),
+                    revoked_count=int(row.revoked_count or 0),
+                    expired_count=int(row.expired_count or 0),
+                    last_applied_at=row.last_applied_at,
+                )
+                for row in rows
+            ],
+            total,
+        )

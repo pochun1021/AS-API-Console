@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Protocol
 
 from db.models.applications import ApiKeyApplication
@@ -8,6 +9,7 @@ from db.repositories.types import (
     ApiKeyCreateInput,
     ApiKeyDetail,
     ApiKeyListItem,
+    ApiKeyUserStatisticsItem,
     ApplicationCreateInput,
     AuthIdentity,
     WhitelistCreateInput,
@@ -63,3 +65,16 @@ class ApiKeyRepository(Protocol):
     def get_key_detail(self, key_id: str, requester_role: str, requester_account: str) -> ApiKeyDetail | None: ...
 
     def revoke_key(self, key_id: str, requester_role: str, requester_account: str) -> ApiKey | None: ...
+
+    def list_user_statistics(
+        self,
+        *,
+        scope: str,
+        q: str | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        sort_by: str = "total_applications",
+        sort_dir: str = "desc",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[ApiKeyUserStatisticsItem], int]: ...

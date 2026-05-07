@@ -60,3 +60,22 @@ class ApiKeyDetailResponse(BaseModel):
 class RevokeResponse(BaseModel):
     id: str
     status: str
+
+
+class ApiKeyUserStatisticsItemResponse(BaseModel):
+    owner_account: str
+    owner_name: str
+    owner_email: str
+    owner_department: str
+    total_applications: int
+    active_count: int
+    revoked_count: int
+    expired_count: int
+    last_applied_at: date
+
+
+class ApiKeyUserStatisticsResponse(BaseModel):
+    items: list[ApiKeyUserStatisticsItemResponse]
+    page: int
+    page_size: int
+    total: int
