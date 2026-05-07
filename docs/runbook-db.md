@@ -8,6 +8,7 @@
 - 常見問題排除
 
 產品契約仍以 `docs/SPEC.md` 為準；本文件是工程執行與維運手冊。
+若本文件與 `docs/SPEC.md` 描述差異，應以 `docs/SPEC.md` 為準，並回補同步文件文字。
 
 ## 技術與版本現況
 - ORM：SQLAlchemy 2.x
@@ -23,6 +24,7 @@
 ### `users`
 - 核心欄位：`id`, `account`, `email`, `name`, `role`, `status`, `created_at`, `updated_at`
 - `id` 直接使用 auth context 的 `sysid`（MVP 唯一身分鍵）；API `GET /api/v1/users` 回傳 `sysid` 時，值等於 `id`
+- 契約映射：auth identity source of truth 為 `account`、`name`、`email`、`department`、`sysid`（其中 `sysid = users.id`）
 - 約束：
   - `account` unique
   - `email` unique

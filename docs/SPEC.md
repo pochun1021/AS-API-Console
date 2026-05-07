@@ -125,10 +125,12 @@
 
 ## 資料模型草案
 ### Entity: `users`（身分來源）
-- `id` (string/uuid)
+- `id` (string/uuid, 使用 auth context 的 `sysid` 作為唯一身分鍵)
+- `sysid` (string, response alias；值等於 `id`)
 - `account` (string, required, unique)
 - `email` (string, required, unique, lowercase)
 - `name` (string, required)
+- `role` (enum: `user` | `admin`)
 - `status` (enum: `active` | `inactive`)
 - `created_at` (datetime)
 - `updated_at` (datetime)
@@ -205,8 +207,7 @@ Base path：`/api/v1`
 {
   "application_date": "2026-05-04",
   "duration_months": 6,
-  "purpose": "integration for internal service",
-  "sysid": "user_123"
+  "purpose": "integration for internal service"
 }
 ```
 - Response（201）：
@@ -299,6 +300,11 @@ Base path：`/api/v1`
 - 用途：供管理者以 `sysid`、`account`、`name`、`email` 查詢可加入特殊人員名單的人員。
 - 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`。
 
+### 6) 管理者啟用/停用 API
+- `POST /api/v1/admins/{id}/enable`：啟用指定使用者管理者身分
+- `POST /api/v1/admins/{id}/disable`：停用指定使用者管理者身分
+- 規則：僅 `admin` 可使用，且需記錄操作稽核資訊（操作者、時間）。
+
 ### 7) 外部研究人員名單服務（整合介面）
 - 用途：供「進入系統」與「送出申請」時檢查是否命中研究人員資格。
 - 資格判斷：以外部服務回傳之職稱代碼判斷是否符合研究人員資格。
@@ -307,11 +313,6 @@ Base path：`/api/v1`
   - 命中：可直接通過資格檢查（不需再檢查特殊人員名單）。
   - 未命中：需再檢查特殊人員名單是否為 `active`。
   - timeout/5xx：允許進入系統，但阻擋申請 API。
-
-### 6) 管理者啟用/停用 API
-- `POST /api/v1/admins/{id}/enable`：啟用指定使用者管理者身分
-- `POST /api/v1/admins/{id}/disable`：停用指定使用者管理者身分
-- 規則：僅 `admin` 可使用，且需記錄操作稽核資訊（操作者、時間）。
 
 ### 錯誤回應格式（建議）
 ```json
