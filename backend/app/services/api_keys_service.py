@@ -185,3 +185,63 @@ class ApiKeysService:
 
         self.session.commit()
         return {"id": key.id, "status": key.status}
+
+    def list_user_statistics(
+        self,
+        *,
+        current_user: CurrentUser,
+        page: int,
+        page_size: int,
+        q: str | None = None,
+        scope: str = "all",
+        from_date: date | None = None,
+        to_date: date | None = None,
+        sort_by: str = "total_applications",
+        sort_dir: str = "desc",
+    ) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+
+        allowed_scopes = {"all", "active", "revoked", "expired"}
+        if scope not in allowed_scopes:
+            raise ApiError("VALIDATION_ERROR", "scope must be one of all, active, revoked, expired", 422)
+
+        if sort_dir not in {"asc", "desc"}:
+            raise ApiError("VALIDATION_ERROR", "sort_dir must be asc or desc", 422)
+
+        if from_date is not None and to_date is not None and from_date > to_date:
+            raise ApiError("VALIDATION_ERROR", "from cannot be greater than to", 422)
+
+        page = max(page, 1)
+        page_size = min(max(page_size, 1), 100)
+        offset = (page - 1) * page_size
+
+        items, total = self.key_repo.list_user_statistics(
+            scope=scope,
+            q=q.strip() if q else None,
+            from_date=from_date,
+            to_date=to_date,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            limit=page_size,
+            offset=offset,
+        )
+
+        return {
+            "items": [
+                {
+                    "owner_account": item.owner_account,
+                    "owner_name": item.owner_name,
+                    "owner_email": item.owner_email,
+                    "total_applications": item.total_applications,
+                    "active_count": item.active_count,
+                    "revoked_count": item.revoked_count,
+                    "expired_count": item.expired_count,
+                    "last_applied_at": item.last_applied_at,
+                }
+                for item in items
+            ],
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        }

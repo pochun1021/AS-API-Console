@@ -6,6 +6,7 @@ import { devAuthProfiles } from "./authContext";
 import ApplyPage from "./pages/ApplyPage";
 import MyApiKeysPage from "./pages/MyApiKeysPage";
 import AdminPage from "./pages/AdminPage";
+import AdminDashboardPage from "./pages/AdminDashboardPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 
 const STORAGE_KEY = "as-api-console-dev-auth-profile";
@@ -56,6 +57,16 @@ export default function App() {
           element={
             auth.role === "admin" ? (
               <AdminPage auth={auth} />
+            ) : (
+              <Navigate to="/apply" replace />
+            )
+          }
+        />
+        <Route
+          path="/admin-dashboard"
+          element={
+            auth.role === "admin" ? (
+              <AdminDashboardPage auth={auth} />
             ) : (
               <Navigate to="/apply" replace />
             )

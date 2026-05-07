@@ -5,7 +5,8 @@ const navItems = [
   { label: "申請", path: "/apply", roles: ["user", "admin"] },
   { label: "API Keys", path: "/api-keys", roles: ["user", "admin"] },
   { label: "特殊人員名單管理", path: "/whitelists", roles: ["admin"] },
-  { label: "管理者名單", path: "/users", roles: ["admin"] }
+  { label: "管理者名單", path: "/users", roles: ["admin"] },
+  { label: "管理者統計", path: "/admin-dashboard", roles: ["admin"] }
 ];
 
 export default function AppLayout({ children, auth }) {

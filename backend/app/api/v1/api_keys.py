@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -5,6 +7,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.schemas.api_keys import (
     ApiKeyDetailResponse,
     ApiKeyListResponse,
+    ApiKeyUserStatisticsResponse,
     ApplicationCreateRequest,
     ApplicationCreateResponse,
     RevokeResponse,
@@ -44,6 +47,33 @@ def list_api_keys(
 ) -> dict:
     service = ApiKeysService(db)
     return service.list_keys(current_user=current_user, page=page, page_size=page_size, status=status)
+
+
+@router.get("/api-keys/statistics/users", response_model=ApiKeyUserStatisticsResponse)
+def list_api_key_user_statistics(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    q: str | None = Query(default=None),
+    scope: str = Query(default="all"),
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
+    sort_by: str = Query(default="total_applications"),
+    sort_dir: str = Query(default="desc"),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    service = ApiKeysService(db)
+    return service.list_user_statistics(
+        current_user=current_user,
+        page=page,
+        page_size=page_size,
+        q=q,
+        scope=scope,
+        from_date=from_date,
+        to_date=to_date,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
 
 
 @router.get("/api-keys/{key_id}", response_model=ApiKeyDetailResponse)

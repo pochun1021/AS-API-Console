@@ -203,3 +203,83 @@ def test_error_response_shape_consistency(client, admin_headers, user_headers):
         assert "error" in body
         assert "code" in body["error"]
         assert "message" in body["error"]
+
+
+def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin_headers):
+    user1 = build_headers(role="user", account="alice", email="alice@example.com", sysid="user-alice", name="Alice")
+    user2 = build_headers(role="user", account="bob", email="bob@example.com", sysid="user-bob", name="Bob")
+    _create_whitelist(client, admin_headers, user1["x-email"])
+    _create_whitelist(client, admin_headers, user2["x-email"])
+
+    for _ in range(2):
+        resp = client.post(
+            "/api/v1/api-keys/applications",
+            headers=user1,
+            json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1"},
+        )
+        assert resp.status_code == 201
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user2,
+        json={"application_date": "2026-05-02", "duration_months": 1, "purpose": "u2"},
+    )
+    assert resp.status_code == 201
+
+    stats_resp = client.get("/api/v1/api-keys/statistics/users", headers=admin_headers)
+    assert stats_resp.status_code == 200
+    body = stats_resp.json()
+    assert body["total"] == 2
+    assert body["items"][0]["owner_account"] == "alice"
+    assert body["items"][0]["total_applications"] == 2
+    assert "api_key_plaintext" not in body["items"][0]
+
+
+def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_headers):
+    user = build_headers(role="user", account="carol", email="carol@example.com", sysid="user-carol", name="Carol")
+    _create_whitelist(client, admin_headers, user["x-email"])
+
+    first = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user,
+        json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "first"},
+    )
+    second = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user,
+        json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "second"},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
+    revoke_resp = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user)
+    assert revoke_resp.status_code == 200
+
+    all_resp = client.get("/api/v1/api-keys/statistics/users?scope=all", headers=admin_headers)
+    active_resp = client.get("/api/v1/api-keys/statistics/users?scope=active", headers=admin_headers)
+    revoked_resp = client.get("/api/v1/api-keys/statistics/users?scope=revoked", headers=admin_headers)
+    expired_resp = client.get("/api/v1/api-keys/statistics/users?scope=expired", headers=admin_headers)
+    ranged_resp = client.get(
+        "/api/v1/api-keys/statistics/users?from=2026-05-02&to=2026-05-03",
+        headers=admin_headers,
+    )
+
+    assert all_resp.status_code == 200
+    assert active_resp.status_code == 200
+    assert revoked_resp.status_code == 200
+    assert expired_resp.status_code == 200
+    assert ranged_resp.status_code == 200
+
+    all_item = all_resp.json()["items"][0]
+    active_item = active_resp.json()["items"][0]
+    revoked_item = revoked_resp.json()["items"][0]
+    ranged_item = ranged_resp.json()["items"][0]
+
+    assert all_item["total_applications"] == 2
+    assert active_item["total_applications"] == 1
+    assert revoked_item["total_applications"] == 1
+    assert expired_resp.json()["total"] == 0
+    assert ranged_item["total_applications"] == 1
+
+    forbidden = client.get("/api/v1/api-keys/statistics/users", headers=user)
+    assert forbidden.status_code == 403
