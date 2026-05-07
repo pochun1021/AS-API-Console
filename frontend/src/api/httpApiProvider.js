@@ -104,6 +104,18 @@ export const httpApiProvider = {
     return request(`/api/v1/admins/${id}/disable`, { method: "POST", auth });
   },
 
+  getLocalePreference(auth) {
+    return request("/api/v1/users/preferences/locale", { auth });
+  },
+
+  updateLocalePreference(preferred_locale, auth) {
+    return request("/api/v1/users/preferences/locale", {
+      method: "PATCH",
+      auth,
+      body: { preferred_locale }
+    });
+  },
+
   async listWhitelists(auth) {
     const result = await request("/api/v1/whitelists", { auth });
     return { ...result, items: result.items.map(mapWhitelistItem) };

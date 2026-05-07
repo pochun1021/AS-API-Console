@@ -20,10 +20,10 @@ import {
   useMediaQuery
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { zhTW } from "@mui/x-data-grid/locales";
 import { useTheme } from "@mui/material/styles";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
+import { useLocale } from "../i18n/locale";
 
 const actionCellSx = {
   display: "flex",
@@ -36,6 +36,7 @@ const actionCellSx = {
 };
 
 export default function AdminPage({ auth }) {
+  const { gridLocaleText, locale, t } = useLocale();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -64,7 +65,7 @@ export default function AdminPage({ auth }) {
       const response = await apiClient.listUsers(auth);
       setItems(response.items);
     } catch (e) {
-      setError(e?.payload?.error?.message || "載入管理者名單失敗");
+      setError(e?.payload?.error?.message || t("admin_load_failed"));
     } finally {
       setLoading(false);
     }
@@ -76,16 +77,16 @@ export default function AdminPage({ auth }) {
     try {
       if (!searchKeyword.trim()) {
         setSearchResults([]);
-        setSearchMessage("請輸入查詢關鍵字。");
+        setSearchMessage(t("admin_search_required"));
         return;
       }
       const response = await apiClient.searchUsers(searchKeyword, auth);
       setSearchResults(response.items);
       if (response.items.length === 0) {
-        setSearchMessage("查無符合人員。");
+        setSearchMessage(t("admin_search_empty"));
       }
     } catch (e) {
-      setSearchMessage(e?.payload?.error?.message || "查詢人員失敗");
+      setSearchMessage(e?.payload?.error?.message || t("admin_search_failed"));
       setSearchResults([]);
     } finally {
       setSearching(false);
@@ -96,10 +97,10 @@ export default function AdminPage({ auth }) {
     setBanner("");
     try {
       await apiClient.enableAdmin(userId, auth);
-      setBanner(`${userName || "此使用者"} 已加入管理者權限。`);
+      setBanner(t("admin_grant_done").replace("{name}", userName || t("common_owner")));
       await load();
     } catch (e) {
-      setBanner(e?.payload?.error?.message || "啟用失敗");
+      setBanner(e?.payload?.error?.message || t("admin_grant_failed"));
     }
   }
 
@@ -107,10 +108,10 @@ export default function AdminPage({ auth }) {
     setBanner("");
     try {
       await apiClient.disableAdmin(userId, auth);
-      setBanner("已停用管理者權限。");
+      setBanner(t("admin_revoke_done"));
       await load();
     } catch (e) {
-      setBanner(e?.payload?.error?.message || "停用失敗");
+      setBanner(e?.payload?.error?.message || t("admin_revoke_failed"));
     }
   }
 
@@ -128,25 +129,25 @@ export default function AdminPage({ auth }) {
   const adminColumns = useMemo(
     () => [
       { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
-      { field: "account", headerName: "帳號", flex: 1, minWidth: 140 },
-      { field: "name", headerName: "姓名", flex: 1, minWidth: 140 },
-      { field: "email", headerName: "Email", flex: 1.5, minWidth: 220 },
+      { field: "account", headerName: t("common_account"), flex: 1, minWidth: 140 },
+      { field: "name", headerName: t("common_name"), flex: 1, minWidth: 140 },
+      { field: "email", headerName: t("common_email"), flex: 1.5, minWidth: 220 },
       {
         field: "status",
-        headerName: "狀態",
+        headerName: t("common_status"),
         flex: 0.8,
         minWidth: 120,
         renderCell: (params) => (
           <Chip
             size="small"
             color={params.value === "active" ? "success" : "default"}
-            label={params.value === "active" ? "啟用中" : "已停用"}
+            label={params.value === "active" ? t("admin_status_active") : t("admin_status_inactive")}
           />
         )
       },
       {
         field: "actions",
-        headerName: "操作",
+        headerName: t("common_actions"),
         sortable: false,
         filterable: false,
         align: "left",
@@ -159,9 +160,9 @@ export default function AdminPage({ auth }) {
           return (
             <Box sx={actionCellSx}>
               {isInactive ? (
-                <Tooltip title="啟用管理者">
+                <Tooltip title={locale === "zh-TW" ? "啟用管理者" : t("common_enable")}>
                   <IconButton
-                    aria-label="啟用管理者"
+                    aria-label={locale === "zh-TW" ? "啟用管理者" : t("common_enable")}
                     size="small"
                     onClick={async () => {
                       await grant(params.row.id, params.row.name);
@@ -171,10 +172,10 @@ export default function AdminPage({ auth }) {
                   </IconButton>
                 </Tooltip>
               ) : (
-                <Tooltip title="停用管理者">
+                <Tooltip title={locale === "zh-TW" ? "停用管理者" : t("common_disable")}>
                   <span>
                     <IconButton
-                      aria-label="停用管理者"
+                      aria-label={locale === "zh-TW" ? "停用管理者" : t("common_disable")}
                       size="small"
                       color="warning"
                     onClick={() => setPendingRevokeUser({ id: params.row.id, name: params.row.name })}
@@ -190,18 +191,18 @@ export default function AdminPage({ auth }) {
         }
       }
     ],
-    [auth.sysid, currentUserBySysid]
+    [auth.sysid, currentUserBySysid, t, locale]
   );
 
   const searchColumns = useMemo(
     () => [
       { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
-      { field: "account", headerName: "帳號", flex: 1, minWidth: 140 },
-      { field: "name", headerName: "姓名", flex: 1, minWidth: 140 },
-      { field: "email", headerName: "Email", flex: 1.5, minWidth: 220 },
+      { field: "account", headerName: t("common_account"), flex: 1, minWidth: 140 },
+      { field: "name", headerName: t("common_name"), flex: 1, minWidth: 140 },
+      { field: "email", headerName: t("common_email"), flex: 1.5, minWidth: 220 },
       {
         field: "actions",
-        headerName: "操作",
+        headerName: t("common_actions"),
         sortable: false,
         filterable: false,
         align: "left",
@@ -212,13 +213,13 @@ export default function AdminPage({ auth }) {
           adminStatusById.get(params.row.id) === "active" ? (
             <Box sx={{ display: "flex", alignItems: "center", height: "100%" }}>
               <Typography variant="body2" color="text.secondary">
-                已啟用
+                {t("admin_status_active")}
               </Typography>
             </Box>
           ) : (
-            <Tooltip title="加入管理者">
+            <Tooltip title={locale === "zh-TW" ? "加入管理者" : t("common_add")}>
               <IconButton
-                aria-label="加入管理者"
+                aria-label={locale === "zh-TW" ? "加入管理者" : t("common_add")}
                 size="small"
                 onClick={async () => {
                   await grant(params.row.id, params.row.name);
@@ -230,21 +231,21 @@ export default function AdminPage({ auth }) {
           )
       }
     ],
-    [adminStatusById]
+    [adminStatusById, t, locale]
   );
 
   if (auth.role !== "admin") {
     return (
       <Stack spacing={3}>
-        <Typography variant="h4">管理者名單</Typography>
-        <ErrorBlock message="僅管理者可使用管理者名單功能。" />
+        <Typography variant="h4">{t("admin_title")}</Typography>
+        <ErrorBlock message={t("admin_forbidden")} />
       </Stack>
     );
   }
 
   return (
     <Stack spacing={3}>
-      <Typography variant="h4">管理者名單</Typography>
+      <Typography variant="h4">{t("admin_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
       <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
@@ -255,15 +256,15 @@ export default function AdminPage({ auth }) {
           sx={{ backgroundColor: "transparent" }}
           onClick={() => setSearchDialogOpen(true)}
         >
-          新增
+          {t("common_add")}
         </Button>
       </Box>
 
       <Card>
         <CardContent>
-          {loading ? <LoadingBlock text="載入管理者名單中..." /> : null}
+          {loading ? <LoadingBlock text={t("admin_loading")} /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
-          {!loading && !error && adminItems.length === 0 ? <EmptyBlock text="目前沒有管理者名單資料。" /> : null}
+          {!loading && !error && adminItems.length === 0 ? <EmptyBlock text={t("admin_empty")} /> : null}
           {!loading && !error && adminItems.length > 0 ? (
             <Box sx={{ height: 480 }}>
               <DataGrid
@@ -274,7 +275,7 @@ export default function AdminPage({ auth }) {
                 initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
                 disableRowSelectionOnClick
                 rowHeight={56}
-                localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
+                localeText={gridLocaleText}
               />
             </Box>
           ) : null}
@@ -282,12 +283,12 @@ export default function AdminPage({ auth }) {
       </Card>
 
       <Dialog open={Boolean(pendingRevokeUser)} onClose={() => setPendingRevokeUser(null)}>
-        <DialogTitle>確認停用管理者</DialogTitle>
+        <DialogTitle>{t("admin_dialog_revoke_title")}</DialogTitle>
         <DialogContent>
-          確認停用 {pendingRevokeUser?.name || "此使用者"} 的管理者權限？
+          {t("admin_dialog_revoke_body").replace("{name}", pendingRevokeUser?.name || t("common_owner"))}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPendingRevokeUser(null)}>取消</Button>
+          <Button onClick={() => setPendingRevokeUser(null)}>{locale === "zh-TW" ? "取消" : "Cancel"}</Button>
           <Button
             color="warning"
             onClick={async () => {
@@ -298,18 +299,18 @@ export default function AdminPage({ auth }) {
               }
             }}
           >
-            確認停用
+            {locale === "zh-TW" ? "確認停用" : t("common_disable")}
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={searchDialogOpen} onClose={closeSearchDialog} fullWidth maxWidth="lg" fullScreen={fullScreen}>
-        <DialogTitle>查詢使用者</DialogTitle>
+        <DialogTitle>{t("admin_dialog_search_title")}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 0.5 }}>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
-                label="查詢關鍵字"
+                label={locale === "zh-TW" ? "查詢關鍵字" : t("common_keyword")}
                 value={searchKeyword}
                 onChange={(e) => setSearchKeyword(e.target.value)}
                 onKeyDown={(e) => {
@@ -322,11 +323,11 @@ export default function AdminPage({ auth }) {
                 fullWidth
               />
               <Button variant="contained" onClick={search} disabled={searching} sx={{ whiteSpace: "nowrap" }}>
-                {searching ? "查詢中..." : "查詢使用者"}
+                {searching ? t("common_searching") : (locale === "zh-TW" ? "查詢使用者" : t("common_search_users"))}
               </Button>
             </Stack>
             <Typography component="p" variant="body2" color="text.secondary">
-              可用 sysid / 帳號 / 姓名 / email
+              {t("admin_search_hint")}
             </Typography>
             {searchMessage ? <Alert severity="info">{searchMessage}</Alert> : null}
             {searchResults.length > 0 ? (
@@ -339,14 +340,14 @@ export default function AdminPage({ auth }) {
                   initialState={{ pagination: { paginationModel: { pageSize: 5, page: 0 } } }}
                   disableRowSelectionOnClick
                   rowHeight={56}
-                  localeText={zhTW.components.MuiDataGrid.defaultProps.localeText}
+                  localeText={gridLocaleText}
                 />
               </Box>
             ) : null}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeSearchDialog}>關閉</Button>
+          <Button onClick={closeSearchDialog}>{locale === "zh-TW" ? "關閉" : "Close"}</Button>
         </DialogActions>
       </Dialog>
     </Stack>

@@ -1,16 +1,18 @@
 import { AppBar, Box, Button, Container, Toolbar, Typography } from "@mui/material";
 import { Link as RouterLink, useLocation } from "react-router-dom";
+import { useLocale } from "../i18n/locale";
 
 const navItems = [
-  { label: "申請", path: "/apply", roles: ["user", "admin"] },
-  { label: "API Keys", path: "/api-keys", roles: ["user", "admin"] },
-  { label: "特殊人員名單管理", path: "/whitelists", roles: ["admin"] },
-  { label: "管理者名單", path: "/users", roles: ["admin"] },
-  { label: "管理者統計", path: "/admin-dashboard", roles: ["admin"] }
+  { labelKey: "nav_apply", path: "/apply", roles: ["user", "admin"] },
+  { labelKey: "nav_api_keys", path: "/api-keys", roles: ["user", "admin"] },
+  { labelKey: "nav_whitelists", path: "/whitelists", roles: ["admin"] },
+  { labelKey: "nav_admins", path: "/users", roles: ["admin"] },
+  { labelKey: "nav_dashboard", path: "/admin-dashboard", roles: ["admin"] }
 ];
 
-export default function AppLayout({ children, auth }) {
+export default function AppLayout({ children, auth, onChangeLocale = () => {} }) {
   const location = useLocation();
+  const { locale, t } = useLocale();
   const visibleNavItems = navItems.filter((item) => item.roles.includes(auth.role));
 
   return (
@@ -20,9 +22,16 @@ export default function AppLayout({ children, auth }) {
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             AS API Console
           </Typography>
+          <Button
+            color="inherit"
+            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
+            onClick={() => onChangeLocale(locale === "zh-TW" ? "en" : "zh-TW")}
+          >
+            {locale === "zh-TW" ? t("lang_en", "EN") : t("lang_zh", "中文")}
+          </Button>
           {visibleNavItems.map((item) => (
             <Button
-              key={item.label}
+              key={item.labelKey}
               component={RouterLink}
               to={item.path}
               color={location.pathname.startsWith(item.path.replace(":id", "")) ? "secondary" : "inherit"}
@@ -33,7 +42,7 @@ export default function AppLayout({ children, auth }) {
                 whiteSpace: "nowrap"
               }}
             >
-              {item.label}
+              {t(item.labelKey)}
             </Button>
           ))}
         </Toolbar>

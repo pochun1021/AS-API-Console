@@ -24,6 +24,7 @@ import {
   Typography
 } from "@mui/material";
 import { apiClient } from "../api/client";
+import { useLocale } from "../i18n/locale";
 
 const APPLY_ERROR_MESSAGE_MAP = {
   APPLICANT_NOT_ELIGIBLE: "你目前不符合申請資格，無法申請 API Key。",
@@ -63,6 +64,8 @@ async function copyText(text) {
 }
 
 export default function ApplyPage({ auth }) {
+  const { locale } = useLocale();
+  const isZh = locale === "zh-TW";
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [form, setForm] = useState({ application_date: today, duration_months: 6, purpose: "" });
   const [submitting, setSubmitting] = useState(false);
@@ -159,20 +162,20 @@ export default function ApplyPage({ auth }) {
 
   return (
     <Stack spacing={3}>
-      <Typography variant="h4">申請 API Key</Typography>
+      <Typography variant="h4">{isZh ? "申請 API Key" : "Apply API Key"}</Typography>
       <Box sx={{ width: { xs: "100%", md: "1024px" }, ml: "auto !important", mr: "auto !important" }}>
         <Card>
           <CardContent>
             <Box component="form" onSubmit={onSubmit}>
               <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="帳號" value={auth.account} InputProps={{ readOnly: true }} /></Grid>
-                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="姓名" value={auth.name} InputProps={{ readOnly: true }} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isZh ? "帳號" : "Account"} value={auth.account} InputProps={{ readOnly: true }} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isZh ? "姓名" : "Name"} value={auth.name} InputProps={{ readOnly: true }} /></Grid>
                 <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Email" value={auth.email} InputProps={{ readOnly: true }} /></Grid>
-                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="單位" value={auth.department} InputProps={{ readOnly: true }} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isZh ? "單位" : "Department"} value={auth.department} InputProps={{ readOnly: true }} /></Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <TextField
                     fullWidth
-                    label="申請日期"
+                    label={isZh ? "申請日期" : "Application Date"}
                     type="date"
                     value={form.application_date}
                     onChange={onChange("application_date")}
@@ -181,7 +184,7 @@ export default function ApplyPage({ auth }) {
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <FormControl>
-                    <FormLabel id="duration-months-label">生效時長（月）</FormLabel>
+                    <FormLabel id="duration-months-label">{isZh ? "生效時長（月）" : "Duration (months)"}</FormLabel>
                     <RadioGroup
                       row
                       aria-labelledby="duration-months-label"
@@ -195,12 +198,10 @@ export default function ApplyPage({ auth }) {
                     </RadioGroup>
                   </FormControl>
                 </Grid>
-                <Grid size={12}>
-                  <TextField fullWidth multiline minRows={3} label="用途" value={form.purpose} onChange={onChange("purpose")} />
-                </Grid>
+                <Grid size={12}><TextField fullWidth multiline minRows={3} label={isZh ? "用途" : "Purpose"} value={form.purpose} onChange={onChange("purpose")} /></Grid>
                 {error && <Grid size={12}><Alert severity="error">{error}</Alert></Grid>}
                 <Grid size={12}>
-                  <Button variant="contained" type="submit" disabled={submitting}>{submitting ? "送出中..." : "送出申請"}</Button>
+                  <Button variant="contained" type="submit" disabled={submitting}>{submitting ? (isZh ? "送出中..." : "Submitting...") : (isZh ? "送出申請" : "Submit")}</Button>
                 </Grid>
               </Grid>
             </Box>
@@ -209,9 +210,9 @@ export default function ApplyPage({ auth }) {
       </Box>
 
       <Dialog open={Boolean(issued)} onClose={closeIssuedDialog}>
-        <DialogTitle>API Key 已建立</DialogTitle>
+        <DialogTitle>{isZh ? "API Key 已建立" : "API Key Created"}</DialogTitle>
         <DialogContent>
-          <Typography sx={{ mb: 1 }}>此明文金鑰只會顯示一次，請立即保存。</Typography>
+          <Typography sx={{ mb: 1 }}>{isZh ? "此明文金鑰只會顯示一次，請立即保存。" : "This plaintext key is shown only once. Save it now."}</Typography>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <Typography sx={{ fontFamily: "monospace", bgcolor: "grey.100", p: 1, borderRadius: 1, flex: 1, userSelect: "text", wordBreak: "break-all" }}>
               {issued?.api_key_plaintext}
@@ -225,7 +226,7 @@ export default function ApplyPage({ auth }) {
           {copyError ? <Alert severity="error" sx={{ mt: 1 }}>{copyError}</Alert> : null}
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeIssuedDialog}>我已保存</Button>
+          <Button onClick={closeIssuedDialog}>{isZh ? "我已保存" : "Saved"}</Button>
         </DialogActions>
       </Dialog>
     </Stack>

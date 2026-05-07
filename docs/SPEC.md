@@ -132,6 +132,7 @@
 - `name` (string, required)
 - `role` (enum: `user` | `admin`)
 - `status` (enum: `active` | `inactive`)
+- `preferred_locale` (enum: `zh-TW` | `en`, nullable；使用者語言偏好)
 - `created_at` (datetime)
 - `updated_at` (datetime)
 
@@ -300,6 +301,25 @@ Base path：`/api/v1`
 - 用途：供管理者以 `sysid`、`account`、`name`、`email` 查詢可加入特殊人員名單的人員。
 - 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`。
 
+### 5-2) 目前使用者語言偏好 API
+- `GET /api/v1/users/preferences/locale`
+  - 用途：取得目前登入使用者語言偏好
+  - Response（200）：`{ "preferred_locale": "zh-TW" | "en" | null }`
+- `PATCH /api/v1/users/preferences/locale`
+  - 用途：更新目前登入使用者語言偏好
+  - Request：`{ "preferred_locale": "zh-TW" | "en" }`
+  - 非法值回傳 `400` + `VALIDATION_ERROR`
+
+### 前端語言規則（MVP）
+- 僅支援 `zh-TW`、`en`。
+- 啟動語言優先序：`DB 偏好 > 系統語言判定 > fallback en`。
+- 系統語言判定規則：
+  - `navigator.language` / `navigator.languages` 命中 `zh*` -> `zh-TW`
+  - 命中 `en*` -> `en`
+  - 其他語系 -> `en`
+- 手動切換語言後，需更新 UI 文案並寫回 `preferred_locale`。
+- DataGrid locale 文案需跟隨語言切換。
+
 ### 6) 管理者啟用/停用 API
 - `POST /api/v1/admins/{id}/enable`：啟用指定使用者管理者身分
 - `POST /api/v1/admins/{id}/disable`：停用指定使用者管理者身分
@@ -372,6 +392,12 @@ Base path：`/api/v1`
 31. 非 `admin` 呼叫 `GET /api/v1/api-keys/statistics/users` 時，API 回傳 `403`。
 32. 統計 API 回傳不得包含 `api_key_plaintext`，且不得改變既有受保護 API 路徑與角色模型。
 33. 統計 API 每筆資料需包含 `owner_department`（可為空值），供管理者統計圖表 X 軸切換使用。
+34. 系統語言 `zh-TW` 首次進站時（DB 無偏好）需顯示中文。
+35. 系統語言 `en-US` 首次進站時（DB 無偏好）需顯示英文。
+36. 系統語言非 `zh*|en*`（例如 `ja-JP`）首次進站時（DB 無偏好）需 fallback 顯示英文。
+37. 手動切換語言後，重新登入需沿用 DB 偏好。
+38. `PATCH /api/v1/users/preferences/locale` 對非法 locale 值需回傳 `400`。
+39. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
 
 ## Roadmap
 ### Phase 1：Foundation

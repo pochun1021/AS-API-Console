@@ -65,6 +65,16 @@ class SQLAlchemyUserRepository(UserRepository):
         self.session.flush()
         return user
 
+    def update_preferred_locale(self, user_id: str, preferred_locale: str | None) -> User | None:
+        user = self.get_by_id(user_id)
+        if not user:
+            return None
+        user.preferred_locale = preferred_locale
+        user.updated_at = datetime.now(timezone.utc)
+        self.session.add(user)
+        self.session.flush()
+        return user
+
     def upsert_from_auth(self, identity: AuthIdentity) -> User:
         user = self.get_by_account(identity.account)
         now = datetime.now(timezone.utc)
@@ -76,6 +86,7 @@ class SQLAlchemyUserRepository(UserRepository):
                 name=identity.name,
                 role="user",
                 status="active",
+                preferred_locale=None,
                 created_at=now,
                 updated_at=now,
             )
