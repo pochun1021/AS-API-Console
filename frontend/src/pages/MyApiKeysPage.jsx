@@ -196,17 +196,18 @@ export default function MyApiKeysPage({ auth }) {
   );
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
       <Typography variant="h4">{t("mykeys_title")}</Typography>
       {banner && <Alert severity="info">{banner}</Alert>}
-      <Card>
-        <CardContent>
+      <Card sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        <CardContent sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
           {loading ? <LoadingBlock text={t("mykeys_loading_list")} /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && items.length === 0 ? <EmptyBlock text={t("mykeys_empty")} /> : null}
           {!loading && !error && items.length > 0 ? (
-            <Box sx={{ height: 480 }}>
+            <Box sx={{ flex: 1, minHeight: 320 }}>
               <DataGrid
+                sx={{ height: "100%" }}
                 rows={items}
                 columns={columns}
                 getRowId={(row) => row.id}

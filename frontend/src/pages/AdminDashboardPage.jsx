@@ -126,7 +126,7 @@ export default function AdminDashboardPage({ auth }) {
   }
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
       <Typography variant="h4">{t("dashboard_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
@@ -187,9 +187,9 @@ export default function AdminDashboardPage({ auth }) {
       {!loading && !error && items.length === 0 ? <EmptyBlock text={t("dashboard_no_data")} /> : null}
 
       {!loading && !error && items.length > 0 && view === "table" ? (
-        <Box sx={{ width: "100%", backgroundColor: "white", borderRadius: 2, p: 1 }}>
+        <Box sx={{ width: "100%", backgroundColor: "white", borderRadius: 2, p: 1, flex: 1, minHeight: 320 }}>
           <DataGrid
-            autoHeight
+            sx={{ height: "100%" }}
             rows={items}
             columns={columns}
             pageSizeOptions={[10, 20, 50]}

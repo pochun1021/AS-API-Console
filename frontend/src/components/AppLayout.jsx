@@ -35,7 +35,14 @@ export default function AppLayout({ children, auth, onChangeLocale = () => {} })
   }
 
   return (
-    <Box sx={{ minHeight: "100vh", background: "linear-gradient(180deg, #f4f7fb 0%, #e9eef7 100%)" }}>
+    <Box
+      sx={{
+        minHeight: "100vh",
+        background: "linear-gradient(180deg, #f4f7fb 0%, #e9eef7 100%)",
+        display: "flex",
+        flexDirection: "column"
+      }}
+    >
       <AppBar position="static" elevation={0}>
         <Toolbar>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
@@ -102,8 +109,8 @@ export default function AppLayout({ children, auth, onChangeLocale = () => {} })
           </Box>
         </Toolbar>
       </AppBar>
-      <Container maxWidth={false} sx={{ py: 4, px: { xs: 2, md: 4 } }}>
-        <Box sx={{ maxWidth: 1840, mx: "auto", width: "100%", display: "flex", flexDirection: "column", gap: 3 }}>
+      <Container maxWidth={false} sx={{ py: 4, px: { xs: 2, md: 4 }, display: "flex", flex: 1, minHeight: 0 }}>
+        <Box sx={{ maxWidth: 1840, mx: "auto", width: "100%", display: "flex", flexDirection: "column", gap: 3, flex: 1, minHeight: 0 }}>
           {children}
         </Box>
       </Container>

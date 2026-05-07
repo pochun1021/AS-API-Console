@@ -261,7 +261,7 @@ export default function WhitelistAdminPage({ auth }) {
   }
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
       <Typography variant="h4">{t("whitelist_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
@@ -276,14 +276,15 @@ export default function WhitelistAdminPage({ auth }) {
         </Button>
       </Box>
 
-      <Card>
-        <CardContent>
+      <Card sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        <CardContent sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
           {loading ? <LoadingBlock text={t("whitelist_loading")} /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && items.length === 0 ? <EmptyBlock text={t("whitelist_empty")} /> : null}
           {!loading && !error && items.length > 0 ? (
-            <Box sx={{ height: 520 }}>
+            <Box sx={{ flex: 1, minHeight: 320 }}>
               <DataGrid
+                sx={{ height: "100%" }}
                 rows={items}
                 columns={whitelistColumns}
                 getRowId={(row) => row.id}

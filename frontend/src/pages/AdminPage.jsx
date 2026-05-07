@@ -244,7 +244,7 @@ export default function AdminPage({ auth }) {
   }
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
       <Typography variant="h4">{t("admin_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
@@ -260,14 +260,15 @@ export default function AdminPage({ auth }) {
         </Button>
       </Box>
 
-      <Card>
-        <CardContent>
+      <Card sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        <CardContent sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
           {loading ? <LoadingBlock text={t("admin_loading")} /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && adminItems.length === 0 ? <EmptyBlock text={t("admin_empty")} /> : null}
           {!loading && !error && adminItems.length > 0 ? (
-            <Box sx={{ height: 480 }}>
+            <Box sx={{ flex: 1, minHeight: 320 }}>
               <DataGrid
+                sx={{ height: "100%" }}
                 rows={adminItems}
                 columns={adminColumns}
                 getRowId={(row) => row.id}
