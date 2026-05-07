@@ -96,16 +96,24 @@ npm run build
     ```
 
 ## 測試資料生成（本機 DB）
-- 產生小型測試資料集（預設會先清除既有 seed 範圍再重建）：
+1. 進入 backend（需先完成 migration 並確認 `DATABASE_URL` 可連線）：
 ```bash
 cd backend
+```
+2. 重建小型測試資料集（預設會先清除既有 seed 範圍再重建）：
+```bash
 uv run python scripts/seed_test_data.py
 ```
-- 若要保留既有 seed 資料並追加：
+3. 保留既有 seed 資料並追加：
 ```bash
-cd backend
 uv run python scripts/seed_test_data.py --no-reset
 ```
+- 成功輸出範例：
+```text
+Seed completed: users=8, whitelists=8, applications=20, api_keys=20, reset=True
+```
+- `reset=True` 代表本次先清除既有 seed 範圍再重建；`reset=False` 代表追加模式（`--no-reset`）。
+- 詳細驗證與常見錯誤處理請見 `docs/runbook-db.md` 的「測試資料（seed）操作」章節。
 
 ## 測試
 Backend：

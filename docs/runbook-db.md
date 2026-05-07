@@ -109,6 +109,65 @@ mariadb -h <host> -u <user> -p as_api_console -e "SHOW TABLES;"
 - `api_keys` 表不應存在 plaintext 欄位。
 - 僅可有 `key_hash` 作為金鑰儲存欄位。
 
+## 測試資料（seed）操作
+
+### 前置條件
+- 已完成 migration 且 schema 為最新版本（`alembic upgrade head`）。
+- `DATABASE_URL` 已正確設定並可連線。
+- 於 `backend` 目錄執行指令。
+
+### 指令
+- 重建小型測試資料（預設模式，先清除既有 seed 範圍再重建）：
+```bash
+cd backend
+uv run python scripts/seed_test_data.py
+```
+- 追加小型測試資料（不清除既有 seed 範圍）：
+```bash
+cd backend
+uv run python scripts/seed_test_data.py --no-reset
+```
+
+### 寫入範圍（small）
+- `users`：8 筆（含 2 位 admin seed + 6 位 user seed）
+- `api_key_whitelist`：8 筆（含 active/inactive）
+- `api_key_applications`：20 筆（含 `active|revoked|expired`）
+- `api_keys`：20 筆（僅 `key_hash`，不含明文）
+
+### 執行結果判讀
+- 成功時輸出：
+```text
+Seed completed: users=8, whitelists=8, applications=20, api_keys=20, reset=<True|False>
+```
+- `reset=True`：代表先清除 seed 範圍再重建。
+- `reset=False`：代表追加模式（`--no-reset`）。
+
+### 驗證方式
+1. 筆數驗證（MariaDB）：
+```bash
+mariadb -h <host> -u <user> -p as_api_console -e "
+SELECT 'users' AS tbl, COUNT(*) AS cnt FROM users
+UNION ALL
+SELECT 'api_key_whitelist', COUNT(*) FROM api_key_whitelist
+UNION ALL
+SELECT 'api_key_applications', COUNT(*) FROM api_key_applications
+UNION ALL
+SELECT 'api_keys', COUNT(*) FROM api_keys;
+"
+```
+2. 狀態分佈驗證：
+```bash
+mariadb -h <host> -u <user> -p as_api_console -e "
+SELECT status, COUNT(*) FROM api_keys GROUP BY status ORDER BY status;
+"
+```
+3. 安全驗證：
+- `api_keys` 僅保存 `key_hash`，不得新增任何明文 key 欄位或查詢路徑。
+
+### 注意事項
+- 不加 `--no-reset` 時，腳本會清除既有 seed 範圍（指定 seed users 對應的 applications/keys 與 seed whitelist/users）後重建。
+- 使用 `--no-reset` 連續執行可能因 unique 約束（如 `users.account`、`users.email`）產生衝突，建議僅在明確需要追加時使用。
+
 ## 常見問題
 
 ### `target database is not up to date`
@@ -129,3 +188,11 @@ alembic current
 ```bash
 alembic upgrade head
 ```
+
+### seed 腳本執行失敗（連線錯誤）
+- 先確認 `DATABASE_URL` 是否正確、資料庫服務是否啟動、帳密/權限是否可用。
+- 再次確認執行位置為 `backend`，並以 `uv run` 啟動腳本。
+
+### seed 追加模式出現唯一鍵衝突
+- 若無需保留既有 seed，改用預設模式（不帶 `--no-reset`）重建。
+- 若需保留資料，先清理衝突資料再重跑 `--no-reset`。
