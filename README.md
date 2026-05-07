@@ -82,6 +82,10 @@ npm run build
 
 ## 開發備註
 - 前端在開發模式提供 `Dev 身份切換`（admin/user），用於模擬 header 身份。
+- 若有第三方 OAuth 整合，前端會優先使用 OAuth 回傳身分（需包含 `account`、`name`、`email`、`department`、`sysid`、`role`）：
+  - `window.__AS_AUTH_CONTEXT__ = { ... }`，或
+  - `sessionStorage["as-api-console-auth-context"] = JSON.stringify({ ... })`
+- 當 OAuth 身分存在時，前端會隱藏 `Dev 身份切換`。
 - Vite dev server 已設定 `/api` proxy 到 `http://127.0.0.1:8000`（若需 `npm run dev` 分離開發可直接使用）。
 - 前端資料來源由 `VITE_API_PROVIDER` 控制：
   - 預設（`frontend/.env.development`）：`mock`
