@@ -11,7 +11,7 @@ from app.core.errors import ApiError
 from app.services.crypto_service import CryptoService
 from app.services.research_eligibility_service import ResearchEligibilityService
 from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyUserRepository, SQLAlchemyWhitelistRepository
-from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApplicationCreateInput, AuthIdentity
+from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
 
 
 @dataclass(slots=True)
@@ -128,15 +128,33 @@ class ApiKeysService:
             "api_key_plaintext": plaintext,
         }
 
-    def list_keys(self, current_user: CurrentUser, page: int, page_size: int, status: str | None = None) -> dict:
+    def list_keys(
+        self,
+        current_user: CurrentUser,
+        page: int,
+        page_size: int,
+        status: str | None = None,
+        owner_account: str | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> dict:
         page = max(page, 1)
         page_size = min(max(page_size, 1), 100)
         offset = (page - 1) * page_size
 
+        normalized_owner_account = owner_account.strip() if owner_account else None
+        if current_user.role != "admin":
+            normalized_owner_account = None
+
         items = self.key_repo.list_keys(
             requester_role=current_user.role,
             requester_account=current_user.account,
-            status=status,
+            filters=ApiKeyListFilter(
+                status=status,
+                owner_account=normalized_owner_account or None,
+                from_date=from_date,
+                to_date=to_date,
+            ),
             limit=page_size,
             offset=offset,
         )

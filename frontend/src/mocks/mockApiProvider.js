@@ -364,13 +364,35 @@ export const mockApiProvider = {
     };
   },
 
-  async listApiKeys(auth) {
+  async listApiKeys(paramsOrAuth, maybeAuth) {
     await delay();
-    const items = auth.role === "admin" ? apiKeys : apiKeys.filter((item) => item.owner_account === auth.account);
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
+
+    let items = auth.role === "admin" ? [...apiKeys] : apiKeys.filter((item) => item.owner_account === auth.account);
+
+    if (auth.role === "admin" && params.owner_account) {
+      items = items.filter((item) => item.owner_account === params.owner_account);
+    }
+    if (params.status) {
+      items = items.filter((item) => item.status === params.status);
+    }
+    if (params.from) {
+      items = items.filter((item) => item.application_date >= params.from);
+    }
+    if (params.to) {
+      items = items.filter((item) => item.application_date <= params.to);
+    }
+
+    const page = Number(params.page || 1);
+    const pageSize = Number(params.page_size || 20);
+    const start = (page - 1) * pageSize;
+    const paged = items.slice(start, start + pageSize);
     return {
-      items: items.map((item) => ({ ...item, key_alias: normalizeAlias(item) })),
-      page: 1,
-      page_size: 20,
+      items: paged.map((item) => ({ ...item, key_alias: normalizeAlias(item) })),
+      page,
+      page_size: pageSize,
       total: items.length
     };
   },

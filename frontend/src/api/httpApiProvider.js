@@ -62,8 +62,19 @@ export const httpApiProvider = {
     return request("/api/v1/api-keys/applications", { method: "POST", auth, body: payload });
   },
 
-  listApiKeys(auth) {
-    return request("/api/v1/api-keys", { auth });
+  listApiKeys(paramsOrAuth, maybeAuth) {
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
+    const query = new URLSearchParams();
+    if (params.page) query.set("page", String(params.page));
+    if (params.page_size) query.set("page_size", String(params.page_size));
+    if (params.status) query.set("status", params.status);
+    if (params.owner_account) query.set("owner_account", params.owner_account);
+    if (params.from) query.set("from", params.from);
+    if (params.to) query.set("to", params.to);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request(`/api/v1/api-keys${suffix}`, { auth });
   },
 
   getApiKeyById(id, auth) {

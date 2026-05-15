@@ -44,11 +44,22 @@ def list_api_keys(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status: str | None = Query(default=None),
+    owner_account: str | None = Query(default=None),
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     service = ApiKeysService(db)
-    return service.list_keys(current_user=current_user, page=page, page_size=page_size, status=status)
+    return service.list_keys(
+        current_user=current_user,
+        page=page,
+        page_size=page_size,
+        status=status,
+        owner_account=owner_account,
+        from_date=from_date,
+        to_date=to_date,
+    )
 
 
 @router.get("/api-keys/statistics/users", response_model=ApiKeyUserStatisticsResponse)

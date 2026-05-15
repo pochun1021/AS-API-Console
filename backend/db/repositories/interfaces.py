@@ -9,6 +9,7 @@ from db.repositories.types import (
     ApiKeyAliasUpdateInput,
     ApiKeyCreateInput,
     ApiKeyDetail,
+    ApiKeyListFilter,
     ApiKeyListItem,
     ApiKeySecretMaterial,
     ApiKeyUserStatisticsItem,
@@ -61,7 +62,7 @@ class ApiKeyRepository(Protocol):
         *,
         requester_role: str,
         requester_account: str,
-        status: str | None = None,
+        filters: ApiKeyListFilter,
         limit: int = 20,
         offset: int = 0,
     ) -> list[ApiKeyListItem]: ...

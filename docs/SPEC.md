@@ -91,6 +91,8 @@
 - 支援 `q`（`account`、`name`、`email`）查詢、分頁與排序。
 - 預設排序為 `total_applications desc`。
 - 圖表口徑需與目前篩選條件一致（`scope`、`from`、`to`、`q`、`sort`）。
+- 表格中的 `total_applications` 與 `active_count` 需可點擊，並以 Dialog 顯示該申請人的 API Key 明細（僅遮罩 key，不得回傳明文）。
+- Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨目前統計頁日期篩選（`from`、`to`）。
 
 ### 7) 狀態頁/元件
 - Loading
@@ -234,7 +236,9 @@ Base path：`/api/v1`
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
 - 規則：`user` 僅回傳 auth 使用者本人的資料；`admin` 可查全部資料。
-- Query（草案）：`page`, `page_size`, `status`, `q`
+- Query（草案）：`page`, `page_size`, `status`, `owner_account`, `from`, `to`
+  - `owner_account` 僅 `admin` 可用於指定申請人篩選；`user` 不得跨人查詢
+  - `from`、`to` 格式為 `YYYY-MM-DD`，基準欄位為 `application_date`
 - Response（200）：
 ```json
 {
@@ -429,6 +433,8 @@ Base path：`/api/v1`
 39. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
 40. `GET /api/v1/api-keys` 與 `GET /api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳 `for_{owner_account}`。
 41. `admin` 可透過 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`。
+42. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
+43. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
 
 ## Roadmap
 ### Phase 1：Foundation

@@ -174,6 +174,48 @@ def test_admin_can_list_global_keys(client, admin_headers):
     assert "user2" in owners
 
 
+def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="user-2")
+    _create_whitelist(client, admin_headers, user1["x-email"])
+    _create_whitelist(client, admin_headers, user2["x-email"])
+
+    resp1 = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user1,
+        json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1"},
+    )
+    assert resp1.status_code == 201
+    key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
+    revoke = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user1)
+    assert revoke.status_code == 200
+
+    resp2 = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user1,
+        json={"application_date": "2026-05-10", "duration_months": 1, "purpose": "u1-2"},
+    )
+    assert resp2.status_code == 201
+
+    resp3 = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user2,
+        json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "u2"},
+    )
+    assert resp3.status_code == 201
+
+    filtered = client.get(
+        "/api/v1/api-keys?owner_account=user1&status=active&from=2026-05-05&to=2026-05-31",
+        headers=admin_headers,
+    )
+    assert filtered.status_code == 200
+    items = filtered.json()["items"]
+    assert len(items) == 1
+    assert items[0]["owner_account"] == "user1"
+    assert items[0]["status"] == "active"
+    assert items[0]["application_date"] == "2026-05-10"
+
+
 def test_reveal_plaintext_admin_only(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
     _create_whitelist(client, admin_headers, user1["x-email"])

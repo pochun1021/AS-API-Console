@@ -13,6 +13,7 @@ from db.repositories.types import (
     ApiKeyAliasUpdateInput,
     ApiKeyCreateInput,
     ApiKeyDetail,
+    ApiKeyListFilter,
     ApiKeyListItem,
     ApiKeySecretMaterial,
     ApiKeyUserStatisticsItem,
@@ -204,7 +205,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         *,
         requester_role: str,
         requester_account: str,
-        status: str | None = None,
+        filters: ApiKeyListFilter,
         limit: int = 20,
         offset: int = 0,
     ) -> list[ApiKeyListItem]:
@@ -217,8 +218,14 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         )
         if requester_role == "user":
             stmt = stmt.where(ApiKeyApplication.account == requester_account)
-        if status:
-            stmt = stmt.where(ApiKey.status == status)
+        if filters.status:
+            stmt = stmt.where(ApiKey.status == filters.status)
+        if filters.owner_account:
+            stmt = stmt.where(ApiKeyApplication.account == filters.owner_account)
+        if filters.from_date:
+            stmt = stmt.where(ApiKeyApplication.application_date >= filters.from_date)
+        if filters.to_date:
+            stmt = stmt.where(ApiKeyApplication.application_date <= filters.to_date)
         rows = self.session.execute(stmt).all()
         return [
             ApiKeyListItem(

@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -78,6 +79,39 @@ test("admin can switch to chart view and change axes", async () => {
 
   expect(container.querySelectorAll(".MuiChartsAxis-tickLabel").length).toBeGreaterThanOrEqual(5);
   expect(screen.getByRole("tab", { name: "圖表", selected: true })).toBeInTheDocument();
+});
+
+test("admin can open detail dialog from total applications count", async () => {
+  const user = userEvent.setup();
+  renderPage(<AdminDashboardPage auth={adminAuth} />);
+
+  expect(await screen.findByText("jane.doe")).toBeInTheDocument();
+
+  const totalButtons = screen.getAllByRole("button", { name: "2" });
+  await user.click(totalButtons[0]);
+  const totalDialog = await screen.findByRole("dialog", { name: "jane.doe 的申請總數明細" });
+  await waitFor(() => {
+    expect(within(totalDialog).queryByText("載入 API Key 明細中...")).not.toBeInTheDocument();
+  });
+  const totalRows = within(totalDialog).getAllByRole("row");
+  expect(totalRows.length).toBeGreaterThanOrEqual(3);
+  expect(within(totalDialog).getAllByText("for_jane.doe").length).toBeGreaterThanOrEqual(1);
+  expect(within(totalDialog).getByText("revoked")).toBeInTheDocument();
+});
+
+test("admin can open detail dialog from active count", async () => {
+  const user = userEvent.setup();
+  renderPage(<AdminDashboardPage auth={adminAuth} />);
+
+  expect(await screen.findByText("jane.doe")).toBeInTheDocument();
+  const activeButton = screen.getAllByRole("button", { name: "1" })[0];
+  await user.click(activeButton);
+  const activeDialog = await screen.findByRole("dialog", { name: "jane.doe 的啟用中明細" });
+  await waitFor(() => {
+    expect(within(activeDialog).queryByText("載入 API Key 明細中...")).not.toBeInTheDocument();
+  });
+  expect(within(activeDialog).getByText("active")).toBeInTheDocument();
+  expect(within(activeDialog).queryByText("revoked")).not.toBeInTheDocument();
 });
 
 test("non-admin user is blocked", async () => {

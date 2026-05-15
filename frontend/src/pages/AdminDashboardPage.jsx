@@ -2,11 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
+  Button,
   Card,
   CardContent,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   MenuItem,
   Stack,
   Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   Tabs,
   TextField,
   Typography
@@ -18,6 +29,19 @@ import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+
+function statusColor(status) {
+  if (status === "active") return "success";
+  if (status === "revoked") return "warning";
+  return "default";
+}
+
+function formatMaskedKey(value) {
+  if (!value) return "-";
+  const text = String(value);
+  const tail = text.slice(-4);
+  return `AS-...${tail}`;
+}
 
 export default function AdminDashboardPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
@@ -49,6 +73,49 @@ export default function AdminDashboardPage({ auth }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
+  const [detailDialog, setDetailDialog] = useState({ open: false, title: "", ownerAccount: "", status: undefined });
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const [detailItems, setDetailItems] = useState([]);
+
+  async function openDetailDialog(row, metric) {
+    const status = metric === "active_count" ? "active" : undefined;
+    const titleKey = metric === "active_count" ? "dashboard_detail_title_active" : "dashboard_detail_title_total";
+    setDetailDialog({
+      open: true,
+      title: t(titleKey).replace("{owner}", row.owner_account),
+      ownerAccount: row.owner_account,
+      status
+    });
+    setDetailLoading(true);
+    setDetailError("");
+    try {
+      const response = await apiClient.listApiKeys(
+        {
+          page: 1,
+          page_size: 100,
+          owner_account: row.owner_account,
+          status,
+          from: fromDate || undefined,
+          to: toDate || undefined
+        },
+        auth
+      );
+      setDetailItems(response.items || []);
+    } catch (e) {
+      setDetailItems([]);
+      setDetailError(e?.payload?.error?.message || t("dashboard_detail_load_failed"));
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  function closeDetailDialog() {
+    setDetailDialog({ open: false, title: "", ownerAccount: "", status: undefined });
+    setDetailItems([]);
+    setDetailError("");
+    setDetailLoading(false);
+  }
 
   const columns = useMemo(
     () => [
@@ -56,13 +123,35 @@ export default function AdminDashboardPage({ auth }) {
       { field: "owner_name", headerName: t("dashboard_col_owner_name"), flex: 1, minWidth: 140 },
       { field: "owner_email", headerName: t("dashboard_col_owner_email"), flex: 1.6, minWidth: 220 },
       { field: "owner_department", headerName: t("dashboard_col_owner_department"), flex: 1, minWidth: 140 },
-      { field: "total_applications", headerName: t("dashboard_col_total_applications"), type: "number", flex: 0.8, minWidth: 120 },
-      { field: "active_count", headerName: t("dashboard_col_active_count"), type: "number", flex: 0.8, minWidth: 120 },
+      {
+        field: "total_applications",
+        headerName: t("dashboard_col_total_applications"),
+        type: "number",
+        flex: 0.8,
+        minWidth: 120,
+        renderCell: (params) => (
+          <Button variant="text" size="small" onClick={() => openDetailDialog(params.row, "total_applications")}>
+            {params.value}
+          </Button>
+        )
+      },
+      {
+        field: "active_count",
+        headerName: t("dashboard_col_active_count"),
+        type: "number",
+        flex: 0.8,
+        minWidth: 120,
+        renderCell: (params) => (
+          <Button variant="text" size="small" onClick={() => openDetailDialog(params.row, "active_count")}>
+            {params.value}
+          </Button>
+        )
+      },
       { field: "revoked_count", headerName: t("dashboard_col_revoked_count"), type: "number", flex: 0.8, minWidth: 120 },
       { field: "expired_count", headerName: t("dashboard_col_expired_count"), type: "number", flex: 0.8, minWidth: 120 },
       { field: "last_applied_at", headerName: t("dashboard_col_last_applied_at"), flex: 1, minWidth: 140 }
     ],
-    [t]
+    [t, fromDate, toDate, auth]
   );
 
   const chartItems = useMemo(() => {
@@ -284,6 +373,40 @@ export default function AdminDashboardPage({ auth }) {
           </CardContent>
         </Card>
       ) : null}
+
+      <Dialog open={detailDialog.open} onClose={closeDetailDialog} fullWidth maxWidth="md">
+        <DialogTitle>{detailDialog.title}</DialogTitle>
+        <DialogContent>
+          {detailLoading ? <LoadingBlock text={t("dashboard_detail_loading")} /> : null}
+          {!detailLoading && detailError ? <ErrorBlock message={detailError} /> : null}
+          {!detailLoading && !detailError && detailItems.length === 0 ? <EmptyBlock text={t("dashboard_detail_empty")} /> : null}
+          {!detailLoading && !detailError && detailItems.length > 0 ? (
+            <Table size="small" aria-label={t("dashboard_detail_table_aria")}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>{t("mykeys_col_key_alias")}</TableCell>
+                  <TableCell>{t("mykeys_col_masked_key")}</TableCell>
+                  <TableCell>{t("common_status")}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {detailItems.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{item.key_alias}</TableCell>
+                    <TableCell>{formatMaskedKey(item.masked_key)}</TableCell>
+                    <TableCell>
+                      <Chip size="small" label={item.status} color={statusColor(item.status)} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDetailDialog}>{t("common_close")}</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

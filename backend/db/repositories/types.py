@@ -46,6 +46,14 @@ class ApiKeyListItem:
 
 
 @dataclass(slots=True)
+class ApiKeyListFilter:
+    status: str | None = None
+    owner_account: str | None = None
+    from_date: date | None = None
+    to_date: date | None = None
+
+
+@dataclass(slots=True)
 class ApiKeyDetail:
     id: str
     status: str
