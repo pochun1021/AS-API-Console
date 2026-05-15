@@ -63,6 +63,9 @@ cp .env.example .env
 - `RESEARCH_LIST_ALLOWED_TITLE_CODES`：可選，允許通過的職稱代碼清單（逗號分隔，例如 `RS01,RS02`）
 - `API_KEY_ENCRYPTION_SECRET`：必填（正式環境），用於 API key 密文加解密的主密鑰來源
 - `API_KEY_KEK_VERSION`：可選，金鑰版本標記（預設 `v1`）
+- `PROVIDER_BASE_URL`：可選，外部 key provider base URL（例如 `https://provider.internal`）
+- `PROVIDER_MASTER_KEY`：可選，呼叫 provider `/key/generate` 使用的主金鑰
+- `PROVIDER_TIMEOUT_SECONDS`：可選，provider timeout 秒數（預設 `3.0`）
 
 4. 啟動後端（同時提供 API + 前端頁面）
 ```bash

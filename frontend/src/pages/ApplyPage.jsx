@@ -103,10 +103,14 @@ export default function ApplyPage({ auth }) {
       setError(t("apply_error_required_purpose"));
       return;
     }
-
     setSubmitting(true);
     try {
-      const response = await apiClient.createApplication(form, auth);
+      const payload = {
+        application_date: form.application_date,
+        duration_months: form.duration_months,
+        purpose: form.purpose
+      };
+      const response = await apiClient.createApplication(payload, auth);
       setIssued(response);
       setForm((prev) => ({ ...prev, purpose: "" }));
       setCopySucceeded(false);
@@ -215,23 +219,29 @@ export default function ApplyPage({ auth }) {
       </Box>
 
       <Dialog open={Boolean(issued)} onClose={closeIssuedDialog}>
-        <DialogTitle>{isZh ? "API Key 已建立" : "API Key Created"}</DialogTitle>
+        <DialogTitle>{issued?.issuance_status === "pending" ? t("apply_pending_title") : (isZh ? "API Key 已建立" : "API Key Created")}</DialogTitle>
         <DialogContent>
-          <Typography sx={{ mb: 1 }}>{isZh ? "此明文金鑰只會顯示一次，請立即保存。" : "This plaintext key is shown only once. Save it now."}</Typography>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <Typography sx={{ fontFamily: "monospace", bgcolor: "grey.100", p: 1, borderRadius: 1, flex: 1, userSelect: "text", wordBreak: "break-all" }}>
-              {issued?.api_key_plaintext}
-            </Typography>
-            <Tooltip title={copySucceeded ? "已複製" : "複製金鑰"}>
-              <IconButton aria-label={copySucceeded ? "已複製金鑰" : "複製金鑰"} onClick={onCopyKey}>
-                {copySucceeded ? <CheckIcon /> : <ContentCopyIcon />}
-              </IconButton>
-            </Tooltip>
-          </Box>
-          {copyError ? <Alert severity="error" sx={{ mt: 1 }}>{copyError}</Alert> : null}
+          {issued?.issuance_status === "pending" ? (
+            <Alert severity="warning">{t("apply_pending_message")}</Alert>
+          ) : (
+            <>
+              <Typography sx={{ mb: 1 }}>{isZh ? "此明文金鑰只會顯示一次，請立即保存。" : "This plaintext key is shown only once. Save it now."}</Typography>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <Typography sx={{ fontFamily: "monospace", bgcolor: "grey.100", p: 1, borderRadius: 1, flex: 1, userSelect: "text", wordBreak: "break-all" }}>
+                  {issued?.api_key_plaintext}
+                </Typography>
+                <Tooltip title={copySucceeded ? "已複製" : "複製金鑰"}>
+                  <IconButton aria-label={copySucceeded ? "已複製金鑰" : "複製金鑰"} onClick={onCopyKey}>
+                    {copySucceeded ? <CheckIcon /> : <ContentCopyIcon />}
+                  </IconButton>
+                </Tooltip>
+              </Box>
+              {copyError ? <Alert severity="error" sx={{ mt: 1 }}>{copyError}</Alert> : null}
+            </>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeIssuedDialog}>{isZh ? "我已保存" : "Saved"}</Button>
+          <Button onClick={closeIssuedDialog}>{isZh ? "我知道了" : "Saved"}</Button>
         </DialogActions>
       </Dialog>
     </Stack>

@@ -30,7 +30,7 @@ def test_users_admin_role_endpoints(client, admin_headers):
     app_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
-        json={"application_date": "2026-05-06", "duration_months": 1, "purpose": "seed"},
+        json={"application_date": "2026-05-06", "duration_months": 1, "purpose": "seed", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert app_resp.status_code == 201
 

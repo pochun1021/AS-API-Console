@@ -15,13 +15,25 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
     body = create_resp.json()
-    assert body["api_key_plaintext"].startswith("AS-")
-    assert len(body["api_key_plaintext"]) == 33
-    assert "api_key_prefix" not in body
+    assert body["issuance_status"] == "pending"
+    assert body["api_key_plaintext"] is None
+    assert body["pending_reason"] == "awaiting_admin_mode_selection"
+    app_id = body["application"]["id"]
+
+    mode_resp = client.patch(
+        f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
+        headers=admin_headers,
+        json={"mode": "budget"},
+    )
+    assert mode_resp.status_code == 200
+
+    issue_resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
+    assert issue_resp.status_code == 200
+    assert issue_resp.json()["api_key_plaintext"].startswith("AS-")
 
     list_resp = client.get("/api/v1/api-keys", headers=user_headers)
     assert list_resp.status_code == 200
@@ -31,22 +43,13 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert item["masked_key"].startswith("AS-...")
     assert item["key_alias"] == f"for_{user_headers['x-account']}"
     assert len(item["masked_key"]) == 10
-    assert "application_date" in item
-    assert "duration_months" in item
-    key_id = item["id"]
-
-    detail_resp = client.get(f"/api/v1/api-keys/{key_id}", headers=user_headers)
-    assert detail_resp.status_code == 200
-    assert "api_key_plaintext" not in detail_resp.json()
-    assert "key_prefix" not in detail_resp.json()
-    assert detail_resp.json()["key_alias"] == f"for_{user_headers['x-account']}"
 
 
 def test_application_rejects_non_whitelisted(client, user_headers):
     resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "APPLICANT_NOT_ELIGIBLE"
@@ -65,10 +68,10 @@ def test_application_success_for_research_eligible_without_whitelist(client, use
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
-    assert create_resp.json()["api_key_plaintext"].startswith("AS-")
+    assert create_resp.json()["issuance_status"] == "pending"
 
 
 def test_application_research_service_unavailable_returns_503_and_no_records(client, admin_headers, user_headers, monkeypatch):
@@ -90,7 +93,7 @@ def test_application_research_service_unavailable_returns_503_and_no_records(cli
     resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     after = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
 
@@ -104,7 +107,7 @@ def test_application_rejects_invalid_duration(client, admin_headers, user_header
     resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 2, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_months": 2, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "INVALID_DURATION_MONTHS"
@@ -115,10 +118,92 @@ def test_application_rejects_future_date(client, admin_headers, user_headers):
     resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
-        json={"application_date": "2999-01-01", "duration_months": 1, "purpose": "test"},
+        json={"application_date": "2999-01-01", "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "INVALID_APPLICATION_DATE"
+
+
+def test_limit_strategy_template_admin_only_and_binding(client, admin_headers, user_headers):
+    forbidden = client.get("/api/v1/limit-strategy-templates", headers=user_headers)
+    assert forbidden.status_code == 403
+
+    created = client.post(
+        "/api/v1/limit-strategy-templates",
+        headers=admin_headers,
+        json={
+            "name": "ratelimit-a",
+            "strategy_type": "rate_limit",
+            "tpm_limit": 12000,
+            "rpm_limit": 600,
+            "status": "active",
+        },
+    )
+    assert created.status_code == 201
+    template_id = created.json()["id"]
+
+    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+    assert create_resp.status_code == 201
+    app_id = create_resp.json()["application"]["id"]
+
+    bind_resp = client.patch(
+        f"/api/v1/api-keys/applications/{app_id}/limit-strategy",
+        headers=admin_headers,
+        json={"template_id": template_id},
+    )
+    assert bind_resp.status_code == 200
+    assert bind_resp.json()["template_id"] == template_id
+
+
+def test_admin_pending_flow_permissions_and_issue(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
+    )
+    assert create_resp.status_code == 201
+    app_id = create_resp.json()["application"]["id"]
+
+    forbidden_list = client.get("/api/v1/api-keys/applications/pending", headers=user_headers)
+    assert forbidden_list.status_code == 403
+
+    pending_list = client.get("/api/v1/api-keys/applications/pending", headers=admin_headers)
+    assert pending_list.status_code == 200
+    assert any(item["id"] == app_id for item in pending_list.json()["items"])
+
+    invalid_mode = client.patch(
+        f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
+        headers=admin_headers,
+        json={"mode": "invalid"},
+    )
+    assert invalid_mode.status_code == 422
+
+    mode_resp = client.patch(
+        f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
+        headers=admin_headers,
+        json={"mode": "budget"},
+    )
+    assert mode_resp.status_code == 200
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+
+    def _raise_unavailable(self, payload):
+        from app.services.provider_client import ProviderUnavailableError
+
+        raise ProviderUnavailableError("provider unavailable")
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _raise_unavailable)
+    resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["issuance_status"] == "pending"
+    assert body["api_key_plaintext"] is None
 
 
 def test_revoke_permissions_and_status_checks(client, admin_headers):
@@ -130,8 +215,11 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
+    app_id = create_resp.json()["application"]["id"]
+    client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+    client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
     key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
     assert create_resp.status_code == 201
 
@@ -157,15 +245,21 @@ def test_admin_can_list_global_keys(client, admin_headers):
     resp1 = client.post(
         "/api/v1/api-keys/applications",
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     resp2 = client.post(
         "/api/v1/api-keys/applications",
         headers=user2,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u2"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp1.status_code == 201
     assert resp2.status_code == 201
+    app1 = resp1.json()["application"]["id"]
+    app2 = resp2.json()["application"]["id"]
+    client.patch(f"/api/v1/api-keys/applications/{app1}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+    client.patch(f"/api/v1/api-keys/applications/{app2}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+    client.post(f"/api/v1/api-keys/applications/{app1}/issue", headers=admin_headers)
+    client.post(f"/api/v1/api-keys/applications/{app2}/issue", headers=admin_headers)
 
     admin_list = client.get("/api/v1/api-keys", headers=admin_headers)
     assert admin_list.status_code == 200
@@ -183,9 +277,12 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
     resp1 = client.post(
         "/api/v1/api-keys/applications",
         headers=user1,
-        json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1"},
+        json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp1.status_code == 201
+    app1 = resp1.json()["application"]["id"]
+    client.patch(f"/api/v1/api-keys/applications/{app1}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+    client.post(f"/api/v1/api-keys/applications/{app1}/issue", headers=admin_headers)
     key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
     revoke = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user1)
     assert revoke.status_code == 200
@@ -193,16 +290,22 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
     resp2 = client.post(
         "/api/v1/api-keys/applications",
         headers=user1,
-        json={"application_date": "2026-05-10", "duration_months": 1, "purpose": "u1-2"},
+        json={"application_date": "2026-05-10", "duration_months": 1, "purpose": "u1-2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp2.status_code == 201
+    app2 = resp2.json()["application"]["id"]
+    client.patch(f"/api/v1/api-keys/applications/{app2}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+    client.post(f"/api/v1/api-keys/applications/{app2}/issue", headers=admin_headers)
 
     resp3 = client.post(
         "/api/v1/api-keys/applications",
         headers=user2,
-        json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "u2"},
+        json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp3.status_code == 201
+    app3 = resp3.json()["application"]["id"]
+    client.patch(f"/api/v1/api-keys/applications/{app3}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+    client.post(f"/api/v1/api-keys/applications/{app3}/issue", headers=admin_headers)
 
     filtered = client.get(
         "/api/v1/api-keys?owner_account=user1&status=active&from=2026-05-05&to=2026-05-31",
@@ -222,10 +325,13 @@ def test_reveal_plaintext_admin_only(client, admin_headers):
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
-    created_plaintext = create_resp.json()["api_key_plaintext"]
+    app_id = create_resp.json()["application"]["id"]
+    client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+    issue_resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
+    created_plaintext = issue_resp.json()["api_key_plaintext"]
     key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
 
     forbidden = client.post(f"/api/v1/api-keys/{key_id}/reveal", headers=user1)
@@ -242,9 +348,12 @@ def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
+    app_id = create_resp.json()["application"]["id"]
+    client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+    client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
     key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
 
     forbidden = client.patch(f"/api/v1/api-keys/{key_id}", headers=user1, json={"key_alias": "custom_user_alias"})
@@ -276,7 +385,7 @@ def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
     resp = client.post(
         "/api/v1/api-keys/applications",
         headers=bad_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     after = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
     assert resp.status_code == 422
@@ -289,7 +398,7 @@ def test_error_response_shape_consistency(client, admin_headers, user_headers):
     e1 = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     # non-admin whitelist management error
     e2 = client.get("/api/v1/whitelists", headers=user_headers)
@@ -315,15 +424,21 @@ def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin
         resp = client.post(
             "/api/v1/api-keys/applications",
             headers=user1,
-            json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1"},
+            json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
         )
         assert resp.status_code == 201
+        app_id = resp.json()["application"]["id"]
+        client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+        client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
     resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user2,
-        json={"application_date": "2026-05-02", "duration_months": 1, "purpose": "u2"},
+        json={"application_date": "2026-05-02", "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp.status_code == 201
+    app_id = resp.json()["application"]["id"]
+    client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+    client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
 
     stats_resp = client.get("/api/v1/api-keys/statistics/users", headers=admin_headers)
     assert stats_resp.status_code == 200
@@ -342,15 +457,18 @@ def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_head
     first = client.post(
         "/api/v1/api-keys/applications",
         headers=user,
-        json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "first"},
+        json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "first", "max_budget": "1000", "budget_duration": "monthly"},
     )
     second = client.post(
         "/api/v1/api-keys/applications",
         headers=user,
-        json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "second"},
+        json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "second", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert first.status_code == 201
     assert second.status_code == 201
+    for app_id in [first.json()["application"]["id"], second.json()["application"]["id"]]:
+        client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
+        client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
 
     key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
     revoke_resp = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user)

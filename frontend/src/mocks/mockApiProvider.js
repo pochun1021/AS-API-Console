@@ -192,9 +192,29 @@ const initialUsers = [
   }
 ];
 
+const initialLimitStrategyTemplates = [
+  {
+    id: "lst_001",
+    name: "default-budget-template",
+    strategy_type: "budget",
+    max_budget: "1000",
+    budget_duration: "monthly",
+    tpm_limit: null,
+    rpm_limit: null,
+    status: "active"
+  }
+];
+
 let apiKeys = initialApiKeys.map((item) => ({ ...item }));
 let whitelists = initialWhitelists.map((item) => ({ ...item }));
 let users = initialUsers.map((item) => ({ ...item }));
+let limitStrategyTemplates = initialLimitStrategyTemplates.map((item) => ({ ...item }));
+let limitStrategyConfig = {
+  budget_max_budget: "1000",
+  budget_duration: "monthly",
+  rate_limit_tpm: 10000,
+  rate_limit_rpm: 500
+};
 
 function createError(code, message, status = 400) {
   const error = new Error(message);
@@ -360,6 +380,7 @@ export const mockApiProvider = {
         issued_at: now.toISOString(),
         expires_at: expires.toISOString()
       },
+      issuance_status: "issued",
       api_key_plaintext: plain
     };
   },
@@ -592,9 +613,127 @@ export const mockApiProvider = {
     return { item };
   },
 
+  async listLimitStrategyTemplates(auth) {
+    await delay();
+    ensureAdmin(auth);
+    return { items: [...limitStrategyTemplates], total: limitStrategyTemplates.length };
+  },
+
+  async createLimitStrategyTemplate(payload, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const name = String(payload?.name || "").trim();
+    const strategyType = payload?.strategy_type;
+    if (!name) throw createError("VALIDATION_ERROR", "template name is required", 422);
+    if (!["budget", "rate_limit"].includes(strategyType)) {
+      throw createError("VALIDATION_ERROR", "strategy_type must be budget or rate_limit", 422);
+    }
+    if (strategyType === "budget") {
+      if (!String(payload?.max_budget || "").trim() || !String(payload?.budget_duration || "").trim()) {
+        throw createError("MISSING_BUDGET_FIELDS", "max_budget and budget_duration are required", 422);
+      }
+    } else if (!payload?.tpm_limit || !payload?.rpm_limit) {
+      throw createError("MISSING_RATE_LIMIT_FIELDS", "tpm_limit and rpm_limit are required", 422);
+    }
+    const created = {
+      id: `lst_${String(limitStrategyTemplates.length + 1).padStart(3, "0")}`,
+      name,
+      strategy_type: strategyType,
+      max_budget: strategyType === "budget" ? String(payload.max_budget) : null,
+      budget_duration: strategyType === "budget" ? String(payload.budget_duration) : null,
+      tpm_limit: strategyType === "rate_limit" ? Number(payload.tpm_limit) : null,
+      rpm_limit: strategyType === "rate_limit" ? Number(payload.rpm_limit) : null,
+      status: payload?.status || "active"
+    };
+    limitStrategyTemplates = [created, ...limitStrategyTemplates];
+    return created;
+  },
+
+  async updateLimitStrategyTemplate(id, payload, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const target = limitStrategyTemplates.find((item) => item.id === id);
+    if (!target) throw createError("LIMIT_STRATEGY_TEMPLATE_NOT_FOUND", "template not found", 404);
+    const name = String(payload?.name || "").trim();
+    const strategyType = payload?.strategy_type;
+    if (!name) throw createError("VALIDATION_ERROR", "template name is required", 422);
+    if (!["budget", "rate_limit"].includes(strategyType)) {
+      throw createError("VALIDATION_ERROR", "strategy_type must be budget or rate_limit", 422);
+    }
+    target.name = name;
+    target.strategy_type = strategyType;
+    target.status = payload?.status || target.status;
+    if (strategyType === "budget") {
+      target.max_budget = String(payload?.max_budget || "");
+      target.budget_duration = String(payload?.budget_duration || "");
+      target.tpm_limit = null;
+      target.rpm_limit = null;
+    } else {
+      target.max_budget = null;
+      target.budget_duration = null;
+      target.tpm_limit = Number(payload?.tpm_limit || 0);
+      target.rpm_limit = Number(payload?.rpm_limit || 0);
+    }
+    return { ...target };
+  },
+
+  async getLimitStrategyConfig(auth) {
+    await delay();
+    ensureAdmin(auth);
+    return { ...limitStrategyConfig };
+  },
+
+  async updateLimitStrategyConfig(payload, auth) {
+    await delay();
+    ensureAdmin(auth);
+    if (!String(payload?.budget_max_budget || "").trim() || !String(payload?.budget_duration || "").trim()) {
+      throw createError("MISSING_BUDGET_FIELDS", "budget config is required", 422);
+    }
+    if (!Number(payload?.rate_limit_tpm) || !Number(payload?.rate_limit_rpm)) {
+      throw createError("MISSING_RATE_LIMIT_FIELDS", "rate limit config is required", 422);
+    }
+    limitStrategyConfig = {
+      budget_max_budget: String(payload.budget_max_budget).trim(),
+      budget_duration: String(payload.budget_duration).trim(),
+      rate_limit_tpm: Number(payload.rate_limit_tpm),
+      rate_limit_rpm: Number(payload.rate_limit_rpm)
+    };
+    return { ...limitStrategyConfig };
+  },
+
+  async listPendingApplications(auth) {
+    await delay();
+    ensureAdmin(auth);
+    return { items: [], total: 0 };
+  },
+
+  async updateApplicationIssuanceMode(id, mode, auth) {
+    await delay();
+    ensureAdmin(auth);
+    return { id, selected_issuance_mode: mode, issuance_status: "pending" };
+  },
+
+  async issueApplication(id, auth) {
+    await delay();
+    ensureAdmin(auth);
+    return {
+      application: { id, account: "mock", status: "active", issued_at: new Date().toISOString(), expires_at: new Date().toISOString() },
+      issuance_status: "issued",
+      api_key_plaintext: "AS-mockmockmockmockmockmockmockmo",
+      pending_reason: null
+    };
+  },
+
   resetForTests() {
     apiKeys = initialApiKeys.map((item) => ({ ...item }));
     whitelists = initialWhitelists.map((item) => ({ ...item }));
     users = initialUsers.map((item) => ({ ...item }));
+    limitStrategyTemplates = initialLimitStrategyTemplates.map((item) => ({ ...item }));
+    limitStrategyConfig = {
+      budget_max_budget: "1000",
+      budget_duration: "monthly",
+      rate_limit_tpm: 10000,
+      rate_limit_rpm: 500
+    };
   }
 };

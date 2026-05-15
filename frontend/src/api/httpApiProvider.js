@@ -153,5 +153,36 @@ export const httpApiProvider = {
         note: payload.remark || null
       }
     }).then(mapWhitelistItem);
+  },
+
+  getLimitStrategyConfig(auth) {
+    return request("/api/v1/limit-strategy-config", { auth });
+  },
+
+  updateLimitStrategyConfig(payload, auth) {
+    return request("/api/v1/limit-strategy-config", {
+      method: "PATCH",
+      auth,
+      body: payload
+    });
+  },
+
+  listPendingApplications(auth) {
+    return request("/api/v1/api-keys/applications/pending", { auth });
+  },
+
+  updateApplicationIssuanceMode(id, mode, auth) {
+    return request(`/api/v1/api-keys/applications/${id}/issuance-mode`, {
+      method: "PATCH",
+      auth,
+      body: { mode }
+    });
+  },
+
+  issueApplication(id, auth) {
+    return request(`/api/v1/api-keys/applications/${id}/issue`, {
+      method: "POST",
+      auth
+    });
   }
 };

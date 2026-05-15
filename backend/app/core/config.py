@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     research_list_allowed_title_codes: str = ""
     api_key_encryption_secret: str = "dev-only-change-me"
     api_key_kek_version: str = "v1"
+    provider_base_url: str | None = None
+    provider_master_key: str | None = None
+    provider_timeout_seconds: float = 3.0
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

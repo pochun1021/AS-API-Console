@@ -9,6 +9,8 @@ import ApplyPage from "./pages/ApplyPage";
 import MyApiKeysPage from "./pages/MyApiKeysPage";
 import AdminPage from "./pages/AdminPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import LimitStrategiesPage from "./pages/LimitStrategiesPage";
+import PendingApplicationsPage from "./pages/PendingApplicationsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 
 const STORAGE_KEY = "as-api-console-dev-auth-profile";
@@ -90,6 +92,26 @@ export default function App() {
           element={
             auth.role === "admin" ? (
               <WhitelistAdminPage auth={auth} />
+            ) : (
+              <Navigate to="/apply" replace />
+            )
+          }
+        />
+        <Route
+          path="/limit-strategies"
+          element={
+            auth.role === "admin" ? (
+              <LimitStrategiesPage auth={auth} />
+            ) : (
+              <Navigate to="/apply" replace />
+            )
+          }
+        />
+        <Route
+          path="/pending-applications"
+          element={
+            auth.role === "admin" ? (
+              <PendingApplicationsPage auth={auth} />
             ) : (
               <Navigate to="/apply" replace />
             )

@@ -24,7 +24,7 @@
 2. 通過進入資格後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`。
 3. 使用者填寫姓名、Email、單位、申請日期、用途與 API 生效時長。
 4. 送出申請前再次檢查資格：優先查外部研究人員名單（職稱代碼），未命中再檢查特殊人員名單（`active`）。
-5. 資格檢查通過後系統立即核發 API Key。
+5. 資格檢查通過後系統建立 pending 申請，待管理者審理選擇核發模式後立即補發 API Key。
 6. 系統只顯示一次明文 API Key，使用者需立即保存。
 7. 一般使用者可在「我的 API Key 紀錄」查看本人全部歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩（`AS-...` + 後 4 碼）。
 8. 一般使用者可自行停用本人已生效（`active`）的 Key。
@@ -46,6 +46,7 @@
   - 申請資格需通過：研究人員名單職稱代碼命中，或特殊人員名單為 `active`
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
   - `duration_months` 僅允許 `1|6|12`
+  - 限制策略由管理者透過模板資源維護；一般使用者申請時不可提交策略細節
 - 成功送出後顯示一次性 key，並提供複製操作；複製成功需有明確視覺回饋（check icon 後恢復）。
 - 複製流程以 Clipboard API 為唯一可驗證複製路徑；若不可用或複製失敗，需提示使用者手動複製。
 - 透過複製 icon 觸發時不得要求使用者先反白金鑰文字，系統需直接完成複製。
@@ -94,6 +95,15 @@
 - 表格中的 `total_applications` 與 `active_count` 需可點擊，並以 Dialog 顯示該申請人的 API Key 明細（僅遮罩 key，不得回傳明文）。
 - Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨目前統計頁日期篩選（`from`、`to`）。
 
+### 8) Limit Strategy Page（限制條件管理頁）
+- 僅 `admin` 可使用。
+- 以獨立頁面管理限制條件模板（查詢、新增、編輯）。
+- 模板型別僅允許：
+  - `budget`（必填：`max_budget`、`budget_duration`）
+  - `rate_limit`（必填：`tpm_limit`、`rpm_limit`）
+- 可調整模板狀態 `active|inactive`。
+- 一般使用者不可查看或修改限制條件模板。
+
 ### 7) 狀態頁/元件
 - Loading
 - Empty
@@ -108,7 +118,7 @@
 - 研究人員名單由外部服務提供並以職稱代碼判斷
 - 本系統不同步維護本地研究人員名單；申請時以外部服務即時查詢為準
 - 外部研究人員服務失敗（timeout/5xx）時：允許進入系統，但阻擋申請
-- 申請後自動核發 API Key
+- 申請後進入 pending 佇列，由管理者逐筆選模式後立即補發 API Key
 - API 生效時長固定月數選單（`1|6|12`）
 - API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
 - API Key 明文只顯示一次
@@ -124,7 +134,6 @@
 ### Nice to Have（後續）
 - OAuth/SSO 串接優化（完善 `sysid` 對接與身分映射）
 - 多安全等級與長度策略（隨機段長度 24-30 碼可配置）
-- 申請審核流程
 - 使用量監控與配額管理
 
 ## 資料模型草案
@@ -174,6 +183,9 @@
 - `application_date` (date, required)
 - `duration_months` (int, required, allowed: `1|6|12`)
 - `purpose` (string, required)
+- `limit_strategy_template_id` (fk -> limit_strategy_templates.id, nullable; 由 admin 綁定)
+- `issuance_status` (enum: `issued` | `pending`)
+- `pending_issued_at` (datetime, nullable)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `issued_at` (datetime)
 - `expires_at` (datetime)
@@ -229,9 +241,44 @@ Base path：`/api/v1`
     "issued_at": "...",
     "expires_at": "..."
   },
-  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  "issuance_status": "issued",
+  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "pending_reason": null
 }
 ```
+- Response（201，provider timeout/5xx）：
+```json
+{
+  "application": {
+    "id": "...",
+    "account": "jane.doe",
+    "status": "active",
+    "issued_at": "...",
+    "expires_at": "..."
+  },
+  "issuance_status": "pending",
+  "api_key_plaintext": null,
+  "pending_reason": "awaiting_admin_mode_selection"
+}
+```
+
+### 1-1) 全域限制條件設定（Admin only）
+- `GET /api/v1/limit-strategy-config`
+- `PATCH /api/v1/limit-strategy-config`
+- 全域固定兩種模式設定（皆可編輯）：
+  - `budget`：`max_budget`、`budget_duration`
+  - `rate_limit`：`tpm_limit`、`rpm_limit`
+- 全域設定提供兩種模式的參數來源；pending 審理時由 admin 逐筆選擇 `budget|rate_limit` 後立即補發。
+- 一般使用者不可查看或修改限制條件設定。
+
+### 1-2) Pending 申請審理（Admin only）
+- `GET /api/v1/api-keys/applications/pending`
+- `PATCH /api/v1/api-keys/applications/{id}/issuance-mode`
+- `POST /api/v1/api-keys/applications/{id}/issue`
+- 規則：
+  - pending 申請可由 admin 設定 `issuance_mode`（`budget|rate_limit`）。
+  - admin 觸發 `issue` 後，系統讀取該筆 mode 與全域設定參數執行補發。
+  - 成功時 `issuance_status=issued`；失敗時維持 `pending`。
 
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
@@ -380,6 +427,10 @@ Base path：`/api/v1`
 - `VALIDATION_ERROR`
 - `INVALID_APPLICATION_DATE`
 - `INVALID_DURATION_MONTHS`
+- `LIMIT_STRATEGY_REQUIRED`
+- `LIMIT_STRATEGY_CONFLICT`
+- `MISSING_BUDGET_FIELDS`
+- `MISSING_RATE_LIMIT_FIELDS`
 - `APPLICANT_NOT_ELIGIBLE`
 - `RESEARCH_LIST_SERVICE_UNAVAILABLE`
 - `WHITELIST_EMAIL_DUPLICATED`
@@ -388,6 +439,11 @@ Base path：`/api/v1`
 - `KEY_NOT_ACTIVE`
 - `RATE_LIMITED`
 - `INTERNAL_ERROR`
+- `APPLICATION_NOT_PENDING`
+- `ISSUANCE_MODE_REQUIRED`
+- `ISSUANCE_MODE_INVALID`
+- `ISSUANCE_CONFIG_INCOMPLETE`
+- `APPLICATION_ALREADY_ISSUED`
 
 ## 驗收標準
 1. 研究人員名單職稱代碼命中者可成功核發 API Key，格式為 `AS-` + 30 碼隨機字元（總長 33）。
@@ -435,6 +491,9 @@ Base path：`/api/v1`
 41. `admin` 可透過 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`。
 42. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
 43. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
+44. 限制策略模板僅 `admin` 可建立、查詢、修改；`user` 呼叫需回 `403`。
+45. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
+46. Provider timeout/5xx 或限制條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
 
 ## Roadmap
 ### Phase 1：Foundation
