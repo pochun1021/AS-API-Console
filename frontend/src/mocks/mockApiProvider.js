@@ -215,6 +215,19 @@ let limitStrategyConfig = {
   rate_limit_tpm: 10000,
   rate_limit_rpm: 500
 };
+let notifications = [
+  {
+    id: "ntf_001",
+    account: "jane.doe",
+    type: "api_key_issued",
+    title: "API key issued",
+    message: "Your pending API key application has been issued.",
+    is_read: false,
+    created_at: new Date().toISOString(),
+    read_at: null,
+    metadata: { application_id: "app_mock_001", key_id: "key_001" }
+  }
+];
 
 function createError(code, message, status = 400) {
   const error = new Error(message);
@@ -724,6 +737,47 @@ export const mockApiProvider = {
     };
   },
 
+  async listNotifications(params, auth) {
+    await delay();
+    const page = Number(params?.page || 1);
+    const pageSize = Number(params?.page_size || 20);
+    let scoped = notifications.filter((item) => item.account === auth.account);
+    if (typeof params?.is_read === "boolean") {
+      scoped = scoped.filter((item) => item.is_read === params.is_read);
+    }
+    const offset = (page - 1) * pageSize;
+    return {
+      items: scoped.slice(offset, offset + pageSize).map(({ account, ...item }) => ({ ...item })),
+      page,
+      page_size: pageSize,
+      total: scoped.length
+    };
+  },
+
+  async markNotificationRead(id, auth) {
+    await delay();
+    const target = notifications.find((item) => item.id === id && item.account === auth.account);
+    if (!target) {
+      throw createError("VALIDATION_ERROR", "notification not found", 404);
+    }
+    target.is_read = true;
+    target.read_at = new Date().toISOString();
+    return { id: target.id, is_read: target.is_read, read_at: target.read_at };
+  },
+
+  async markAllNotificationsRead(auth) {
+    await delay();
+    let updated = 0;
+    notifications = notifications.map((item) => {
+      if (item.account === auth.account && !item.is_read) {
+        updated += 1;
+        return { ...item, is_read: true, read_at: new Date().toISOString() };
+      }
+      return item;
+    });
+    return { updated };
+  },
+
   resetForTests() {
     apiKeys = initialApiKeys.map((item) => ({ ...item }));
     whitelists = initialWhitelists.map((item) => ({ ...item }));
@@ -735,5 +789,18 @@ export const mockApiProvider = {
       rate_limit_tpm: 10000,
       rate_limit_rpm: 500
     };
+    notifications = [
+      {
+        id: "ntf_001",
+        account: "jane.doe",
+        type: "api_key_issued",
+        title: "API key issued",
+        message: "Your pending API key application has been issued.",
+        is_read: false,
+        created_at: new Date().toISOString(),
+        read_at: null,
+        metadata: { application_id: "app_mock_001", key_id: "key_001" }
+      }
+    ];
   }
 };

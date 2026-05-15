@@ -12,6 +12,7 @@ import AdminDashboardPage from "./pages/AdminDashboardPage";
 import LimitStrategiesPage from "./pages/LimitStrategiesPage";
 import PendingApplicationsPage from "./pages/PendingApplicationsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
+import NotificationsPage from "./pages/NotificationsPage";
 
 const STORAGE_KEY = "as-api-console-dev-auth-profile";
 
@@ -87,6 +88,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/apply" replace />} />
         <Route path="/apply" element={<ApplyPage auth={auth} />} />
         <Route path="/api-keys" element={<MyApiKeysPage auth={auth} />} />
+        <Route path="/notifications" element={<NotificationsPage auth={auth} />} />
         <Route
           path="/whitelists"
           element={

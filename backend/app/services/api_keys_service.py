@@ -1,5 +1,8 @@
 import hashlib
+import json
+import logging
 import secrets
+from asyncio import run as run_async
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -9,11 +12,14 @@ from app.core.auth import CurrentUser
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.services.crypto_service import CryptoService
+from app.services.mail_service import MailService
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
 from app.services.research_eligibility_service import ResearchEligibilityService
 from db.models.applications import ApiKeyApplication
+from db.models.api_keys import ApiKey
 from db.models.limit_strategy_config import LimitStrategyConfig
 from db.models.limit_strategy_templates import LimitStrategyTemplate
+from db.models.notifications import Notification
 from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyUserRepository, SQLAlchemyWhitelistRepository
 from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
 
@@ -55,6 +61,7 @@ class ApiKeysService:
         self.research_eligibility = ResearchEligibilityService()
         self.provider_client = ProviderClient()
         self.crypto = CryptoService(self.settings.api_key_encryption_secret)
+        self.mail_service = MailService()
 
     def create_application(
         self,
@@ -194,7 +201,12 @@ class ApiKeysService:
             raise ApiError("ISSUANCE_MODE_REQUIRED", "issuance mode is required", 409)
 
         plaintext = self._issue_application(application)
+        notification_id = None
+        if application.issuance_status == "issued":
+            notification_id = self._create_key_issued_notification(application)
         self.session.commit()
+        if notification_id:
+            self._deliver_key_issued_email(application=application, notification_id=notification_id)
         return {
             "application": {
                 "id": application.id,
@@ -207,6 +219,46 @@ class ApiKeysService:
             "api_key_plaintext": plaintext,
             "pending_reason": "provider_unavailable" if application.issuance_status == "pending" else None,
         }
+
+    def _create_key_issued_notification(self, application: ApiKeyApplication) -> str:
+        key = self.session.query(ApiKey).filter(ApiKey.application_id == application.id).one_or_none()
+        notification = Notification(
+            id=secrets.token_hex(16),
+            user_id=application.user_id,
+            type="api_key_issued",
+            title="API key issued",
+            message="Your pending API key application has been issued.",
+            is_read=False,
+            metadata_json=json.dumps({"application_id": application.id, "key_id": key.id if key else None}),
+            email_delivery_status="pending",
+            email_error=None,
+            created_at=datetime.now(UTC),
+            read_at=None,
+        )
+        self.session.add(notification)
+        return notification.id
+
+    def _deliver_key_issued_email(self, *, application: ApiKeyApplication, notification_id: str) -> None:
+        notification = self.session.get(Notification, notification_id)
+        if notification is None:
+            return
+        try:
+            run_async(
+                self.mail_service.send_key_issued_notification(
+                    to_email=application.email,
+                    owner_name=application.name,
+                    application_id=application.id,
+                    app_domain=self.settings.app_domain,
+                )
+            )
+            notification.email_delivery_status = "sent" if self.mail_service.is_enabled() else "skipped"
+            notification.email_error = None
+        except Exception as exc:  # noqa: BLE001
+            logging.exception("failed to send key issued notification email")
+            notification.email_delivery_status = "failed"
+            notification.email_error = str(exc)[:255]
+        self.session.add(notification)
+        self.session.commit()
 
     def _issue_application(self, application: ApiKeyApplication) -> str | None:
         mode = application.selected_issuance_mode

@@ -30,6 +30,16 @@ class Settings(BaseSettings):
     provider_base_url: str | None = None
     provider_master_key: str | None = None
     provider_timeout_seconds: float = 3.0
+    mail_enabled: bool = False
+    mail_server: str | None = None
+    mail_port: int = 587
+    mail_username: str | None = None
+    mail_password: str | None = None
+    mail_from: str | None = None
+    mail_from_name: str = "AS API Console"
+    mail_starttls: bool = True
+    mail_ssl_tls: bool = False
+    mail_validate_certs: bool = True
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

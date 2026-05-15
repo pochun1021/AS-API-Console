@@ -293,6 +293,18 @@ Base path：`/api/v1`
   - pending 申請可由 admin 設定 `issuance_mode`（`budget|rate_limit`）。
   - admin 觸發 `issue` 後，系統讀取該筆 mode 與全域設定參數執行補發。
   - 成功時 `issuance_status=issued`；失敗時維持 `pending`。
+  - 成功補發後，系統需建立站內通知並嘗試發送 Email（Email 不含 `api_key_plaintext`）。
+  - 若 Email 發送失敗，不可回滾補發成功結果；站內通知仍需保留。
+
+### 1-3) 通知中心（User/Admin）
+- `GET /api/v1/notifications`
+- `PATCH /api/v1/notifications/{id}/read`
+- `PATCH /api/v1/notifications/read-all`
+- 規則：
+  - 僅可讀取與操作 auth 使用者本人的通知。
+  - `GET` 支援 `page`、`page_size`、`is_read` 篩選。
+  - 每筆通知至少包含 `type`、`title`、`message`、`is_read`、`created_at`、`metadata`。
+  - `metadata` 可包含 `application_id`、`key_id`。
 
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
@@ -509,6 +521,8 @@ Base path：`/api/v1`
 45. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
 46. Provider timeout/5xx 或金鑰條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
 47. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
+48. 待審申請成功補發後，系統需建立站內通知並嘗試發送 Email；Email 不得包含 `api_key_plaintext`。
+49. `GET/PATCH /api/v1/notifications*` 僅允許操作本人通知；不得跨帳號讀取或標記已讀。
 
 ## Roadmap
 ### Phase 1：Foundation

@@ -184,5 +184,23 @@ export const httpApiProvider = {
       method: "POST",
       auth
     });
-  }
+  },
+
+  listNotifications(params, auth) {
+    const query = new URLSearchParams();
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.page_size) query.set("page_size", String(params.page_size));
+    if (typeof params?.is_read === "boolean") query.set("is_read", String(params.is_read));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request(`/api/v1/notifications${suffix}`, { auth });
+  },
+
+  markNotificationRead(id, auth) {
+    return request(`/api/v1/notifications/${id}/read`, { method: "PATCH", auth });
+  },
+
+  markAllNotificationsRead(auth) {
+    return request("/api/v1/notifications/read-all", { method: "PATCH", auth });
+  },
+
 };
