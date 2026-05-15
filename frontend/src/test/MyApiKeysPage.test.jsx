@@ -48,6 +48,7 @@ test("shows owner column for admin list", async () => {
   );
 
   expect(await screen.findByRole("columnheader", { name: "申請人" })).toBeInTheDocument();
+  expect(await screen.findByRole("columnheader", { name: "Key Alias" })).toBeInTheDocument();
   expect((await screen.findAllByText("jane.doe / Jane Doe")).length).toBeGreaterThan(0);
 });
 
@@ -85,4 +86,21 @@ test("shows applicant identity in detail dialog for admin", async () => {
 
   await user.click((await screen.findAllByRole("button", { name: "查看詳情" }))[0]);
   expect(await screen.findByText("申請人: jane.doe / Jane Doe")).toBeInTheDocument();
+});
+
+test("admin can edit key alias in list dialog", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={adminAuth} />
+    </MemoryRouter>
+  );
+
+  await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
+  const aliasInput = await screen.findByLabelText("Key Alias");
+  await user.clear(aliasInput);
+  await user.type(aliasInput, "service_ops");
+  await user.click(screen.getByRole("button", { name: "儲存" }));
+  expect(await screen.findByText("Key Alias 已更新。")).toBeInTheDocument();
+  expect(await screen.findByText("service_ops")).toBeInTheDocument();
 });

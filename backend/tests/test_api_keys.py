@@ -29,6 +29,7 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert "api_key_plaintext" not in item
     assert "key_prefix" not in item
     assert item["masked_key"].startswith("AS-...")
+    assert item["key_alias"] == f"for_{user_headers['x-account']}"
     assert len(item["masked_key"]) == 10
     assert "application_date" in item
     assert "duration_months" in item
@@ -38,6 +39,7 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert detail_resp.status_code == 200
     assert "api_key_plaintext" not in detail_resp.json()
     assert "key_prefix" not in detail_resp.json()
+    assert detail_resp.json()["key_alias"] == f"for_{user_headers['x-account']}"
 
 
 def test_application_rejects_non_whitelisted(client, user_headers):
@@ -190,6 +192,33 @@ def test_reveal_plaintext_admin_only(client, admin_headers):
     reveal_resp = client.post(f"/api/v1/api-keys/{key_id}/reveal", headers=admin_headers)
     assert reveal_resp.status_code == 200
     assert reveal_resp.json()["api_key_plaintext"] == created_plaintext
+
+
+def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
+    _create_whitelist(client, admin_headers, user1["x-email"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
+
+    forbidden = client.patch(f"/api/v1/api-keys/{key_id}", headers=user1, json={"key_alias": "custom_user_alias"})
+    assert forbidden.status_code == 403
+
+    invalid = client.patch(f"/api/v1/api-keys/{key_id}", headers=admin_headers, json={"key_alias": "   "})
+    assert invalid.status_code == 422
+
+    updated = client.patch(f"/api/v1/api-keys/{key_id}", headers=admin_headers, json={"key_alias": "custom_admin_alias"})
+    assert updated.status_code == 200
+    assert updated.json()["key_alias"] == "custom_admin_alias"
+
+    listed = client.get("/api/v1/api-keys", headers=admin_headers)
+    assert listed.status_code == 200
+    admin_item = next(item for item in listed.json()["items"] if item["id"] == key_id)
+    assert admin_item["key_alias"] == "custom_admin_alias"
 
 
 def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):

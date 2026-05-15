@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import CurrentUser, get_current_user
 from app.schemas.api_keys import (
     ApiKeyDetailResponse,
+    ApiKeyAliasUpdateRequest,
     ApiKeyListResponse,
     ApiKeyRevealResponse,
     ApiKeyUserStatisticsResponse,
@@ -109,3 +110,18 @@ def reveal_api_key(
 ) -> dict:
     service = ApiKeysService(db)
     return service.reveal_key_plaintext(current_user=current_user, key_id=key_id)
+
+
+@router.patch("/api-keys/{key_id}", response_model=ApiKeyDetailResponse)
+def update_api_key_alias(
+    key_id: str,
+    payload: ApiKeyAliasUpdateRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    service = ApiKeysService(db)
+    try:
+        return service.update_key_alias(current_user=current_user, key_id=key_id, key_alias=payload.key_alias)
+    except Exception:
+        db.rollback()
+        raise

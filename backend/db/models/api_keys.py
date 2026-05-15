@@ -21,6 +21,7 @@ class ApiKey(Base):
     key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     key_prefix: Mapped[str] = mapped_column(String(10), default="AS-", nullable=False)
     masked_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    key_alias: Mapped[str | None] = mapped_column(String(100), nullable=True)
     key_ciphertext: Mapped[str | None] = mapped_column(Text(), nullable=True)
     key_kek_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
     length: Mapped[int] = mapped_column(Integer, default=30, nullable=False)

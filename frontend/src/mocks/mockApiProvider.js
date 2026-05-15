@@ -250,6 +250,10 @@ function findUserById(id) {
   return users.find((item) => item.id === id);
 }
 
+function normalizeAlias(item) {
+  return item.key_alias || `for_${item.owner_account}`;
+}
+
 function findOrCreateUserByAuth(auth) {
   let user = users.find((item) => item.account === auth.account);
   if (user) return user;
@@ -338,6 +342,7 @@ export const mockApiProvider = {
         application_date: payload.application_date,
         duration_months: payload.duration_months,
         purpose: payload.purpose.trim(),
+        key_alias: `for_${auth.account}`,
         department: auth.department,
         created_at: now.toISOString(),
         expires_at: expires.toISOString(),
@@ -362,7 +367,12 @@ export const mockApiProvider = {
   async listApiKeys(auth) {
     await delay();
     const items = auth.role === "admin" ? apiKeys : apiKeys.filter((item) => item.owner_account === auth.account);
-    return { items, page: 1, page_size: 20, total: items.length };
+    return {
+      items: items.map((item) => ({ ...item, key_alias: normalizeAlias(item) })),
+      page: 1,
+      page_size: 20,
+      total: items.length
+    };
   },
 
   async listApiKeyUserStatistics(params, auth) {
@@ -402,7 +412,22 @@ export const mockApiProvider = {
       throw createError("KEY_NOT_OWNED_BY_USER", "key is not owned by user", 403);
     }
 
-    return { item: target };
+    return { item: { ...target, key_alias: normalizeAlias(target) } };
+  },
+
+  async updateApiKey(id, payload, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const target = findApiKeyById(id);
+    if (!target) {
+      throw createError("VALIDATION_ERROR", "id not found", 404);
+    }
+    const normalizedAlias = String(payload?.key_alias || "").trim();
+    if (!normalizedAlias) {
+      throw createError("VALIDATION_ERROR", "key alias cannot be empty", 422);
+    }
+    target.key_alias = normalizedAlias;
+    return { item: { ...target, key_alias: normalizeAlias(target) } };
   },
 
   async revokeApiKey(id, auth) {

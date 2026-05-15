@@ -54,6 +54,7 @@
 - 顯示範圍：僅本人帳號的全部歷史紀錄（`active|revoked|expired`）。
 - 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（`AS-...` + 後 4 碼）。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
+- 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示 `for_{owner_account}`。
 - 操作：僅對本人 `active` key 顯示「停用」按鈕。
 
 ### 3) API Key Detail Dialog（詳情視窗）
@@ -62,6 +63,7 @@
 - 一般使用者僅可查本人資料。
 - 一般使用者可停用本人 `active` key。
 - 一般查詢/詳情不可再次顯示 key 明文（僅受控 reveal 流程可回取）。
+- 管理者可於詳情視窗編輯 `key_alias`。
 
 ### 4) Whitelist Admin Page（特殊人員名單管理頁）
 - 可用 `sysid`、`account`、`name`、`email` 查詢使用者後加入特殊人員名單。
@@ -183,6 +185,7 @@
 - `application_id` (fk -> api_key_applications.id)
 - `key_hash` (string, required)
 - `masked_key` (string, 遮罩格式固定為 `AS-...` + 後 4 碼；response only)
+- `key_alias` (string, nullable；顯示預設值 `for_{owner_account}`，可由 admin 更新)
 - `key_ciphertext` (string, encrypted at rest, nullable for legacy rows)
 - `key_kek_version` (string, key-encryption-key version tag)
 - `length` (int, MVP 固定 30，表示隨機段長度，不含 `AS-` 前綴)
@@ -192,7 +195,9 @@
 
 ## 權限規則（MVP）
 - `user`：可使用 `GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`POST /api/v1/api-keys/{id}/revoke`，但僅可查詢/停用本人 `active` key。
+- `user`：不可更新 `key_alias`。
 - `admin`：可查詢全部 API Key 與申請紀錄，可管理特殊人員名單（沿用受保護路徑 `/api/v1/whitelists*`），可啟用/停用其他使用者管理者身分（沿用受保護路徑 `/api/v1/admins/{id}/enable|disable`）。
+- `admin`：可使用 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`。
 - 金鑰啟用狀態以 `api_keys.status` 為唯一判斷來源：`active`=啟用，`revoked|expired`=不可用。
 
 ## API 草案
@@ -238,6 +243,7 @@ Base path：`/api/v1`
       "id": "...",
       "status": "active",
       "masked_key": "AS-...wxyz",
+      "key_alias": "for_jane.doe",
       "owner_account": "jane.doe",
       "owner_name": "Jane Doe",
       "expires_at": "..."
@@ -281,6 +287,7 @@ Base path：`/api/v1`
 ### 3) 查詢單筆 API Key 紀錄
 - `GET /api/v1/api-keys/{id}`
 - 規則：`user` 僅可查本人資料；`admin` 可查任意資料；不可回傳明文 key。
+- 回傳 `key_alias`；若資料未設定則回傳預設值 `for_{owner_account}`。
 - 回傳可包含申請人識別欄位 `owner_account`、`owner_name`（供管理者辨識申請來源）。
 - 回傳應包含 `purpose` 供詳情頁顯示；若歷史資料未留存用途，前端顯示 `-`。
 - 回傳應包含 `department` 供詳情頁顯示；若歷史資料未留存單位，前端顯示 `-`。
@@ -288,6 +295,16 @@ Base path：`/api/v1`
 ### 4) 停用 API Key
 - `POST /api/v1/api-keys/{id}/revoke`
 - 規則：`user` 僅可停用本人 `active` key；`admin` 可停用任意 `active` key；停用為軟停用（`status=revoked`）。
+
+### 4-0) 更新 API Key Alias
+- `PATCH /api/v1/api-keys/{id}`
+- Request：
+```json
+{
+  "key_alias": "service_internal_batch"
+}
+```
+- 規則：僅 `admin` 可使用；`key_alias` 不可為空字串；成功後回傳更新後單筆資料。
 
 ### 4-1) 受控回取 API Key 明文（Reveal）
 - `POST /api/v1/api-keys/{id}/reveal`
@@ -410,6 +427,8 @@ Base path：`/api/v1`
 37. 手動切換語言後，重新登入需沿用 DB 偏好。
 38. `PATCH /api/v1/users/preferences/locale` 對非法 locale 值需回傳 `400`。
 39. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
+40. `GET /api/v1/api-keys` 與 `GET /api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳 `for_{owner_account}`。
+41. `admin` 可透過 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`。
 
 ## Roadmap
 ### Phase 1：Foundation

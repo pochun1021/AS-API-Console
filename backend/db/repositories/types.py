@@ -37,6 +37,7 @@ class ApiKeyListItem:
     id: str
     status: str
     masked_key: str
+    key_alias: str | None
     application_date: date
     duration_months: int
     owner_account: str
@@ -49,6 +50,7 @@ class ApiKeyDetail:
     id: str
     status: str
     masked_key: str
+    key_alias: str | None
     owner_account: str
     owner_name: str
     purpose: str
@@ -79,6 +81,11 @@ class ApiKeySecretMaterial:
     owner_account: str
     key_ciphertext: str | None
     key_kek_version: str | None
+
+
+@dataclass(slots=True)
+class ApiKeyAliasUpdateInput:
+    key_alias: str
 
 
 @dataclass(slots=True)

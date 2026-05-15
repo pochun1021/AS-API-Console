@@ -26,6 +26,7 @@ class ApiKeyListItemResponse(BaseModel):
     id: str
     status: str
     masked_key: str
+    key_alias: str
     application_date: date
     duration_months: int
     owner_account: str
@@ -44,6 +45,7 @@ class ApiKeyDetailResponse(BaseModel):
     id: str
     status: str
     masked_key: str
+    key_alias: str
     owner_account: str
     owner_name: str
     purpose: str
@@ -63,6 +65,10 @@ class ApiKeyRevealResponse(BaseModel):
     id: str
     api_key_plaintext: str
     key_kek_version: str
+
+
+class ApiKeyAliasUpdateRequest(BaseModel):
+    key_alias: str
 
 
 class ApiKeyUserStatisticsItemResponse(BaseModel):

@@ -10,8 +10,8 @@ from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.services.crypto_service import CryptoService
 from app.services.research_eligibility_service import ResearchEligibilityService
-from db.repositories.types import ApiKeyCreateInput, ApplicationCreateInput, AuthIdentity
 from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyUserRepository, SQLAlchemyWhitelistRepository
+from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApplicationCreateInput, AuthIdentity
 
 
 @dataclass(slots=True)
@@ -41,6 +41,10 @@ def _calc_expiration(issued_at: datetime, duration_months: int) -> datetime:
     month = month % 12 + 1
     day = min(issued_at.day, 28)
     return issued_at.replace(year=year, month=month, day=day)
+
+
+def _default_alias(owner_account: str) -> str:
+    return f"for_{owner_account}"
 
 
 class ApiKeysService:
@@ -143,6 +147,7 @@ class ApiKeysService:
                     "id": item.id,
                     "status": item.status,
                     "masked_key": item.masked_key,
+                    "key_alias": item.key_alias or _default_alias(item.owner_account),
                     "application_date": item.application_date,
                     "duration_months": item.duration_months,
                     "owner_account": item.owner_account,
@@ -169,6 +174,7 @@ class ApiKeysService:
             "id": scoped.id,
             "status": scoped.status,
             "masked_key": scoped.masked_key,
+            "key_alias": scoped.key_alias or _default_alias(scoped.owner_account),
             "owner_account": scoped.owner_account,
             "owner_name": scoped.owner_name,
             "purpose": scoped.purpose,
@@ -177,6 +183,43 @@ class ApiKeysService:
             "duration_months": scoped.duration_months,
             "created_at": scoped.created_at,
             "expires_at": scoped.expires_at,
+        }
+
+    def update_key_alias(self, current_user: CurrentUser, key_id: str, key_alias: str) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+
+        normalized_alias = key_alias.strip()
+        if not normalized_alias:
+            raise ApiError("VALIDATION_ERROR", "key_alias cannot be empty", 422)
+
+        exists = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
+        if exists is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+
+        updated = self.key_repo.update_key_alias(
+            key_id,
+            current_user.role,
+            current_user.account,
+            ApiKeyAliasUpdateInput(key_alias=normalized_alias),
+        )
+        if updated is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+
+        self.session.commit()
+        return {
+            "id": updated.id,
+            "status": updated.status,
+            "masked_key": updated.masked_key,
+            "key_alias": updated.key_alias or _default_alias(updated.owner_account),
+            "owner_account": updated.owner_account,
+            "owner_name": updated.owner_name,
+            "purpose": updated.purpose,
+            "department": updated.department,
+            "application_date": updated.application_date,
+            "duration_months": updated.duration_months,
+            "created_at": updated.created_at,
+            "expires_at": updated.expires_at,
         }
 
     def revoke_key(self, current_user: CurrentUser, key_id: str) -> dict:

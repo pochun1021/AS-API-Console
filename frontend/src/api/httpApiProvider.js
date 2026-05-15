@@ -70,6 +70,10 @@ export const httpApiProvider = {
     return request(`/api/v1/api-keys/${id}`, { auth }).then((item) => ({ item }));
   },
 
+  updateApiKey(id, payload, auth) {
+    return request(`/api/v1/api-keys/${id}`, { method: "PATCH", auth, body: payload }).then((item) => ({ item }));
+  },
+
   revokeApiKey(id, auth) {
     return request(`/api/v1/api-keys/${id}/revoke`, { method: "POST", auth });
   },

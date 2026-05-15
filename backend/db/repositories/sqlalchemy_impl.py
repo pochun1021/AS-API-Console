@@ -10,6 +10,7 @@ from db.models.users import User
 from db.models.whitelist import ApiKeyWhitelist
 from db.repositories.interfaces import ApiKeyRepository, UserRepository, WhitelistRepository
 from db.repositories.types import (
+    ApiKeyAliasUpdateInput,
     ApiKeyCreateInput,
     ApiKeyDetail,
     ApiKeyListItem,
@@ -224,6 +225,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
                 id=row.ApiKey.id,
                 status=row.ApiKey.status,
                 masked_key=row.ApiKey.masked_key,
+                key_alias=row.ApiKey.key_alias,
                 application_date=row.ApiKeyApplication.application_date,
                 duration_months=row.ApiKeyApplication.duration_months,
                 owner_account=row.ApiKeyApplication.account,
@@ -249,6 +251,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             id=row.ApiKey.id,
             status=row.ApiKey.status,
             masked_key=row.ApiKey.masked_key,
+            key_alias=row.ApiKey.key_alias,
             owner_account=row.ApiKeyApplication.account,
             owner_name=row.ApiKeyApplication.name,
             purpose=row.ApiKeyApplication.purpose,
@@ -305,6 +308,39 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         self.session.add(row.ApiKeyApplication)
         self.session.flush()
         return key
+
+    def update_key_alias(
+        self, key_id: str, requester_role: str, requester_account: str, data: ApiKeyAliasUpdateInput
+    ) -> ApiKeyDetail | None:
+        stmt = select(ApiKey, ApiKeyApplication).join(
+            ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id
+        )
+        stmt = stmt.where(ApiKey.id == key_id)
+        if requester_role == "user":
+            stmt = stmt.where(ApiKeyApplication.account == requester_account)
+
+        row = self.session.execute(stmt).first()
+        if row is None:
+            return None
+
+        row.ApiKey.key_alias = data.key_alias
+        self.session.add(row.ApiKey)
+        self.session.flush()
+
+        return ApiKeyDetail(
+            id=row.ApiKey.id,
+            status=row.ApiKey.status,
+            masked_key=row.ApiKey.masked_key,
+            key_alias=row.ApiKey.key_alias,
+            owner_account=row.ApiKeyApplication.account,
+            owner_name=row.ApiKeyApplication.name,
+            purpose=row.ApiKeyApplication.purpose,
+            department=row.ApiKeyApplication.department,
+            application_date=row.ApiKeyApplication.application_date,
+            duration_months=row.ApiKeyApplication.duration_months,
+            created_at=row.ApiKey.created_at,
+            expires_at=row.ApiKeyApplication.expires_at,
+        )
 
     def list_user_statistics(
         self,

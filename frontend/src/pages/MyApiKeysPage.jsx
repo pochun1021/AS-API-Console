@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import BlockIcon from "@mui/icons-material/Block";
+import EditIcon from "@mui/icons-material/Edit";
 import {
   Alert,
   Box,
@@ -11,6 +12,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  TextField,
   IconButton,
   Stack,
   Tooltip,
@@ -62,6 +64,10 @@ export default function MyApiKeysPage({ auth }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [pendingRevokeId, setPendingRevokeId] = useState("");
+  const [pendingAliasEditItem, setPendingAliasEditItem] = useState(null);
+  const [aliasInputValue, setAliasInputValue] = useState("");
+  const [aliasSaving, setAliasSaving] = useState(false);
+  const [detailAliasValue, setDetailAliasValue] = useState("");
 
   async function load() {
     setLoading(true);
@@ -96,8 +102,10 @@ export default function MyApiKeysPage({ auth }) {
     try {
       const response = await apiClient.getApiKeyById(id, auth);
       setDetailItem(response.item);
+      setDetailAliasValue(response.item?.key_alias || "");
     } catch (e) {
       setDetailItem(null);
+      setDetailAliasValue("");
       setDetailError(e?.payload?.error?.message || t("mykeys_detail_failed"));
     } finally {
       setDetailLoading(false);
@@ -114,7 +122,26 @@ export default function MyApiKeysPage({ auth }) {
     setDetailOpen(false);
     setDetailId("");
     setDetailItem(null);
+    setDetailAliasValue("");
     setDetailError("");
+  }
+
+  async function saveAlias(id, keyAlias) {
+    setAliasSaving(true);
+    setBanner("");
+    try {
+      const response = await apiClient.updateApiKey(id, { key_alias: keyAlias }, auth);
+      setBanner(t("mykeys_alias_update_done"));
+      setItems((prev) => prev.map((item) => (item.id === id ? { ...item, key_alias: response.item.key_alias } : item)));
+      if (detailItem?.id === id) {
+        setDetailItem(response.item);
+        setDetailAliasValue(response.item.key_alias || "");
+      }
+    } catch (e) {
+      setBanner(e?.payload?.error?.message || t("mykeys_alias_update_failed"));
+    } finally {
+      setAliasSaving(false);
+    }
   }
 
   useEffect(() => {
@@ -157,6 +184,12 @@ export default function MyApiKeysPage({ auth }) {
 
       if (auth.role === "admin") {
         baseColumns.push({
+          field: "key_alias",
+          headerName: t("mykeys_col_key_alias"),
+          flex: 1.4,
+          minWidth: 180
+        });
+        baseColumns.push({
           field: "owner",
           headerName: t("mykeys_col_owner"),
           flex: 1.5,
@@ -181,6 +214,20 @@ export default function MyApiKeysPage({ auth }) {
                 <VisibilityIcon fontSize="small" />
               </IconButton>
             </Tooltip>
+            {auth.role === "admin" ? (
+              <Tooltip title={t("mykeys_edit_key_alias")}>
+                <IconButton
+                  aria-label={t("mykeys_edit_key_alias")}
+                  size="small"
+                  onClick={() => {
+                    setPendingAliasEditItem(params.row);
+                    setAliasInputValue(params.row.key_alias || "");
+                  }}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            ) : null}
             {params.row.status === "active" ? (
               <Tooltip title={t("mykeys_revoke_key")}>
                 <IconButton
@@ -272,16 +319,61 @@ export default function MyApiKeysPage({ auth }) {
               <Typography>{t("mykeys_detail_created_at")}: {formatDateTime(detailItem.created_at)}</Typography>
               <Typography>{t("mykeys_detail_expires_at")}: {formatDateTime(detailItem.expires_at)}</Typography>
               <Typography>{t("mykeys_detail_purpose")}: {detailItem.purpose || "-"}</Typography>
+              {auth.role === "admin" ? (
+                <TextField
+                  label={t("mykeys_col_key_alias")}
+                  size="small"
+                  value={detailAliasValue}
+                  onChange={(e) => setDetailAliasValue(e.target.value)}
+                />
+              ) : null}
             </Stack>
           ) : null}
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDetail}>{locale === "zh-TW" ? "關閉" : "Close"}</Button>
+          {auth.role === "admin" && detailItem ? (
+            <Button
+              variant="outlined"
+              disabled={aliasSaving}
+              onClick={() => saveAlias(detailItem.id, detailAliasValue)}
+            >
+              {t("mykeys_save_key_alias")}
+            </Button>
+          ) : null}
           {detailItem?.status === "active" ? (
             <Button color="warning" variant="contained" onClick={() => setPendingRevokeId(detailItem.id)}>
               停用金鑰
             </Button>
           ) : null}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(pendingAliasEditItem)} onClose={() => setPendingAliasEditItem(null)} fullWidth maxWidth="xs">
+        <DialogTitle>{t("mykeys_dialog_alias_title")}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            label={t("mykeys_col_key_alias")}
+            value={aliasInputValue}
+            onChange={(e) => setAliasInputValue(e.target.value)}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingAliasEditItem(null)}>{locale === "zh-TW" ? "取消" : "Cancel"}</Button>
+          <Button
+            disabled={aliasSaving}
+            onClick={async () => {
+              const target = pendingAliasEditItem;
+              if (!target) return;
+              await saveAlias(target.id, aliasInputValue);
+              setPendingAliasEditItem(null);
+            }}
+          >
+            {locale === "zh-TW" ? "儲存" : "Save"}
+          </Button>
         </DialogActions>
       </Dialog>
     </Stack>

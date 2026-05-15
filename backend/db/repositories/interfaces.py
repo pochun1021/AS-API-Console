@@ -6,6 +6,7 @@ from db.models.api_keys import ApiKey
 from db.models.users import User
 from db.models.whitelist import ApiKeyWhitelist
 from db.repositories.types import (
+    ApiKeyAliasUpdateInput,
     ApiKeyCreateInput,
     ApiKeyDetail,
     ApiKeyListItem,
@@ -72,6 +73,10 @@ class ApiKeyRepository(Protocol):
     ) -> ApiKeySecretMaterial | None: ...
 
     def revoke_key(self, key_id: str, requester_role: str, requester_account: str) -> ApiKey | None: ...
+
+    def update_key_alias(
+        self, key_id: str, requester_role: str, requester_account: str, data: ApiKeyAliasUpdateInput
+    ) -> ApiKeyDetail | None: ...
 
     def list_user_statistics(
         self,
