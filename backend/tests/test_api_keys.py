@@ -21,11 +21,15 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     body = create_resp.json()
     assert body["api_key_plaintext"].startswith("AS-")
     assert len(body["api_key_plaintext"]) == 33
+    assert "api_key_prefix" not in body
 
     list_resp = client.get("/api/v1/api-keys", headers=user_headers)
     assert list_resp.status_code == 200
     item = list_resp.json()["items"][0]
     assert "api_key_plaintext" not in item
+    assert "key_prefix" not in item
+    assert item["masked_key"].startswith("AS-...")
+    assert len(item["masked_key"]) == 10
     assert "application_date" in item
     assert "duration_months" in item
     key_id = item["id"]
@@ -33,6 +37,7 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     detail_resp = client.get(f"/api/v1/api-keys/{key_id}", headers=user_headers)
     assert detail_resp.status_code == 200
     assert "api_key_plaintext" not in detail_resp.json()
+    assert "key_prefix" not in detail_resp.json()
 
 
 def test_application_rejects_non_whitelisted(client, user_headers):

@@ -31,7 +31,7 @@ def _hash_key(plaintext: str) -> str:
 
 
 def _mask_key(plaintext: str) -> str:
-    return f"{plaintext[:7]}****{plaintext[-4:]}"
+    return f"AS-...{plaintext[-4:]}"
 
 
 def _calc_expiration(issued_at: datetime, duration_months: int) -> datetime:
@@ -122,7 +122,6 @@ class ApiKeysService:
                 "expires_at": application.expires_at,
             },
             "api_key_plaintext": plaintext,
-            "api_key_prefix": "AS-",
         }
 
     def list_keys(self, current_user: CurrentUser, page: int, page_size: int, status: str | None = None) -> dict:
@@ -144,7 +143,6 @@ class ApiKeysService:
                     "id": item.id,
                     "status": item.status,
                     "masked_key": item.masked_key,
-                    "key_prefix": item.key_prefix,
                     "application_date": item.application_date,
                     "duration_months": item.duration_months,
                     "owner_account": item.owner_account,
@@ -171,7 +169,6 @@ class ApiKeysService:
             "id": scoped.id,
             "status": scoped.status,
             "masked_key": scoped.masked_key,
-            "key_prefix": scoped.key_prefix,
             "owner_account": scoped.owner_account,
             "owner_name": scoped.owner_name,
             "purpose": scoped.purpose,

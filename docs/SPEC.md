@@ -26,9 +26,9 @@
 4. 送出申請前再次檢查資格：優先查外部研究人員名單（職稱代碼），未命中再檢查特殊人員名單（`active`）。
 5. 資格檢查通過後系統立即核發 API Key。
 6. 系統只顯示一次明文 API Key，使用者需立即保存。
-7. 一般使用者可在「我的 API Key 紀錄」查看本人全部歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩（前 4 碼 + `****` + 後 4 碼）。
+7. 一般使用者可在「我的 API Key 紀錄」查看本人全部歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩（`AS-...` + 後 4 碼）。
 8. 一般使用者可自行停用本人已生效（`active`）的 Key。
-9. 使用者可於列表/詳情查看狀態、到期時間與 key 前綴。
+9. 使用者可於列表/詳情查看狀態、到期時間與遮罩 key（`AS-...XXXX`）。
 
 ## 頁面規格
 ### 1) Apply Page（申請頁）
@@ -52,7 +52,7 @@
 
 ### 2) My API Keys Page（一般使用者我的紀錄頁）
 - 顯示範圍：僅本人帳號的全部歷史紀錄（`active|revoked|expired`）。
-- 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（前 4 碼 + `****` + 後 4 碼）。
+- 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（`AS-...` + 後 4 碼）。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
 - 操作：僅對本人 `active` key 顯示「停用」按鈕。
 
@@ -182,8 +182,7 @@
 - `id` (string/uuid)
 - `application_id` (fk -> api_key_applications.id)
 - `key_hash` (string, required)
-- `key_prefix` (string, required, MVP 固定 `AS-`)
-- `masked_key` (string, 遮罩格式固定為前 4 碼 + `****` + 後 4 碼；response only)
+- `masked_key` (string, 遮罩格式固定為 `AS-...` + 後 4 碼；response only)
 - `key_ciphertext` (string, encrypted at rest, nullable for legacy rows)
 - `key_kek_version` (string, key-encryption-key version tag)
 - `length` (int, MVP 固定 30，表示隨機段長度，不含 `AS-` 前綴)
@@ -223,8 +222,7 @@ Base path：`/api/v1`
     "issued_at": "...",
     "expires_at": "..."
   },
-  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "api_key_prefix": "AS-"
+  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 }
 ```
 
@@ -239,8 +237,7 @@ Base path：`/api/v1`
     {
       "id": "...",
       "status": "active",
-      "masked_key": "AS-abcd****wxyz",
-      "key_prefix": "AS-",
+      "masked_key": "AS-...wxyz",
       "owner_account": "jane.doe",
       "owner_name": "Jane Doe",
       "expires_at": "..."
@@ -381,7 +378,7 @@ Base path：`/api/v1`
 7. 明文 key 預設僅於建立成功當下回傳一次；一般查詢端點不得回傳明文。
 8. 資料庫不得存 API Key 明文；需存 `key_hash`，並可存加密密文欄位供受控 reveal 流程使用。
 9. 一般使用者登入後只能看到自己的全部歷史紀錄。
-10. 一般使用者查詢 API Key 時僅能看到 `masked_key`/`key_prefix`，不得看到明文。
+10. 一般使用者查詢 API Key 時僅能看到 `masked_key`（格式 `AS-...XXXX`），不得看到明文。
 10-1. `POST /api/v1/api-keys/{id}/reveal` 僅 `admin` 可使用，且可回傳明文 key。
 11. 一般使用者可停用本人 `active` key，停用後狀態轉為 `revoked`。
 12. 一般使用者停用非本人 key 時，API 回傳 `KEY_NOT_OWNED_BY_USER`。

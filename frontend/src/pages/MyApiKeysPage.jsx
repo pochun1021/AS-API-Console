@@ -43,6 +43,13 @@ function formatDateTime(value) {
   return Number.isNaN(dt.getTime()) ? "-" : dt.toLocaleString();
 }
 
+function formatMaskedKey(value) {
+  if (!value) return "-";
+  const text = String(value);
+  const tail = text.slice(-4);
+  return `AS-...${tail}`;
+}
+
 export default function MyApiKeysPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const [items, setItems] = useState([]);
@@ -144,7 +151,7 @@ export default function MyApiKeysPage({ auth }) {
           headerName: t("mykeys_col_masked_key"),
           flex: 1.5,
           minWidth: 180,
-          valueGetter: (_value, row) => `${row.masked_key} (${row.key_prefix})`
+          valueFormatter: (value) => formatMaskedKey(value)
         }
       ];
 
@@ -260,7 +267,7 @@ export default function MyApiKeysPage({ auth }) {
               <Typography>{t("mykeys_detail_application_date")}: {detailItem.application_date}</Typography>
               <Typography>{t("mykeys_detail_duration")}: {detailItem.duration_months} {t("mykeys_duration_suffix")}</Typography>
               <Typography>
-                {t("mykeys_detail_masked_key")}: {detailItem.masked_key} ({detailItem.key_prefix})
+                {t("mykeys_detail_masked_key")}: {formatMaskedKey(detailItem.masked_key)}
               </Typography>
               <Typography>{t("mykeys_detail_created_at")}: {formatDateTime(detailItem.created_at)}</Typography>
               <Typography>{t("mykeys_detail_expires_at")}: {formatDateTime(detailItem.expires_at)}</Typography>

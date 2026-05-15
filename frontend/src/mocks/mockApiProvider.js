@@ -4,8 +4,7 @@ const initialApiKeys = [
   {
     id: "key_001",
     status: "active",
-    masked_key: "AS-abcd****xy90",
-    key_prefix: "AS-",
+    masked_key: "AS-...xy90",
     application_date: today,
     duration_months: 6,
     purpose: "integration test for platform service",
@@ -18,8 +17,7 @@ const initialApiKeys = [
   {
     id: "key_002",
     status: "revoked",
-    masked_key: "AS-efgh****mn56",
-    key_prefix: "AS-",
+    masked_key: "AS-...mn56",
     application_date: today,
     duration_months: 1,
     purpose: "legacy integration",
@@ -32,8 +30,7 @@ const initialApiKeys = [
   {
     id: "key_003",
     status: "active",
-    masked_key: "AS-ijkl****ab12",
-    key_prefix: "AS-",
+    masked_key: "AS-...ab12",
     application_date: today,
     duration_months: 12,
     purpose: "admin automation",
@@ -46,8 +43,7 @@ const initialApiKeys = [
   {
     id: "key_004",
     status: "expired",
-    masked_key: "AS-mnop****pq78",
-    key_prefix: "AS-",
+    masked_key: "AS-...pq78",
     application_date: "2025-04-01",
     duration_months: 1,
     created_at: "2025-04-01T08:00:00.000Z",
@@ -58,8 +54,7 @@ const initialApiKeys = [
   {
     id: "key_005",
     status: "active",
-    masked_key: "AS-qrst****cd34",
-    key_prefix: "AS-",
+    masked_key: "AS-...cd34",
     application_date: "2026-04-15",
     duration_months: 6,
     purpose: "reporting service integration",
@@ -72,8 +67,7 @@ const initialApiKeys = [
   {
     id: "key_006",
     status: "revoked",
-    masked_key: "AS-uvwx****ef56",
-    key_prefix: "AS-",
+    masked_key: "AS-...ef56",
     application_date: "2026-03-10",
     duration_months: 12,
     purpose: "security scanner",
@@ -86,8 +80,7 @@ const initialApiKeys = [
   {
     id: "key_007",
     status: "expired",
-    masked_key: "AS-yz12****gh78",
-    key_prefix: "AS-",
+    masked_key: "AS-...gh78",
     application_date: "2025-12-01",
     duration_months: 1,
     purpose: "legacy webhook client",
@@ -332,7 +325,6 @@ export const mockApiProvider = {
     validateApplication(payload, auth);
 
     const plain = generatePlainKey();
-    const prefix = "AS-";
     const id = `key_${String(apiKeys.length + 1).padStart(3, "0")}`;
     const now = new Date();
     const expires = new Date(now);
@@ -342,8 +334,7 @@ export const mockApiProvider = {
       {
         id,
         status: "active",
-        masked_key: `${plain.slice(0, 7)}****${plain.slice(-4)}`,
-        key_prefix: prefix,
+        masked_key: `AS-...${plain.slice(-4)}`,
         application_date: payload.application_date,
         duration_months: payload.duration_months,
         purpose: payload.purpose.trim(),
@@ -364,8 +355,7 @@ export const mockApiProvider = {
         issued_at: now.toISOString(),
         expires_at: expires.toISOString()
       },
-      api_key_plaintext: plain,
-      api_key_prefix: prefix
+      api_key_plaintext: plain
     };
   },
 

@@ -223,7 +223,6 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             ApiKeyListItem(
                 id=row.ApiKey.id,
                 status=row.ApiKey.status,
-                key_prefix=row.ApiKey.key_prefix,
                 masked_key=row.ApiKey.masked_key,
                 application_date=row.ApiKeyApplication.application_date,
                 duration_months=row.ApiKeyApplication.duration_months,
@@ -249,7 +248,6 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         return ApiKeyDetail(
             id=row.ApiKey.id,
             status=row.ApiKey.status,
-            key_prefix=row.ApiKey.key_prefix,
             masked_key=row.ApiKey.masked_key,
             owner_account=row.ApiKeyApplication.account,
             owner_name=row.ApiKeyApplication.name,

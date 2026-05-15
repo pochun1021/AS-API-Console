@@ -36,7 +36,6 @@ class ApiKeyCreateInput:
 class ApiKeyListItem:
     id: str
     status: str
-    key_prefix: str
     masked_key: str
     application_date: date
     duration_months: int
@@ -49,7 +48,6 @@ class ApiKeyListItem:
 class ApiKeyDetail:
     id: str
     status: str
-    key_prefix: str
     masked_key: str
     owner_account: str
     owner_name: str
