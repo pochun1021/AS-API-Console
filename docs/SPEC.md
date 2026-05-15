@@ -95,14 +95,23 @@
 - 表格中的 `total_applications` 與 `active_count` 需可點擊，並以 Dialog 顯示該申請人的 API Key 明細（僅遮罩 key，不得回傳明文）。
 - Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨目前統計頁日期篩選（`from`、`to`）。
 
-### 8) Limit Strategy Page（限制條件管理頁）
+### 8) Key Condition Page（金鑰條件管理頁）
 - 僅 `admin` 可使用。
-- 以獨立頁面管理限制條件模板（查詢、新增、編輯）。
+- 以獨立頁面管理金鑰條件模板（查詢、新增、編輯）。
 - 模板型別僅允許：
-  - `budget`（必填：`max_budget`、`budget_duration`）
-  - `rate_limit`（必填：`tpm_limit`、`rpm_limit`）
+  - `budget`（額度；必填：`max_budget`、`budget_duration`）
+  - `rate_limit`（速度；必填：`tpm_limit`、`rpm_limit`）
+- 欄位語意：
+  - `max_budget`：總金額額度（USD）。
+  - `budget_duration`：重置週期（僅允許 `daily|weekly|monthly`）。
+  - `tpm_limit`：每分鐘 Token 數限制。
+  - `rpm_limit`：每分鐘請求數限制。
+- `budget_duration` 前端顯示需使用單選，展示文案映射：
+  - `daily` => `1天`
+  - `weekly` => `7天`
+  - `monthly` => `30天`
 - 可調整模板狀態 `active|inactive`。
-- 一般使用者不可查看或修改限制條件模板。
+- 一般使用者不可查看或修改金鑰條件模板。
 
 ### 7) 狀態頁/元件
 - Loading
@@ -262,14 +271,19 @@ Base path：`/api/v1`
 }
 ```
 
-### 1-1) 全域限制條件設定（Admin only）
+### 1-1) 全域金鑰條件設定（Admin only）
 - `GET /api/v1/limit-strategy-config`
 - `PATCH /api/v1/limit-strategy-config`
 - 全域固定兩種模式設定（皆可編輯）：
-  - `budget`：`max_budget`、`budget_duration`
-  - `rate_limit`：`tpm_limit`、`rpm_limit`
+  - `budget`（額度）：`max_budget`、`budget_duration`
+  - `rate_limit`（速度）：`tpm_limit`、`rpm_limit`
+- 欄位語意同金鑰條件模板：
+  - `max_budget`：總金額額度（USD）。
+  - `budget_duration`：重置週期（`daily|weekly|monthly`）。
+  - `tpm_limit`：每分鐘 Token 數限制。
+  - `rpm_limit`：每分鐘請求數限制。
 - 全域設定提供兩種模式的參數來源；pending 審理時由 admin 逐筆選擇 `budget|rate_limit` 後立即補發。
-- 一般使用者不可查看或修改限制條件設定。
+- 一般使用者不可查看或修改金鑰條件設定。
 
 ### 1-2) Pending 申請審理（Admin only）
 - `GET /api/v1/api-keys/applications/pending`
@@ -493,7 +507,8 @@ Base path：`/api/v1`
 43. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
 44. 限制策略模板僅 `admin` 可建立、查詢、修改；`user` 呼叫需回 `403`。
 45. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
-46. Provider timeout/5xx 或限制條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
+46. Provider timeout/5xx 或金鑰條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
+47. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
 
 ## Roadmap
 ### Phase 1：Foundation

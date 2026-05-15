@@ -6,6 +6,7 @@ import {
   Card,
   CardContent,
   Divider,
+  MenuItem,
   Stack,
   TextField,
   Typography
@@ -93,13 +94,20 @@ export default function LimitStrategiesPage({ auth }) {
                 <TextField
                   label={t("apply_max_budget")}
                   value={form.budget_max_budget}
+                  helperText={t("limit_strategy_budget_helper")}
                   onChange={(e) => setForm((prev) => ({ ...prev, budget_max_budget: e.target.value }))}
                 />
                 <TextField
+                  select
                   label={t("apply_budget_duration")}
                   value={form.budget_duration}
+                  helperText={t("limit_strategy_budget_duration_helper")}
                   onChange={(e) => setForm((prev) => ({ ...prev, budget_duration: e.target.value }))}
-                />
+                >
+                  <MenuItem value="daily">{t("limit_strategy_budget_duration_daily")}</MenuItem>
+                  <MenuItem value="weekly">{t("limit_strategy_budget_duration_weekly")}</MenuItem>
+                  <MenuItem value="monthly">{t("limit_strategy_budget_duration_monthly")}</MenuItem>
+                </TextField>
               </Box>
 
               <Divider />
@@ -110,12 +118,14 @@ export default function LimitStrategiesPage({ auth }) {
                   type="number"
                   label={t("apply_tpm_limit")}
                   value={form.rate_limit_tpm}
+                  helperText={t("limit_strategy_tpm_helper")}
                   onChange={(e) => setForm((prev) => ({ ...prev, rate_limit_tpm: e.target.value }))}
                 />
                 <TextField
                   type="number"
                   label={t("apply_rpm_limit")}
                   value={form.rate_limit_rpm}
+                  helperText={t("limit_strategy_rpm_helper")}
                   onChange={(e) => setForm((prev) => ({ ...prev, rate_limit_rpm: e.target.value }))}
                 />
               </Box>
