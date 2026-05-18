@@ -1,16 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import CheckIcon from "@mui/icons-material/Check";
 import LanguageOutlinedIcon from "@mui/icons-material/LanguageOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
-import { AppBar, Badge, Box, Button, Container, IconButton, Menu, MenuItem, Toolbar, Tooltip, Typography } from "@mui/material";
+import { AppBar, Box, Button, Container, IconButton, Menu, MenuItem, Toolbar, Tooltip, Typography } from "@mui/material";
 import { Link as RouterLink, useLocation } from "react-router-dom";
-import { apiClient } from "../api/client";
 import { useLocale } from "../i18n/locale";
 
 const navItems = [
   { labelKey: "nav_apply", path: "/apply", roles: ["user", "admin"] },
   { labelKey: "nav_api_keys", path: "/api-keys", roles: ["user", "admin"] },
-  { labelKey: "nav_notifications", path: "/notifications", roles: ["user", "admin"] },
   { labelKey: "nav_pending_applications", path: "/pending-applications", roles: ["admin"] },
   { labelKey: "nav_whitelists", path: "/whitelists", roles: ["admin"] },
   { labelKey: "nav_limit_strategies", path: "/limit-strategies", roles: ["admin"] },
@@ -22,25 +20,8 @@ export default function AppLayout({ children, auth, onChangeLocale = () => {} })
   const location = useLocation();
   const { locale, t } = useLocale();
   const [localeMenuAnchor, setLocaleMenuAnchor] = useState(null);
-  const [unreadCount, setUnreadCount] = useState(0);
   const visibleNavItems = navItems.filter((item) => item.roles.includes(auth.role));
   const localeMenuOpen = Boolean(localeMenuAnchor);
-
-  useEffect(() => {
-    let canceled = false;
-    async function refreshUnread() {
-      try {
-        const result = await apiClient.listNotifications({ page: 1, page_size: 1, is_read: false }, auth);
-        if (!canceled) setUnreadCount(result.total || 0);
-      } catch {
-        if (!canceled) setUnreadCount(0);
-      }
-    }
-    refreshUnread();
-    return () => {
-      canceled = true;
-    };
-  }, [auth, location.pathname]);
 
   function openLocaleMenu(event) {
     setLocaleMenuAnchor(event.currentTarget);
@@ -82,13 +63,7 @@ export default function AppLayout({ children, auth, onChangeLocale = () => {} })
                 whiteSpace: "nowrap"
               }}
             >
-              {item.path === "/notifications" ? (
-                <Badge badgeContent={unreadCount} color="warning">
-                  {t(item.labelKey)}
-                </Badge>
-              ) : (
-                t(item.labelKey)
-              )}
+              {t(item.labelKey)}
             </Button>
           ))}
           <Box sx={{ display: "flex", alignItems: "center", ml: { xs: 0.5, sm: 1 } }}>

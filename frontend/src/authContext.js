@@ -8,11 +8,11 @@ export const devAuthProfiles = {
     role: "admin"
   },
   user: {
-    account: "user1",
-    name: "User 1",
-    email: "user1@example.com",
-    department: "R&D",
-    sysid: "user-seed-001",
+    account: "pochen",
+    name: "Pochen",
+    email: "pochen@as.edu.tw",
+    department: "IT",
+    sysid: "user-seed-pochen",
     role: "user"
   }
 };

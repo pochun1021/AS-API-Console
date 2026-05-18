@@ -1,15 +1,14 @@
-from db.repositories.interfaces import ApiKeyRepository, UserRepository, WhitelistRepository
+from db.repositories.interfaces import ApiKeyRepository, WhitelistRepository
 from db.repositories.sqlalchemy_impl import (
+    SQLAlchemyAdminRepository,
     SQLAlchemyApiKeyRepository,
-    SQLAlchemyUserRepository,
     SQLAlchemyWhitelistRepository,
 )
 
 __all__ = [
     "ApiKeyRepository",
     "WhitelistRepository",
-    "UserRepository",
+    "SQLAlchemyAdminRepository",
     "SQLAlchemyApiKeyRepository",
     "SQLAlchemyWhitelistRepository",
-    "SQLAlchemyUserRepository",
 ]

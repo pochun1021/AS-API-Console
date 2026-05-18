@@ -16,6 +16,11 @@ from db import models  # noqa: F401
 from db.session import get_db
 
 
+@pytest.fixture(autouse=True)
+def disable_provider_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: False)
+
+
 @pytest.fixture()
 def client() -> Generator[TestClient, None, None]:
     settings = get_settings()

@@ -124,42 +124,6 @@ def test_application_rejects_future_date(client, admin_headers, user_headers):
     assert resp.json()["error"]["code"] == "INVALID_APPLICATION_DATE"
 
 
-def test_limit_strategy_template_admin_only_and_binding(client, admin_headers, user_headers):
-    forbidden = client.get("/api/v1/limit-strategy-templates", headers=user_headers)
-    assert forbidden.status_code == 403
-
-    created = client.post(
-        "/api/v1/limit-strategy-templates",
-        headers=admin_headers,
-        json={
-            "name": "ratelimit-a",
-            "strategy_type": "rate_limit",
-            "tpm_limit": 12000,
-            "rpm_limit": 600,
-            "status": "active",
-        },
-    )
-    assert created.status_code == 201
-    template_id = created.json()["id"]
-
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
-    create_resp = client.post(
-        "/api/v1/api-keys/applications",
-        headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
-    )
-    assert create_resp.status_code == 201
-    app_id = create_resp.json()["application"]["id"]
-
-    bind_resp = client.patch(
-        f"/api/v1/api-keys/applications/{app_id}/limit-strategy",
-        headers=admin_headers,
-        json={"template_id": template_id},
-    )
-    assert bind_resp.status_code == 200
-    assert bind_resp.json()["template_id"] == template_id
-
-
 def test_admin_pending_flow_permissions_and_issue(client, admin_headers, user_headers, monkeypatch):
     _create_whitelist(client, admin_headers, user_headers["x-email"])
     create_resp = client.post(

@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, Date, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -15,10 +15,7 @@ class ApiKeyApplication(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     account: Mapped[str] = mapped_column(String(100), nullable=False)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    limit_strategy_template_id: Mapped[str | None] = mapped_column(
-        ForeignKey("limit_strategy_templates.id"), nullable=True, index=True
-    )
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     department: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -48,5 +45,4 @@ class ApiKeyApplication(Base):
         nullable=False,
     )
 
-    user: Mapped["User"] = relationship(back_populates="applications")
     api_key: Mapped["ApiKey"] = relationship(back_populates="application", uselist=False)

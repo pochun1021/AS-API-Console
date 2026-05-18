@@ -1,8 +1,5 @@
 import hashlib
-import json
-import logging
 import secrets
-from asyncio import run as run_async
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -12,15 +9,12 @@ from app.core.auth import CurrentUser
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.services.crypto_service import CryptoService
-from app.services.mail_service import MailService
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
 from app.services.research_eligibility_service import ResearchEligibilityService
 from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
 from db.models.limit_strategy_config import LimitStrategyConfig
-from db.models.limit_strategy_templates import LimitStrategyTemplate
-from db.models.notifications import Notification
-from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyUserRepository, SQLAlchemyWhitelistRepository
+from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
 from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
 
 
@@ -55,13 +49,11 @@ class ApiKeysService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.settings = get_settings()
-        self.user_repo = SQLAlchemyUserRepository(session)
         self.whitelist_repo = SQLAlchemyWhitelistRepository(session)
         self.key_repo = SQLAlchemyApiKeyRepository(session)
         self.research_eligibility = ResearchEligibilityService()
         self.provider_client = ProviderClient()
         self.crypto = CryptoService(self.settings.api_key_encryption_secret)
-        self.mail_service = MailService()
 
     def create_application(
         self,
@@ -104,13 +96,11 @@ class ApiKeysService:
             department=current_user.department,
             sysid=current_user.sysid,
         )
-        user = self.user_repo.upsert_from_auth(identity)
-
         issued_at = datetime.now(UTC)
         expires_at = _calc_expiration(issued_at, duration_months)
         application = self.key_repo.create_application(
             ApplicationCreateInput(
-                user_id=user.id,
+                user_id=current_user.sysid,
                 identity=identity,
                 application_date=application_date,
                 duration_months=duration_months,
@@ -201,12 +191,7 @@ class ApiKeysService:
             raise ApiError("ISSUANCE_MODE_REQUIRED", "issuance mode is required", 409)
 
         plaintext = self._issue_application(application)
-        notification_id = None
-        if application.issuance_status == "issued":
-            notification_id = self._create_key_issued_notification(application)
         self.session.commit()
-        if notification_id:
-            self._deliver_key_issued_email(application=application, notification_id=notification_id)
         return {
             "application": {
                 "id": application.id,
@@ -219,46 +204,6 @@ class ApiKeysService:
             "api_key_plaintext": plaintext,
             "pending_reason": "provider_unavailable" if application.issuance_status == "pending" else None,
         }
-
-    def _create_key_issued_notification(self, application: ApiKeyApplication) -> str:
-        key = self.session.query(ApiKey).filter(ApiKey.application_id == application.id).one_or_none()
-        notification = Notification(
-            id=secrets.token_hex(16),
-            user_id=application.user_id,
-            type="api_key_issued",
-            title="API key issued",
-            message="Your pending API key application has been issued.",
-            is_read=False,
-            metadata_json=json.dumps({"application_id": application.id, "key_id": key.id if key else None}),
-            email_delivery_status="pending",
-            email_error=None,
-            created_at=datetime.now(UTC),
-            read_at=None,
-        )
-        self.session.add(notification)
-        return notification.id
-
-    def _deliver_key_issued_email(self, *, application: ApiKeyApplication, notification_id: str) -> None:
-        notification = self.session.get(Notification, notification_id)
-        if notification is None:
-            return
-        try:
-            run_async(
-                self.mail_service.send_key_issued_notification(
-                    to_email=application.email,
-                    owner_name=application.name,
-                    application_id=application.id,
-                    app_domain=self.settings.app_domain,
-                )
-            )
-            notification.email_delivery_status = "sent" if self.mail_service.is_enabled() else "skipped"
-            notification.email_error = None
-        except Exception as exc:  # noqa: BLE001
-            logging.exception("failed to send key issued notification email")
-            notification.email_delivery_status = "failed"
-            notification.email_error = str(exc)[:255]
-        self.session.add(notification)
-        self.session.commit()
 
     def _issue_application(self, application: ApiKeyApplication) -> str | None:
         mode = application.selected_issuance_mode
@@ -323,132 +268,6 @@ class ApiKeysService:
         application.updated_at = datetime.now(UTC)
         self.session.add(application)
         return plaintext
-
-    def create_limit_strategy_template(self, current_user: CurrentUser, payload: dict) -> dict:
-        if current_user.role != "admin":
-            raise ApiError("FORBIDDEN", "admin role required", 403)
-        data = self._validate_template_payload(payload)
-        now = datetime.now(UTC)
-        template = LimitStrategyTemplate(
-            id=secrets.token_hex(16),
-            name=data["name"],
-            strategy_type=data["strategy_type"],
-            max_budget=data["max_budget"],
-            budget_duration=data["budget_duration"],
-            tpm_limit=data["tpm_limit"],
-            rpm_limit=data["rpm_limit"],
-            status=data["status"],
-            created_by=current_user.account,
-            updated_by=current_user.account,
-            created_at=now,
-            updated_at=now,
-        )
-        self.session.add(template)
-        self.session.commit()
-        return self._serialize_template(template)
-
-    def list_limit_strategy_templates(self, current_user: CurrentUser) -> dict:
-        if current_user.role != "admin":
-            raise ApiError("FORBIDDEN", "admin role required", 403)
-        items = self.session.query(LimitStrategyTemplate).order_by(LimitStrategyTemplate.created_at.desc()).all()
-        return {"items": [self._serialize_template(item) for item in items], "total": len(items)}
-
-    def update_limit_strategy_template(self, current_user: CurrentUser, template_id: str, payload: dict) -> dict:
-        if current_user.role != "admin":
-            raise ApiError("FORBIDDEN", "admin role required", 403)
-        template = self.session.get(LimitStrategyTemplate, template_id)
-        if template is None:
-            raise ApiError("LIMIT_STRATEGY_TEMPLATE_NOT_FOUND", "template not found", 404)
-        data = self._validate_template_payload(payload)
-        template.name = data["name"]
-        template.strategy_type = data["strategy_type"]
-        template.max_budget = data["max_budget"]
-        template.budget_duration = data["budget_duration"]
-        template.tpm_limit = data["tpm_limit"]
-        template.rpm_limit = data["rpm_limit"]
-        template.status = data["status"]
-        template.updated_by = current_user.account
-        template.updated_at = datetime.now(UTC)
-        self.session.add(template)
-        self.session.commit()
-        return self._serialize_template(template)
-
-    def get_application_limit_strategy_binding(self, current_user: CurrentUser, application_id: str) -> dict:
-        if current_user.role != "admin":
-            raise ApiError("FORBIDDEN", "admin role required", 403)
-        application = self.session.get(ApiKeyApplication, application_id)
-        if application is None:
-            raise ApiError("VALIDATION_ERROR", "application not found", 404)
-        return {"application_id": application.id, "template_id": application.limit_strategy_template_id}
-
-    def bind_application_limit_strategy(self, current_user: CurrentUser, application_id: str, template_id: str) -> dict:
-        if current_user.role != "admin":
-            raise ApiError("FORBIDDEN", "admin role required", 403)
-        application = self.session.get(ApiKeyApplication, application_id)
-        if application is None:
-            raise ApiError("VALIDATION_ERROR", "application not found", 404)
-        template = self.session.get(LimitStrategyTemplate, template_id)
-        if template is None:
-            raise ApiError("LIMIT_STRATEGY_TEMPLATE_NOT_FOUND", "template not found", 404)
-        if template.status != "active":
-            raise ApiError("LIMIT_STRATEGY_TEMPLATE_INACTIVE", "template is inactive", 422)
-        application.limit_strategy_template_id = template.id
-        application.updated_at = datetime.now(UTC)
-        self.session.add(application)
-        self.session.commit()
-        return {"application_id": application.id, "template_id": application.limit_strategy_template_id}
-
-    def _validate_template_payload(self, payload: dict) -> dict:
-        name = str(payload.get("name") or "").strip()
-        strategy_type = str(payload.get("strategy_type") or "").strip()
-        status = str(payload.get("status") or "active").strip()
-        if not name:
-            raise ApiError("VALIDATION_ERROR", "template name is required", 422)
-        if strategy_type not in {"budget", "rate_limit"}:
-            raise ApiError("VALIDATION_ERROR", "strategy_type must be budget or rate_limit", 422)
-        if status not in {"active", "inactive"}:
-            raise ApiError("VALIDATION_ERROR", "status must be active or inactive", 422)
-        if strategy_type == "budget":
-            max_budget = str(payload.get("max_budget") or "").strip()
-            budget_duration = str(payload.get("budget_duration") or "").strip()
-            if not max_budget or not budget_duration:
-                raise ApiError("MISSING_BUDGET_FIELDS", "max_budget and budget_duration are required", 422)
-            return {
-                "name": name,
-                "strategy_type": strategy_type,
-                "max_budget": max_budget,
-                "budget_duration": budget_duration,
-                "tpm_limit": None,
-                "rpm_limit": None,
-                "status": status,
-            }
-        tpm_limit = payload.get("tpm_limit")
-        rpm_limit = payload.get("rpm_limit")
-        if tpm_limit is None or rpm_limit is None:
-            raise ApiError("MISSING_RATE_LIMIT_FIELDS", "tpm_limit and rpm_limit are required", 422)
-        if int(tpm_limit) <= 0 or int(rpm_limit) <= 0:
-            raise ApiError("INVALID_RATE_LIMIT_FIELDS", "tpm_limit and rpm_limit must be positive", 422)
-        return {
-            "name": name,
-            "strategy_type": strategy_type,
-            "max_budget": None,
-            "budget_duration": None,
-            "tpm_limit": int(tpm_limit),
-            "rpm_limit": int(rpm_limit),
-            "status": status,
-        }
-
-    def _serialize_template(self, template: LimitStrategyTemplate) -> dict:
-        return {
-            "id": template.id,
-            "name": template.name,
-            "strategy_type": template.strategy_type,
-            "max_budget": template.max_budget,
-            "budget_duration": template.budget_duration,
-            "tpm_limit": template.tpm_limit,
-            "rpm_limit": template.rpm_limit,
-            "status": template.status,
-        }
 
     def get_limit_strategy_config(self, current_user: CurrentUser) -> dict:
         if current_user.role != "admin":

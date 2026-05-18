@@ -24,15 +24,10 @@ def test_whitelist_duplicate_email(client, admin_headers):
 
 
 def test_users_admin_role_endpoints(client, admin_headers):
-    # seed user via application flow
-    client.post("/api/v1/whitelists", headers=admin_headers, json={"email": "u1@example.com", "note": "seed"})
-    user_headers = build_headers(role="user", account="u1", email="u1@example.com", sysid="u1-sys")
-    app_resp = client.post(
-        "/api/v1/api-keys/applications",
-        headers=user_headers,
-        json={"application_date": "2026-05-06", "duration_months": 1, "purpose": "seed", "max_budget": "1000", "budget_duration": "monthly"},
-    )
-    assert app_resp.status_code == 201
+    # bootstrap another admin identity via auth headers
+    target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid="u1-sys")
+    bootstrap = client.get("/api/v1/api-keys", headers=target_admin_headers)
+    assert bootstrap.status_code == 200
 
     users = client.get("/api/v1/users?q=u1", headers=admin_headers)
     assert users.status_code == 200
@@ -52,8 +47,7 @@ def test_users_admin_role_endpoints(client, admin_headers):
     assert disable.json()["role"] == "admin"
     assert disable.json()["status"] == "inactive"
 
-    disabled_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid="u1-sys")
-    disabled_list = client.get("/api/v1/api-keys", headers=disabled_headers)
+    disabled_list = client.get("/api/v1/api-keys", headers=target_admin_headers)
     assert disabled_list.status_code == 403
     assert disabled_list.json()["error"]["code"] == "FORBIDDEN"
 

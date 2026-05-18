@@ -146,21 +146,12 @@
 - 使用量監控與配額管理
 
 ## 資料模型草案
-### Entity: `users`（身分來源）
-- `id` (string/uuid, 使用 auth context 的 `sysid` 作為唯一身分鍵)
-- `sysid` (string, response alias；值等於 `id`)
-- `account` (string, required, unique)
-- `email` (string, required, unique, lowercase)
-- `name` (string, required)
-- `role` (enum: `user` | `admin`)
-- `status` (enum: `active` | `inactive`)
-- `preferred_locale` (enum: `zh-TW` | `en`, nullable；使用者語言偏好)
-- `created_at` (datetime)
-- `updated_at` (datetime)
+### Entity: `users`（已移除）
+- `users` table 已自本階段移除。
+- 管理者資料來源為 `admins`。
 
 ### Entity: `admins`（管理者名單來源）
 - `id` (string/uuid)
-- `user_id` (string/uuid, unique, 對應使用者主鍵)
 - `account` (string, required, unique)
 - `email` (string, required, unique, lowercase)
 - `name` (string, required)
@@ -185,14 +176,13 @@
 ### Entity: `api_key_applications`
 - `id` (string/uuid)
 - `account` (string, required)
-- `user_id` (fk -> users.id, required)
+- `user_id` (string, required；存 auth `sysid`，不再綁定 `users` FK)
 - `name` (string, required)
 - `email` (string, required)
 - `department` (string, required)
 - `application_date` (date, required)
 - `duration_months` (int, required, allowed: `1|6|12`)
 - `purpose` (string, required)
-- `limit_strategy_template_id` (fk -> limit_strategy_templates.id, nullable; 由 admin 綁定)
 - `issuance_status` (enum: `issued` | `pending`)
 - `pending_issued_at` (datetime, nullable)
 - `status` (enum: `active` | `revoked` | `expired`)
@@ -293,18 +283,14 @@ Base path：`/api/v1`
   - pending 申請可由 admin 設定 `issuance_mode`（`budget|rate_limit`）。
   - admin 觸發 `issue` 後，系統讀取該筆 mode 與全域設定參數執行補發。
   - 成功時 `issuance_status=issued`；失敗時維持 `pending`。
-  - 成功補發後，系統需建立站內通知並嘗試發送 Email（Email 不含 `api_key_plaintext`）。
-  - 若 Email 發送失敗，不可回滾補發成功結果；站內通知仍需保留。
+  - 本階段通知中心與語言偏好功能停用（見 1-3、5-2）。
 
-### 1-3) 通知中心（User/Admin）
+### 1-3) 通知中心（暫停）
 - `GET /api/v1/notifications`
 - `PATCH /api/v1/notifications/{id}/read`
 - `PATCH /api/v1/notifications/read-all`
 - 規則：
-  - 僅可讀取與操作 auth 使用者本人的通知。
-  - `GET` 支援 `page`、`page_size`、`is_read` 篩選。
-  - 每筆通知至少包含 `type`、`title`、`message`、`is_read`、`created_at`、`metadata`。
-  - `metadata` 可包含 `application_id`、`key_id`。
+  - 本階段停用，固定回傳 `410 FEATURE_DISABLED`。
 
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
@@ -403,26 +389,23 @@ Base path：`/api/v1`
 
 ### 5-1) 特殊人員名單新增前使用者查詢 API
 - `GET /api/v1/users?q={keyword}`
-- 用途：供管理者以 `sysid`、`account`、`name`、`email` 查詢可加入特殊人員名單的人員。
-- 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`。
+- 用途：供管理者查詢既有管理者名單（`admins`）資料。
+- 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`status`。
 
-### 5-2) 目前使用者語言偏好 API
+### 5-2) 目前使用者語言偏好 API（暫停）
 - `GET /api/v1/users/preferences/locale`
-  - 用途：取得目前登入使用者語言偏好
-  - Response（200）：`{ "preferred_locale": "zh-TW" | "en" | null }`
+  - 本階段停用，回傳 `410 FEATURE_DISABLED`
 - `PATCH /api/v1/users/preferences/locale`
-  - 用途：更新目前登入使用者語言偏好
-  - Request：`{ "preferred_locale": "zh-TW" | "en" }`
-  - 非法值回傳 `400` + `VALIDATION_ERROR`
+  - 本階段停用，回傳 `410 FEATURE_DISABLED`
 
-### 前端語言規則（MVP）
+### 前端語言規則（MVP，停用後降級）
 - 僅支援 `zh-TW`、`en`。
-- 啟動語言優先序：`DB 偏好 > 系統語言判定 > fallback en`。
+- 啟動語言優先序：`系統語言判定 > fallback en`（本階段不寫回 DB）。
 - 系統語言判定規則：
   - `navigator.language` / `navigator.languages` 命中 `zh*` -> `zh-TW`
   - 命中 `en*` -> `en`
   - 其他語系 -> `en`
-- 手動切換語言後，需更新 UI 文案並寫回 `preferred_locale`。
+- 手動切換語言後，需更新 UI 文案（本階段不寫回 `preferred_locale`）。
 - DataGrid locale 文案需跟隨語言切換。
 
 ### 6) 管理者啟用/停用 API
@@ -511,18 +494,17 @@ Base path：`/api/v1`
 35. 系統語言 `en-US` 首次進站時（DB 無偏好）需顯示英文。
 36. 系統語言非 `zh*|en*`（例如 `ja-JP`）首次進站時（DB 無偏好）需 fallback 顯示英文。
 37. 手動切換語言後，重新登入需沿用 DB 偏好。
-38. `PATCH /api/v1/users/preferences/locale` 對非法 locale 值需回傳 `400`。
+38. `GET/PATCH /api/v1/users/preferences/locale` 於本階段需回傳 `410` 與 `FEATURE_DISABLED`。
 39. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
 40. `GET /api/v1/api-keys` 與 `GET /api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳 `for_{owner_account}`。
 41. `admin` 可透過 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`。
 42. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
 43. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
-44. 限制策略模板僅 `admin` 可建立、查詢、修改；`user` 呼叫需回 `403`。
+44. 限制策略設定僅 `admin` 可讀取與更新（`/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。
 45. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
 46. Provider timeout/5xx 或金鑰條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
 47. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
-48. 待審申請成功補發後，系統需建立站內通知並嘗試發送 Email；Email 不得包含 `api_key_plaintext`。
-49. `GET/PATCH /api/v1/notifications*` 僅允許操作本人通知；不得跨帳號讀取或標記已讀。
+48. `GET/PATCH /api/v1/notifications*` 於本階段需回傳 `410` 與 `FEATURE_DISABLED`。
 
 ## Roadmap
 ### Phase 1：Foundation

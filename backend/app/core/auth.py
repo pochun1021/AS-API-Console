@@ -4,7 +4,8 @@ from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
-from db.repositories import SQLAlchemyUserRepository
+from db.repositories import SQLAlchemyAdminRepository
+from db.repositories.types import AuthIdentity
 from db.session import get_db
 
 
@@ -45,9 +46,24 @@ def get_current_user(
     if role not in {"user", "admin"}:
         raise ApiError("VALIDATION_ERROR", "invalid role", 422)
 
-    user = SQLAlchemyUserRepository(db).get_by_account(x_account or "")
-    if user is not None and user.status == "inactive":
-        raise ApiError("FORBIDDEN", "user is disabled", 403)
+    if role == "admin":
+        repo = SQLAlchemyAdminRepository(db)
+        admin = repo.get_by_account(x_account or "")
+        if admin is None:
+            repo.upsert_from_auth(
+                AuthIdentity(
+                    account=x_account or "",
+                    name=x_name or "",
+                    email=x_email or "",
+                    department=x_department or "",
+                    sysid=x_sysid or "",
+                ),
+                created_by=x_account or "system",
+            )
+            db.commit()
+            admin = repo.get_by_account(x_account or "")
+        if admin is None or admin.status != "active":
+            raise ApiError("FORBIDDEN", "admin is disabled", 403)
 
     return CurrentUser(
         account=x_account or "",

@@ -4,11 +4,11 @@ from uuid import uuid4
 from sqlalchemy import Select, case, func, select
 from sqlalchemy.orm import Session
 
+from db.models.admins import Admin
 from db.models.api_keys import ApiKey
 from db.models.applications import ApiKeyApplication
-from db.models.users import User
 from db.models.whitelist import ApiKeyWhitelist
-from db.repositories.interfaces import ApiKeyRepository, UserRepository, WhitelistRepository
+from db.repositories.interfaces import ApiKeyRepository, WhitelistRepository
 from db.repositories.types import (
     ApiKeyAliasUpdateInput,
     ApiKeyCreateInput,
@@ -24,82 +24,69 @@ from db.repositories.types import (
 )
 
 
-class SQLAlchemyUserRepository(UserRepository):
+class SQLAlchemyAdminRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def get_by_id(self, user_id: str) -> User | None:
-        return self.session.get(User, user_id)
+    def get_by_id(self, admin_id: str) -> Admin | None:
+        return self.session.get(Admin, admin_id)
 
-    def get_by_account(self, account: str) -> User | None:
-        stmt = select(User).where(User.account == account)
+    def get_by_account(self, account: str) -> Admin | None:
+        stmt = select(Admin).where(Admin.account == account)
         return self.session.scalar(stmt)
 
-    def get_by_email(self, email: str) -> User | None:
-        stmt = select(User).where(User.email == email.lower())
+    def get_by_sysid(self, sysid: str) -> Admin | None:
+        stmt = select(Admin).where(Admin.sysid == sysid)
         return self.session.scalar(stmt)
 
-    def search(self, keyword: str, limit: int = 20) -> list[User]:
+    def search(self, keyword: str, limit: int = 20) -> list[Admin]:
         like = f"%{keyword}%"
         stmt = (
-            select(User)
-            .where(User.account.like(like) | User.email.like(like) | User.name.like(like))
+            select(Admin)
+            .where(Admin.account.like(like) | Admin.email.like(like) | Admin.name.like(like) | Admin.sysid.like(like))
             .limit(limit)
         )
         return list(self.session.scalars(stmt).all())
 
-    def update_role(self, user_id: str, role: str) -> User | None:
-        user = self.get_by_id(user_id)
-        if not user:
-            return None
-        user.role = role
-        user.updated_at = datetime.now(timezone.utc)
-        self.session.add(user)
-        self.session.flush()
-        return user
-
-    def update_status(self, user_id: str, status: str) -> User | None:
-        user = self.get_by_id(user_id)
-        if not user:
-            return None
-        user.status = status
-        user.updated_at = datetime.now(timezone.utc)
-        self.session.add(user)
-        self.session.flush()
-        return user
-
-    def update_preferred_locale(self, user_id: str, preferred_locale: str | None) -> User | None:
-        user = self.get_by_id(user_id)
-        if not user:
-            return None
-        user.preferred_locale = preferred_locale
-        user.updated_at = datetime.now(timezone.utc)
-        self.session.add(user)
-        self.session.flush()
-        return user
-
-    def upsert_from_auth(self, identity: AuthIdentity) -> User:
-        user = self.get_by_account(identity.account)
+    def upsert_from_auth(self, identity: AuthIdentity, *, created_by: str) -> Admin:
+        admin = self.get_by_sysid(identity.sysid) or self.get_by_account(identity.account)
         now = datetime.now(timezone.utc)
-        if user is None:
-            user = User(
+        if admin is None:
+            admin = Admin(
                 id=identity.sysid,
                 account=identity.account,
                 email=identity.email.lower(),
                 name=identity.name,
-                role="user",
+                department=identity.department,
+                sysid=identity.sysid,
                 status="active",
-                preferred_locale=None,
+                created_by=created_by,
+                updated_by=created_by,
                 created_at=now,
                 updated_at=now,
             )
         else:
-            user.name = identity.name
-            user.email = identity.email.lower()
-            user.updated_at = now
-        self.session.add(user)
+            admin.account = identity.account
+            admin.name = identity.name
+            admin.email = identity.email.lower()
+            admin.department = identity.department
+            admin.status = "active"
+            admin.updated_by = created_by
+            admin.updated_at = now
+        self.session.add(admin)
         self.session.flush()
-        return user
+        return admin
+
+    def set_status(self, admin_id: str, *, status: str, updated_by: str) -> Admin | None:
+        admin = self.get_by_id(admin_id)
+        if admin is None:
+            return None
+        admin.status = status
+        admin.updated_by = updated_by
+        admin.updated_at = datetime.now(timezone.utc)
+        self.session.add(admin)
+        self.session.flush()
+        return admin
 
 
 class SQLAlchemyWhitelistRepository(WhitelistRepository):

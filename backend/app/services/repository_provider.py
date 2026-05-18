@@ -1,14 +1,14 @@
 from sqlalchemy.orm import Session
 
 from db.repositories import (
+    SQLAlchemyAdminRepository,
     SQLAlchemyApiKeyRepository,
-    SQLAlchemyUserRepository,
     SQLAlchemyWhitelistRepository,
 )
 
 
-def get_user_repository(session: Session) -> SQLAlchemyUserRepository:
-    return SQLAlchemyUserRepository(session)
+def get_admin_repository(session: Session) -> SQLAlchemyAdminRepository:
+    return SQLAlchemyAdminRepository(session)
 
 
 def get_whitelist_repository(session: Session) -> SQLAlchemyWhitelistRepository:

@@ -5,8 +5,6 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
 from app.schemas.api_keys import (
-    ApplicationLimitStrategyBindingRequest,
-    ApplicationLimitStrategyBindingResponse,
     ApiKeyDetailResponse,
     ApiKeyAliasUpdateRequest,
     ApiKeyListResponse,
@@ -16,9 +14,6 @@ from app.schemas.api_keys import (
     PendingApplicationListResponse,
     PendingApplicationModeUpdateRequest,
     PendingApplicationModeUpdateResponse,
-    LimitStrategyTemplateListResponse,
-    LimitStrategyTemplateRequest,
-    LimitStrategyTemplateResponse,
     LimitStrategyConfigResponse,
     LimitStrategyConfigUpdateRequest,
     ApplicationCreateRequest,
@@ -192,71 +187,6 @@ def update_api_key_alias(
     except Exception:
         db.rollback()
         raise
-
-
-@router.post("/limit-strategy-templates", response_model=LimitStrategyTemplateResponse, status_code=201)
-def create_limit_strategy_template(
-    payload: LimitStrategyTemplateRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    return service.create_limit_strategy_template(current_user=current_user, payload=payload.model_dump())
-
-
-@router.get("/limit-strategy-templates", response_model=LimitStrategyTemplateListResponse)
-def list_limit_strategy_templates(
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    return service.list_limit_strategy_templates(current_user=current_user)
-
-
-@router.patch("/limit-strategy-templates/{template_id}", response_model=LimitStrategyTemplateResponse)
-def update_limit_strategy_template(
-    template_id: str,
-    payload: LimitStrategyTemplateRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    return service.update_limit_strategy_template(
-        current_user=current_user,
-        template_id=template_id,
-        payload=payload.model_dump(),
-    )
-
-
-@router.get(
-    "/api-keys/applications/{application_id}/limit-strategy",
-    response_model=ApplicationLimitStrategyBindingResponse,
-)
-def get_application_limit_strategy_binding(
-    application_id: str,
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    return service.get_application_limit_strategy_binding(current_user=current_user, application_id=application_id)
-
-
-@router.patch(
-    "/api-keys/applications/{application_id}/limit-strategy",
-    response_model=ApplicationLimitStrategyBindingResponse,
-)
-def bind_application_limit_strategy(
-    application_id: str,
-    payload: ApplicationLimitStrategyBindingRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    return service.bind_application_limit_strategy(
-        current_user=current_user,
-        application_id=application_id,
-        template_id=payload.template_id,
-    )
 
 
 @router.get("/limit-strategy-config", response_model=LimitStrategyConfigResponse)

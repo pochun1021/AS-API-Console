@@ -128,41 +128,6 @@ class ApiKeyUserStatisticsResponse(BaseModel):
     total: int
 
 
-class LimitStrategyTemplateRequest(BaseModel):
-    name: str
-    strategy_type: Literal["budget", "rate_limit"]
-    max_budget: str | None = None
-    budget_duration: str | None = None
-    tpm_limit: int | None = None
-    rpm_limit: int | None = None
-    status: Literal["active", "inactive"] = "active"
-
-
-class LimitStrategyTemplateResponse(BaseModel):
-    id: str
-    name: str
-    strategy_type: Literal["budget", "rate_limit"]
-    max_budget: str | None = None
-    budget_duration: str | None = None
-    tpm_limit: int | None = None
-    rpm_limit: int | None = None
-    status: Literal["active", "inactive"]
-
-
-class LimitStrategyTemplateListResponse(BaseModel):
-    items: list[LimitStrategyTemplateResponse]
-    total: int
-
-
-class ApplicationLimitStrategyBindingRequest(BaseModel):
-    template_id: str
-
-
-class ApplicationLimitStrategyBindingResponse(BaseModel):
-    application_id: str
-    template_id: str | None = None
-
-
 class LimitStrategyConfigResponse(BaseModel):
     budget_max_budget: str
     budget_duration: str
