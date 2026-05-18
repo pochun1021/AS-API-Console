@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { apiClient } from "./api/client";
 import AppLayout from "./components/AppLayout";
 import DevAuthSwitcher from "./components/DevAuthSwitcher";
-import { devAuthProfiles, readOAuthAuthContext } from "./authContext";
+import { clearOAuthAuthContext, devAuthProfiles, readOAuthAuthContext } from "./authContext";
 import { detectSystemLocale, useLocale } from "./i18n/locale";
 import ApplyPage from "./pages/ApplyPage";
 import MyApiKeysPage from "./pages/MyApiKeysPage";
@@ -30,6 +31,7 @@ function readStoredProfileKey() {
 export default function App() {
   const [profileKey, setProfileKey] = useState(readStoredProfileKey);
   const [oauthAuth, setOAuthAuth] = useState(readOAuthAuthContext);
+  const [logoutInProgress, setLogoutInProgress] = useState(false);
   const [localeReady, setLocaleReady] = useState(false);
   const { setLocale } = useLocale();
 
@@ -45,6 +47,23 @@ export default function App() {
 
   function changeLocale(nextLocale) {
     setLocale(nextLocale);
+  }
+
+  async function handleLogout() {
+    if (logoutInProgress) return;
+    setLogoutInProgress(true);
+    try {
+      await apiClient.logout();
+    } catch {
+      // Best effort logout: clear local auth state and force re-login.
+    } finally {
+      clearOAuthAuthContext();
+      setOAuthAuth(null);
+      setLogoutInProgress(false);
+      if (typeof window !== "undefined") {
+        window.location.assign("/login");
+      }
+    }
   }
 
   useEffect(() => {
@@ -72,7 +91,7 @@ export default function App() {
   }
 
   return (
-    <AppLayout auth={auth} onChangeLocale={changeLocale}>
+    <AppLayout auth={auth} onChangeLocale={changeLocale} onLogout={handleLogout} logoutInProgress={logoutInProgress}>
       {!oauthAuth ? <DevAuthSwitcher profileKey={profileKey} onChange={changeProfile} auth={auth} /> : null}
       <Routes>
         <Route path="/" element={<Navigate to="/apply" replace />} />

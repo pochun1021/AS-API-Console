@@ -73,3 +73,17 @@ export function readOAuthAuthContext() {
 
   return readStoredOAuthAuth();
 }
+
+export function clearOAuthAuthContext() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.sessionStorage.removeItem(OAUTH_AUTH_STORAGE_KEY);
+  if ("__AS_AUTH_CONTEXT__" in window) {
+    try {
+      delete window.__AS_AUTH_CONTEXT__;
+    } catch {
+      window.__AS_AUTH_CONTEXT__ = undefined;
+    }
+  }
+}

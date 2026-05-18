@@ -77,3 +77,17 @@ test("admin sees whitelist nav", () => {
   expect(screen.getByRole("link", { name: "管理者名單" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "管理者統計" })).toBeInTheDocument();
 });
+
+test("clicking logout icon triggers onLogout", () => {
+  const onLogout = vi.fn();
+  render(
+    <MemoryRouter>
+      <AppLayout auth={userAuth} onLogout={onLogout}>
+        <div>content</div>
+      </AppLayout>
+    </MemoryRouter>
+  );
+
+  fireEvent.click(screen.getByLabelText("登出"));
+  expect(onLogout).toHaveBeenCalledTimes(1);
+});

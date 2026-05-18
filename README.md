@@ -81,6 +81,11 @@ cp .env.example .env
 - `PROVIDER_BASE_URL`：可選，外部 key provider base URL（例如 `https://provider.internal`）
 - `PROVIDER_MASTER_KEY`：可選，呼叫 provider `/key/generate` 使用的主金鑰
 - `PROVIDER_TIMEOUT_SECONDS`：可選，provider timeout 秒數（預設 `3.0`）
+- `SESSION_SECRET_KEY`：必填（正式環境），FastAPI session 簽章密鑰
+- `OAUTH_PROVIDER`：可選，OAuth provider 名稱（寫入 auth audit）
+- `OAUTH_AUTH_URI` / `OAUTH_TOKEN_URI` / `OAUTH_BASIC_URI`：OAuth auth/token/basic 端點
+- `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` / `OAUTH_REDIRECT_URI`：OAuth client 設定
+- `OAUTH_SCOPE`：可選，OAuth scope（預設 `basic`）
 - `MAIL_ENABLED`：可選，是否啟用 Email 發送（預設 `false`）
 - `MAIL_SERVER` / `MAIL_PORT`：可選，SMTP 主機與連接埠
 - `MAIL_USERNAME` / `MAIL_PASSWORD`：可選，SMTP 認證資訊
@@ -102,6 +107,7 @@ python -m uvicorn app.main:app --reload
 5. 開啟系統
 - 前端頁面：`http://127.0.0.1:8000/`
 - API 文件：`http://127.0.0.1:8000/docs`
+- OAuth 登入入口：`http://127.0.0.1:8000/login`
 
 ## 前端更新流程
 - 修改前端後重新執行：
@@ -112,6 +118,7 @@ npm run build
 - 回到瀏覽器重新整理 `http://127.0.0.1:8000/` 即可看到更新。
 
 ## 開發備註
+- 後端提供 OAuth 登入入口：`GET /login` 與 callback `GET /auth/callback`，成功後以 session 注入 auth context（`account/name/email/department/sysid`，role 固定 `user`）。
 - 前端在開發模式提供 `Dev 身份切換`（admin/user），用於模擬 header 身份。
 - 若有第三方 OAuth 整合，前端會優先使用 OAuth 回傳身分（需包含 `account`、`name`、`email`、`department`、`sysid`、`role`）：
   - `window.__AS_AUTH_CONTEXT__ = { ... }`，或

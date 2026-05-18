@@ -10,7 +10,7 @@
 - 撤銷
 - 到期失效
 
-重點是先提供最小可用流程，並保留後續 SSO/OAuth、審核流程與安全等級擴充能力。
+重點是先提供最小可用流程，並保留後續審核流程與安全等級擴充能力。
 
 ## 資料儲存策略
 - MVP 階段採用 MariaDB 作為主要資料庫。
@@ -123,6 +123,7 @@
 ## 功能需求
 ### Must Have（MVP）
 - 權限模型僅區分 `user` 與 `admin`
+- 提供 OAuth/SSO 登入入口（`GET /login`、`GET /auth/callback`）並建立 session auth context
 - 僅符合資格的人員可進入系統與申請 API Key（研究人員名單職稱代碼命中，或特殊人員名單 `active` 命中）
 - 特殊人員名單管理能力（新增、查詢、停用/啟用）
 - 研究人員名單由外部服務提供並以職稱代碼判斷
@@ -142,7 +143,6 @@
 - 管理者可啟用/停用其他使用者的管理者身分
 
 ### Nice to Have（後續）
-- OAuth/SSO 串接優化（完善 `sysid` 對接與身分映射）
 - 多安全等級與長度策略（隨機段長度 24-30 碼可配置）
 - 使用量監控與配額管理
 
@@ -220,6 +220,22 @@
 - `created_at` (datetime)
 - `read_at` (datetime, nullable)
 
+### Entity: `auth_audit_logs`
+- `id` (string/uuid)
+- `provider` (string, required)
+- `request_id` (string, required)
+- `result` (enum: `success` | `failure`)
+- `error_code` (string, nullable)
+- `account` (string, nullable)
+- `name` (string, nullable)
+- `email` (string, nullable)
+- `department` (string, nullable)
+- `sysid` (string, nullable)
+- `role` (string, nullable；本期固定 `user`)
+- `detail` (string, nullable)
+- `created_at` (datetime)
+- 不得記錄 access token、refresh token、password、client secret 等敏感憑證
+
 ## 權限規則（MVP）
 - `user`：可使用 `GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`POST /api/v1/api-keys/{id}/revoke`，但僅可查詢/停用本人 `active` key。
 - `user`：不可更新 `key_alias`。
@@ -229,6 +245,18 @@
 
 ## API 草案
 Base path：`/api/v1`
+
+### Auth Login Entry
+- `GET /login`
+  - 用途：導向 OAuth provider auth endpoint。
+  - 規則：建立 request_id（state）並寫入 session，用於 callback 對帳。
+- `GET /auth/callback`
+  - 用途：接收 provider callback，交換 access token，取得 basic identity claims，建立本機 session auth context。
+  - 規則：
+    - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
+    - 若缺少必要欄位（任一 `account`、`name`、`email`、`department`、`sysid`）需拒絕登入
+    - 成功與失敗皆須寫入 `auth_audit_logs`
+    - 嚴禁落地 token/secret 類敏感資訊
 
 ### 1) 申請並核發 API Key
 - `POST /api/v1/api-keys/applications`
@@ -541,6 +569,11 @@ Base path：`/api/v1`
 58. `api_key_issued` 通知首次由本人標記已讀時，API 可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
 59. 通知中心文案需支援 `zh-TW|en` 切換，且僅單筆 `PATCH /api/v1/notifications/{id}/read` 可用於已讀操作。
 60. 通知中心金鑰 Dialog 提示文案需依目前語系顯示單一語言，不得中英並列。
+61. `GET /login` 需可導向 OAuth provider，並附帶 state/request_id。
+62. `GET /auth/callback` 成功時需建立 session auth context 並 redirect `/`。
+63. `GET /auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失、state mismatch）需回錯，且寫入 failure audit。
+64. OAuth 成功登入寫入的角色需固定為 `user`，不得由 OAuth payload 直接升權為 `admin`。
+65. `auth_audit_logs` 不得包含 access token/refresh token/password/client secret。
 
 ## Roadmap
 ### Phase 1：Foundation

@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     mail_starttls: bool = True
     mail_ssl_tls: bool = False
     mail_validate_certs: bool = True
+    session_secret_key: str = "dev-session-secret-change-me"
+    oauth_provider: str = "fisa"
+    oauth_auth_uri: str | None = None
+    oauth_token_uri: str | None = None
+    oauth_basic_uri: str | None = None
+    oauth_client_id: str | None = None
+    oauth_client_secret: str | None = None
+    oauth_redirect_uri: str | None = None
+    oauth_scope: str = "basic"
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

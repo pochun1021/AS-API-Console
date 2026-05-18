@@ -17,7 +17,7 @@ const navItems = [
   { labelKey: "nav_dashboard", path: "/admin-dashboard", roles: ["admin"] }
 ];
 
-export default function AppLayout({ children, auth, onChangeLocale = () => {} }) {
+export default function AppLayout({ children, auth, onChangeLocale = () => {}, onLogout = () => {}, logoutInProgress = false }) {
   const location = useLocation();
   const { locale, t } = useLocale();
   const [localeMenuAnchor, setLocaleMenuAnchor] = useState(null);
@@ -105,7 +105,12 @@ export default function AppLayout({ children, auth, onChangeLocale = () => {} })
               </MenuItem>
             </Menu>
             <Tooltip title={locale === "zh-TW" ? "登出" : "Logout"}>
-              <IconButton aria-label={locale === "zh-TW" ? "登出" : "Logout"} color="inherit">
+              <IconButton
+                aria-label={locale === "zh-TW" ? "登出" : "Logout"}
+                color="inherit"
+                onClick={onLogout}
+                disabled={logoutInProgress}
+              >
                 <LogoutOutlinedIcon fontSize="small" />
               </IconButton>
             </Tooltip>

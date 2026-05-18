@@ -694,6 +694,11 @@ export const mockApiProvider = {
     };
   },
 
+  async logout() {
+    await delay();
+    return { status: "ok" };
+  },
+
   resetForTests() {
     apiKeys = initialApiKeys.map((item) => ({ ...item }));
     whitelists = initialWhitelists.map((item) => ({ ...item }));
