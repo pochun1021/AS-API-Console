@@ -25,6 +25,7 @@
 3. 使用者填寫姓名、Email、單位、申請日期、用途與 API 生效時長。
 4. 送出申請前再次檢查資格：優先查外部研究人員名單（職稱代碼），未命中再檢查特殊人員名單（`active`）。
 5. 資格檢查通過後系統建立 pending 申請，待管理者審理選擇核發模式後立即補發 API Key。
+5-1. 建立 pending 申請後，系統需寄送 Email 給所有 `active` 管理者（通知有新申請待審）與申請者本人（通知已收到申請、請等待配發）。
 6. 系統只顯示一次明文 API Key，使用者需立即保存。
 7. 一般使用者可在「我的 API Key 紀錄」查看本人全部歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩（`AS-...` + 後 4 碼）。
 8. 一般使用者可自行停用本人已生效（`active`）的 Key。
@@ -206,6 +207,19 @@
 - `status` (enum: `active` | `revoked` | `expired`)
 - `created_at` (datetime)
 
+### Entity: `notifications`
+- `id` (string/uuid)
+- `sysid` (string, required；通知收件者，對應 auth context 的 `sysid`)
+- `type` (string, required)
+- `title` (string, required)
+- `message` (string, required)
+- `is_read` (bool, required)
+- `metadata_json` (string, nullable)
+- `email_delivery_status` (string, nullable)
+- `email_error` (string, nullable)
+- `created_at` (datetime)
+- `read_at` (datetime, nullable)
+
 ## 權限規則（MVP）
 - `user`：可使用 `GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`POST /api/v1/api-keys/{id}/revoke`，但僅可查詢/停用本人 `active` key。
 - `user`：不可更新 `key_alias`。
@@ -282,15 +296,24 @@ Base path：`/api/v1`
 - 規則：
   - pending 申請可由 admin 設定 `issuance_mode`（`budget|rate_limit`）。
   - admin 觸發 `issue` 後，系統讀取該筆 mode 與全域設定參數執行補發。
+  - 配發來源支援 `external|local`；`local` 模式需強制使用系統內建產 key 流程，不呼叫外部 provider。
   - 成功時 `issuance_status=issued`；失敗時維持 `pending`。
-  - 本階段通知中心與語言偏好功能停用（見 1-3、5-2）。
+  - `issue` 成功後需寄送「已配發」Email 給申請者本人。
+  - 「已配發」Email 內容需中英並列（中文在前、英文在後）。
+  - 「已配發」Email 不得包含 `Application ID`。
+  - 若「已配發」Email 發送失敗，不可影響 `issued` 結果；API 仍回 `200`，並於 response 回傳 `email_warning` 提示。
+  - 本階段語言偏好功能停用（見 5-2）。
+  - 申請建立後的 Email 通知採中英並列內容（中文在前、英文在後）。
+  - 申請建立後若 Email 發送失敗，不可影響申請建立結果；API 仍回 `201`，並以後端 log 記錄失敗。
 
-### 1-3) 通知中心（暫停）
+### 1-3) 通知中心
 - `GET /api/v1/notifications`
 - `PATCH /api/v1/notifications/{id}/read`
 - `PATCH /api/v1/notifications/read-all`
 - 規則：
-  - 本階段停用，固定回傳 `410 FEATURE_DISABLED`。
+  - 僅可查詢與操作本人 `sysid` 的通知資料。
+  - `PATCH /notifications/{id}/read` 僅可標記本人通知。
+  - `PATCH /notifications/read-all` 僅可影響本人通知。
 
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
@@ -504,7 +527,15 @@ Base path：`/api/v1`
 45. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
 46. Provider timeout/5xx 或金鑰條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
 47. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
-48. `GET/PATCH /api/v1/notifications*` 於本階段需回傳 `410` 與 `FEATURE_DISABLED`。
+48. `GET/PATCH /api/v1/notifications*` 需可用，且僅可查詢/操作本人 `sysid` 的通知資料。
+49. `POST /api/v1/api-keys/applications` 成功建立 pending 後，需寄送 Email 給所有 `active` 管理者與申請者本人。
+50. 第 49 項通知信內容需中英並列（中文在前、英文在後）。
+51. 第 49 項若寄信失敗，`POST /api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
+52. `POST /api/v1/api-keys/applications/{id}/issue` 成功配發後，需寄送「已配發」Email 給申請者本人。
+53. 第 52 項若寄信失敗，`issue` 仍需維持 `issued` 且回傳 `email_warning`。
+54. 當配發模式為 `local` 時，`issue` 需可在不連線外部 provider 的情況下成功 `issued`。
+55. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
+56. 第 52 項通知信不得包含 `Application ID`。
 
 ## Roadmap
 ### Phase 1：Foundation

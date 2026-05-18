@@ -133,6 +133,40 @@ def test_applicant_mail_body_does_not_include_application_id():
     assert isinstance(service, MailService)
 
 
+def test_issued_mail_body_is_bilingual_and_hides_application_id(monkeypatch):
+    from asyncio import run as run_async
+
+    from app.services.mail_service import MailService
+
+    captured: dict[str, str] = {}
+
+    async def _capture_send_html(self, *, subject, recipients, body):
+        captured["subject"] = subject
+        captured["body"] = body
+        captured["recipients"] = ",".join(recipients)
+
+    monkeypatch.setattr("app.services.mail_service.MailService._send_html", _capture_send_html)
+
+    service = MailService()
+    run_async(
+        service.send_key_issued_notification(
+            to_email="issued@example.com",
+            owner_name="Tester",
+            application_id="app-123",
+            app_domain="http://localhost:8000",
+        )
+    )
+
+    body = captured["body"]
+    assert "您的 API Key 已配發" in captured["subject"]
+    assert "Your API key has been issued" in captured["subject"]
+    assert "Tester 您好" in body
+    assert "Hello Tester" in body
+    assert "Application ID" not in body
+    assert "申請單號" not in body
+    assert captured["recipients"] == "issued@example.com"
+
+
 def test_application_success_for_research_eligible_without_whitelist(client, user_headers, monkeypatch):
     monkeypatch.setattr(
         "app.services.api_keys_service.ResearchEligibilityService.is_configured",
@@ -203,6 +237,10 @@ def test_application_rejects_future_date(client, admin_headers, user_headers):
 
 
 def test_admin_pending_flow_permissions_and_issue(client, admin_headers, user_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
     _create_whitelist(client, admin_headers, user_headers["x-email"])
     create_resp = client.post(
         "/api/v1/api-keys/applications",
@@ -246,6 +284,114 @@ def test_admin_pending_flow_permissions_and_issue(client, admin_headers, user_he
     body = resp.json()
     assert body["issuance_status"] == "pending"
     assert body["api_key_plaintext"] is None
+    monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+    get_settings.cache_clear()
+
+
+def test_issue_pending_application_sends_issued_email_to_applicant(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test issue mail"},
+    )
+    assert create_resp.status_code == 201
+    app_id = create_resp.json()["application"]["id"]
+    mode_resp = client.patch(
+        f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
+        headers=admin_headers,
+        json={"mode": "budget"},
+    )
+    assert mode_resp.status_code == 200
+
+    calls: list[dict] = []
+
+    async def _fake_issue_mail(self, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(
+        "app.services.mail_service.MailService.send_key_issued_notification",
+        _fake_issue_mail,
+    )
+    issue_resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
+    assert issue_resp.status_code == 200
+    body = issue_resp.json()
+    assert body["issuance_status"] == "issued"
+    assert body["email_warning"] is None
+    assert len(calls) == 1
+    assert calls[0]["to_email"] == user_headers["x-email"]
+
+
+def test_issue_pending_application_email_failure_returns_warning(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test issue mail fail"},
+    )
+    assert create_resp.status_code == 201
+    app_id = create_resp.json()["application"]["id"]
+    mode_resp = client.patch(
+        f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
+        headers=admin_headers,
+        json={"mode": "budget"},
+    )
+    assert mode_resp.status_code == 200
+
+    async def _raise_issue_mail(self, **kwargs):
+        raise RuntimeError("mail failure")
+
+    monkeypatch.setattr(
+        "app.services.mail_service.MailService.send_key_issued_notification",
+        _raise_issue_mail,
+    )
+    issue_resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
+    assert issue_resp.status_code == 200
+    body = issue_resp.json()
+    assert body["issuance_status"] == "issued"
+    assert body["api_key_plaintext"].startswith("AS-")
+    assert body["email_warning"] == "key_issued_email_failed"
+
+
+def test_issue_pending_application_local_mode_does_not_call_provider(client, admin_headers, user_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "local")
+    get_settings.cache_clear()
+    try:
+        _create_whitelist(client, admin_headers, user_headers["x-email"])
+        create_resp = client.post(
+            "/api/v1/api-keys/applications",
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "local issue mode"},
+        )
+        assert create_resp.status_code == 201
+        app_id = create_resp.json()["application"]["id"]
+        mode_resp = client.patch(
+            f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
+            headers=admin_headers,
+            json={"mode": "budget"},
+        )
+        assert mode_resp.status_code == 200
+
+        monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+
+        def _raise_provider_should_not_be_called(self, payload):
+            raise AssertionError("provider should not be called in local issuance mode")
+
+        monkeypatch.setattr(
+            "app.services.provider_client.ProviderClient.generate_key",
+            _raise_provider_should_not_be_called,
+        )
+
+        issue_resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
+        assert issue_resp.status_code == 200
+        body = issue_resp.json()
+        assert body["issuance_status"] == "issued"
+        assert body["api_key_plaintext"].startswith("AS-")
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
 
 
 def test_revoke_permissions_and_status_checks(client, admin_headers):

@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.errors import ApiError
 from app.schemas.notifications import (
     NotificationListResponse,
     NotificationReadAllResponse,
     NotificationReadResponse,
 )
+from app.services.notifications_service import NotificationsService
 from db.session import get_db
 
 router = APIRouter()
@@ -21,7 +21,8 @@ def list_notifications(
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    raise ApiError("FEATURE_DISABLED", "notifications are disabled", 410)
+    service = NotificationsService(db)
+    return service.list_notifications(current_user=current_user, page=page, page_size=page_size, is_read=is_read)
 
 
 @router.patch("/notifications/{notification_id}/read", response_model=NotificationReadResponse)
@@ -30,7 +31,8 @@ def mark_notification_read(
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    raise ApiError("FEATURE_DISABLED", "notifications are disabled", 410)
+    service = NotificationsService(db)
+    return service.mark_notification_read(current_user=current_user, notification_id=notification_id)
 
 
 @router.patch("/notifications/read-all", response_model=NotificationReadAllResponse)
@@ -38,4 +40,5 @@ def mark_all_notifications_read(
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    raise ApiError("FEATURE_DISABLED", "notifications are disabled", 410)
+    service = NotificationsService(db)
+    return service.mark_all_notifications_read(current_user=current_user)

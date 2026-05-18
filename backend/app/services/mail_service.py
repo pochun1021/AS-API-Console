@@ -64,13 +64,17 @@ class MailService:
         app_domain: str,
     ) -> None:
         await self._send_html(
-            subject="[AS API Console] Your API key has been issued",
+            subject="[AS API Console] 您的 API Key 已配發 / Your API key has been issued",
             recipients=[to_email],
             body=(
+                f"<p>{owner_name} 您好：</p>"
+                "<p>您申請的 API Key 已完成配發。</p>"
+                f"<p>請登入 <a href=\"{app_domain}\">AS API Console</a> 查看金鑰資訊。</p>"
+                "<p>此通知不包含 API Key 明文內容。</p>"
+                "<hr/>"
                 f"<p>Hello {owner_name},</p>"
-                "<p>Your pending API key application has been issued.</p>"
-                f"<p>Application ID: <b>{application_id}</b></p>"
-                f"<p>Please sign in to <a href=\"{app_domain}\">AS API Console</a> to review your key details.</p>"
+                "<p>Your API key application has been issued.</p>"
+                f"<p>Please sign in to <a href=\"{app_domain}\">AS API Console</a> to review key details.</p>"
                 "<p>This notification does not contain plaintext API key content.</p>"
             ),
         )

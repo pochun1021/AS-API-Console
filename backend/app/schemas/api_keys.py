@@ -58,6 +58,7 @@ class PendingApplicationIssueResponse(BaseModel):
     issuance_status: Literal["pending", "issued"]
     api_key_plaintext: str | None = None
     pending_reason: str | None = None
+    email_warning: str | None = None
 
 
 class ApiKeyListItemResponse(BaseModel):

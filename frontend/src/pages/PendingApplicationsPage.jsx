@@ -9,10 +9,16 @@ export default function PendingApplicationsPage({ auth }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
+  const [success, setSuccess] = useState("");
 
-  async function load() {
+  async function load({ clearMessages = true } = {}) {
     setLoading(true);
-    setError("");
+    if (clearMessages) {
+      setError("");
+      setWarning("");
+      setSuccess("");
+    }
     try {
       const resp = await apiClient.listPendingApplications(auth);
       setRows(resp.items || []);
@@ -33,12 +39,26 @@ export default function PendingApplicationsPage({ auth }) {
   }
 
   async function issueNow(id) {
+    setError("");
+    setWarning("");
+    setSuccess("");
     try {
-      await apiClient.issueApplication(id, auth);
-      await load();
+      const resp = await apiClient.issueApplication(id, auth);
+      if (resp?.issuance_status === "issued") {
+        setSuccess(t("pending_issue_done"));
+        if (resp?.email_warning === "key_issued_email_failed") {
+          setWarning(t("pending_issue_email_warning"));
+        }
+      } else {
+        const pendingReason = resp?.pending_reason === "provider_unavailable"
+          ? t("pending_issue_still_pending_provider_unavailable")
+          : t("pending_issue_still_pending");
+        setWarning(pendingReason);
+      }
+      await load({ clearMessages: false });
     } catch (e) {
       setError(e?.payload?.error?.message || t("pending_issue_failed"));
-      await load();
+      await load({ clearMessages: false });
     }
   }
 
@@ -88,6 +108,8 @@ export default function PendingApplicationsPage({ auth }) {
     <Stack spacing={2}>
       <Typography variant="h4">{t("pending_title")}</Typography>
       {error ? <Alert severity="error">{error}</Alert> : null}
+      {warning ? <Alert severity="warning">{warning}</Alert> : null}
+      {success ? <Alert severity="success">{success}</Alert> : null}
       <Card>
         <CardContent>
           <Box sx={{ height: 560 }}>

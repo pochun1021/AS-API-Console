@@ -1,9 +1,11 @@
 import hashlib
+import json
 import logging
 import secrets
 from asyncio import run as run_async
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -17,6 +19,7 @@ from app.services.research_eligibility_service import ResearchEligibilityService
 from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
 from db.models.limit_strategy_config import LimitStrategyConfig
+from db.models.notifications import Notification
 from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
 from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
 
@@ -229,6 +232,20 @@ class ApiKeysService:
             raise ApiError("ISSUANCE_MODE_REQUIRED", "issuance mode is required", 409)
 
         plaintext = self._issue_application(application)
+        email_warning: str | None = None
+        if application.issuance_status == "issued":
+            try:
+                run_async(
+                    self.mail_service.send_key_issued_notification(
+                        to_email=application.email,
+                        owner_name=application.name,
+                        application_id=application.id,
+                        app_domain=self.settings.app_domain,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logging.exception("failed to send key issued email to applicant")
+                email_warning = "key_issued_email_failed"
         self.session.commit()
         return {
             "application": {
@@ -241,6 +258,7 @@ class ApiKeysService:
             "issuance_status": application.issuance_status,
             "api_key_plaintext": plaintext,
             "pending_reason": "provider_unavailable" if application.issuance_status == "pending" else None,
+            "email_warning": email_warning,
         }
 
     def _issue_application(self, application: ApiKeyApplication) -> str | None:
@@ -270,7 +288,9 @@ class ApiKeysService:
 
         plaintext: str | None = None
         try:
-            if self.provider_client.is_configured():
+            provider_mode = (self.settings.issuance_provider_mode or "external").strip().lower()
+            use_local_issuance = provider_mode == "local"
+            if not use_local_issuance and self.provider_client.is_configured():
                 provider_result = self.provider_client.generate_key(
                     {
                         "account": application.account,
@@ -298,6 +318,7 @@ class ApiKeysService:
             )
             application.issuance_status = "issued"
             application.pending_issued_at = datetime.now(UTC)
+            self._create_key_issued_notification(application)
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError:
@@ -306,6 +327,22 @@ class ApiKeysService:
         application.updated_at = datetime.now(UTC)
         self.session.add(application)
         return plaintext
+
+    def _create_key_issued_notification(self, application: ApiKeyApplication) -> None:
+        notification = Notification(
+            id=str(uuid4()),
+            sysid=application.sysid,
+            type="api_key_issued",
+            title="API key issued",
+            message="Your pending API key application has been issued.",
+            is_read=False,
+            metadata_json=json.dumps({"application_id": application.id}, ensure_ascii=False),
+            email_delivery_status=None,
+            email_error=None,
+            created_at=datetime.now(UTC),
+            read_at=None,
+        )
+        self.session.add(notification)
 
     def get_limit_strategy_config(self, current_user: CurrentUser) -> dict:
         if current_user.role != "admin":

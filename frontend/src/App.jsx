@@ -9,6 +9,7 @@ import MyApiKeysPage from "./pages/MyApiKeysPage";
 import AdminPage from "./pages/AdminPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import LimitStrategiesPage from "./pages/LimitStrategiesPage";
+import NotificationsPage from "./pages/NotificationsPage";
 import PendingApplicationsPage from "./pages/PendingApplicationsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 
@@ -20,8 +21,8 @@ function readStoredProfileKey() {
   }
 
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored === "user") {
-    return "user";
+  if (stored === "admin" || stored === "user") {
+    return stored;
   }
   return "user";
 }
@@ -77,6 +78,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/apply" replace />} />
         <Route path="/apply" element={<ApplyPage auth={auth} />} />
         <Route path="/api-keys" element={<MyApiKeysPage auth={auth} />} />
+        <Route path="/notifications" element={<NotificationsPage auth={auth} />} />
         <Route
           path="/whitelists"
           element={
