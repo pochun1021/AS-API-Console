@@ -18,6 +18,13 @@ class ApplicationCreateInput:
     application_date: date
     duration_months: int
     purpose: str
+    limit_strategy: str
+    max_budget: str | None
+    budget_duration: str | None
+    tpm_limit: int | None
+    rpm_limit: int | None
+    issuance_status: str
+    pending_issued_at: datetime | None
     issued_at: datetime
     expires_at: datetime
 

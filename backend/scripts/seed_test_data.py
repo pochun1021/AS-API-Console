@@ -14,9 +14,9 @@ from sqlalchemy.orm import Session
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db import models  # noqa: F401
+from db.models.admins import Admin
 from db.models.api_keys import ApiKey
 from db.models.applications import ApiKeyApplication
-from db.models.users import User
 from db.models.whitelist import ApiKeyWhitelist
 from db.session import SessionLocal
 from app.core.config import get_settings
@@ -37,41 +37,34 @@ def _generate_seed_api_key() -> str:
     return f"AS-{suffix}"
 
 
-def _build_users(now: datetime) -> list[User]:
+def _build_admins(now: datetime) -> list[Admin]:
     return [
-        User(
+        Admin(
             id="admin-seed-001",
             account="admin.seed",
             email="admin.seed@example.com",
             name="Admin Seed",
-            role="admin",
+            department="Security",
+            sysid="admin-seed-001",
             status="active",
+            created_by="seed_script",
+            updated_by="seed_script",
             created_at=now,
             updated_at=now,
         ),
-        User(
+        Admin(
             id="admin-seed-002",
             account="admin.inactive.seed",
             email="admin.inactive.seed@example.com",
             name="Admin Inactive Seed",
-            role="admin",
+            department="Security",
+            sysid="admin-seed-002",
             status="inactive",
+            created_by="seed_script",
+            updated_by="seed_script",
             created_at=now,
             updated_at=now,
         ),
-        *[
-            User(
-                id=f"user-seed-{idx:03d}",
-                account=f"user{idx}",
-                email=f"user{idx}@example.com",
-                name=f"User {idx}",
-                role="user",
-                status="active",
-                created_at=now,
-                updated_at=now,
-            )
-            for idx in range(1, 7)
-        ],
     ]
 
 
@@ -183,12 +176,12 @@ def _reset_seed_scope(session: Session) -> None:
         session.execute(delete(ApiKey).where(ApiKey.application_id.in_(app_ids)))
     session.execute(delete(ApiKeyApplication).where(ApiKeyApplication.user_id.in_(seed_user_ids)))
     session.execute(delete(ApiKeyWhitelist).where(ApiKeyWhitelist.email.like("user%@example.com")))
-    session.execute(delete(User).where(User.id.in_(seed_user_ids)))
+    session.execute(delete(Admin).where(Admin.id.in_(["admin-seed-001", "admin-seed-002"])))
 
 
 def seed_small(reset: bool) -> dict[str, int]:
     now = datetime.now(UTC)
-    users = _build_users(now)
+    admins = _build_admins(now)
     whitelists = _build_whitelists(now)
     applications, keys = _build_applications_and_keys(now)
 
@@ -196,14 +189,14 @@ def seed_small(reset: bool) -> dict[str, int]:
         if reset:
             _reset_seed_scope(session)
 
-        session.add_all(users)
+        session.add_all(admins)
         session.add_all(whitelists)
         session.add_all(applications)
         session.add_all(keys)
         session.commit()
 
     return {
-        "users": len(users),
+        "admins": len(admins),
         "whitelists": len(whitelists),
         "applications": len(applications),
         "api_keys": len(keys),
@@ -223,7 +216,7 @@ def main() -> None:
     result = seed_small(reset=reset)
     print(
         "Seed completed: "
-        f"users={result['users']}, "
+        f"admins={result['admins']}, "
         f"whitelists={result['whitelists']}, "
         f"applications={result['applications']}, "
         f"api_keys={result['api_keys']}, "

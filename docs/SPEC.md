@@ -24,7 +24,8 @@
 2. 通過進入資格後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`。
 3. 使用者填寫姓名、Email、單位、申請日期、用途與 API 生效時長。
 4. 送出申請前再次檢查資格：優先查外部研究人員名單（職稱代碼），未命中再檢查特殊人員名單（`active`）。
-5. 資格檢查通過後系統立即核發 API Key。
+5. 資格檢查通過後系統建立 pending 申請，待管理者審理選擇核發模式後立即補發 API Key。
+5-1. 建立 pending 申請後，系統需寄送 Email 給所有 `active` 管理者（通知有新申請待審）與申請者本人（通知已收到申請、請等待配發）。
 6. 系統只顯示一次明文 API Key，使用者需立即保存。
 7. 一般使用者可在「我的 API Key 紀錄」查看本人全部歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩（`AS-...` + 後 4 碼）。
 8. 一般使用者可自行停用本人已生效（`active`）的 Key。
@@ -46,6 +47,7 @@
   - 申請資格需通過：研究人員名單職稱代碼命中，或特殊人員名單為 `active`
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
   - `duration_months` 僅允許 `1|6|12`
+  - 限制策略由管理者透過模板資源維護；一般使用者申請時不可提交策略細節
 - 成功送出後顯示一次性 key，並提供複製操作；複製成功需有明確視覺回饋（check icon 後恢復）。
 - 複製流程以 Clipboard API 為唯一可驗證複製路徑；若不可用或複製失敗，需提示使用者手動複製。
 - 透過複製 icon 觸發時不得要求使用者先反白金鑰文字，系統需直接完成複製。
@@ -94,6 +96,24 @@
 - 表格中的 `total_applications` 與 `active_count` 需可點擊，並以 Dialog 顯示該申請人的 API Key 明細（僅遮罩 key，不得回傳明文）。
 - Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨目前統計頁日期篩選（`from`、`to`）。
 
+### 8) Key Condition Page（金鑰條件管理頁）
+- 僅 `admin` 可使用。
+- 以獨立頁面管理金鑰條件模板（查詢、新增、編輯）。
+- 模板型別僅允許：
+  - `budget`（額度；必填：`max_budget`、`budget_duration`）
+  - `rate_limit`（速度；必填：`tpm_limit`、`rpm_limit`）
+- 欄位語意：
+  - `max_budget`：總金額額度（USD）。
+  - `budget_duration`：重置週期（僅允許 `daily|weekly|monthly`）。
+  - `tpm_limit`：每分鐘 Token 數限制。
+  - `rpm_limit`：每分鐘請求數限制。
+- `budget_duration` 前端顯示需使用單選，展示文案映射：
+  - `daily` => `1天`
+  - `weekly` => `7天`
+  - `monthly` => `30天`
+- 可調整模板狀態 `active|inactive`。
+- 一般使用者不可查看或修改金鑰條件模板。
+
 ### 7) 狀態頁/元件
 - Loading
 - Empty
@@ -108,7 +128,7 @@
 - 研究人員名單由外部服務提供並以職稱代碼判斷
 - 本系統不同步維護本地研究人員名單；申請時以外部服務即時查詢為準
 - 外部研究人員服務失敗（timeout/5xx）時：允許進入系統，但阻擋申請
-- 申請後自動核發 API Key
+- 申請後進入 pending 佇列，由管理者逐筆選模式後立即補發 API Key
 - API 生效時長固定月數選單（`1|6|12`）
 - API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
 - API Key 明文只顯示一次
@@ -124,25 +144,15 @@
 ### Nice to Have（後續）
 - OAuth/SSO 串接優化（完善 `sysid` 對接與身分映射）
 - 多安全等級與長度策略（隨機段長度 24-30 碼可配置）
-- 申請審核流程
 - 使用量監控與配額管理
 
 ## 資料模型草案
-### Entity: `users`（身分來源）
-- `id` (string/uuid, 使用 auth context 的 `sysid` 作為唯一身分鍵)
-- `sysid` (string, response alias；值等於 `id`)
-- `account` (string, required, unique)
-- `email` (string, required, unique, lowercase)
-- `name` (string, required)
-- `role` (enum: `user` | `admin`)
-- `status` (enum: `active` | `inactive`)
-- `preferred_locale` (enum: `zh-TW` | `en`, nullable；使用者語言偏好)
-- `created_at` (datetime)
-- `updated_at` (datetime)
+### Entity: `users`（已移除）
+- `users` table 已自本階段移除。
+- 管理者資料來源為 `admins`。
 
 ### Entity: `admins`（管理者名單來源）
 - `id` (string/uuid)
-- `user_id` (string/uuid, unique, 對應使用者主鍵)
 - `account` (string, required, unique)
 - `email` (string, required, unique, lowercase)
 - `name` (string, required)
@@ -167,13 +177,15 @@
 ### Entity: `api_key_applications`
 - `id` (string/uuid)
 - `account` (string, required)
-- `user_id` (fk -> users.id, required)
+- `user_id` (string, required；存 auth `sysid`，不再綁定 `users` FK)
 - `name` (string, required)
 - `email` (string, required)
 - `department` (string, required)
 - `application_date` (date, required)
 - `duration_months` (int, required, allowed: `1|6|12`)
 - `purpose` (string, required)
+- `issuance_status` (enum: `issued` | `pending`)
+- `pending_issued_at` (datetime, nullable)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `issued_at` (datetime)
 - `expires_at` (datetime)
@@ -194,6 +206,19 @@
 - `security_level` (enum, MVP 固定 `high`)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `created_at` (datetime)
+
+### Entity: `notifications`
+- `id` (string/uuid)
+- `sysid` (string, required；通知收件者，對應 auth context 的 `sysid`)
+- `type` (string, required)
+- `title` (string, required)
+- `message` (string, required)
+- `is_read` (bool, required)
+- `metadata_json` (string, nullable)
+- `email_delivery_status` (string, nullable)
+- `email_error` (string, nullable)
+- `created_at` (datetime)
+- `read_at` (datetime, nullable)
 
 ## 權限規則（MVP）
 - `user`：可使用 `GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`POST /api/v1/api-keys/{id}/revoke`，但僅可查詢/停用本人 `active` key。
@@ -229,9 +254,67 @@ Base path：`/api/v1`
     "issued_at": "...",
     "expires_at": "..."
   },
-  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  "issuance_status": "issued",
+  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "pending_reason": null
 }
 ```
+- Response（201，provider timeout/5xx）：
+```json
+{
+  "application": {
+    "id": "...",
+    "account": "jane.doe",
+    "status": "active",
+    "issued_at": "...",
+    "expires_at": "..."
+  },
+  "issuance_status": "pending",
+  "api_key_plaintext": null,
+  "pending_reason": "awaiting_admin_mode_selection"
+}
+```
+
+### 1-1) 全域金鑰條件設定（Admin only）
+- `GET /api/v1/limit-strategy-config`
+- `PATCH /api/v1/limit-strategy-config`
+- 全域固定兩種模式設定（皆可編輯）：
+  - `budget`（額度）：`max_budget`、`budget_duration`
+  - `rate_limit`（速度）：`tpm_limit`、`rpm_limit`
+- 欄位語意同金鑰條件模板：
+  - `max_budget`：總金額額度（USD）。
+  - `budget_duration`：重置週期（`daily|weekly|monthly`）。
+  - `tpm_limit`：每分鐘 Token 數限制。
+  - `rpm_limit`：每分鐘請求數限制。
+- 全域設定提供兩種模式的參數來源；pending 審理時由 admin 逐筆選擇 `budget|rate_limit` 後立即補發。
+- 一般使用者不可查看或修改金鑰條件設定。
+
+### 1-2) Pending 申請審理（Admin only）
+- `GET /api/v1/api-keys/applications/pending`
+- `PATCH /api/v1/api-keys/applications/{id}/issuance-mode`
+- `POST /api/v1/api-keys/applications/{id}/issue`
+- 規則：
+  - pending 申請可由 admin 設定 `issuance_mode`（`budget|rate_limit`）。
+  - admin 觸發 `issue` 後，系統讀取該筆 mode 與全域設定參數執行補發。
+  - 配發來源支援 `external|local`；`local` 模式需強制使用系統內建產 key 流程，不呼叫外部 provider。
+  - 成功時 `issuance_status=issued`；失敗時維持 `pending`。
+  - `issue` 成功後需寄送「已配發」Email 給申請者本人。
+  - 「已配發」Email 內容需中英並列（中文在前、英文在後）。
+  - 「已配發」Email 不得包含 `Application ID`。
+  - 若「已配發」Email 發送失敗，不可影響 `issued` 結果；API 仍回 `200`，並於 response 回傳 `email_warning` 提示。
+  - 本階段語言偏好功能停用（見 5-2）。
+  - 申請建立後的 Email 通知採中英並列內容（中文在前、英文在後）。
+  - 申請建立後若 Email 發送失敗，不可影響申請建立結果；API 仍回 `201`，並以後端 log 記錄失敗。
+
+### 1-3) 通知中心
+- `GET /api/v1/notifications`
+- `PATCH /api/v1/notifications/{id}/read`
+- 規則：
+  - 僅可查詢與操作本人 `sysid` 的通知資料。
+  - `PATCH /notifications/{id}/read` 僅可標記本人通知；管理者不得代替他人標記已讀。
+  - 通知文案需支援 `zh-TW|en` 切換，並由前端依通知 `type` 與 `metadata` 產生對應語系顯示。
+  - `PATCH /notifications/{id}/read` 於 `api_key_issued` 通知首次由本人標記已讀時，可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
+  - 通知中心 Dialog 保存提醒文案由前端 i18n 顯示單一語言（`zh-TW` 或 `en`），不得中英並列。
 
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
@@ -330,26 +413,23 @@ Base path：`/api/v1`
 
 ### 5-1) 特殊人員名單新增前使用者查詢 API
 - `GET /api/v1/users?q={keyword}`
-- 用途：供管理者以 `sysid`、`account`、`name`、`email` 查詢可加入特殊人員名單的人員。
-- 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`。
+- 用途：供管理者查詢既有管理者名單（`admins`）資料。
+- 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`status`。
 
-### 5-2) 目前使用者語言偏好 API
+### 5-2) 目前使用者語言偏好 API（暫停）
 - `GET /api/v1/users/preferences/locale`
-  - 用途：取得目前登入使用者語言偏好
-  - Response（200）：`{ "preferred_locale": "zh-TW" | "en" | null }`
+  - 本階段停用，回傳 `410 FEATURE_DISABLED`
 - `PATCH /api/v1/users/preferences/locale`
-  - 用途：更新目前登入使用者語言偏好
-  - Request：`{ "preferred_locale": "zh-TW" | "en" }`
-  - 非法值回傳 `400` + `VALIDATION_ERROR`
+  - 本階段停用，回傳 `410 FEATURE_DISABLED`
 
-### 前端語言規則（MVP）
+### 前端語言規則（MVP，停用後降級）
 - 僅支援 `zh-TW`、`en`。
-- 啟動語言優先序：`DB 偏好 > 系統語言判定 > fallback en`。
+- 啟動語言優先序：`系統語言判定 > fallback en`（本階段不寫回 DB）。
 - 系統語言判定規則：
   - `navigator.language` / `navigator.languages` 命中 `zh*` -> `zh-TW`
   - 命中 `en*` -> `en`
   - 其他語系 -> `en`
-- 手動切換語言後，需更新 UI 文案並寫回 `preferred_locale`。
+- 手動切換語言後，需更新 UI 文案（本階段不寫回 `preferred_locale`）。
 - DataGrid locale 文案需跟隨語言切換。
 
 ### 6) 管理者啟用/停用 API
@@ -380,6 +460,10 @@ Base path：`/api/v1`
 - `VALIDATION_ERROR`
 - `INVALID_APPLICATION_DATE`
 - `INVALID_DURATION_MONTHS`
+- `LIMIT_STRATEGY_REQUIRED`
+- `LIMIT_STRATEGY_CONFLICT`
+- `MISSING_BUDGET_FIELDS`
+- `MISSING_RATE_LIMIT_FIELDS`
 - `APPLICANT_NOT_ELIGIBLE`
 - `RESEARCH_LIST_SERVICE_UNAVAILABLE`
 - `WHITELIST_EMAIL_DUPLICATED`
@@ -388,6 +472,11 @@ Base path：`/api/v1`
 - `KEY_NOT_ACTIVE`
 - `RATE_LIMITED`
 - `INTERNAL_ERROR`
+- `APPLICATION_NOT_PENDING`
+- `ISSUANCE_MODE_REQUIRED`
+- `ISSUANCE_MODE_INVALID`
+- `ISSUANCE_CONFIG_INCOMPLETE`
+- `APPLICATION_ALREADY_ISSUED`
 
 ## 驗收標準
 1. 研究人員名單職稱代碼命中者可成功核發 API Key，格式為 `AS-` + 30 碼隨機字元（總長 33）。
@@ -429,12 +518,29 @@ Base path：`/api/v1`
 35. 系統語言 `en-US` 首次進站時（DB 無偏好）需顯示英文。
 36. 系統語言非 `zh*|en*`（例如 `ja-JP`）首次進站時（DB 無偏好）需 fallback 顯示英文。
 37. 手動切換語言後，重新登入需沿用 DB 偏好。
-38. `PATCH /api/v1/users/preferences/locale` 對非法 locale 值需回傳 `400`。
+38. `GET/PATCH /api/v1/users/preferences/locale` 於本階段需回傳 `410` 與 `FEATURE_DISABLED`。
 39. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
 40. `GET /api/v1/api-keys` 與 `GET /api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳 `for_{owner_account}`。
 41. `admin` 可透過 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`。
 42. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
 43. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
+44. 限制策略設定僅 `admin` 可讀取與更新（`/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。
+45. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
+46. Provider timeout/5xx 或金鑰條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
+47. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
+48. `GET/PATCH /api/v1/notifications*` 需可用，且僅可查詢/操作本人 `sysid` 的通知資料。
+49. `POST /api/v1/api-keys/applications` 成功建立 pending 後，需寄送 Email 給所有 `active` 管理者與申請者本人。
+50. 第 49 項通知信內容需中英並列（中文在前、英文在後）。
+51. 第 49 項若寄信失敗，`POST /api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
+52. `POST /api/v1/api-keys/applications/{id}/issue` 成功配發後，需寄送「已配發」Email 給申請者本人。
+53. 第 52 項若寄信失敗，`issue` 仍需維持 `issued` 且回傳 `email_warning`。
+54. 當配發模式為 `local` 時，`issue` 需可在不連線外部 provider 的情況下成功 `issued`。
+55. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
+56. 第 52 項通知信不得包含 `Application ID`。
+57. `PATCH /api/v1/notifications/{id}/read` 僅通知本人可操作；即使為 `admin` 也不得代替他人已讀。
+58. `api_key_issued` 通知首次由本人標記已讀時，API 可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
+59. 通知中心文案需支援 `zh-TW|en` 切換，且僅單筆 `PATCH /api/v1/notifications/{id}/read` 可用於已讀操作。
+60. 通知中心金鑰 Dialog 提示文案需依目前語系顯示單一語言，不得中英並列。
 
 ## Roadmap
 ### Phase 1：Foundation

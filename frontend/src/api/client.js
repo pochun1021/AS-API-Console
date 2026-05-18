@@ -50,5 +50,12 @@ export const apiClient = {
   updateLocalePreference: (preferredLocale, auth) => provider.updateLocalePreference(preferredLocale, auth),
   listWhitelists: (auth) => provider.listWhitelists(auth),
   createWhitelist: (payload, auth) => provider.createWhitelist(payload, auth),
-  updateWhitelist: (id, payload, auth) => provider.updateWhitelist(id, payload, auth)
+  updateWhitelist: (id, payload, auth) => provider.updateWhitelist(id, payload, auth),
+  getLimitStrategyConfig: (auth) => provider.getLimitStrategyConfig(auth),
+  updateLimitStrategyConfig: (payload, auth) => provider.updateLimitStrategyConfig(payload, auth),
+  listPendingApplications: (auth) => provider.listPendingApplications(auth),
+  updateApplicationIssuanceMode: (id, mode, auth) => provider.updateApplicationIssuanceMode(id, mode, auth),
+  issueApplication: (id, auth) => provider.issueApplication(id, auth),
+  listNotifications: (params, auth) => provider.listNotifications(params, auth),
+  markNotificationRead: (id, auth) => provider.markNotificationRead(id, auth)
 };

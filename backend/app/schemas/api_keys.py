@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -19,7 +20,45 @@ class ApplicationSummary(BaseModel):
 
 class ApplicationCreateResponse(BaseModel):
     application: ApplicationSummary
-    api_key_plaintext: str
+    issuance_status: Literal["issued", "pending"]
+    api_key_plaintext: str | None = None
+    pending_reason: str | None = None
+
+
+class PendingApplicationItemResponse(BaseModel):
+    id: str
+    account: str
+    name: str
+    email: str
+    department: str
+    purpose: str
+    application_date: date
+    duration_months: int
+    selected_issuance_mode: Literal["budget", "rate_limit"] | None = None
+    created_at: datetime
+
+
+class PendingApplicationListResponse(BaseModel):
+    items: list[PendingApplicationItemResponse]
+    total: int
+
+
+class PendingApplicationModeUpdateRequest(BaseModel):
+    mode: Literal["budget", "rate_limit"]
+
+
+class PendingApplicationModeUpdateResponse(BaseModel):
+    id: str
+    selected_issuance_mode: Literal["budget", "rate_limit"]
+    issuance_status: Literal["pending", "issued"]
+
+
+class PendingApplicationIssueResponse(BaseModel):
+    application: ApplicationSummary
+    issuance_status: Literal["pending", "issued"]
+    api_key_plaintext: str | None = None
+    pending_reason: str | None = None
+    email_warning: str | None = None
 
 
 class ApiKeyListItemResponse(BaseModel):
@@ -88,3 +127,17 @@ class ApiKeyUserStatisticsResponse(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class LimitStrategyConfigResponse(BaseModel):
+    budget_max_budget: str
+    budget_duration: str
+    rate_limit_tpm: int
+    rate_limit_rpm: int
+
+
+class LimitStrategyConfigUpdateRequest(BaseModel):
+    budget_max_budget: str
+    budget_duration: str
+    rate_limit_tpm: int
+    rate_limit_rpm: int

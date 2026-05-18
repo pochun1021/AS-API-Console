@@ -3,26 +3,28 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "./components/AppLayout";
 import DevAuthSwitcher from "./components/DevAuthSwitcher";
 import { devAuthProfiles, readOAuthAuthContext } from "./authContext";
-import { apiClient } from "./api/client";
 import { detectSystemLocale, useLocale } from "./i18n/locale";
 import ApplyPage from "./pages/ApplyPage";
 import MyApiKeysPage from "./pages/MyApiKeysPage";
 import AdminPage from "./pages/AdminPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import LimitStrategiesPage from "./pages/LimitStrategiesPage";
+import NotificationsPage from "./pages/NotificationsPage";
+import PendingApplicationsPage from "./pages/PendingApplicationsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 
 const STORAGE_KEY = "as-api-console-dev-auth-profile";
 
 function readStoredProfileKey() {
   if (typeof window === "undefined") {
-    return "admin";
+    return "user";
   }
 
   const stored = window.localStorage.getItem(STORAGE_KEY);
   if (stored === "admin" || stored === "user") {
     return stored;
   }
-  return "admin";
+  return "user";
 }
 
 export default function App() {
@@ -41,13 +43,8 @@ export default function App() {
     }
   }
 
-  async function changeLocale(nextLocale) {
+  function changeLocale(nextLocale) {
     setLocale(nextLocale);
-    try {
-      await apiClient.updateLocalePreference(nextLocale, auth);
-    } catch {
-      // Keep UX responsive even if persistence temporarily fails.
-    }
   }
 
   useEffect(() => {
@@ -58,10 +55,6 @@ export default function App() {
     let canceled = false;
     async function initLocale() {
       try {
-        const result = await apiClient.getLocalePreference(auth);
-        const resolved = result?.preferred_locale || detectSystemLocale();
-        if (!canceled) setLocale(resolved);
-      } catch {
         if (!canceled) setLocale(detectSystemLocale());
       } finally {
         if (!canceled) setLocaleReady(true);
@@ -72,7 +65,7 @@ export default function App() {
     return () => {
       canceled = true;
     };
-  }, [auth, setLocale]);
+  }, [setLocale]);
 
   if (!localeReady) {
     return null;
@@ -85,11 +78,32 @@ export default function App() {
         <Route path="/" element={<Navigate to="/apply" replace />} />
         <Route path="/apply" element={<ApplyPage auth={auth} />} />
         <Route path="/api-keys" element={<MyApiKeysPage auth={auth} />} />
+        <Route path="/notifications" element={<NotificationsPage auth={auth} />} />
         <Route
           path="/whitelists"
           element={
             auth.role === "admin" ? (
               <WhitelistAdminPage auth={auth} />
+            ) : (
+              <Navigate to="/apply" replace />
+            )
+          }
+        />
+        <Route
+          path="/limit-strategies"
+          element={
+            auth.role === "admin" ? (
+              <LimitStrategiesPage auth={auth} />
+            ) : (
+              <Navigate to="/apply" replace />
+            )
+          }
+        />
+        <Route
+          path="/pending-applications"
+          element={
+            auth.role === "admin" ? (
+              <PendingApplicationsPage auth={auth} />
             ) : (
               <Navigate to="/apply" replace />
             )

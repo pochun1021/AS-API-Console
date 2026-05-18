@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, Date, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -15,13 +15,21 @@ class ApiKeyApplication(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     account: Mapped[str] = mapped_column(String(100), nullable=False)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     department: Mapped[str] = mapped_column(String(100), nullable=False)
     application_date: Mapped[date] = mapped_column(Date, nullable=False)
     duration_months: Mapped[int] = mapped_column(Integer, nullable=False)
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    limit_strategy: Mapped[str] = mapped_column(String(20), nullable=False)
+    max_budget: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    budget_duration: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    tpm_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rpm_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    issuance_status: Mapped[str] = mapped_column(String(20), default="issued", nullable=False)
+    selected_issuance_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    pending_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -37,5 +45,4 @@ class ApiKeyApplication(Base):
         nullable=False,
     )
 
-    user: Mapped["User"] = relationship(back_populates="applications")
     api_key: Mapped["ApiKey"] = relationship(back_populates="application", uselist=False)

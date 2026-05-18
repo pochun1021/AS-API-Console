@@ -118,14 +118,28 @@ mariadb -h <host> -u <user> -p as_api_console -e "SHOW TABLES;"
 
 ### 指令
 - 重建小型測試資料（預設模式，先清除既有 seed 範圍再重建）：
+使用 `uv`：
 ```bash
 cd backend
 uv run python scripts/seed_test_data.py
 ```
+若環境沒有 `uv`：
+```bash
+cd backend
+. .venv/bin/activate
+python scripts/seed_test_data.py
+```
 - 追加小型測試資料（不清除既有 seed 範圍）：
+使用 `uv`：
 ```bash
 cd backend
 uv run python scripts/seed_test_data.py --no-reset
+```
+若環境沒有 `uv`：
+```bash
+cd backend
+. .venv/bin/activate
+python scripts/seed_test_data.py --no-reset
 ```
 
 ### 寫入範圍（small）
@@ -200,7 +214,7 @@ alembic upgrade head
 
 ### seed 腳本執行失敗（連線錯誤）
 - 先確認 `DATABASE_URL` 是否正確、資料庫服務是否啟動、帳密/權限是否可用。
-- 再次確認執行位置為 `backend`，並以 `uv run` 啟動腳本。
+- 再次確認執行位置為 `backend`；有 `uv` 用 `uv run`，無 `uv` 則先啟用 `.venv` 後使用 `python` 啟動腳本。
 
 ### seed 追加模式出現唯一鍵衝突
 - 若無需保留既有 seed，改用預設模式（不帶 `--no-reset`）重建。
@@ -209,4 +223,4 @@ alembic upgrade head
 ### 舊資料仍出現樣板遮罩（`AS-xxxx****xxxx`）
 - 原因：歷史 key 無法從 `key_hash` 反推 plaintext，無法直接補齊真實前後4碼。
 - 處理方式：移除舊 key 並透過正常申請流程重發，讓系統在建立當下寫入真實 `masked_key`。
-- 開發環境建議：直接使用 `uv run python scripts/seed_test_data.py`（reset 模式）重建資料。
+- 開發環境建議：以 reset 模式重建資料（有 `uv`：`uv run python scripts/seed_test_data.py`；無 `uv`：`python scripts/seed_test_data.py`）。

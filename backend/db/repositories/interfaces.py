@@ -3,7 +3,6 @@ from typing import Protocol
 
 from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
-from db.models.users import User
 from db.models.whitelist import ApiKeyWhitelist
 from db.repositories.types import (
     ApiKeyAliasUpdateInput,
@@ -18,24 +17,6 @@ from db.repositories.types import (
     WhitelistCreateInput,
     WhitelistUpdateInput,
 )
-
-
-class UserRepository(Protocol):
-    def get_by_id(self, user_id: str) -> User | None: ...
-
-    def get_by_account(self, account: str) -> User | None: ...
-
-    def get_by_email(self, email: str) -> User | None: ...
-
-    def search(self, keyword: str, limit: int = 20) -> list[User]: ...
-
-    def update_role(self, user_id: str, role: str) -> User | None: ...
-
-    def update_status(self, user_id: str, status: str) -> User | None: ...
-    
-    def update_preferred_locale(self, user_id: str, preferred_locale: str | None) -> User | None: ...
-
-    def upsert_from_auth(self, identity: AuthIdentity) -> User: ...
 
 
 class WhitelistRepository(Protocol):

@@ -1,7 +1,11 @@
 import hashlib
+import json
+import logging
 import secrets
+from asyncio import run as run_async
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -9,8 +13,14 @@ from app.core.auth import CurrentUser
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.services.crypto_service import CryptoService
+from app.services.mail_service import MailService
+from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
 from app.services.research_eligibility_service import ResearchEligibilityService
-from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyUserRepository, SQLAlchemyWhitelistRepository
+from db.models.applications import ApiKeyApplication
+from db.models.api_keys import ApiKey
+from db.models.limit_strategy_config import LimitStrategyConfig
+from db.models.notifications import Notification
+from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
 from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
 
 
@@ -18,12 +28,6 @@ from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, Api
 class Pagination:
     page: int = 1
     page_size: int = 20
-
-
-def _generate_api_key() -> str:
-    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    suffix = "".join(secrets.choice(alphabet) for _ in range(30))
-    return f"AS-{suffix}"
 
 
 def _hash_key(plaintext: str) -> str:
@@ -51,17 +55,28 @@ class ApiKeysService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.settings = get_settings()
-        self.user_repo = SQLAlchemyUserRepository(session)
+        self.admin_repo = SQLAlchemyAdminRepository(session)
         self.whitelist_repo = SQLAlchemyWhitelistRepository(session)
         self.key_repo = SQLAlchemyApiKeyRepository(session)
         self.research_eligibility = ResearchEligibilityService()
+        self.provider_client = ProviderClient()
         self.crypto = CryptoService(self.settings.api_key_encryption_secret)
+        self.mail_service = MailService()
 
-    def create_application(self, current_user: CurrentUser, application_date: date, duration_months: int, purpose: str) -> dict:
+    def create_application(
+        self,
+        current_user: CurrentUser,
+        application_date: date,
+        duration_months: int,
+        purpose: str,
+    ) -> dict:
         if application_date > date.today():
             raise ApiError("INVALID_APPLICATION_DATE", "application_date cannot be in the future", 422)
         if duration_months not in {1, 6, 12}:
             raise ApiError("INVALID_DURATION_MONTHS", "duration_months must be one of 1, 6, 12", 422)
+        normalized_purpose = purpose.strip()
+        if not normalized_purpose:
+            raise ApiError("VALIDATION_ERROR", "purpose is required", 422)
 
         research_eligible = False
         if self.research_eligibility.is_configured():
@@ -89,33 +104,30 @@ class ApiKeysService:
             department=current_user.department,
             sysid=current_user.sysid,
         )
-        user = self.user_repo.upsert_from_auth(identity)
-
         issued_at = datetime.now(UTC)
         expires_at = _calc_expiration(issued_at, duration_months)
         application = self.key_repo.create_application(
             ApplicationCreateInput(
-                user_id=user.id,
+                user_id=current_user.sysid,
                 identity=identity,
                 application_date=application_date,
                 duration_months=duration_months,
-                purpose=purpose,
+                purpose=normalized_purpose,
+                limit_strategy="",
+                max_budget=None,
+                budget_duration=None,
+                tpm_limit=None,
+                rpm_limit=None,
+                issuance_status="pending",
+                pending_issued_at=None,
                 issued_at=issued_at,
                 expires_at=expires_at,
             )
         )
-
-        plaintext = _generate_api_key()
-        self.key_repo.create_key(
-            ApiKeyCreateInput(
-                application_id=application.id,
-                key_hash=_hash_key(plaintext),
-                masked_key=_mask_key(plaintext),
-                key_ciphertext=self.crypto.encrypt(plaintext),
-                key_kek_version=self.settings.api_key_kek_version,
-            )
-        )
+        application.selected_issuance_mode = None
+        self.session.add(application)
         self.session.commit()
+        self._send_application_received_emails(application)
 
         return {
             "application": {
@@ -125,8 +137,267 @@ class ApiKeysService:
                 "issued_at": application.issued_at,
                 "expires_at": application.expires_at,
             },
-            "api_key_plaintext": plaintext,
+            "issuance_status": "pending",
+            "api_key_plaintext": None,
+            "pending_reason": "awaiting_admin_mode_selection",
         }
+
+    def _send_application_received_emails(self, application: ApiKeyApplication) -> None:
+        try:
+            active_admin_emails = self.admin_repo.list_active_emails()
+            run_async(
+                self.mail_service.send_application_received_to_admins(
+                    recipients=active_admin_emails,
+                    application_id=application.id,
+                    applicant_account=application.account,
+                    applicant_name=application.name,
+                    applicant_email=application.email,
+                    applicant_department=application.department,
+                    application_date=str(application.application_date),
+                    duration_months=application.duration_months,
+                    purpose=application.purpose,
+                    app_domain=self.settings.app_domain,
+                )
+            )
+        except Exception:  # noqa: BLE001
+            logging.exception("failed to send application received email to admins")
+
+        try:
+            run_async(
+                self.mail_service.send_application_received_to_applicant(
+                    to_email=application.email,
+                    owner_name=application.name,
+                    application_id=application.id,
+                    app_domain=self.settings.app_domain,
+                )
+            )
+        except Exception:  # noqa: BLE001
+            logging.exception("failed to send application received email to applicant")
+
+    def list_pending_applications(self, current_user: CurrentUser) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+        stmt = (
+            self.session.query(ApiKeyApplication)
+            .filter(ApiKeyApplication.issuance_status == "pending")
+            .order_by(ApiKeyApplication.created_at.desc())
+        )
+        items = stmt.all()
+        return {
+            "items": [
+                {
+                    "id": app.id,
+                    "account": app.account,
+                    "name": app.name,
+                    "email": app.email,
+                    "department": app.department,
+                    "purpose": app.purpose,
+                    "application_date": app.application_date,
+                    "duration_months": app.duration_months,
+                    "selected_issuance_mode": app.selected_issuance_mode,
+                    "created_at": app.created_at,
+                }
+                for app in items
+            ],
+            "total": len(items),
+        }
+
+    def update_pending_application_mode(self, current_user: CurrentUser, application_id: str, mode: str) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+        if mode not in {"budget", "rate_limit"}:
+            raise ApiError("ISSUANCE_MODE_INVALID", "mode must be budget or rate_limit", 422)
+        application = self.session.get(ApiKeyApplication, application_id)
+        if application is None:
+            raise ApiError("VALIDATION_ERROR", "application not found", 404)
+        if application.issuance_status != "pending":
+            raise ApiError("APPLICATION_NOT_PENDING", "application is not pending", 409)
+        application.selected_issuance_mode = mode
+        application.updated_at = datetime.now(UTC)
+        self.session.add(application)
+        self.session.commit()
+        return {"id": application.id, "selected_issuance_mode": mode, "issuance_status": application.issuance_status}
+
+    def issue_pending_application(self, current_user: CurrentUser, application_id: str) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+        application = self.session.get(ApiKeyApplication, application_id)
+        if application is None:
+            raise ApiError("VALIDATION_ERROR", "application not found", 404)
+        if application.issuance_status == "issued":
+            raise ApiError("APPLICATION_ALREADY_ISSUED", "application already issued", 409)
+        if application.issuance_status != "pending":
+            raise ApiError("APPLICATION_NOT_PENDING", "application is not pending", 409)
+        if application.selected_issuance_mode not in {"budget", "rate_limit"}:
+            raise ApiError("ISSUANCE_MODE_REQUIRED", "issuance mode is required", 409)
+
+        plaintext = self._issue_application(application)
+        email_warning: str | None = None
+        if application.issuance_status == "issued":
+            try:
+                run_async(
+                    self.mail_service.send_key_issued_notification(
+                        to_email=application.email,
+                        owner_name=application.name,
+                        application_id=application.id,
+                        app_domain=self.settings.app_domain,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logging.exception("failed to send key issued email to applicant")
+                email_warning = "key_issued_email_failed"
+        self.session.commit()
+        return {
+            "application": {
+                "id": application.id,
+                "account": application.account,
+                "status": application.status,
+                "issued_at": application.issued_at,
+                "expires_at": application.expires_at,
+            },
+            "issuance_status": application.issuance_status,
+            "api_key_plaintext": plaintext,
+            "pending_reason": "provider_unavailable" if application.issuance_status == "pending" else None,
+            "email_warning": email_warning,
+        }
+
+    def _issue_application(self, application: ApiKeyApplication) -> str | None:
+        mode = application.selected_issuance_mode
+        if mode not in {"budget", "rate_limit"}:
+            raise ApiError("ISSUANCE_MODE_REQUIRED", "issuance mode is required", 409)
+        config = self._get_or_create_limit_strategy_config()
+        if mode == "budget":
+            max_budget = (config.budget_max_budget or "").strip()
+            budget_duration = (config.budget_duration or "").strip()
+            tpm_limit = None
+            rpm_limit = None
+            if not max_budget or not budget_duration:
+                raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "budget config is incomplete", 409)
+        else:
+            max_budget = None
+            budget_duration = None
+            tpm_limit = config.rate_limit_tpm
+            rpm_limit = config.rate_limit_rpm
+            if not tpm_limit or not rpm_limit or int(tpm_limit) <= 0 or int(rpm_limit) <= 0:
+                raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "rate limit config is incomplete", 409)
+        application.limit_strategy = mode
+        application.max_budget = max_budget
+        application.budget_duration = budget_duration
+        application.tpm_limit = tpm_limit
+        application.rpm_limit = rpm_limit
+
+        plaintext: str | None = None
+        try:
+            provider_mode = (self.settings.issuance_provider_mode or "external").strip().lower()
+            use_local_issuance = provider_mode == "local"
+            if not use_local_issuance and self.provider_client.is_configured():
+                provider_result = self.provider_client.generate_key(
+                    {
+                        "account": application.account,
+                        "application_id": application.id,
+                        "duration_months": application.duration_months,
+                        "purpose": application.purpose,
+                        "limit_strategy": mode,
+                        "max_budget": max_budget,
+                        "budget_duration": budget_duration,
+                        "tpm_limit": tpm_limit,
+                        "rpm_limit": rpm_limit,
+                    }
+                )
+                plaintext = provider_result.key_plaintext
+            else:
+                plaintext = _generate_api_key()
+            key = self.key_repo.create_key(
+                ApiKeyCreateInput(
+                    application_id=application.id,
+                    key_hash=_hash_key(plaintext),
+                    masked_key=_mask_key(plaintext),
+                    key_ciphertext=self.crypto.encrypt(plaintext),
+                    key_kek_version=self.settings.api_key_kek_version,
+                )
+            )
+            application.issuance_status = "issued"
+            application.pending_issued_at = datetime.now(UTC)
+            self._create_key_issued_notification(application, key_id=key.id)
+        except ProviderBadRequestError as exc:
+            raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
+        except ProviderUnavailableError:
+            application.issuance_status = "pending"
+            plaintext = None
+        application.updated_at = datetime.now(UTC)
+        self.session.add(application)
+        return plaintext
+
+    def _create_key_issued_notification(self, application: ApiKeyApplication, *, key_id: str) -> None:
+        notification = Notification(
+            id=str(uuid4()),
+            sysid=application.sysid,
+            type="api_key_issued",
+            title="API key issued",
+            message="Your pending API key application has been issued.",
+            is_read=False,
+            metadata_json=json.dumps({"application_id": application.id, "key_id": key_id}, ensure_ascii=False),
+            email_delivery_status=None,
+            email_error=None,
+            created_at=datetime.now(UTC),
+            read_at=None,
+        )
+        self.session.add(notification)
+
+    def get_limit_strategy_config(self, current_user: CurrentUser) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+        config = self._get_or_create_limit_strategy_config()
+        return {
+            "budget_max_budget": config.budget_max_budget,
+            "budget_duration": config.budget_duration,
+            "rate_limit_tpm": config.rate_limit_tpm,
+            "rate_limit_rpm": config.rate_limit_rpm,
+        }
+
+    def update_limit_strategy_config(self, current_user: CurrentUser, payload: dict) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+        budget_max_budget = str(payload.get("budget_max_budget") or "").strip()
+        budget_duration = str(payload.get("budget_duration") or "").strip()
+        rate_limit_tpm = int(payload.get("rate_limit_tpm") or 0)
+        rate_limit_rpm = int(payload.get("rate_limit_rpm") or 0)
+        if not budget_max_budget or not budget_duration:
+            raise ApiError("MISSING_BUDGET_FIELDS", "budget config is required", 422)
+        if rate_limit_tpm <= 0 or rate_limit_rpm <= 0:
+            raise ApiError("MISSING_RATE_LIMIT_FIELDS", "rate limit config is required", 422)
+        config = self._get_or_create_limit_strategy_config()
+        config.budget_max_budget = budget_max_budget
+        config.budget_duration = budget_duration
+        config.rate_limit_tpm = rate_limit_tpm
+        config.rate_limit_rpm = rate_limit_rpm
+        config.updated_at = datetime.now(UTC)
+        self.session.add(config)
+        self.session.commit()
+        return {
+            "budget_max_budget": config.budget_max_budget,
+            "budget_duration": config.budget_duration,
+            "rate_limit_tpm": config.rate_limit_tpm,
+            "rate_limit_rpm": config.rate_limit_rpm,
+        }
+
+    def _get_or_create_limit_strategy_config(self) -> LimitStrategyConfig:
+        config = self.session.get(LimitStrategyConfig, "global-limit-strategy-config")
+        if config is not None:
+            return config
+        now = datetime.now(UTC)
+        config = LimitStrategyConfig(
+            id="global-limit-strategy-config",
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            created_at=now,
+            updated_at=now,
+        )
+        self.session.add(config)
+        self.session.flush()
+        return config
 
     def list_keys(
         self,
@@ -333,3 +604,7 @@ class ApiKeysService:
             "page_size": page_size,
             "total": total,
         }
+def _generate_api_key() -> str:
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    suffix = "".join(secrets.choice(alphabet) for _ in range(30))
+    return f"AS-{suffix}"
