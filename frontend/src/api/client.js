@@ -57,6 +57,5 @@ export const apiClient = {
   updateApplicationIssuanceMode: (id, mode, auth) => provider.updateApplicationIssuanceMode(id, mode, auth),
   issueApplication: (id, auth) => provider.issueApplication(id, auth),
   listNotifications: (params, auth) => provider.listNotifications(params, auth),
-  markNotificationRead: (id, auth) => provider.markNotificationRead(id, auth),
-  markAllNotificationsRead: (auth) => provider.markAllNotificationsRead(auth)
+  markNotificationRead: (id, auth) => provider.markNotificationRead(id, auth)
 };

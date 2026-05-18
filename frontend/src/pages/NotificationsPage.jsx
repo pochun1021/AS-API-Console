@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Card, CardContent, Chip, Stack, Typography } from "@mui/material";
+import { Alert, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from "@mui/material";
 import { apiClient } from "../api/client";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
@@ -10,6 +10,7 @@ export default function NotificationsPage({ auth }) {
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
   const [items, setItems] = useState([]);
+  const [revealedKey, setRevealedKey] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -32,20 +33,20 @@ export default function NotificationsPage({ auth }) {
 
   async function markRead(id) {
     try {
-      await apiClient.markNotificationRead(id, auth);
-      setItems((prev) => prev.map((item) => (item.id === id ? { ...item, is_read: true } : item)));
+      const result = await apiClient.markNotificationRead(id, auth);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, is_read: true, read_at: result.read_at || new Date().toISOString() } : item
+        )
+      );
+      if (result?.api_key_plaintext) {
+        setRevealedKey({
+          value: result.api_key_plaintext,
+          warning: t("notifications_key_save_warning")
+        });
+      }
     } catch (e) {
       setBanner(e?.payload?.error?.message || t("notifications_mark_read_failed"));
-    }
-  }
-
-  async function markAllRead() {
-    try {
-      await apiClient.markAllNotificationsRead(auth);
-      setItems((prev) => prev.map((item) => ({ ...item, is_read: true })));
-      setBanner(t("notifications_mark_all_done"));
-    } catch (e) {
-      setBanner(e?.payload?.error?.message || t("notifications_mark_all_failed"));
     }
   }
 
@@ -55,9 +56,6 @@ export default function NotificationsPage({ auth }) {
         <Typography variant="h4">{t("notifications_title")}</Typography>
         <Stack direction="row" spacing={1} alignItems="center">
           <Chip label={`${t("notifications_unread")}: ${unreadCount}`} color={unreadCount ? "warning" : "default"} />
-          <Button variant="outlined" onClick={markAllRead} disabled={!items.length || !unreadCount}>
-            {t("notifications_mark_all_read")}
-          </Button>
         </Stack>
       </Stack>
 
@@ -72,10 +70,10 @@ export default function NotificationsPage({ auth }) {
               <CardContent>
                 <Stack spacing={1.5}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Typography variant="h6">{item.title}</Typography>
+                    <Typography variant="h6">{resolveNotificationTitle(item, t)}</Typography>
                     <Chip label={item.is_read ? t("notifications_read") : t("notifications_unread")} size="small" />
                   </Stack>
-                  <Typography color="text.secondary">{item.message}</Typography>
+                  <Typography color="text.secondary">{resolveNotificationMessage(item, t)}</Typography>
                   <Typography variant="body2" color="text.secondary">
                     {new Date(item.created_at).toLocaleString()}
                   </Typography>
@@ -91,6 +89,31 @@ export default function NotificationsPage({ auth }) {
             </Card>
           ))
         : null}
+
+      <Dialog open={Boolean(revealedKey)} onClose={() => setRevealedKey(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>{t("notifications_key_revealed_title")}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+            <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
+              {revealedKey?.value}
+            </Typography>
+            <Typography variant="body2">{revealedKey?.warning}</Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRevealedKey(null)}>{t("common_close")}</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
+}
+
+function resolveNotificationTitle(item, t) {
+  if (item.type === "api_key_issued") return t("notifications_type_api_key_issued_title");
+  return item.title || t("notifications_fallback_title");
+}
+
+function resolveNotificationMessage(item, t) {
+  if (item.type === "api_key_issued") return t("notifications_type_api_key_issued_message");
+  return item.message || t("notifications_fallback_message");
 }

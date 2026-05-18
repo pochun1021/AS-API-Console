@@ -682,22 +682,16 @@ export const mockApiProvider = {
     if (!target) {
       throw createError("VALIDATION_ERROR", "notification not found", 404);
     }
+    const firstRead = !target.is_read;
     target.is_read = true;
     target.read_at = new Date().toISOString();
-    return { id: target.id, is_read: target.is_read, read_at: target.read_at };
-  },
-
-  async markAllNotificationsRead(auth) {
-    await delay();
-    let updated = 0;
-    notifications = notifications.map((item) => {
-      if (item.account === auth.account && !item.is_read) {
-        updated += 1;
-        return { ...item, is_read: true, read_at: new Date().toISOString() };
-      }
-      return item;
-    });
-    return { updated };
+    return {
+      id: target.id,
+      is_read: target.is_read,
+      read_at: target.read_at,
+      revealed: firstRead && target.type === "api_key_issued",
+      api_key_plaintext: firstRead && target.type === "api_key_issued" ? "AS-mockmockmockmockmockmockmockmo" : null
+    };
   },
 
   resetForTests() {

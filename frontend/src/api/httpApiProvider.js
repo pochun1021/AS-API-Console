@@ -199,8 +199,4 @@ export const httpApiProvider = {
     return request(`/api/v1/notifications/${id}/read`, { method: "PATCH", auth });
   },
 
-  markAllNotificationsRead(auth) {
-    return request("/api/v1/notifications/read-all", { method: "PATCH", auth });
-  },
-
 };

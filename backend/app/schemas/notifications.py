@@ -30,7 +30,5 @@ class NotificationReadResponse(BaseModel):
     id: str
     is_read: bool
     read_at: datetime | None = None
-
-
-class NotificationReadAllResponse(BaseModel):
-    updated: int
+    revealed: bool = False
+    api_key_plaintext: str | None = None

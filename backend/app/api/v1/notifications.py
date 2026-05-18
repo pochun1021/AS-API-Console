@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from app.core.auth import CurrentUser, get_current_user
 from app.schemas.notifications import (
     NotificationListResponse,
-    NotificationReadAllResponse,
     NotificationReadResponse,
 )
 from app.services.notifications_service import NotificationsService
@@ -34,11 +33,3 @@ def mark_notification_read(
     service = NotificationsService(db)
     return service.mark_notification_read(current_user=current_user, notification_id=notification_id)
 
-
-@router.patch("/notifications/read-all", response_model=NotificationReadAllResponse)
-def mark_all_notifications_read(
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = NotificationsService(db)
-    return service.mark_all_notifications_read(current_user=current_user)

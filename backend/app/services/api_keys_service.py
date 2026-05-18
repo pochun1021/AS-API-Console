@@ -307,7 +307,7 @@ class ApiKeysService:
                 plaintext = provider_result.key_plaintext
             else:
                 plaintext = _generate_api_key()
-            self.key_repo.create_key(
+            key = self.key_repo.create_key(
                 ApiKeyCreateInput(
                     application_id=application.id,
                     key_hash=_hash_key(plaintext),
@@ -318,7 +318,7 @@ class ApiKeysService:
             )
             application.issuance_status = "issued"
             application.pending_issued_at = datetime.now(UTC)
-            self._create_key_issued_notification(application)
+            self._create_key_issued_notification(application, key_id=key.id)
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError:
@@ -328,7 +328,7 @@ class ApiKeysService:
         self.session.add(application)
         return plaintext
 
-    def _create_key_issued_notification(self, application: ApiKeyApplication) -> None:
+    def _create_key_issued_notification(self, application: ApiKeyApplication, *, key_id: str) -> None:
         notification = Notification(
             id=str(uuid4()),
             sysid=application.sysid,
@@ -336,7 +336,7 @@ class ApiKeysService:
             title="API key issued",
             message="Your pending API key application has been issued.",
             is_read=False,
-            metadata_json=json.dumps({"application_id": application.id}, ensure_ascii=False),
+            metadata_json=json.dumps({"application_id": application.id, "key_id": key_id}, ensure_ascii=False),
             email_delivery_status=None,
             email_error=None,
             created_at=datetime.now(UTC),

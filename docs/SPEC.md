@@ -309,11 +309,12 @@ Base path：`/api/v1`
 ### 1-3) 通知中心
 - `GET /api/v1/notifications`
 - `PATCH /api/v1/notifications/{id}/read`
-- `PATCH /api/v1/notifications/read-all`
 - 規則：
   - 僅可查詢與操作本人 `sysid` 的通知資料。
-  - `PATCH /notifications/{id}/read` 僅可標記本人通知。
-  - `PATCH /notifications/read-all` 僅可影響本人通知。
+  - `PATCH /notifications/{id}/read` 僅可標記本人通知；管理者不得代替他人標記已讀。
+  - 通知文案需支援 `zh-TW|en` 切換，並由前端依通知 `type` 與 `metadata` 產生對應語系顯示。
+  - `PATCH /notifications/{id}/read` 於 `api_key_issued` 通知首次由本人標記已讀時，可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
+  - 通知中心 Dialog 保存提醒文案由前端 i18n 顯示單一語言（`zh-TW` 或 `en`），不得中英並列。
 
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
@@ -536,6 +537,10 @@ Base path：`/api/v1`
 54. 當配發模式為 `local` 時，`issue` 需可在不連線外部 provider 的情況下成功 `issued`。
 55. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
 56. 第 52 項通知信不得包含 `Application ID`。
+57. `PATCH /api/v1/notifications/{id}/read` 僅通知本人可操作；即使為 `admin` 也不得代替他人已讀。
+58. `api_key_issued` 通知首次由本人標記已讀時，API 可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
+59. 通知中心文案需支援 `zh-TW|en` 切換，且僅單筆 `PATCH /api/v1/notifications/{id}/read` 可用於已讀操作。
+60. 通知中心金鑰 Dialog 提示文案需依目前語系顯示單一語言，不得中英並列。
 
 ## Roadmap
 ### Phase 1：Foundation
