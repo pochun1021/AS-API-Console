@@ -14,15 +14,20 @@ class WhitelistsService:
         self.session = session
         self.repo = SQLAlchemyWhitelistRepository(session)
 
-    def create(self, current_user: CurrentUser, email: str, note: str | None) -> dict:
-        if self.repo.get_by_email(email) is not None:
-            raise ApiError("WHITELIST_EMAIL_DUPLICATED", "whitelist email already exists", 409)
+    def create(self, current_user: CurrentUser, sysid: str, note: str | None) -> dict:
+        normalized_sysid = sysid.strip()
+        if not normalized_sysid:
+            raise ApiError("VALIDATION_ERROR", "sysid is required", 422)
+
+        if self.repo.get_by_sysid(normalized_sysid) is not None:
+            raise ApiError("WHITELIST_SYSID_DUPLICATED", "whitelist sysid already exists", 409)
 
         try:
             item = self.repo.create(
                 WhitelistCreateInput(
                     id=str(uuid4()),
-                    email=email.lower(),
+                    sysid=normalized_sysid,
+                    email=None,
                     created_by=current_user.account,
                     note=note,
                 )
@@ -30,10 +35,11 @@ class WhitelistsService:
             self.session.commit()
         except IntegrityError as exc:
             self.session.rollback()
-            raise ApiError("WHITELIST_EMAIL_DUPLICATED", "whitelist email already exists", 409) from exc
+            raise ApiError("WHITELIST_SYSID_DUPLICATED", "whitelist sysid already exists", 409) from exc
 
         return {
             "id": item.id,
+            "sysid": item.sysid,
             "email": item.email,
             "status": item.status,
             "note": item.note,
@@ -53,6 +59,7 @@ class WhitelistsService:
             "items": [
                 {
                     "id": item.id,
+                    "sysid": item.sysid,
                     "email": item.email,
                     "status": item.status,
                     "note": item.note,
@@ -82,6 +89,7 @@ class WhitelistsService:
         self.session.commit()
         return {
             "id": item.id,
+            "sysid": item.sysid,
             "email": item.email,
             "status": item.status,
             "note": item.note,

@@ -44,7 +44,7 @@ test("admin can search user and add whitelist item, then sees duplicated error",
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "jane");
   await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
   await user.click((await within(searchDialog).findAllByRole("button", { name: "加入特殊人員名單" }))[0]);
-  expect(await within(searchDialog).findByText("Email 已存在於特殊人員名單")).toBeInTheDocument();
+  expect(await within(searchDialog).findByText("SysID 已存在於特殊人員名單")).toBeInTheDocument();
 });
 
 test("admin can toggle status with confirm and update remark", async () => {

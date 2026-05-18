@@ -102,7 +102,8 @@ class SQLAlchemyWhitelistRepository(WhitelistRepository):
         now = datetime.now(timezone.utc)
         whitelist = ApiKeyWhitelist(
             id=data.id,
-            email=data.email.lower(),
+            sysid=data.sysid,
+            email=data.email.lower() if data.email else None,
             status="active",
             note=data.note,
             created_by=data.created_by,
@@ -124,13 +125,13 @@ class SQLAlchemyWhitelistRepository(WhitelistRepository):
     def get_by_id(self, whitelist_id: str) -> ApiKeyWhitelist | None:
         return self.session.get(ApiKeyWhitelist, whitelist_id)
 
-    def get_by_email(self, email: str) -> ApiKeyWhitelist | None:
-        stmt = select(ApiKeyWhitelist).where(ApiKeyWhitelist.email == email.lower())
+    def get_by_sysid(self, sysid: str) -> ApiKeyWhitelist | None:
+        stmt = select(ApiKeyWhitelist).where(ApiKeyWhitelist.sysid == sysid)
         return self.session.scalar(stmt)
 
-    def find_active_by_email(self, email: str) -> ApiKeyWhitelist | None:
+    def find_active_by_sysid(self, sysid: str) -> ApiKeyWhitelist | None:
         stmt = select(ApiKeyWhitelist).where(
-            ApiKeyWhitelist.email == email.lower(), ApiKeyWhitelist.status == "active"
+            ApiKeyWhitelist.sysid == sysid, ApiKeyWhitelist.status == "active"
         )
         return self.session.scalar(stmt)
 

@@ -9,18 +9,18 @@ def test_whitelist_admin_only(client, admin_headers, user_headers):
     admin_resp = client.post(
         "/api/v1/whitelists",
         headers=admin_headers,
-        json={"email": "wl1@example.com", "note": "seed"},
+        json={"sysid": "wl1-sysid", "note": "seed"},
     )
     assert admin_resp.status_code == 201
 
 
-def test_whitelist_duplicate_email(client, admin_headers):
-    payload = {"email": "dup@example.com", "note": "seed"}
+def test_whitelist_duplicate_sysid(client, admin_headers):
+    payload = {"sysid": "dup-sysid", "note": "seed"}
     first = client.post("/api/v1/whitelists", headers=admin_headers, json=payload)
     second = client.post("/api/v1/whitelists", headers=admin_headers, json=payload)
     assert first.status_code == 201
     assert second.status_code == 409
-    assert second.json()["error"]["code"] == "WHITELIST_EMAIL_DUPLICATED"
+    assert second.json()["error"]["code"] == "WHITELIST_SYSID_DUPLICATED"
 
 
 def test_users_admin_role_endpoints(client, admin_headers):

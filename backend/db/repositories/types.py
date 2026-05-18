@@ -106,7 +106,8 @@ class ApiKeyAliasUpdateInput:
 @dataclass(slots=True)
 class WhitelistCreateInput:
     id: str
-    email: str
+    sysid: str
+    email: str | None
     created_by: str
     note: str | None = None
 

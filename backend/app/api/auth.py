@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.services.auth_audit_service import AuthAuditService
 from app.services.oauth_service import OAuthService
+from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyWhitelistRepository
 from db.session import get_db
 
 router = APIRouter()
@@ -48,6 +49,16 @@ def oauth_callback(
     except ApiError as exc:
         audit.log(provider=provider, request_id=request_id, result="failure", error_code=exc.code)
         raise
+
+    whitelist_repo = SQLAlchemyWhitelistRepository(db)
+    admin_repo = SQLAlchemyAdminRepository(db)
+    allow_by_tcode = identity.tcode.upper().startswith("B")
+    allow_by_whitelist = whitelist_repo.find_active_by_sysid(identity.sysid) is not None
+    admin = admin_repo.get_by_sysid(identity.sysid)
+    allow_by_admin = admin is not None and admin.status == "active"
+    if not (allow_by_tcode or allow_by_whitelist or allow_by_admin):
+        audit.log(provider=provider, request_id=request_id, result="failure", error_code="LOGIN_NOT_ELIGIBLE")
+        raise ApiError("LOGIN_NOT_ELIGIBLE", "user is not eligible to login", 403)
 
     request.session["auth_context"] = {
         "account": identity.account,

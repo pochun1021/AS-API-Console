@@ -141,7 +141,7 @@ export const httpApiProvider = {
     return request("/api/v1/whitelists", {
       method: "POST",
       auth,
-      body: { email: payload.email, note: payload.remark || null }
+      body: { sysid: payload.sysid, note: payload.remark || null }
     }).then(mapWhitelistItem);
   },
 

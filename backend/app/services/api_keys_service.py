@@ -93,7 +93,7 @@ class ApiKeysService:
                     503,
                 ) from exc
 
-        whitelist_eligible = self.whitelist_repo.find_active_by_email(current_user.email) is not None
+        whitelist_eligible = self.whitelist_repo.find_active_by_sysid(current_user.sysid) is not None
         if not research_eligible and not whitelist_eligible:
             raise ApiError("APPLICANT_NOT_ELIGIBLE", "applicant is not eligible", 403)
 

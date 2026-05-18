@@ -1,7 +1,10 @@
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
 from app.core.errors import ApiError
+from db.models.user_preferences import UserPreference
 from db.repositories import SQLAlchemyAdminRepository
 
 
@@ -43,7 +46,25 @@ class UsersService:
         return {"id": user.id, "role": "admin", "status": user.status}
 
     def get_locale_preference(self, current_user: CurrentUser) -> dict:
-        raise ApiError("FEATURE_DISABLED", "locale preference is disabled", 410)
+        preference = self.session.get(UserPreference, current_user.sysid)
+        return {"preferred_locale": preference.preferred_locale if preference else None}
 
     def update_locale_preference(self, current_user: CurrentUser, preferred_locale: str) -> dict:
-        raise ApiError("FEATURE_DISABLED", "locale preference is disabled", 410)
+        if preferred_locale not in {"zh-TW", "en"}:
+            raise ApiError("VALIDATION_ERROR", "preferred_locale must be one of: zh-TW, en", 422)
+
+        preference = self.session.get(UserPreference, current_user.sysid)
+        now = datetime.now(timezone.utc)
+        if preference is None:
+            preference = UserPreference(
+                sysid=current_user.sysid,
+                preferred_locale=preferred_locale,
+                created_at=now,
+                updated_at=now,
+            )
+        else:
+            preference.preferred_locale = preferred_locale
+            preference.updated_at = now
+        self.session.add(preference)
+        self.session.commit()
+        return {"preferred_locale": preference.preferred_locale}

@@ -4,13 +4,13 @@ from app.services.research_eligibility_service import ResearchEligibilityResult
 from tests.conftest import build_headers
 
 
-def _create_whitelist(client, admin_headers, email: str) -> None:
-    resp = client.post("/api/v1/whitelists", headers=admin_headers, json={"email": email, "note": "seed"})
+def _create_whitelist(client, admin_headers, sysid: str) -> None:
+    resp = client.post("/api/v1/whitelists", headers=admin_headers, json={"sysid": sysid, "note": "seed"})
     assert resp.status_code == 201
 
 
 def test_application_success_and_no_plaintext_in_queries(client, admin_headers, user_headers):
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
     create_resp = client.post(
         "/api/v1/api-keys/applications",
@@ -56,7 +56,7 @@ def test_application_rejects_non_whitelisted(client, user_headers):
 
 
 def test_application_sends_emails_to_admins_and_applicant(client, admin_headers, user_headers, monkeypatch):
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     calls: dict[str, list] = {"admins": [], "applicant": []}
 
     async def _fake_admin_mail(self, **kwargs):
@@ -86,7 +86,7 @@ def test_application_sends_emails_to_admins_and_applicant(client, admin_headers,
 
 
 def test_application_email_failure_does_not_block_creation(client, admin_headers, user_headers, monkeypatch):
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
     async def _raise_admin_mail(self, **kwargs):
         raise RuntimeError("mail failure")
@@ -187,7 +187,7 @@ def test_application_success_for_research_eligible_without_whitelist(client, use
 
 
 def test_application_research_service_unavailable_returns_503_and_no_records(client, admin_headers, user_headers, monkeypatch):
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     monkeypatch.setattr(
         "app.services.api_keys_service.ResearchEligibilityService.is_configured",
         lambda self: True,
@@ -215,7 +215,7 @@ def test_application_research_service_unavailable_returns_503_and_no_records(cli
 
 
 def test_application_rejects_invalid_duration(client, admin_headers, user_headers):
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
@@ -226,7 +226,7 @@ def test_application_rejects_invalid_duration(client, admin_headers, user_header
 
 
 def test_application_rejects_future_date(client, admin_headers, user_headers):
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
@@ -241,7 +241,7 @@ def test_admin_pending_flow_permissions_and_issue(client, admin_headers, user_he
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
     get_settings.cache_clear()
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
@@ -289,7 +289,7 @@ def test_admin_pending_flow_permissions_and_issue(client, admin_headers, user_he
 
 
 def test_issue_pending_application_sends_issued_email_to_applicant(client, admin_headers, user_headers, monkeypatch):
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
@@ -323,7 +323,7 @@ def test_issue_pending_application_sends_issued_email_to_applicant(client, admin
 
 
 def test_issue_pending_application_email_failure_returns_warning(client, admin_headers, user_headers, monkeypatch):
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,
@@ -359,7 +359,7 @@ def test_issue_pending_application_local_mode_does_not_call_provider(client, adm
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "local")
     get_settings.cache_clear()
     try:
-        _create_whitelist(client, admin_headers, user_headers["x-email"])
+        _create_whitelist(client, admin_headers, user_headers["x-sysid"])
         create_resp = client.post(
             "/api/v1/api-keys/applications",
             headers=user_headers,
@@ -398,7 +398,7 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
     user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="user-2")
 
-    _create_whitelist(client, admin_headers, user1["x-email"])
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
 
     create_resp = client.post(
         "/api/v1/api-keys/applications",
@@ -427,8 +427,8 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
 def test_admin_can_list_global_keys(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
     user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="user-2")
-    _create_whitelist(client, admin_headers, user1["x-email"])
-    _create_whitelist(client, admin_headers, user2["x-email"])
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    _create_whitelist(client, admin_headers, user2["x-sysid"])
 
     resp1 = client.post(
         "/api/v1/api-keys/applications",
@@ -459,8 +459,8 @@ def test_admin_can_list_global_keys(client, admin_headers):
 def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
     user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="user-2")
-    _create_whitelist(client, admin_headers, user1["x-email"])
-    _create_whitelist(client, admin_headers, user2["x-email"])
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    _create_whitelist(client, admin_headers, user2["x-sysid"])
 
     resp1 = client.post(
         "/api/v1/api-keys/applications",
@@ -509,7 +509,7 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
 
 def test_reveal_plaintext_admin_only(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
-    _create_whitelist(client, admin_headers, user1["x-email"])
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user1,
@@ -532,7 +532,7 @@ def test_reveal_plaintext_admin_only(client, admin_headers):
 
 def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
-    _create_whitelist(client, admin_headers, user1["x-email"])
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user1,
@@ -561,7 +561,7 @@ def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
 
 
 def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
-    _create_whitelist(client, admin_headers, "no-sysid@example.com")
+    _create_whitelist(client, admin_headers, "no-sysid-user")
     bad_headers = {
         "x-account": "nosys",
         "x-name": "No Sysid",
@@ -605,8 +605,8 @@ def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin
     user2 = build_headers(
         role="user", account="bob", email="bob@example.com", sysid="user-bob", name="Bob", department="Security"
     )
-    _create_whitelist(client, admin_headers, user1["x-email"])
-    _create_whitelist(client, admin_headers, user2["x-email"])
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    _create_whitelist(client, admin_headers, user2["x-sysid"])
 
     for _ in range(2):
         resp = client.post(
@@ -640,7 +640,7 @@ def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin
 
 def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_headers):
     user = build_headers(role="user", account="carol", email="carol@example.com", sysid="user-carol", name="Carol")
-    _create_whitelist(client, admin_headers, user["x-email"])
+    _create_whitelist(client, admin_headers, user["x-sysid"])
 
     first = client.post(
         "/api/v1/api-keys/applications",

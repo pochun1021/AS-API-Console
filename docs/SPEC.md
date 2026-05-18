@@ -166,7 +166,8 @@
 
 ### Entity: `api_key_whitelist`
 - `id` (string/uuid)
-- `email` (string, required, unique, lowercase)
+- `sysid` (string, required, unique)
+- `email` (string, nullable, lowercase；僅供顯示，不作放行比對)
 - `status` (enum: `active` | `inactive`)
 - `note` (string, nullable)
 - `created_by` (string)
@@ -253,8 +254,11 @@ Base path：`/api/v1`
 - `GET /auth/callback`
   - 用途：接收 provider callback，交換 access token，取得 basic identity claims，建立本機 session auth context。
   - 規則：
+    - OAuth claims 來源：`sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
+    - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
     - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
-    - 若缺少必要欄位（任一 `account`、`name`、`email`、`department`、`sysid`）需拒絕登入
+    - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
+    - 登入放行規則：`tCode` 以 `B` 開頭可直接放行；否則需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.sysid`）
     - 成功與失敗皆須寫入 `auth_audit_logs`
     - 嚴禁落地 token/secret 類敏感資訊
 
@@ -434,7 +438,7 @@ Base path：`/api/v1`
 ```
 
 ### 5) 特殊人員名單管理 API（沿用受保護路徑）
-- `POST /api/v1/whitelists`：新增特殊人員名單 email
+- `POST /api/v1/whitelists`：新增特殊人員名單 sysid
 - `GET /api/v1/whitelists`：查詢特殊人員名單列表
 - `PATCH /api/v1/whitelists/{id}`：更新狀態（`active/inactive`）與備註
 - 規則：僅 `admin` 可使用。
@@ -444,20 +448,23 @@ Base path：`/api/v1`
 - 用途：供管理者查詢既有管理者名單（`admins`）資料。
 - 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`status`。
 
-### 5-2) 目前使用者語言偏好 API（暫停）
+### 5-2) 目前使用者語言偏好 API
 - `GET /api/v1/users/preferences/locale`
-  - 本階段停用，回傳 `410 FEATURE_DISABLED`
+  - 回傳格式：`{ "preferred_locale": "zh-TW" | "en" | null }`
 - `PATCH /api/v1/users/preferences/locale`
-  - 本階段停用，回傳 `410 FEATURE_DISABLED`
+  - Request body：`{ "preferred_locale": "zh-TW" | "en" }`
+  - 僅允許 `zh-TW|en`，其餘值回傳 `422 VALIDATION_ERROR`
 
-### 前端語言規則（MVP，停用後降級）
+### 前端語言規則（MVP）
 - 僅支援 `zh-TW`、`en`。
-- 啟動語言優先序：`系統語言判定 > fallback en`（本階段不寫回 DB）。
+- 啟動語言優先序：
+  - 若 DB 已有偏好（`preferred_locale`），直接套用 DB。
+  - 若 DB 無偏好（`null`），依系統語言規則判定，並立即寫回 DB 作為初始值。
 - 系統語言判定規則：
   - `navigator.language` / `navigator.languages` 命中 `zh*` -> `zh-TW`
   - 命中 `en*` -> `en`
   - 其他語系 -> `en`
-- 手動切換語言後，需更新 UI 文案（本階段不寫回 `preferred_locale`）。
+- 手動切換語言後，需更新 UI 文案並寫回 `preferred_locale`。
 - DataGrid locale 文案需跟隨語言切換。
 
 ### 6) 管理者啟用/停用 API
@@ -494,7 +501,8 @@ Base path：`/api/v1`
 - `MISSING_RATE_LIMIT_FIELDS`
 - `APPLICANT_NOT_ELIGIBLE`
 - `RESEARCH_LIST_SERVICE_UNAVAILABLE`
-- `WHITELIST_EMAIL_DUPLICATED`
+- `WHITELIST_SYSID_DUPLICATED`
+- `LOGIN_NOT_ELIGIBLE`
 - `USER_NOT_FOUND`
 - `KEY_NOT_OWNED_BY_USER`
 - `KEY_NOT_ACTIVE`
@@ -525,6 +533,7 @@ Base path：`/api/v1`
 15. `user` 呼叫 `GET /api/v1/api-keys` 時僅可看到本人資料；`admin` 可看到全域資料。
 16. `user` 查詢或停用非本人 key 時，API 回傳 `403`（或既有錯誤碼）。
 17. 非 `admin` 使用特殊人員名單管理 API（`/api/v1/whitelists*`）時，回傳 `403`。
+17-1. 特殊人員名單比對主鍵為 `sysid`，新增重複 `sysid` 時需回傳 `409` 與 `WHITELIST_SYSID_DUPLICATED`。
 18. 管理者可成功啟用/停用其他使用者的管理者身分（`/api/v1/admins/{id}/enable|disable`）。
 18-1. 管理者名單需顯示狀態欄位；停用後該管理者仍保留於名單，狀態改為 `inactive`。
 19. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
@@ -546,34 +555,39 @@ Base path：`/api/v1`
 35. 系統語言 `en-US` 首次進站時（DB 無偏好）需顯示英文。
 36. 系統語言非 `zh*|en*`（例如 `ja-JP`）首次進站時（DB 無偏好）需 fallback 顯示英文。
 37. 手動切換語言後，重新登入需沿用 DB 偏好。
-38. `GET/PATCH /api/v1/users/preferences/locale` 於本階段需回傳 `410` 與 `FEATURE_DISABLED`。
-39. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
-40. `GET /api/v1/api-keys` 與 `GET /api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳 `for_{owner_account}`。
-41. `admin` 可透過 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`。
-42. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
-43. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
-44. 限制策略設定僅 `admin` 可讀取與更新（`/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。
-45. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
-46. Provider timeout/5xx 或金鑰條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
-47. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
-48. `GET/PATCH /api/v1/notifications*` 需可用，且僅可查詢/操作本人 `sysid` 的通知資料。
-49. `POST /api/v1/api-keys/applications` 成功建立 pending 後，需寄送 Email 給所有 `active` 管理者與申請者本人。
-50. 第 49 項通知信內容需中英並列（中文在前、英文在後）。
-51. 第 49 項若寄信失敗，`POST /api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
-52. `POST /api/v1/api-keys/applications/{id}/issue` 成功配發後，需寄送「已配發」Email 給申請者本人。
-53. 第 52 項若寄信失敗，`issue` 仍需維持 `issued` 且回傳 `email_warning`。
-54. 當配發模式為 `local` 時，`issue` 需可在不連線外部 provider 的情況下成功 `issued`。
-55. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
-56. 第 52 項通知信不得包含 `Application ID`。
-57. `PATCH /api/v1/notifications/{id}/read` 僅通知本人可操作；即使為 `admin` 也不得代替他人已讀。
-58. `api_key_issued` 通知首次由本人標記已讀時，API 可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
-59. 通知中心文案需支援 `zh-TW|en` 切換，且僅單筆 `PATCH /api/v1/notifications/{id}/read` 可用於已讀操作。
-60. 通知中心金鑰 Dialog 提示文案需依目前語系顯示單一語言，不得中英並列。
-61. `GET /login` 需可導向 OAuth provider，並附帶 state/request_id。
-62. `GET /auth/callback` 成功時需建立 session auth context 並 redirect `/`。
-63. `GET /auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失、state mismatch）需回錯，且寫入 failure audit。
-64. OAuth 成功登入寫入的角色需固定為 `user`，不得由 OAuth payload 直接升權為 `admin`。
-65. `auth_audit_logs` 不得包含 access token/refresh token/password/client secret。
+38. `GET /api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 成功後可立即由 `GET` 讀回。
+39. `PATCH /api/v1/users/preferences/locale` 僅允許 `zh-TW|en`；非法值（如 `ja-JP`）需回傳 `422` 與 `VALIDATION_ERROR`。
+40. 首次登入 DB 無偏好時，前端需依系統語言規則決定語系並觸發一次寫回。
+41. 手動切換語言後，重新登入需沿用 DB 偏好。
+42. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
+43. `GET /api/v1/api-keys` 與 `GET /api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳 `for_{owner_account}`。
+44. `admin` 可透過 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`。
+45. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
+46. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
+47. 限制策略設定僅 `admin` 可讀取與更新（`/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。
+48. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
+49. Provider timeout/5xx 或金鑰條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
+50. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
+51. `GET/PATCH /api/v1/notifications*` 需可用，且僅可查詢/操作本人 `sysid` 的通知資料。
+52. `POST /api/v1/api-keys/applications` 成功建立 pending 後，需寄送 Email 給所有 `active` 管理者與申請者本人。
+53. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
+54. 第 52 項若寄信失敗，`POST /api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
+55. `POST /api/v1/api-keys/applications/{id}/issue` 成功配發後，需寄送「已配發」Email 給申請者本人。
+56. 第 55 項若寄信失敗，`issue` 仍需維持 `issued` 且回傳 `email_warning`。
+57. 當配發模式為 `local` 時，`issue` 需可在不連線外部 provider 的情況下成功 `issued`。
+58. 第 55 項通知信內容需中英並列（中文在前、英文在後）。
+59. 第 55 項通知信不得包含 `Application ID`。
+60. `PATCH /api/v1/notifications/{id}/read` 僅通知本人可操作；即使為 `admin` 也不得代替他人已讀。
+61. `api_key_issued` 通知首次由本人標記已讀時，API 可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
+62. 通知中心文案需支援 `zh-TW|en` 切換，且僅單筆 `PATCH /api/v1/notifications/{id}/read` 可用於已讀操作。
+63. 通知中心金鑰 Dialog 提示文案需依目前語系顯示單一語言，不得中英並列。
+64. `GET /login` 需可導向 OAuth provider，並附帶 state/request_id。
+65. `GET /auth/callback` 成功時需建立 session auth context 並 redirect `/`。
+66. `GET /auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失、state mismatch）需回錯，且寫入 failure audit。
+67. OAuth 成功登入寫入的角色需固定為 `user`，不得由 OAuth payload 直接升權為 `admin`。
+68. `auth_audit_logs` 不得包含 access token/refresh token/password/client secret。
+69. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。
+70. `tCode` 以 `B` 開頭者可登入；非 `B*` 者需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.sysid`），否則回 `403 LOGIN_NOT_ELIGIBLE`。
 
 ## Roadmap
 ### Phase 1：Foundation

@@ -245,7 +245,7 @@ function validateApplication(payload, auth) {
     throw createError("VALIDATION_ERROR", "請填寫用途");
   }
 
-  const activeWhitelist = whitelists.find((item) => item.email === auth.email && item.status === "active");
+  const activeWhitelist = whitelists.find((item) => item.sysid === auth.sysid && item.status === "active");
   if (!activeWhitelist) {
     throw createError("APPLICANT_NOT_ELIGIBLE", "申請者不符合資格", 403);
   }
@@ -563,23 +563,23 @@ export const mockApiProvider = {
     await delay();
     ensureAdmin(auth);
 
-    const email = payload.email?.trim().toLowerCase();
-    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-      throw createError("VALIDATION_ERROR", "Email 格式不正確");
+    const sysid = payload.sysid?.trim();
+    if (!sysid) {
+      throw createError("VALIDATION_ERROR", "SysID 不可為空");
     }
 
-    if (whitelists.some((item) => item.email.toLowerCase() === email)) {
-      throw createError("WHITELIST_EMAIL_DUPLICATED", "Email 已存在於特殊人員名單");
+    if (whitelists.some((item) => item.sysid === sysid)) {
+      throw createError("WHITELIST_SYSID_DUPLICATED", "SysID 已存在於特殊人員名單");
     }
 
     const now = new Date().toISOString();
     const item = {
       id: `wl_${String(whitelists.length + 1).padStart(3, "0")}`,
-      email,
+      email: payload.email?.trim().toLowerCase() || "",
       account: payload.account || "",
       status: "active",
       remark: payload.remark?.trim() || "",
-      sysid: payload.sysid || "",
+      sysid,
       name: payload.name || "",
       created_at: now,
       updated_at: now

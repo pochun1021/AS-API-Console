@@ -14,6 +14,7 @@ class OAuthIdentity:
     email: str
     department: str
     sysid: str
+    tcode: str
     role: str = "user"
 
 
@@ -65,11 +66,12 @@ class OAuthService:
             raise ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed", 401)
         claims = response.json()
         identity = OAuthIdentity(
-            account=self._pick_claim(claims, "account", "ssoid", "uid", "user_id"),
-            name=self._pick_claim(claims, "name", "display_name", "cname"),
+            account=self._pick_claim(claims, "cn", "account", "ssoid", "uid", "user_id"),
+            name=self._pick_claim(claims, "chName", "name", "display_name", "cname"),
             email=self._pick_claim(claims, "email", "mail"),
-            department=self._pick_claim(claims, "department", "dept", "org"),
-            sysid=self._pick_claim(claims, "sysid"),
+            department=self._pick_claim(claims, "instCode", "department", "dept", "org"),
+            sysid=self._pick_claim(claims, "sysId", "sysid"),
+            tcode=self._pick_claim(claims, "tCode", "tcode"),
             role="user",
         )
         return identity

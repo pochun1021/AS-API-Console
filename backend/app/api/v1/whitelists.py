@@ -28,7 +28,7 @@ def create_whitelist(
 ) -> dict:
     _require_admin(current_user)
     service = WhitelistsService(db)
-    return service.create(current_user, payload.email, payload.note)
+    return service.create(current_user, payload.sysid, payload.note)
 
 
 @router.get("/whitelists", response_model=WhitelistListResponse)

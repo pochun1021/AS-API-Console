@@ -12,7 +12,7 @@ from tests.test_api_keys import _create_whitelist
 
 
 def _issue_and_get_application_id(client, admin_headers, user_headers) -> str:
-    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     create_resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user_headers,

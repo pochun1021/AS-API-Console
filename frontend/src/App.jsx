@@ -47,6 +47,9 @@ export default function App() {
 
   function changeLocale(nextLocale) {
     setLocale(nextLocale);
+    apiClient.updateLocalePreference(nextLocale, auth).catch(() => {
+      // Do not block UI locale switch when persistence fails.
+    });
   }
 
   async function handleLogout() {
@@ -74,7 +77,20 @@ export default function App() {
     let canceled = false;
     async function initLocale() {
       try {
-        if (!canceled) setLocale(detectSystemLocale());
+        const preference = await apiClient.getLocalePreference(auth);
+        if (canceled) return;
+        if (preference?.preferred_locale === "zh-TW" || preference?.preferred_locale === "en") {
+          setLocale(preference.preferred_locale);
+          return;
+        }
+
+        const systemLocale = detectSystemLocale();
+        setLocale(systemLocale);
+        try {
+          await apiClient.updateLocalePreference(systemLocale, auth);
+        } catch {
+          // Keep running with current UI locale when initial persistence fails.
+        }
       } finally {
         if (!canceled) setLocaleReady(true);
       }
@@ -84,7 +100,7 @@ export default function App() {
     return () => {
       canceled = true;
     };
-  }, [setLocale]);
+  }, [auth, setLocale]);
 
   if (!localeReady) {
     return null;

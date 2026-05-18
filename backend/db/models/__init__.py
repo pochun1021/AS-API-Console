@@ -4,6 +4,7 @@ from db.models.applications import ApiKeyApplication
 from db.models.auth_audit_logs import AuthAuditLog
 from db.models.limit_strategy_config import LimitStrategyConfig
 from db.models.notifications import Notification
+from db.models.user_preferences import UserPreference
 from db.models.whitelist import ApiKeyWhitelist
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "AuthAuditLog",
     "LimitStrategyConfig",
     "Notification",
+    "UserPreference",
 ]
