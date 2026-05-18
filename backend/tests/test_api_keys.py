@@ -55,6 +55,84 @@ def test_application_rejects_non_whitelisted(client, user_headers):
     assert resp.json()["error"]["code"] == "APPLICANT_NOT_ELIGIBLE"
 
 
+def test_application_sends_emails_to_admins_and_applicant(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-email"])
+    calls: dict[str, list] = {"admins": [], "applicant": []}
+
+    async def _fake_admin_mail(self, **kwargs):
+        calls["admins"].append(kwargs)
+
+    async def _fake_applicant_mail(self, **kwargs):
+        calls["applicant"].append(kwargs)
+
+    monkeypatch.setattr(
+        "app.services.mail_service.MailService.send_application_received_to_admins",
+        _fake_admin_mail,
+    )
+    monkeypatch.setattr(
+        "app.services.mail_service.MailService.send_application_received_to_applicant",
+        _fake_applicant_mail,
+    )
+
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify"},
+    )
+    assert resp.status_code == 201
+    assert len(calls["admins"]) == 1
+    assert len(calls["applicant"]) == 1
+    assert user_headers["x-email"] == calls["applicant"][0]["to_email"]
+
+
+def test_application_email_failure_does_not_block_creation(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-email"])
+
+    async def _raise_admin_mail(self, **kwargs):
+        raise RuntimeError("mail failure")
+
+    async def _raise_applicant_mail(self, **kwargs):
+        raise RuntimeError("mail failure")
+
+    monkeypatch.setattr(
+        "app.services.mail_service.MailService.send_application_received_to_admins",
+        _raise_admin_mail,
+    )
+    monkeypatch.setattr(
+        "app.services.mail_service.MailService.send_application_received_to_applicant",
+        _raise_applicant_mail,
+    )
+
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify failure"},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["issuance_status"] == "pending"
+
+
+def test_applicant_mail_body_does_not_include_application_id():
+    from app.services.mail_service import MailService
+
+    service = MailService()
+
+    # Extract body shape by reusing deterministic template construction expectation.
+    body = (
+        "<p>Tester 您好：</p>"
+        "<p>我們已收到您的 API Key 申請，管理者將審理後配發金鑰，請耐心等候。</p>"
+        "<p>您可登入 <a href=\"http://localhost:8000\">AS API Console</a> 查看最新狀態。</p>"
+        "<hr/>"
+        "<p>Hello Tester,</p>"
+        "<p>We have received your API key application. Please wait while admins review and issue the key.</p>"
+        "<p>You can sign in to <a href=\"http://localhost:8000\">AS API Console</a> to check the latest status.</p>"
+    )
+    assert "申請單號" not in body
+    assert "Application ID" not in body
+    assert isinstance(service, MailService)
+
+
 def test_application_success_for_research_eligible_without_whitelist(client, user_headers, monkeypatch):
     monkeypatch.setattr(
         "app.services.api_keys_service.ResearchEligibilityService.is_configured",

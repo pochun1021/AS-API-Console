@@ -48,6 +48,11 @@ class SQLAlchemyAdminRepository:
         )
         return list(self.session.scalars(stmt).all())
 
+    def list_active_emails(self) -> list[str]:
+        stmt = select(Admin.email).where(Admin.status == "active")
+        rows = self.session.execute(stmt).all()
+        return [str(row[0]).lower() for row in rows if row[0]]
+
     def upsert_from_auth(self, identity: AuthIdentity, *, created_by: str) -> Admin:
         admin = self.get_by_sysid(identity.sysid) or self.get_by_account(identity.account)
         now = datetime.now(timezone.utc)

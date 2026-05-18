@@ -1,5 +1,7 @@
 import hashlib
+import logging
 import secrets
+from asyncio import run as run_async
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -9,12 +11,13 @@ from app.core.auth import CurrentUser
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.services.crypto_service import CryptoService
+from app.services.mail_service import MailService
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
 from app.services.research_eligibility_service import ResearchEligibilityService
 from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
 from db.models.limit_strategy_config import LimitStrategyConfig
-from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
+from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
 from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
 
 
@@ -49,11 +52,13 @@ class ApiKeysService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.settings = get_settings()
+        self.admin_repo = SQLAlchemyAdminRepository(session)
         self.whitelist_repo = SQLAlchemyWhitelistRepository(session)
         self.key_repo = SQLAlchemyApiKeyRepository(session)
         self.research_eligibility = ResearchEligibilityService()
         self.provider_client = ProviderClient()
         self.crypto = CryptoService(self.settings.api_key_encryption_secret)
+        self.mail_service = MailService()
 
     def create_application(
         self,
@@ -119,6 +124,7 @@ class ApiKeysService:
         application.selected_issuance_mode = None
         self.session.add(application)
         self.session.commit()
+        self._send_application_received_emails(application)
 
         return {
             "application": {
@@ -132,6 +138,38 @@ class ApiKeysService:
             "api_key_plaintext": None,
             "pending_reason": "awaiting_admin_mode_selection",
         }
+
+    def _send_application_received_emails(self, application: ApiKeyApplication) -> None:
+        try:
+            active_admin_emails = self.admin_repo.list_active_emails()
+            run_async(
+                self.mail_service.send_application_received_to_admins(
+                    recipients=active_admin_emails,
+                    application_id=application.id,
+                    applicant_account=application.account,
+                    applicant_name=application.name,
+                    applicant_email=application.email,
+                    applicant_department=application.department,
+                    application_date=str(application.application_date),
+                    duration_months=application.duration_months,
+                    purpose=application.purpose,
+                    app_domain=self.settings.app_domain,
+                )
+            )
+        except Exception:  # noqa: BLE001
+            logging.exception("failed to send application received email to admins")
+
+        try:
+            run_async(
+                self.mail_service.send_application_received_to_applicant(
+                    to_email=application.email,
+                    owner_name=application.name,
+                    application_id=application.id,
+                    app_domain=self.settings.app_domain,
+                )
+            )
+        except Exception:  # noqa: BLE001
+            logging.exception("failed to send application received email to applicant")
 
     def list_pending_applications(self, current_user: CurrentUser) -> dict:
         if current_user.role != "admin":
