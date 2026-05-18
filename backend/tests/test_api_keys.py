@@ -1,5 +1,6 @@
 from datetime import date
 
+from db.repositories.types import AuthIdentity
 from app.services.research_eligibility_service import ResearchEligibilityResult
 from tests.conftest import build_headers
 
@@ -53,6 +54,149 @@ def test_application_rejects_non_whitelisted(client, user_headers):
     )
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "APPLICANT_NOT_ELIGIBLE"
+
+
+def test_admin_can_submit_proxy_application_for_target_user(client, admin_headers, monkeypatch):
+    target_sysid = "target-user-1"
+    _create_whitelist(client, admin_headers, target_sysid)
+    monkeypatch.setattr(
+        "app.services.api_keys_service.DirectoryIdentityService.is_configured",
+        lambda self: True,
+    )
+    monkeypatch.setattr(
+        "app.services.api_keys_service.DirectoryIdentityService.resolve_by_account",
+        lambda self, account: AuthIdentity(
+            account="target.user",
+            name="Target User",
+            email="target.user@example.com",
+            department="R&D",
+            sysid=target_sysid,
+        ),
+    )
+
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=admin_headers,
+        json={
+            "application_date": str(date.today()),
+            "duration_months": 1,
+            "purpose": "admin proxy submit",
+            "target_identity": {
+                "account": "target.user",
+            },
+        },
+    )
+    assert resp.status_code == 201
+    app_id = resp.json()["application"]["id"]
+
+    pending = client.get("/api/v1/api-keys/applications/pending", headers=admin_headers)
+    item = next(row for row in pending.json()["items"] if row["id"] == app_id)
+    assert item["account"] == "target.user"
+    assert item["email"] == "target.user@example.com"
+
+
+def test_admin_proxy_application_validates_required_target_identity_fields(client, admin_headers):
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=admin_headers,
+        json={
+            "application_date": str(date.today()),
+            "duration_months": 1,
+            "purpose": "admin proxy submit",
+            "target_identity": {
+                "account": "",
+            },
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_admin_proxy_application_target_account_not_found(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.api_keys_service.DirectoryIdentityService.is_configured",
+        lambda self: True,
+    )
+
+    from app.services.directory_identity_service import DirectoryLookupNotFoundError
+
+    def _raise_not_found(self, account):
+        raise DirectoryLookupNotFoundError("not found")
+
+    monkeypatch.setattr(
+        "app.services.api_keys_service.DirectoryIdentityService.resolve_by_account",
+        _raise_not_found,
+    )
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=admin_headers,
+        json={
+            "application_date": str(date.today()),
+            "duration_months": 1,
+            "purpose": "admin proxy submit",
+            "target_identity": {"account": "missing.user"},
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_admin_proxy_application_directory_unavailable(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.api_keys_service.DirectoryIdentityService.is_configured",
+        lambda self: True,
+    )
+
+    from app.services.directory_identity_service import DirectoryLookupUnavailableError
+
+    def _raise_unavailable(self, account):
+        raise DirectoryLookupUnavailableError("timeout")
+
+    monkeypatch.setattr(
+        "app.services.api_keys_service.DirectoryIdentityService.resolve_by_account",
+        _raise_unavailable,
+    )
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=admin_headers,
+        json={
+            "application_date": str(date.today()),
+            "duration_months": 1,
+            "purpose": "admin proxy submit",
+            "target_identity": {"account": "target.user"},
+        },
+    )
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "DIRECTORY_SERVICE_UNAVAILABLE"
+
+
+def test_admin_proxy_application_target_account_not_unique(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.api_keys_service.DirectoryIdentityService.is_configured",
+        lambda self: True,
+    )
+
+    from app.services.directory_identity_service import DirectoryLookupNotUniqueError
+
+    def _raise_not_unique(self, account):
+        raise DirectoryLookupNotUniqueError("multiple accounts")
+
+    monkeypatch.setattr(
+        "app.services.api_keys_service.DirectoryIdentityService.resolve_by_account",
+        _raise_not_unique,
+    )
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=admin_headers,
+        json={
+            "application_date": str(date.today()),
+            "duration_months": 1,
+            "purpose": "admin proxy submit",
+            "target_identity": {"account": "duplicated.user"},
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_application_sends_emails_to_admins_and_applicant(client, admin_headers, user_headers, monkeypatch):

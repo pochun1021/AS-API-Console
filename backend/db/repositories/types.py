@@ -15,6 +15,8 @@ class AuthIdentity:
 class ApplicationCreateInput:
     user_id: str
     identity: AuthIdentity
+    operator_identity: AuthIdentity
+    is_proxy_submission: bool
     application_date: date
     duration_months: int
     purpose: str

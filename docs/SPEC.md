@@ -21,8 +21,8 @@
 
 ## 使用者流程
 1. 使用者透過 SSO/OAuth 登入時，系統先檢查進入資格：優先查外部研究人員名單（以職稱代碼判斷），未命中再檢查本系統特殊人員名單（原白名單，僅 `active` 可通過）。
-2. 通過進入資格後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`。
-3. 使用者填寫姓名、Email、單位、申請日期、用途與 API 生效時長。
+2. 通過進入資格後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`（對應 OAuth claims：`cn`、`chName`、`email`、`instCode`、`sysId`）。
+3. 一般使用者填寫申請日期、用途與 API 生效時長；管理者可選擇代他人送出申請，僅需填寫目標 `account`，其餘身份欄位由系統查詢補齊。
 4. 送出申請前再次檢查資格：優先查外部研究人員名單（職稱代碼），未命中再檢查特殊人員名單（`active`）。
 5. 資格檢查通過後系統建立 pending 申請，待管理者審理選擇核發模式後立即補發 API Key。
 5-1. 建立 pending 申請後，系統需寄送 Email 給所有 `active` 管理者（通知有新申請待審）與申請者本人（通知已收到申請、請等待配發）。
@@ -42,11 +42,13 @@
   - `application_date`（必填，使用者可選）
   - `duration_months`（必填，選單：`1|6|12`）
   - `purpose`（必填）
+  - `target_identity`（選填；僅 `admin` 可傳，欄位：`account`）
 - 驗證：
   - `email` 格式檢查
   - 申請資格需通過：研究人員名單職稱代碼命中，或特殊人員名單為 `active`
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
   - `duration_months` 僅允許 `1|6|12`
+  - `admin` 代申請時，`target_identity.account` 必填；`name`、`email`、`department`、`sysid` 由後端目錄查詢補齊
   - 限制策略由管理者透過模板資源維護；一般使用者申請時不可提交策略細節
 - 成功送出後顯示一次性 key，並提供複製操作；複製成功需有明確視覺回饋（check icon 後恢復）。
 - 複製流程以 Clipboard API 為唯一可驗證複製路徑；若不可用或複製失敗，需提示使用者手動複製。
@@ -192,6 +194,12 @@
 - `expires_at` (datetime)
 - `revoked_at` (datetime, nullable)
 - `sysid` (string, required, SSO/OAuth 主體唯一識別碼)
+- `is_proxy_submission` (bool, required；是否為管理者代申請)
+- `operator_account` (string, required；實際操作者帳號)
+- `operator_name` (string, required；實際操作者姓名)
+- `operator_email` (string, required；實際操作者 email)
+- `operator_department` (string, required；實際操作者單位)
+- `operator_sysid` (string, required；實際操作者 sysid)
 - `created_at` (datetime)
 - `updated_at` (datetime)
 
@@ -266,14 +274,19 @@ Base path：`/api/v1`
 - `POST /api/v1/api-keys/applications`
 - 前置條件：
   - 請求必須為已登入使用者（`account`、`name`、`email`、`department`、`sysid` 由 auth context 提供，並以 auth context 為準）
+  - `user` 僅能以 auth context 申請本人；`admin` 可選擇代他人申請（透過 `target_identity`）
   - 申請資格必須通過：研究人員名單職稱代碼命中，或特殊人員名單 `active` 命中
+  - `admin` 代申請時，後端需先依 `target_identity.account` 查人員目錄取得唯一身份，再以該身份的 `email/sysid` 檢查申請資格
   - 若研究人員名單服務失敗（timeout/5xx），本 API 回傳拒絕，不得建立申請資料
 - Request：
 ```json
 {
   "application_date": "2026-05-04",
   "duration_months": 6,
-  "purpose": "integration for internal service"
+  "purpose": "integration for internal service",
+  "target_identity": {
+    "account": "target.user"
+  }
 }
 ```
 - Response（201）：
@@ -588,6 +601,8 @@ Base path：`/api/v1`
 68. `auth_audit_logs` 不得包含 access token/refresh token/password/client secret。
 69. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。
 70. `tCode` 以 `B` 開頭者可登入；非 `B*` 者需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.sysid`），否則回 `403 LOGIN_NOT_ELIGIBLE`。
+71. `admin` 可於 `POST /api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
+72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若目錄服務 timeout/5xx，API 回傳 `503 DIRECTORY_SERVICE_UNAVAILABLE`。
 
 ## Roadmap
 ### Phase 1：Foundation

@@ -175,6 +175,12 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             expires_at=data.expires_at,
             revoked_at=None,
             sysid=data.identity.sysid,
+            is_proxy_submission=data.is_proxy_submission,
+            operator_account=data.operator_identity.account,
+            operator_name=data.operator_identity.name,
+            operator_email=data.operator_identity.email.lower(),
+            operator_department=data.operator_identity.department,
+            operator_sysid=data.operator_identity.sysid,
             created_at=data.issued_at,
             updated_at=data.issued_at,
         )

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     research_list_api_url: str | None = None
     research_list_timeout_seconds: float = 3.0
     research_list_allowed_title_codes: str = ""
+    directory_identity_api_url: str | None = None
+    directory_identity_timeout_seconds: float = 3.0
     api_key_encryption_secret: str = "dev-only-change-me"
     api_key_kek_version: str = "v1"
     provider_base_url: str | None = None

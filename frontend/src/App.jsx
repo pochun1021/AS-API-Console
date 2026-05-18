@@ -18,14 +18,14 @@ const STORAGE_KEY = "as-api-console-dev-auth-profile";
 
 function readStoredProfileKey() {
   if (typeof window === "undefined") {
-    return "user";
+    return "admin";
   }
 
   const stored = window.localStorage.getItem(STORAGE_KEY);
   if (stored === "admin" || stored === "user") {
     return stored;
   }
-  return "user";
+  return "admin";
 }
 
 export default function App() {

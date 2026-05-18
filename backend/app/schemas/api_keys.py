@@ -8,6 +8,11 @@ class ApplicationCreateRequest(BaseModel):
     application_date: date
     duration_months: int = Field(..., description="allowed: 1, 6, 12")
     purpose: str
+    target_identity: "ApplicationTargetIdentityRequest | None" = None
+
+
+class ApplicationTargetIdentityRequest(BaseModel):
+    account: str
 
 
 class ApplicationSummary(BaseModel):
