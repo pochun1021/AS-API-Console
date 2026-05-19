@@ -131,6 +131,20 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
         application_id = str(uuid.uuid4())
         sysid = user_id
         revoked_at = issued_at + timedelta(days=3) if status == "revoked" else None
+        # Keep seed rows aligned with current non-null application schema.
+        selected_mode = "budget" if idx % 2 == 0 else "rate_limit"
+        if selected_mode == "budget":
+            limit_strategy = "budget"
+            max_budget = "1000"
+            budget_duration = "monthly"
+            tpm_limit = None
+            rpm_limit = None
+        else:
+            limit_strategy = "rate_limit"
+            max_budget = None
+            budget_duration = None
+            tpm_limit = 10000
+            rpm_limit = 120
 
         application = ApiKeyApplication(
             id=application_id,
@@ -142,11 +156,25 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
             application_date=(date.today() - timedelta(days=min(idx * 5, 180))),
             duration_months=duration_months,
             purpose=purposes[idx % len(purposes)],
+            limit_strategy=limit_strategy,
+            max_budget=max_budget,
+            budget_duration=budget_duration,
+            tpm_limit=tpm_limit,
+            rpm_limit=rpm_limit,
+            issuance_status="issued",
+            selected_issuance_mode=selected_mode,
+            pending_issued_at=None,
             status=status,
             issued_at=issued_at,
             expires_at=expires_at,
             revoked_at=revoked_at,
             sysid=sysid,
+            is_proxy_submission=False,
+            operator_account=account,
+            operator_name=f"User {user_no}",
+            operator_email=email,
+            operator_department=departments[idx % len(departments)],
+            operator_sysid=sysid,
             created_at=issued_at,
             updated_at=issued_at,
         )
