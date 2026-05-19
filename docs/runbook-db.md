@@ -116,6 +116,30 @@ mariadb -h <host> -u <user> -p as_api_console -e "SHOW TABLES;"
 - `DATABASE_URL` 已正確設定並可連線。
 - 於 `backend` 目錄執行指令。
 
+### 一鍵初始化（推薦）
+- migration + seed（reset）：
+使用 `uv`：
+```bash
+cd backend
+uv run python scripts/setup_dev_db.py
+```
+若環境沒有 `uv`：
+```bash
+cd backend
+. .venv/bin/activate
+python scripts/setup_dev_db.py
+```
+- 僅 migration：
+```bash
+cd backend
+uv run python scripts/setup_dev_db.py --skip-seed
+```
+- 僅 seed（不跑 migration）：
+```bash
+cd backend
+uv run python scripts/setup_dev_db.py --skip-migrate
+```
+
 ### 指令
 - 重建小型測試資料（預設模式，先清除既有 seed 範圍再重建）：
 使用 `uv`：
@@ -143,7 +167,7 @@ python scripts/seed_test_data.py --no-reset
 ```
 
 ### 寫入範圍（small）
-- `users`：8 筆（含 2 位 admin seed + 6 位 user seed）
+- `admins`：2 筆（`active` 1 筆 + `inactive` 1 筆）
 - `api_key_whitelist`：8 筆（含 active/inactive）
 - `api_key_applications`：20 筆（含 `active|revoked|expired`）
 - `api_keys`：20 筆（僅 `key_hash`，不含明文；`masked_key` 為真實 key 前4後4遮罩）
@@ -151,7 +175,7 @@ python scripts/seed_test_data.py --no-reset
 ### 執行結果判讀
 - 成功時輸出：
 ```text
-Seed completed: users=8, whitelists=8, applications=20, api_keys=20, reset=<True|False>
+Seed completed: admins=2, whitelists=8, applications=20, api_keys=20, reset=<True|False>
 ```
 - `reset=True`：代表先清除 seed 範圍再重建。
 - `reset=False`：代表追加模式（`--no-reset`）。
@@ -160,7 +184,7 @@ Seed completed: users=8, whitelists=8, applications=20, api_keys=20, reset=<True
 1. 筆數驗證（MariaDB）：
 ```bash
 mariadb -h <host> -u <user> -p as_api_console -e "
-SELECT 'users' AS tbl, COUNT(*) AS cnt FROM users
+SELECT 'admins' AS tbl, COUNT(*) AS cnt FROM admins
 UNION ALL
 SELECT 'api_key_whitelist', COUNT(*) FROM api_key_whitelist
 UNION ALL

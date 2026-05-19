@@ -123,31 +123,24 @@ npm run build
 
 ## 開發備註
 - 後端提供 OAuth 登入入口：`GET /login` 與 callback `GET /auth/callback`，成功後以 session 注入 auth context（`account/name/email/department/sysid`，role 固定 `user`）。
-- 前端在開發模式提供 `Dev 身份切換`（admin/user），用於模擬 header 身份；預設為 `admin`。
 - 若有第三方 OAuth 整合，前端會優先使用 OAuth 回傳身分（需包含 `account`、`name`、`email`、`department`、`sysid`、`role`）：
   - `window.__AS_AUTH_CONTEXT__ = { ... }`，或
   - `sessionStorage["as-api-console-auth-context"] = JSON.stringify({ ... })`
-- 當 OAuth 身分存在時，前端會隱藏 `Dev 身份切換`。
 - Vite dev server 已設定 `/api` proxy 到 `http://127.0.0.1:8000`（若需 `npm run dev` 分離開發可直接使用）。
-- 前端資料來源由 `VITE_API_PROVIDER` 控制：
-  - 預設（`frontend/.env.development`）：`mock`
-  - 切換 real API：
-    ```bash
-    cd frontend
-    VITE_API_PROVIDER=real npm run dev
-    ```
-  - 使用 mock：
-    ```bash
-    cd frontend
-    VITE_API_PROVIDER=mock npm run dev
-    ```
+- 前端預設使用 real API（HTTP provider）；建議搭配本機 DB seed 資料進行整合開發。
 
 ## 測試資料生成（本機 DB）
-1. 進入 backend（需先完成 migration 並確認 `DATABASE_URL` 可連線）：
+1. 一鍵初始化本機開發 DB（migration + seed）：
 ```bash
 cd backend
+uv run python scripts/setup_dev_db.py
 ```
-2. 重建小型測試資料集（預設會先清除既有 seed 範圍再重建）：
+若環境沒有 `uv`：
+```bash
+. .venv/bin/activate
+python scripts/setup_dev_db.py
+```
+2. 只重建小型測試資料集（預設會先清除既有 seed 範圍再重建）：
 ```bash
 uv run python scripts/seed_test_data.py
 ```
@@ -167,7 +160,7 @@ python scripts/seed_test_data.py --no-reset
 ```
 - 成功輸出範例：
 ```text
-Seed completed: users=8, whitelists=8, applications=20, api_keys=20, reset=True
+Seed completed: admins=2, whitelists=8, applications=20, api_keys=20, reset=True
 ```
 - `reset=True` 代表本次先清除既有 seed 範圍再重建；`reset=False` 代表追加模式（`--no-reset`）。
 - 詳細驗證與常見錯誤處理請見 `docs/runbook-db.md` 的「測試資料（seed）操作」章節。
