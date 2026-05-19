@@ -1,5 +1,6 @@
 
 from tests.conftest import build_headers
+from db.repositories.types import AuthIdentity
 
 
 def test_whitelist_admin_only(client, admin_headers, user_headers):
@@ -23,11 +24,28 @@ def test_whitelist_duplicate_sysid(client, admin_headers):
     assert second.json()["error"]["code"] == "WHITELIST_SYSID_DUPLICATED"
 
 
-def test_users_admin_role_endpoints(client, admin_headers):
+def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
     # bootstrap another admin identity via auth headers
     target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
     bootstrap = client.get("/api/v1/api-keys", headers=target_admin_headers)
     assert bootstrap.status_code == 200
+
+    def fake_search_by_keyword(self, keyword, limit=20):
+        assert keyword == "u1"
+        return [
+            AuthIdentity(
+                account="u1",
+                name="User One",
+                email="u1@example.com",
+                department="IT",
+                sysid=7003,
+            )
+        ]
+
+    monkeypatch.setattr(
+        "app.services.directory_identity_service.DirectoryIdentityService.search_by_keyword",
+        fake_search_by_keyword,
+    )
 
     users = client.get("/api/v1/users?q=u1", headers=admin_headers)
     assert users.status_code == 200

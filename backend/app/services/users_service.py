@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
 from app.core.errors import ApiError
+from app.services.directory_identity_service import DirectoryIdentityService, DirectoryLookupUnavailableError
 from db.models.user_preferences import UserPreference
 from db.repositories import SQLAlchemyAdminRepository
 
@@ -12,19 +13,23 @@ class UsersService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repo = SQLAlchemyAdminRepository(session)
+        self.directory = DirectoryIdentityService()
 
     def search(self, q: str, limit: int = 20) -> dict:
-        users = self.repo.search(q, limit=limit)
+        try:
+            users = self.directory.search_by_keyword(q, limit=limit)
+        except DirectoryLookupUnavailableError as exc:
+            raise ApiError("DIRECTORY_SERVICE_UNAVAILABLE", "directory service unavailable", 503) from exc
         return {
             "items": [
                 {
-                    "id": user.id,
+                    "id": str(user.sysid),
                     "sysid": user.sysid,
                     "account": user.account,
                     "name": user.name,
                     "email": user.email,
-                    "role": "admin",
-                    "status": user.status,
+                    "role": "user",
+                    "status": "active",
                 }
                 for user in users
             ],

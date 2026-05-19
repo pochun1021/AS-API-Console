@@ -71,7 +71,7 @@
 - 管理者可於詳情視窗編輯 `key_alias`。
 
 ### 4) Whitelist Admin Page（特殊人員名單管理頁）
-- 可用 `sysid`、`account`、`name`、`email` 查詢使用者後加入特殊人員名單。
+- 可用 `account`、`name` 查詢使用者後加入特殊人員名單。
 - 可查詢特殊人員名單與狀態。
 - 可停用/啟用特殊人員名單條目。
 
@@ -79,7 +79,7 @@
 - 僅 `admin` 可使用。
 - 列表僅顯示目前已啟用管理權限（`role=admin`）的人員。
 - 列表需顯示管理者狀態（`active`/`inactive`），停用後不得自動從名單移除。
-- 可用 `sysid`、`account`、`name`、`email` 查詢使用者。
+- 可用 `account`、`name` 查詢使用者。
 - 可啟用一般使用者的管理者權限（對應 `enable`）。
 - 可停用其他管理者的管理者權限（對應 `disable`）。
 - 前端需阻擋管理者對自己執行管理者停用（避免誤鎖管理權限）。
@@ -460,8 +460,8 @@ Base path：`/api/v1`
 
 ### 5-1) 特殊人員名單新增前使用者查詢 API
 - `GET /api/v1/users?q={keyword}`
-- 用途：供管理者查詢既有管理者名單（`admins`）資料。
-- 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`status`。
+- 用途：供管理者透過外部人員目錄 API 查詢候選人資料（供新增管理者/特殊人員前使用）。
+- 規則：僅 `admin` 可使用；`q` 僅用於 `account`、`name` 查詢；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`status`。
 
 ### 5-2) 目前使用者語言偏好 API
 - `GET /api/v1/users/preferences/locale`
@@ -556,6 +556,7 @@ Base path：`/api/v1`
 21. 管理者不可在前端停用自己的管理者權限（不可將自己的角色由 `admin` 降為 `user`）。
 22. `admin` 呼叫 `GET /api/v1/api-keys` 時，每筆資料需可辨識申請人（至少包含 `owner_account`、`owner_name`）。
 23. 調整申請人識別欄位後，既有受保護 API 路徑與角色模型（`user|admin`）不得改動。
+23-1. 管理者名單與特殊人員名單新增人員查詢（`GET /api/v1/users`）僅可用 `account`、`name` 查詢，不得以 `sysid` 或 `email` 作為查詢條件。
 24. API Keys 清單頁不得顯示建立時間；建立時間僅顯示於單筆詳情視窗。
 25. API Key 詳情視窗需顯示用途（`purpose`）；若無資料則顯示 `-`。
 26. API Key 詳情視窗需顯示單位（`department`）；若無資料則顯示 `-`。
