@@ -14,7 +14,8 @@ const navItems = [
   { labelKey: "nav_whitelists", path: "/whitelists", roles: ["admin"] },
   { labelKey: "nav_limit_strategies", path: "/limit-strategies", roles: ["admin"] },
   { labelKey: "nav_admins", path: "/users", roles: ["admin"] },
-  { labelKey: "nav_dashboard", path: "/admin-dashboard", roles: ["admin"] }
+  { labelKey: "nav_dashboard", path: "/admin-dashboard", roles: ["admin"] },
+  { labelKey: "nav_operation_logs", path: "/operation-audit-logs", roles: ["admin"] }
 ];
 
 export default function AppLayout({ children, auth, onChangeLocale = () => {}, onLogout = () => {}, logoutInProgress = false }) {

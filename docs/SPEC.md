@@ -521,6 +521,14 @@ Base path：`/api/v1`
 - metadata 採白名單策略，僅記錄必要且非敏感欄位。
 - 若 audit 寫入失敗，不得改變原本 API 成功/失敗語意（主流程優先）。
 
+### 6-2) 操作稽核熱資料查詢（v1）
+- `GET /api/v1/operation-audit-logs`
+- 規則：僅 `admin` 可使用。
+- 查詢參數：`page`、`page_size`、`from`、`to`、`event_type`、`result(success|failure)`。
+- 預設熱資料窗：若未提供 `from/to`，回傳最近 7 天資料。
+- 排序：`created_at desc`（最新優先）。
+- 回傳欄位（精簡）：`created_at`、`event_type`、`action`、`result`、`actor_account`、`target_type`、`target_id`、`error_code`。
+
 ### 7) 外部研究人員名單服務（整合介面）
 - 用途：供「進入系統」與「送出申請」時檢查是否命中研究人員資格。
 - 資格判斷：以外部服務回傳之職稱代碼判斷是否符合研究人員資格。
@@ -645,6 +653,10 @@ Base path：`/api/v1`
 75. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證（token/password/client secret）。
 76. `operation_audit_logs.metadata_json` 僅允許白名單欄位（例如 `application_id`、`key_id`、`whitelist_id`、`target_admin_id`、`status`、`duration_months`），不得落地原始敏感 payload。
 77. 關鍵操作稽核功能不得改動既有受保護 API 路徑與角色模型（`user|admin`）。
+78. `GET /api/v1/operation-audit-logs` 僅 `admin` 可呼叫，`user` 呼叫需回 `403`。
+79. 操作稽核查詢在未提供 `from/to` 時，需預設回傳最近 7 天熱資料。
+80. 操作稽核查詢結果需依 `created_at desc` 排序，並支援 `page/page_size` 分頁。
+81. 操作稽核查詢需支援 `event_type` 與 `result` 篩選，且回傳不得包含敏感憑證資訊。
 
 ## Roadmap
 ### Phase 1：Foundation
