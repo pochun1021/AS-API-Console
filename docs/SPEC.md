@@ -246,6 +246,25 @@
 - `created_at` (datetime)
 - 不得記錄 access token、refresh token、password、client secret 等敏感憑證
 
+### Entity: `operation_audit_logs`
+- `id` (string/uuid)
+- `event_type` (string, required)
+- `action` (string, required)
+- `result` (enum: `success` | `failure`)
+- `error_code` (string, nullable)
+- `actor_sysid` (integer, nullable)
+- `actor_account` (string, nullable)
+- `actor_role` (string, nullable)
+- `target_type` (string, required)
+- `target_id` (string, nullable)
+- `request_id` (string, required)
+- `source_ip` (string, nullable)
+- `user_agent` (string, nullable)
+- `metadata_json` (string, nullable；僅允許白名單欄位，不得包含敏感值)
+- `created_at` (datetime)
+- 目的：記錄關鍵操作稽核（v1），成功與失敗事件皆需落地。
+- 不得記錄 API key 明文、token、password、client secret 等敏感憑證。
+
 ## 權限規則（MVP）
 - `user`：可使用 `GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`POST /api/v1/api-keys/{id}/revoke`，但僅可查詢/停用本人 `active` key。
 - `user`：不可更新 `key_alias`。
@@ -487,6 +506,21 @@ Base path：`/api/v1`
 - `POST /api/v1/admins/{id}/disable`：停用指定使用者管理者身分
 - 規則：僅 `admin` 可使用，且需記錄操作稽核資訊（操作者、時間）。
 
+### 6-1) 關鍵操作稽核 log（v1）
+- 儲存方式：寫入 `operation_audit_logs`（DB 落地）。
+- 範圍（v1）：
+  - `POST /api/v1/api-keys/applications`
+  - `POST /api/v1/api-keys/{id}/revoke`
+  - `POST /api/v1/whitelists`
+  - `PATCH /api/v1/whitelists/{id}`
+  - `POST /api/v1/admins/{id}/enable`
+  - `POST /api/v1/admins/{id}/disable`
+  - `PATCH /api/v1/limit-strategy-config`
+- 稽核欄位至少需可辨識：事件類型、動作、成功/失敗、操作者（`sysid/account/role`）、目標資源類型與 ID、`request_id`、時間、來源 IP、user-agent。
+- 成功與失敗都需記錄（含權限不足、驗證失敗、資源不存在等）。
+- metadata 採白名單策略，僅記錄必要且非敏感欄位。
+- 若 audit 寫入失敗，不得改變原本 API 成功/失敗語意（主流程優先）。
+
 ### 7) 外部研究人員名單服務（整合介面）
 - 用途：供「進入系統」與「送出申請」時檢查是否命中研究人員資格。
 - 資格判斷：以外部服務回傳之職稱代碼判斷是否符合研究人員資格。
@@ -606,6 +640,11 @@ Base path：`/api/v1`
 70. `tCode` 以 `B` 開頭者可登入；非 `B*` 者需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.sysid`），否則回 `403 LOGIN_NOT_ELIGIBLE`。
 71. `admin` 可於 `POST /api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若目錄服務 timeout/5xx，API 回傳 `503 DIRECTORY_SERVICE_UNAVAILABLE`。
+73. `POST /api/v1/api-keys/applications`、`POST /api/v1/api-keys/{id}/revoke`、`POST /api/v1/whitelists`、`PATCH /api/v1/whitelists/{id}`、`POST /api/v1/admins/{id}/enable`、`POST /api/v1/admins/{id}/disable`、`PATCH /api/v1/limit-strategy-config` 成功時皆需寫入 `operation_audit_logs`。
+74. 第 73 項 7 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。
+75. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證（token/password/client secret）。
+76. `operation_audit_logs.metadata_json` 僅允許白名單欄位（例如 `application_id`、`key_id`、`whitelist_id`、`target_admin_id`、`status`、`duration_months`），不得落地原始敏感 payload。
+77. 關鍵操作稽核功能不得改動既有受保護 API 路徑與角色模型（`user|admin`）。
 
 ## Roadmap
 ### Phase 1：Foundation

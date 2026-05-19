@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.errors import ApiError
+from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
 from app.schemas.users import (
     UserListResponse,
     UserLocalePreferenceResponse,
@@ -34,23 +35,145 @@ def list_users(
 @router.post("/admins/{user_id}/enable", response_model=UserRoleMutationResponse)
 def enable_admin(
     user_id: str,
+    request: Request,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    _require_admin(current_user)
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "admin_management"
+    action = "enable"
+    target_type = "admin"
+    target_id = user_id
+    try:
+        _require_admin(current_user)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+
     service = UsersService(db)
-    return service.enable_admin(user_id)
+    try:
+        result = service.enable_admin(current_user=current_user, user_id=user_id)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+    except Exception:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["id"],
+        context=context,
+        metadata={"target_admin_id": result["id"], "status": result["status"]},
+    )
+    return result
 
 
 @router.post("/admins/{user_id}/disable", response_model=UserRoleMutationResponse)
 def disable_admin(
     user_id: str,
+    request: Request,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    _require_admin(current_user)
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "admin_management"
+    action = "disable"
+    target_type = "admin"
+    target_id = user_id
+    try:
+        _require_admin(current_user)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+
     service = UsersService(db)
-    return service.disable_admin(user_id)
+    try:
+        result = service.disable_admin(current_user=current_user, user_id=user_id)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+    except Exception:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["id"],
+        context=context,
+        metadata={"target_admin_id": result["id"], "status": result["status"]},
+    )
+    return result
 
 
 @router.get("/users/preferences/locale", response_model=UserLocalePreferenceResponse)
