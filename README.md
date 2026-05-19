@@ -73,8 +73,8 @@ cp .env.example .env
 - `APP_DOMAIN`：後端對外基底網址（預設 `http://localhost:8000`，方便後續部署調整）
 - `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME`：MariaDB 連線組件（程式會自動組成 `DATABASE_URL`）
 - `DATABASE_URL`：可選，若提供會覆蓋 `DB_*` 組合結果
-- `TEST_DB_USER` / `TEST_DB_PASSWORD` / `TEST_DB_HOST` / `TEST_DB_PORT` / `TEST_DB_NAME`：測試資料庫連線組件（程式會自動組成 `TEST_DATABASE_URL`）
-- `TEST_DATABASE_URL`：可選，若提供會覆蓋 `TEST_DB_*` 組合結果
+- `TEST_DB_USER` / `TEST_DB_PASSWORD` / `TEST_DB_HOST` / `TEST_DB_PORT` / `TEST_DB_NAME`：僅測試（pytest）使用的資料庫連線組件（程式會自動組成 `TEST_DATABASE_URL`）
+- `TEST_DATABASE_URL`：僅測試（pytest）使用；若提供會覆蓋 `TEST_DB_*` 組合結果
 - `RESEARCH_LIST_API_URL`：可選，外部研究人員資格查詢 API URL（設定後申請會即時查詢）
 - `RESEARCH_LIST_TIMEOUT_SECONDS`：可選，外部查詢 timeout 秒數（預設 `3.0`）
 - `RESEARCH_LIST_ALLOWED_TITLE_CODES`：可選，允許通過的職稱代碼清單（逗號分隔，例如 `RS01,RS02`）

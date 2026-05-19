@@ -131,6 +131,7 @@ cp -n .env.example .env
   - `OAUTH_REDIRECT_URI=https://api-console.example.org/auth/callback`
 
 如果你改用 `DATABASE_URL`，它會覆蓋 `DB_*` 組合結果。
+本部署文件為正式環境流程，`TEST_DB_*` / `TEST_DATABASE_URL` 僅供測試使用，正式部署不需要設定。
 
 systemd `EnvironmentFile` 注意事項：
 - `.env` 每行使用 `KEY=VALUE`，不要加 `export`
