@@ -161,3 +161,16 @@ test("admin proxy mode sends target_identity", async () => {
     account: "target.user"
   });
 });
+
+test("proxy account lookup hint is visible only in proxy mode", async () => {
+  const user = userEvent.setup();
+  renderPage(<ApplyPage auth={adminAuth} />);
+
+  expect(screen.queryByText("系統會依帳號自動查詢姓名、Email、單位與 SysID。")).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("radio", { name: "協助他人申請" }));
+  expect(screen.getByText("系統會依帳號自動查詢姓名、Email、單位與 SysID。")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("radio", { name: "為自己申請" }));
+  expect(screen.queryByText("系統會依帳號自動查詢姓名、Email、單位與 SysID。")).not.toBeInTheDocument();
+});

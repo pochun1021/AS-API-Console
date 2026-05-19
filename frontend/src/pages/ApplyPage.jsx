@@ -206,6 +206,11 @@ export default function ApplyPage({ auth }) {
                     </FormControl>
                   </Grid>
                 ) : null}
+                {auth.role === "admin" && proxyEnabled ? (
+                  <Grid size={12}>
+                    <Alert severity="info">{t("apply_proxy_account_lookup_hint")}</Alert>
+                  </Grid>
+                ) : null}
                 <Grid size={{ xs: 12, md: 6 }}>
                   <TextField fullWidth label={isZh ? "帳號" : "Account"} value={auth.role === "admin" && proxyEnabled ? targetIdentity.account : auth.account} onChange={auth.role === "admin" && proxyEnabled ? onTargetChange("account") : undefined} InputProps={{ readOnly: !(auth.role === "admin" && proxyEnabled) }} />
                 </Grid>
@@ -218,11 +223,6 @@ export default function ApplyPage({ auth }) {
                 <Grid size={{ xs: 12, md: 6 }}>
                   <TextField fullWidth label={isZh ? "單位" : "Department"} value={auth.department} InputProps={{ readOnly: true }} />
                 </Grid>
-                {auth.role === "admin" && proxyEnabled ? (
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Alert severity="info">{t("apply_proxy_account_lookup_hint")}</Alert>
-                  </Grid>
-                ) : null}
                 <Grid size={{ xs: 12, md: 6 }}>
                   <DatePicker
                     label={isZh ? "申請日期" : "Application Date"}
