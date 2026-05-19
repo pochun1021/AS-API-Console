@@ -13,7 +13,7 @@ class OAuthIdentity:
     name: str
     email: str
     department: str
-    sysid: str
+    sysid: int
     tcode: str
     role: str = "user"
 
@@ -70,7 +70,7 @@ class OAuthService:
             name=self._pick_claim(claims, "chName", "name", "display_name", "cname"),
             email=self._pick_claim(claims, "email", "mail"),
             department=self._pick_claim(claims, "instCode", "department", "dept", "org"),
-            sysid=self._pick_claim(claims, "sysId", "sysid"),
+            sysid=self._pick_numeric_claim(claims, "sysId", "sysid"),
             tcode=self._pick_claim(claims, "tCode", "tcode"),
             role="user",
         )
@@ -82,3 +82,12 @@ class OAuthService:
             if isinstance(value, str) and value.strip():
                 return value.strip()
         raise ApiError("OAUTH_IDENTITY_INVALID", f"missing required oauth claim: {'|'.join(keys)}", 422)
+
+    def _pick_numeric_claim(self, claims: dict, *keys: str) -> int:
+        value = self._pick_claim(claims, *keys)
+        if not value.isdigit():
+            raise ApiError("OAUTH_IDENTITY_INVALID", f"oauth claim must be numeric: {'|'.join(keys)}", 422)
+        numeric_value = int(value)
+        if numeric_value <= 0:
+            raise ApiError("OAUTH_IDENTITY_INVALID", f"oauth claim must be positive integer: {'|'.join(keys)}", 422)
+        return numeric_value

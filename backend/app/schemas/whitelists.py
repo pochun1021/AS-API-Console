@@ -4,13 +4,13 @@ from pydantic import BaseModel
 
 
 class WhitelistCreateRequest(BaseModel):
-    sysid: str
+    sysid: int
     note: str | None = None
 
 
 class WhitelistItemResponse(BaseModel):
     id: str
-    sysid: str
+    sysid: int
     email: str | None
     status: str
     note: str | None

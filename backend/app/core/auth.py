@@ -15,7 +15,7 @@ class CurrentUser:
     name: str
     email: str
     department: str
-    sysid: str
+    sysid: int
     role: str
 
 
@@ -56,6 +56,13 @@ def get_current_user(
     if role not in {"user", "admin"}:
         raise ApiError("VALIDATION_ERROR", "invalid role", 422)
 
+    try:
+        normalized_sysid = int(x_sysid or "")
+    except ValueError as exc:
+        raise ApiError("VALIDATION_ERROR", "x-sysid must be numeric", 422) from exc
+    if normalized_sysid <= 0:
+        raise ApiError("VALIDATION_ERROR", "x-sysid must be positive integer", 422)
+
     if role == "admin":
         repo = SQLAlchemyAdminRepository(db)
         admin = repo.get_by_account(x_account or "")
@@ -66,7 +73,7 @@ def get_current_user(
                     name=x_name or "",
                     email=x_email or "",
                     department=x_department or "",
-                    sysid=x_sysid or "",
+                    sysid=normalized_sysid,
                 ),
                 created_by=x_account or "system",
             )
@@ -80,6 +87,6 @@ def get_current_user(
         name=x_name or "",
         email=(x_email or "").lower(),
         department=x_department or "",
-        sysid=x_sysid or "",
+        sysid=normalized_sysid,
         role=role,
     )

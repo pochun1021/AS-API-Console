@@ -38,13 +38,14 @@
   - `name`（必填，唯讀，自 SSO/OAuth 登入帶入）
   - `email`（必填，唯讀，自 SSO/OAuth 登入帶入）
   - `department`（必填，唯讀，自 SSO/OAuth 登入帶入）
-  - `sysid`（必填，唯讀，自 SSO/OAuth 登入帶入）
+  - `sysid`（必填，唯讀，自 SSO/OAuth 登入帶入；純數字）
   - `application_date`（必填，使用者可選）
   - `duration_months`（必填，選單：`1|6|12`）
   - `purpose`（必填）
   - `target_identity`（選填；僅 `admin` 可傳，欄位：`account`）
 - 驗證：
   - `email` 格式檢查
+  - `sysid` 必須為純數字（整數語意）
   - 申請資格需通過：研究人員名單職稱代碼命中，或特殊人員名單為 `active`
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
   - `duration_months` 僅允許 `1|6|12`
@@ -159,7 +160,7 @@
 - `email` (string, required, unique, lowercase)
 - `name` (string, required)
 - `department` (string, nullable)
-- `sysid` (string, required)
+- `sysid` (integer, required)
 - `status` (enum: `active` | `inactive`)
 - `created_by` (string)
 - `updated_by` (string)
@@ -168,7 +169,7 @@
 
 ### Entity: `api_key_whitelist`
 - `id` (string/uuid)
-- `sysid` (string, required, unique)
+- `sysid` (integer, required, unique)
 - `email` (string, nullable, lowercase；僅供顯示，不作放行比對)
 - `status` (enum: `active` | `inactive`)
 - `note` (string, nullable)
@@ -180,7 +181,7 @@
 ### Entity: `api_key_applications`
 - `id` (string/uuid)
 - `account` (string, required)
-- `user_id` (string, required；存 auth `sysid`，不再綁定 `users` FK)
+- `user_id` (integer, required；存 auth `sysid`，不再綁定 `users` FK)
 - `name` (string, required)
 - `email` (string, required)
 - `department` (string, required)
@@ -193,13 +194,13 @@
 - `issued_at` (datetime)
 - `expires_at` (datetime)
 - `revoked_at` (datetime, nullable)
-- `sysid` (string, required, SSO/OAuth 主體唯一識別碼)
+- `sysid` (integer, required, SSO/OAuth 主體唯一識別碼)
 - `is_proxy_submission` (bool, required；是否為管理者代申請)
 - `operator_account` (string, required；實際操作者帳號)
 - `operator_name` (string, required；實際操作者姓名)
 - `operator_email` (string, required；實際操作者 email)
 - `operator_department` (string, required；實際操作者單位)
-- `operator_sysid` (string, required；實際操作者 sysid)
+- `operator_sysid` (integer, required；實際操作者 sysid)
 - `created_at` (datetime)
 - `updated_at` (datetime)
 
@@ -218,7 +219,7 @@
 
 ### Entity: `notifications`
 - `id` (string/uuid)
-- `sysid` (string, required；通知收件者，對應 auth context 的 `sysid`)
+- `sysid` (integer, required；通知收件者，對應 auth context 的 `sysid`)
 - `type` (string, required)
 - `title` (string, required)
 - `message` (string, required)
@@ -239,7 +240,7 @@
 - `name` (string, nullable)
 - `email` (string, nullable)
 - `department` (string, nullable)
-- `sysid` (string, nullable)
+- `sysid` (integer, nullable)
 - `role` (string, nullable；本期固定 `user`)
 - `detail` (string, nullable)
 - `created_at` (datetime)
@@ -274,6 +275,7 @@ Base path：`/api/v1`
 - `POST /api/v1/api-keys/applications`
 - 前置條件：
   - 請求必須為已登入使用者（`account`、`name`、`email`、`department`、`sysid` 由 auth context 提供，並以 auth context 為準）
+  - `sysid` 必須為純數字；若為非數字，回傳 `VALIDATION_ERROR`。
   - `user` 僅能以 auth context 申請本人；`admin` 可選擇代他人申請（透過 `target_identity`）
   - 申請資格必須通過：研究人員名單職稱代碼命中，或特殊人員名單 `active` 命中
   - `admin` 代申請時，後端需先依 `target_identity.account` 查人員目錄取得唯一身份，再以該身份的 `email/sysid` 檢查申請資格

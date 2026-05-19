@@ -6,7 +6,7 @@ const oauthUser = {
   name: "OAuth User",
   email: "oauth.user@example.com",
   department: "R&D",
-  sysid: "oauth-sysid-1",
+  sysid: 5001,
   role: "user"
 };
 
@@ -32,13 +32,13 @@ describe("readOAuthAuthContext", () => {
   });
 
   test("window context has priority over sessionStorage", () => {
-    window.__AS_AUTH_CONTEXT__ = { ...oauthUser, sysid: "window-sysid" };
+    window.__AS_AUTH_CONTEXT__ = { ...oauthUser, sysid: 5002 };
     window.sessionStorage.setItem(
       "as-api-console-auth-context",
-      JSON.stringify({ ...oauthUser, sysid: "session-sysid" })
+      JSON.stringify({ ...oauthUser, sysid: 5003 })
     );
 
-    expect(readOAuthAuthContext()?.sysid).toBe("window-sysid");
+    expect(readOAuthAuthContext()?.sysid).toBe(5002);
   });
 
   test("returns null for invalid role or missing fields", () => {

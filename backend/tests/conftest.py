@@ -47,22 +47,24 @@ def client() -> Generator[TestClient, None, None]:
     app.dependency_overrides.clear()
 
 
-def build_headers(*, role: str, account: str, email: str, sysid: str, name: str = "Tester", department: str = "IT") -> dict[str, str]:
+def build_headers(
+    *, role: str, account: str, email: str, sysid: int | str, name: str = "Tester", department: str = "IT"
+) -> dict[str, str]:
     return {
         "x-account": account,
         "x-name": name,
         "x-email": email,
         "x-department": department,
-        "x-sysid": sysid,
+        "x-sysid": str(sysid),
         "x-role": role,
     }
 
 
 @pytest.fixture()
 def admin_headers() -> dict[str, str]:
-    return build_headers(role="admin", account="admin", email="admin@example.com", sysid="admin-1")
+    return build_headers(role="admin", account="admin", email="admin@example.com", sysid="1001")
 
 
 @pytest.fixture()
 def user_headers() -> dict[str, str]:
-    return build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
+    return build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, String, Text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.base import Base
@@ -13,7 +13,7 @@ class ApiKeyWhitelist(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    sysid: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    sysid: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -17,7 +17,7 @@
 - Python MariaDB driver：`mariadb`（需先安裝 MariaDB Connector/C，確保 `mariadb_config` 可用）
 - Alembic path：`backend/alembic.ini`
 - Migration 目錄：`backend/db/migrations/versions`
-- 目前 head revision：`0002_create_core_tables`
+- 目前 head revision：`0021_sysid_bigint`
 
 ## Schema 實作對照
 
@@ -207,9 +207,28 @@ alembic current
 
 ### 本地 DB 要重建
 - 僅限本地開發環境可重建，避免誤刪正式資料。
-- 重建後需重新執行：
+- 建議先執行（MariaDB）：
+```sql
+SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS alembic_version;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS user_preferences;
+DROP TABLE IF EXISTS auth_audit_logs;
+DROP TABLE IF EXISTS api_keys;
+DROP TABLE IF EXISTS api_key_applications;
+DROP TABLE IF EXISTS api_key_whitelist;
+DROP TABLE IF EXISTS admins;
+DROP TABLE IF EXISTS limit_strategy_config;
+DROP TABLE IF EXISTS users;
+SET FOREIGN_KEY_CHECKS = 1;
+```
+- 重建後重新執行：
 ```bash
 alembic upgrade head
+```
+- 最後驗證：
+```bash
+alembic current
 ```
 
 ### seed 腳本執行失敗（連線錯誤）

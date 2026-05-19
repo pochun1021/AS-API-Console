@@ -35,17 +35,16 @@ class SQLAlchemyAdminRepository:
         stmt = select(Admin).where(Admin.account == account)
         return self.session.scalar(stmt)
 
-    def get_by_sysid(self, sysid: str) -> Admin | None:
+    def get_by_sysid(self, sysid: int) -> Admin | None:
         stmt = select(Admin).where(Admin.sysid == sysid)
         return self.session.scalar(stmt)
 
     def search(self, keyword: str, limit: int = 20) -> list[Admin]:
         like = f"%{keyword}%"
-        stmt = (
-            select(Admin)
-            .where(Admin.account.like(like) | Admin.email.like(like) | Admin.name.like(like) | Admin.sysid.like(like))
-            .limit(limit)
-        )
+        where_clause = Admin.account.like(like) | Admin.email.like(like) | Admin.name.like(like)
+        if keyword.isdigit():
+            where_clause = where_clause | (Admin.sysid == int(keyword))
+        stmt = select(Admin).where(where_clause).limit(limit)
         return list(self.session.scalars(stmt).all())
 
     def list_active_emails(self) -> list[str]:
@@ -58,7 +57,7 @@ class SQLAlchemyAdminRepository:
         now = datetime.now(timezone.utc)
         if admin is None:
             admin = Admin(
-                id=identity.sysid,
+                id=str(identity.sysid),
                 account=identity.account,
                 email=identity.email.lower(),
                 name=identity.name,
@@ -125,11 +124,11 @@ class SQLAlchemyWhitelistRepository(WhitelistRepository):
     def get_by_id(self, whitelist_id: str) -> ApiKeyWhitelist | None:
         return self.session.get(ApiKeyWhitelist, whitelist_id)
 
-    def get_by_sysid(self, sysid: str) -> ApiKeyWhitelist | None:
+    def get_by_sysid(self, sysid: int) -> ApiKeyWhitelist | None:
         stmt = select(ApiKeyWhitelist).where(ApiKeyWhitelist.sysid == sysid)
         return self.session.scalar(stmt)
 
-    def find_active_by_sysid(self, sysid: str) -> ApiKeyWhitelist | None:
+    def find_active_by_sysid(self, sysid: int) -> ApiKeyWhitelist | None:
         stmt = select(ApiKeyWhitelist).where(
             ApiKeyWhitelist.sysid == sysid, ApiKeyWhitelist.status == "active"
         )

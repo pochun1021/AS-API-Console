@@ -37,7 +37,7 @@ def test_notifications_list_only_current_sysid(client, admin_headers):
         "x-name": "User One",
         "x-email": "user1@example.com",
         "x-department": "IT",
-        "x-sysid": "user-1",
+        "x-sysid": "2001",
         "x-role": "user",
     }
     user2 = {
@@ -45,7 +45,7 @@ def test_notifications_list_only_current_sysid(client, admin_headers):
         "x-name": "User Two",
         "x-email": "user2@example.com",
         "x-department": "IT",
-        "x-sysid": "user-2",
+        "x-sysid": "2002",
         "x-role": "user",
     }
 
@@ -69,7 +69,7 @@ def test_mark_notification_read_and_cross_sysid_forbidden(client, admin_headers)
         "x-name": "User One",
         "x-email": "user1@example.com",
         "x-department": "IT",
-        "x-sysid": "user-1",
+        "x-sysid": "2001",
         "x-role": "user",
     }
     user2 = {
@@ -77,7 +77,7 @@ def test_mark_notification_read_and_cross_sysid_forbidden(client, admin_headers)
         "x-name": "User Two",
         "x-email": "user2@example.com",
         "x-department": "IT",
-        "x-sysid": "user-2",
+        "x-sysid": "2002",
         "x-role": "user",
     }
 
@@ -107,7 +107,7 @@ def test_admin_cannot_mark_other_user_notification_read(client, admin_headers):
         "x-name": "User One",
         "x-email": "user1@example.com",
         "x-department": "IT",
-        "x-sysid": "user-1",
+        "x-sysid": "2001",
         "x-role": "user",
     }
     _issue_and_get_application_id(client, admin_headers, user1)
@@ -118,7 +118,7 @@ def test_admin_cannot_mark_other_user_notification_read(client, admin_headers):
         "x-name": "Another Admin",
         "x-email": "another.admin@example.com",
         "x-department": "IT",
-        "x-sysid": "admin-2",
+        "x-sysid": "1002",
         "x-role": "admin",
     }
     forbidden = client.patch(f"/api/v1/notifications/{item['id']}/read", headers=outsider_admin)
@@ -131,7 +131,7 @@ def test_mark_notification_read_reveals_plaintext_with_legacy_application_id_onl
         "x-name": "User One",
         "x-email": "user1@example.com",
         "x-department": "IT",
-        "x-sysid": "user-1",
+        "x-sysid": "2001",
         "x-role": "user",
     }
     app_id = _issue_and_get_application_id(client, admin_headers, user1)

@@ -18,7 +18,7 @@ class AuthAuditService:
         name: str | None = None,
         email: str | None = None,
         department: str | None = None,
-        sysid: str | None = None,
+        sysid: int | None = None,
         role: str | None = None,
         detail: str | None = None,
     ) -> None:

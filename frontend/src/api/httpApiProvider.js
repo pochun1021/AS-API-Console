@@ -5,7 +5,7 @@ function buildHeaders(auth) {
     "x-name": auth.name,
     "x-email": auth.email,
     "x-department": auth.department,
-    "x-sysid": auth.sysid,
+    "x-sysid": String(auth.sysid),
     "x-role": auth.role || "user"
   };
 }

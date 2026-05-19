@@ -97,7 +97,7 @@ const initialWhitelists = [
     id: "wl_001",
     email: "jane.doe@company.com",
     account: "jane.doe",
-    sysid: "user_123",
+    sysid: 123,
     name: "Jane Doe",
     status: "active",
     remark: "platform team",
@@ -108,7 +108,7 @@ const initialWhitelists = [
     id: "wl_002",
     email: "legacy.user@company.com",
     account: "legacy.user",
-    sysid: "user_999",
+    sysid: 999,
     name: "Legacy User",
     status: "inactive",
     remark: "offboarded",
@@ -119,7 +119,7 @@ const initialWhitelists = [
     id: "wl_003",
     email: "bob.lin@company.com",
     account: "bob.lin",
-    sysid: "user_654",
+    sysid: 654,
     name: "Bob Lin",
     status: "active",
     remark: "qa team",
@@ -130,7 +130,7 @@ const initialWhitelists = [
     id: "wl_004",
     email: "sam.chen@company.com",
     account: "sam.chen",
-    sysid: "user_789",
+    sysid: 789,
     name: "Sam Chen",
     status: "active",
     remark: "secops automation",
@@ -143,7 +143,7 @@ const initialUsers = [
   {
     id: "usr_001",
     account: "jane.doe",
-    sysid: "user_123",
+    sysid: 123,
     name: "Jane Doe",
     email: "jane.doe@company.com",
     role: "user",
@@ -153,7 +153,7 @@ const initialUsers = [
   {
     id: "usr_002",
     account: "john.admin",
-    sysid: "admin_001",
+    sysid: 1,
     name: "John Admin",
     email: "john.admin@company.com",
     role: "admin",
@@ -163,7 +163,7 @@ const initialUsers = [
   {
     id: "usr_003",
     account: "alice.wang",
-    sysid: "user_456",
+    sysid: 456,
     name: "Alice Wang",
     email: "alice.wang@company.com",
     role: "user",
@@ -173,7 +173,7 @@ const initialUsers = [
   {
     id: "usr_004",
     account: "sam.chen",
-    sysid: "user_789",
+    sysid: 789,
     name: "Sam Chen",
     email: "sam.chen@company.com",
     role: "user",
@@ -183,7 +183,7 @@ const initialUsers = [
   {
     id: "usr_005",
     account: "mike.li",
-    sysid: "user_999",
+    sysid: 999,
     name: "Mike Li",
     email: "mike.li@company.com",
     role: "user",
@@ -504,7 +504,7 @@ export const mockApiProvider = {
     }
 
     const items = users.filter((item) =>
-      [item.sysid, item.account, item.name, item.email].some((value) => value.toLowerCase().includes(q))
+      [item.sysid, item.account, item.name, item.email].some((value) => String(value).toLowerCase().includes(q))
     );
 
     return { items: items.map(mapUserForAdminPage) };
@@ -563,8 +563,8 @@ export const mockApiProvider = {
     await delay();
     ensureAdmin(auth);
 
-    const sysid = payload.sysid?.trim();
-    if (!sysid) {
+    const sysid = Number(payload.sysid);
+    if (!Number.isInteger(sysid) || sysid <= 0) {
       throw createError("VALIDATION_ERROR", "SysID 不可為空");
     }
 

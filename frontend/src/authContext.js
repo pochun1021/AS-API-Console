@@ -4,7 +4,7 @@ export const devAuthProfiles = {
     name: "abcd1234",
     email: "s880632520@gmail.com",
     department: "IT",
-    sysid: "admin-abcd1234",
+    sysid: 100001,
     role: "admin"
   },
   user: {
@@ -12,7 +12,7 @@ export const devAuthProfiles = {
     name: "Pochen",
     email: "pochen@as.edu.tw",
     department: "IT",
-    sysid: "user-seed-pochen",
+    sysid: 200001,
     role: "user"
   }
 };
@@ -29,19 +29,24 @@ function normalizeAuthCandidate(candidate) {
     return null;
   }
 
-  const requiredFields = ["account", "name", "email", "department", "sysid"];
+  const requiredFields = ["account", "name", "email", "department"];
   for (const key of requiredFields) {
-    if (!candidate[key] || typeof candidate[key] !== "string") {
-      return null;
-    }
+    if (!candidate[key] || typeof candidate[key] !== "string") return null;
   }
+  const numericSysid =
+    typeof candidate.sysid === "number"
+      ? candidate.sysid
+      : typeof candidate.sysid === "string" && /^\d+$/.test(candidate.sysid)
+        ? Number(candidate.sysid)
+        : null;
+  if (!numericSysid || numericSysid <= 0) return null;
 
   return {
     account: candidate.account,
     name: candidate.name,
     email: candidate.email,
     department: candidate.department,
-    sysid: candidate.sysid,
+    sysid: numericSysid,
     role
   };
 }

@@ -14,19 +14,17 @@ class WhitelistsService:
         self.session = session
         self.repo = SQLAlchemyWhitelistRepository(session)
 
-    def create(self, current_user: CurrentUser, sysid: str, note: str | None) -> dict:
-        normalized_sysid = sysid.strip()
-        if not normalized_sysid:
-            raise ApiError("VALIDATION_ERROR", "sysid is required", 422)
-
-        if self.repo.get_by_sysid(normalized_sysid) is not None:
+    def create(self, current_user: CurrentUser, sysid: int, note: str | None) -> dict:
+        if sysid <= 0:
+            raise ApiError("VALIDATION_ERROR", "sysid must be positive integer", 422)
+        if self.repo.get_by_sysid(sysid) is not None:
             raise ApiError("WHITELIST_SYSID_DUPLICATED", "whitelist sysid already exists", 409)
 
         try:
             item = self.repo.create(
                 WhitelistCreateInput(
                     id=str(uuid4()),
-                    sysid=normalized_sysid,
+                    sysid=sysid,
                     email=None,
                     created_by=current_user.account,
                     note=note,

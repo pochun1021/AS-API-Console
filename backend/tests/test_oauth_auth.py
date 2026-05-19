@@ -28,7 +28,7 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
             name="OAuth User",
             email="oauth.user@example.com",
             department="IT",
-            sysid="oauth-sysid-1",
+            sysid=3001,
             tcode="B123",
             role="user",
         ),
@@ -67,7 +67,7 @@ def test_callback_rejects_not_eligible_login(client, monkeypatch):
             name="OAuth User2",
             email="oauth.user2@example.com",
             department="IT",
-            sysid="oauth-sysid-2",
+            sysid=3002,
             tcode="A001",
             role="user",
         ),
@@ -80,8 +80,8 @@ def test_callback_rejects_not_eligible_login(client, monkeypatch):
 
 
 def test_callback_allows_non_b_tcode_when_whitelisted(client, monkeypatch):
-    admin_headers = build_headers(role="admin", account="admin", email="admin@example.com", sysid="admin-1")
-    white_sysid = "oauth-sysid-3"
+    admin_headers = build_headers(role="admin", account="admin", email="admin@example.com", sysid="1001")
+    white_sysid = 3003
     create_whitelist = client.post(
         "/api/v1/whitelists",
         headers=admin_headers,

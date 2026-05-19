@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import BigInteger, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.base import Base
@@ -19,7 +19,7 @@ class AuthAuditLog(Base):
     name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     department: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    sysid: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    sysid: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     role: Mapped[str | None] = mapped_column(String(20), nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

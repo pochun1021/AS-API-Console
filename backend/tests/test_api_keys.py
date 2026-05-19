@@ -6,7 +6,7 @@ from tests.conftest import build_headers
 
 
 def _create_whitelist(client, admin_headers, sysid: str) -> None:
-    resp = client.post("/api/v1/whitelists", headers=admin_headers, json={"sysid": sysid, "note": "seed"})
+    resp = client.post("/api/v1/whitelists", headers=admin_headers, json={"sysid": int(sysid), "note": "seed"})
     assert resp.status_code == 201
 
 
@@ -57,7 +57,7 @@ def test_application_rejects_non_whitelisted(client, user_headers):
 
 
 def test_admin_can_submit_proxy_application_for_target_user(client, admin_headers, monkeypatch):
-    target_sysid = "target-user-1"
+    target_sysid = 4001
     _create_whitelist(client, admin_headers, target_sysid)
     monkeypatch.setattr(
         "app.services.api_keys_service.DirectoryIdentityService.is_configured",
@@ -539,8 +539,8 @@ def test_issue_pending_application_local_mode_does_not_call_provider(client, adm
 
 
 def test_revoke_permissions_and_status_checks(client, admin_headers):
-    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
-    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="user-2")
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
 
     _create_whitelist(client, admin_headers, user1["x-sysid"])
 
@@ -569,8 +569,8 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
 
 
 def test_admin_can_list_global_keys(client, admin_headers):
-    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
-    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="user-2")
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
     _create_whitelist(client, admin_headers, user1["x-sysid"])
     _create_whitelist(client, admin_headers, user2["x-sysid"])
 
@@ -601,8 +601,8 @@ def test_admin_can_list_global_keys(client, admin_headers):
 
 
 def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_headers):
-    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
-    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="user-2")
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
     _create_whitelist(client, admin_headers, user1["x-sysid"])
     _create_whitelist(client, admin_headers, user2["x-sysid"])
 
@@ -652,7 +652,7 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
 
 
 def test_reveal_plaintext_admin_only(client, admin_headers):
-    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user1["x-sysid"])
     create_resp = client.post(
         "/api/v1/api-keys/applications",
@@ -675,7 +675,7 @@ def test_reveal_plaintext_admin_only(client, admin_headers):
 
 
 def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
-    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="user-1")
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user1["x-sysid"])
     create_resp = client.post(
         "/api/v1/api-keys/applications",
@@ -705,7 +705,7 @@ def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
 
 
 def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
-    _create_whitelist(client, admin_headers, "no-sysid-user")
+    _create_whitelist(client, admin_headers, 8100)
     bad_headers = {
         "x-account": "nosys",
         "x-name": "No Sysid",
@@ -744,10 +744,10 @@ def test_error_response_shape_consistency(client, admin_headers, user_headers):
 
 def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin_headers):
     user1 = build_headers(
-        role="user", account="alice", email="alice@example.com", sysid="user-alice", name="Alice", department="R&D"
+        role="user", account="alice", email="alice@example.com", sysid=8101, name="Alice", department="R&D"
     )
     user2 = build_headers(
-        role="user", account="bob", email="bob@example.com", sysid="user-bob", name="Bob", department="Security"
+        role="user", account="bob", email="bob@example.com", sysid=8102, name="Bob", department="Security"
     )
     _create_whitelist(client, admin_headers, user1["x-sysid"])
     _create_whitelist(client, admin_headers, user2["x-sysid"])
@@ -783,7 +783,7 @@ def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin
 
 
 def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_headers):
-    user = build_headers(role="user", account="carol", email="carol@example.com", sysid="user-carol", name="Carol")
+    user = build_headers(role="user", account="carol", email="carol@example.com", sysid=8103, name="Carol")
     _create_whitelist(client, admin_headers, user["x-sysid"])
 
     first = client.post(

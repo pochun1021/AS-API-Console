@@ -11,7 +11,7 @@ const auth = {
   name: "Jane Doe",
   email: "jane.doe@company.com",
   department: "Platform Engineering",
-  sysid: "user_123"
+  sysid: 123
 };
 const adminAuth = { ...auth, role: "admin" };
 
