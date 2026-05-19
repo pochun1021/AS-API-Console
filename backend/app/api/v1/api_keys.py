@@ -1,9 +1,10 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.errors import ApiError
 from app.schemas.api_keys import (
     ApiKeyDetailResponse,
     ApiKeyAliasUpdateRequest,
@@ -21,6 +22,7 @@ from app.schemas.api_keys import (
     RevokeResponse,
 )
 from app.services.api_keys_service import ApiKeysService
+from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
 from db.session import get_db
 
 router = APIRouter()
@@ -29,21 +31,71 @@ router = APIRouter()
 @router.post("/api-keys/applications", response_model=ApplicationCreateResponse, status_code=201)
 def create_application(
     payload: ApplicationCreateRequest,
+    request: Request,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "api_key_application"
+    action = "create"
+    target_type = "api_key_application"
     service = ApiKeysService(db)
     try:
-        return service.create_application(
+        result = service.create_application(
             current_user=current_user,
             application_date=payload.application_date,
             duration_months=payload.duration_months,
             purpose=payload.purpose,
             target_identity=payload.target_identity.model_dump() if payload.target_identity else None,
         )
+    except ApiError as exc:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            context=context,
+            metadata={
+                "duration_months": payload.duration_months,
+                "is_proxy_submission": payload.target_identity is not None,
+            },
+        )
+        raise
     except Exception:
         db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            context=context,
+            metadata={
+                "duration_months": payload.duration_months,
+                "is_proxy_submission": payload.target_identity is not None,
+            },
+        )
         raise
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["application"]["id"],
+        context=context,
+        metadata={
+            "application_id": result["application"]["id"],
+            "duration_months": payload.duration_months,
+            "is_proxy_submission": payload.target_identity is not None,
+        },
+    )
+    return result
 
 
 @router.get("/api-keys/applications/pending", response_model=PendingApplicationListResponse)
@@ -154,15 +206,57 @@ def get_api_key_detail(
 @router.post("/api-keys/{key_id}/revoke", response_model=RevokeResponse)
 def revoke_api_key(
     key_id: str,
+    request: Request,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "api_key"
+    action = "revoke"
+    target_type = "api_key"
     service = ApiKeysService(db)
     try:
-        return service.revoke_key(current_user=current_user, key_id=key_id)
+        result = service.revoke_key(current_user=current_user, key_id=key_id)
+    except ApiError as exc:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=key_id,
+            context=context,
+            metadata={"key_id": key_id},
+        )
+        raise
     except Exception:
         db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=key_id,
+            context=context,
+            metadata={"key_id": key_id},
+        )
         raise
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["id"],
+        context=context,
+        metadata={"key_id": result["id"], "status": result["status"]},
+    )
+    return result
 
 
 @router.post("/api-keys/{key_id}/reveal", response_model=ApiKeyRevealResponse)
@@ -202,8 +296,67 @@ def get_limit_strategy_config(
 @router.patch("/limit-strategy-config", response_model=LimitStrategyConfigResponse)
 def update_limit_strategy_config(
     payload: LimitStrategyConfigUpdateRequest,
+    request: Request,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "limit_strategy_config"
+    action = "update"
+    target_type = "limit_strategy_config"
+    target_id = "global-limit-strategy-config"
     service = ApiKeysService(db)
-    return service.update_limit_strategy_config(current_user=current_user, payload=payload.model_dump())
+    try:
+        result = service.update_limit_strategy_config(current_user=current_user, payload=payload.model_dump())
+    except ApiError as exc:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={
+                "budget_duration": payload.budget_duration,
+                "rate_limit_tpm": payload.rate_limit_tpm,
+                "rate_limit_rpm": payload.rate_limit_rpm,
+            },
+        )
+        raise
+    except Exception:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={
+                "budget_duration": payload.budget_duration,
+                "rate_limit_tpm": payload.rate_limit_tpm,
+                "rate_limit_rpm": payload.rate_limit_rpm,
+            },
+        )
+        raise
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=target_id,
+        context=context,
+        metadata={
+            "budget_duration": result["budget_duration"],
+            "rate_limit_tpm": result["rate_limit_tpm"],
+            "rate_limit_rpm": result["rate_limit_rpm"],
+        },
+    )
+    return result

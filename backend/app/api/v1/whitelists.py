@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.errors import ApiError
+from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
 from app.schemas.whitelists import (
     WhitelistCreateRequest,
     WhitelistItemResponse,
@@ -23,12 +24,69 @@ def _require_admin(current_user: CurrentUser) -> None:
 @router.post("/whitelists", response_model=WhitelistItemResponse, status_code=201)
 def create_whitelist(
     payload: WhitelistCreateRequest,
+    request: Request,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    _require_admin(current_user)
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "whitelist"
+    action = "create"
+    target_type = "whitelist"
+    try:
+        _require_admin(current_user)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            context=context,
+            metadata={"sysid": payload.sysid},
+        )
+        raise
+
     service = WhitelistsService(db)
-    return service.create(current_user, payload.sysid, payload.note)
+    try:
+        result = service.create(current_user, payload.sysid, payload.note)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            context=context,
+            metadata={"sysid": payload.sysid},
+        )
+        raise
+    except Exception:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            context=context,
+            metadata={"sysid": payload.sysid},
+        )
+        raise
+
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["id"],
+        context=context,
+        metadata={"whitelist_id": result["id"], "sysid": result["sysid"], "status": result["status"]},
+    )
+    return result
 
 
 @router.get("/whitelists", response_model=WhitelistListResponse)
@@ -48,9 +106,69 @@ def list_whitelists(
 def update_whitelist(
     whitelist_id: str,
     payload: WhitelistUpdateRequest,
+    request: Request,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    _require_admin(current_user)
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "whitelist"
+    action = "update"
+    target_type = "whitelist"
+    try:
+        _require_admin(current_user)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=whitelist_id,
+            context=context,
+            metadata={"whitelist_id": whitelist_id, "status": payload.status},
+        )
+        raise
+
     service = WhitelistsService(db)
-    return service.update(current_user, whitelist_id, payload.status, payload.note)
+    try:
+        result = service.update(current_user, whitelist_id, payload.status, payload.note)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=whitelist_id,
+            context=context,
+            metadata={"whitelist_id": whitelist_id, "status": payload.status},
+        )
+        raise
+    except Exception:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=whitelist_id,
+            context=context,
+            metadata={"whitelist_id": whitelist_id, "status": payload.status},
+        )
+        raise
+
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["id"],
+        context=context,
+        metadata={"whitelist_id": result["id"], "status": result["status"]},
+    )
+    return result
