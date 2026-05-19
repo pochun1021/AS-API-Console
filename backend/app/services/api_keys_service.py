@@ -13,6 +13,12 @@ from app.core.auth import CurrentUser
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.services.crypto_service import CryptoService
+from app.services.directory_identity_service import (
+    DirectoryIdentityService,
+    DirectoryLookupNotFoundError,
+    DirectoryLookupNotUniqueError,
+    DirectoryLookupUnavailableError,
+)
 from app.services.mail_service import MailService
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
 from app.services.research_eligibility_service import ResearchEligibilityService
@@ -59,6 +65,7 @@ class ApiKeysService:
         self.whitelist_repo = SQLAlchemyWhitelistRepository(session)
         self.key_repo = SQLAlchemyApiKeyRepository(session)
         self.research_eligibility = ResearchEligibilityService()
+        self.directory_identity = DirectoryIdentityService()
         self.provider_client = ProviderClient()
         self.crypto = CryptoService(self.settings.api_key_encryption_secret)
         self.mail_service = MailService()
@@ -69,6 +76,7 @@ class ApiKeysService:
         application_date: date,
         duration_months: int,
         purpose: str,
+        target_identity: dict | None = None,
     ) -> dict:
         if application_date > date.today():
             raise ApiError("INVALID_APPLICATION_DATE", "application_date cannot be in the future", 422)
@@ -78,12 +86,36 @@ class ApiKeysService:
         if not normalized_purpose:
             raise ApiError("VALIDATION_ERROR", "purpose is required", 422)
 
+        identity = AuthIdentity(
+            account=current_user.account,
+            name=current_user.name,
+            email=current_user.email,
+            department=current_user.department,
+            sysid=current_user.sysid,
+        )
+        is_proxy_submission = False
+        if current_user.role == "admin" and target_identity is not None:
+            target_account = str(target_identity.get("account", "")).strip()
+            if not target_account:
+                raise ApiError("VALIDATION_ERROR", "target_identity.account is required for admin proxy submission", 422)
+            if not self.directory_identity.is_configured():
+                raise ApiError("DIRECTORY_SERVICE_UNAVAILABLE", "directory service unavailable", 503)
+            try:
+                identity = self.directory_identity.resolve_by_account(target_account)
+            except DirectoryLookupNotFoundError as exc:
+                raise ApiError("VALIDATION_ERROR", "target account not found", 422) from exc
+            except DirectoryLookupNotUniqueError as exc:
+                raise ApiError("VALIDATION_ERROR", "target account is not unique", 422) from exc
+            except DirectoryLookupUnavailableError as exc:
+                raise ApiError("DIRECTORY_SERVICE_UNAVAILABLE", "directory service unavailable", 503) from exc
+            is_proxy_submission = True
+
         research_eligible = False
         if self.research_eligibility.is_configured():
             try:
                 result = self.research_eligibility.check_eligibility(
-                    email=current_user.email,
-                    sysid=current_user.sysid,
+                    email=identity.email,
+                    sysid=identity.sysid,
                 )
                 research_eligible = result.eligible
             except RuntimeError as exc:
@@ -93,11 +125,11 @@ class ApiKeysService:
                     503,
                 ) from exc
 
-        whitelist_eligible = self.whitelist_repo.find_active_by_email(current_user.email) is not None
+        whitelist_eligible = self.whitelist_repo.find_active_by_sysid(identity.sysid) is not None
         if not research_eligible and not whitelist_eligible:
             raise ApiError("APPLICANT_NOT_ELIGIBLE", "applicant is not eligible", 403)
 
-        identity = AuthIdentity(
+        operator_identity = AuthIdentity(
             account=current_user.account,
             name=current_user.name,
             email=current_user.email,
@@ -108,8 +140,10 @@ class ApiKeysService:
         expires_at = _calc_expiration(issued_at, duration_months)
         application = self.key_repo.create_application(
             ApplicationCreateInput(
-                user_id=current_user.sysid,
+                user_id=identity.sysid,
                 identity=identity,
+                operator_identity=operator_identity,
+                is_proxy_submission=is_proxy_submission,
                 application_date=application_date,
                 duration_months=duration_months,
                 purpose=normalized_purpose,

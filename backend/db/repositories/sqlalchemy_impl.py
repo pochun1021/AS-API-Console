@@ -35,17 +35,16 @@ class SQLAlchemyAdminRepository:
         stmt = select(Admin).where(Admin.account == account)
         return self.session.scalar(stmt)
 
-    def get_by_sysid(self, sysid: str) -> Admin | None:
+    def get_by_sysid(self, sysid: int) -> Admin | None:
         stmt = select(Admin).where(Admin.sysid == sysid)
         return self.session.scalar(stmt)
 
     def search(self, keyword: str, limit: int = 20) -> list[Admin]:
         like = f"%{keyword}%"
-        stmt = (
-            select(Admin)
-            .where(Admin.account.like(like) | Admin.email.like(like) | Admin.name.like(like) | Admin.sysid.like(like))
-            .limit(limit)
-        )
+        where_clause = Admin.account.like(like) | Admin.email.like(like) | Admin.name.like(like)
+        if keyword.isdigit():
+            where_clause = where_clause | (Admin.sysid == int(keyword))
+        stmt = select(Admin).where(where_clause).limit(limit)
         return list(self.session.scalars(stmt).all())
 
     def list_active_emails(self) -> list[str]:
@@ -58,7 +57,7 @@ class SQLAlchemyAdminRepository:
         now = datetime.now(timezone.utc)
         if admin is None:
             admin = Admin(
-                id=identity.sysid,
+                id=str(identity.sysid),
                 account=identity.account,
                 email=identity.email.lower(),
                 name=identity.name,
@@ -102,7 +101,8 @@ class SQLAlchemyWhitelistRepository(WhitelistRepository):
         now = datetime.now(timezone.utc)
         whitelist = ApiKeyWhitelist(
             id=data.id,
-            email=data.email.lower(),
+            sysid=data.sysid,
+            email=data.email.lower() if data.email else None,
             status="active",
             note=data.note,
             created_by=data.created_by,
@@ -124,13 +124,13 @@ class SQLAlchemyWhitelistRepository(WhitelistRepository):
     def get_by_id(self, whitelist_id: str) -> ApiKeyWhitelist | None:
         return self.session.get(ApiKeyWhitelist, whitelist_id)
 
-    def get_by_email(self, email: str) -> ApiKeyWhitelist | None:
-        stmt = select(ApiKeyWhitelist).where(ApiKeyWhitelist.email == email.lower())
+    def get_by_sysid(self, sysid: int) -> ApiKeyWhitelist | None:
+        stmt = select(ApiKeyWhitelist).where(ApiKeyWhitelist.sysid == sysid)
         return self.session.scalar(stmt)
 
-    def find_active_by_email(self, email: str) -> ApiKeyWhitelist | None:
+    def find_active_by_sysid(self, sysid: int) -> ApiKeyWhitelist | None:
         stmt = select(ApiKeyWhitelist).where(
-            ApiKeyWhitelist.email == email.lower(), ApiKeyWhitelist.status == "active"
+            ApiKeyWhitelist.sysid == sysid, ApiKeyWhitelist.status == "active"
         )
         return self.session.scalar(stmt)
 
@@ -174,6 +174,12 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             expires_at=data.expires_at,
             revoked_at=None,
             sysid=data.identity.sysid,
+            is_proxy_submission=data.is_proxy_submission,
+            operator_account=data.operator_identity.account,
+            operator_name=data.operator_identity.name,
+            operator_email=data.operator_identity.email.lower(),
+            operator_department=data.operator_identity.department,
+            operator_sysid=data.operator_identity.sysid,
             created_at=data.issued_at,
             updated_at=data.issued_at,
         )

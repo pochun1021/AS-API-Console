@@ -1,16 +1,17 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 
 class WhitelistCreateRequest(BaseModel):
-    email: EmailStr
+    sysid: int
     note: str | None = None
 
 
 class WhitelistItemResponse(BaseModel):
     id: str
-    email: str
+    sysid: int
+    email: str | None
     status: str
     note: str | None
     created_by: str

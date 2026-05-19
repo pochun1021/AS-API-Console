@@ -9,23 +9,23 @@ def test_whitelist_admin_only(client, admin_headers, user_headers):
     admin_resp = client.post(
         "/api/v1/whitelists",
         headers=admin_headers,
-        json={"email": "wl1@example.com", "note": "seed"},
+        json={"sysid": 7001, "note": "seed"},
     )
     assert admin_resp.status_code == 201
 
 
-def test_whitelist_duplicate_email(client, admin_headers):
-    payload = {"email": "dup@example.com", "note": "seed"}
+def test_whitelist_duplicate_sysid(client, admin_headers):
+    payload = {"sysid": 7002, "note": "seed"}
     first = client.post("/api/v1/whitelists", headers=admin_headers, json=payload)
     second = client.post("/api/v1/whitelists", headers=admin_headers, json=payload)
     assert first.status_code == 201
     assert second.status_code == 409
-    assert second.json()["error"]["code"] == "WHITELIST_EMAIL_DUPLICATED"
+    assert second.json()["error"]["code"] == "WHITELIST_SYSID_DUPLICATED"
 
 
 def test_users_admin_role_endpoints(client, admin_headers):
     # bootstrap another admin identity via auth headers
-    target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid="u1-sys")
+    target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
     bootstrap = client.get("/api/v1/api-keys", headers=target_admin_headers)
     assert bootstrap.status_code == 200
 
@@ -35,7 +35,7 @@ def test_users_admin_role_endpoints(client, admin_headers):
     user_item = users.json()["items"][0]
     user_id = user_item["id"]
     assert "sysid" in user_item
-    assert user_item["sysid"] == user_item["id"]
+    assert str(user_item["sysid"]) == user_item["id"]
 
     enable = client.post(f"/api/v1/admins/{user_id}/enable", headers=admin_headers)
     assert enable.status_code == 200

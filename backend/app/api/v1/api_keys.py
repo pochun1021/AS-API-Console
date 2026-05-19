@@ -39,6 +39,7 @@ def create_application(
             application_date=payload.application_date,
             duration_months=payload.duration_months,
             purpose=payload.purpose,
+            target_identity=payload.target_identity.model_dump() if payload.target_identity else None,
         )
     except Exception:
         db.rollback()

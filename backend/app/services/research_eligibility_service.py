@@ -29,14 +29,14 @@ class ResearchEligibilityService:
     def is_configured(self) -> bool:
         return bool(self.api_url)
 
-    def check_eligibility(self, *, email: str, sysid: str) -> ResearchEligibilityResult:
+    def check_eligibility(self, *, email: str, sysid: int) -> ResearchEligibilityResult:
         if not self.api_url:
             return ResearchEligibilityResult(eligible=False, title_code=None)
 
         try:
             response = httpx.get(
                 self.api_url,
-                params={"email": email, "sysid": sysid},
+                params={"email": email, "sysid": str(sysid)},
                 timeout=self.timeout_seconds,
             )
         except httpx.RequestError as exc:

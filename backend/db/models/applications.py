@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import CheckConstraint, Date, DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -15,7 +15,7 @@ class ApiKeyApplication(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     account: Mapped[str] = mapped_column(String(100), nullable=False)
-    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     department: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -34,7 +34,13 @@ class ApiKeyApplication(Base):
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    sysid: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    sysid: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    is_proxy_submission: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    operator_account: Mapped[str] = mapped_column(String(100), nullable=False)
+    operator_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    operator_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    operator_department: Mapped[str] = mapped_column(String(100), nullable=False)
+    operator_sysid: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

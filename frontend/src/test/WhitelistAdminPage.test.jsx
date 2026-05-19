@@ -8,7 +8,7 @@ const adminAuth = {
   name: "John Admin",
   email: "john.admin@company.com",
   department: "Security",
-  sysid: "admin_001",
+  sysid: 1,
   role: "admin"
 };
 
@@ -17,7 +17,7 @@ const userAuth = {
   name: "Jane Doe",
   email: "jane.doe@company.com",
   department: "Platform Engineering",
-  sysid: "user_123",
+  sysid: 123,
   role: "user"
 };
 
@@ -44,7 +44,7 @@ test("admin can search user and add whitelist item, then sees duplicated error",
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "jane");
   await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
   await user.click((await within(searchDialog).findAllByRole("button", { name: "加入特殊人員名單" }))[0]);
-  expect(await within(searchDialog).findByText("Email 已存在於特殊人員名單")).toBeInTheDocument();
+  expect(await within(searchDialog).findByText("SysID 已存在於特殊人員名單")).toBeInTheDocument();
 });
 
 test("admin can toggle status with confirm and update remark", async () => {
@@ -70,7 +70,7 @@ test("admin can search by sysid", async () => {
 
   await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
   const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
-  await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "user_456");
+  await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), 456);
   await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
   expect(await within(searchDialog).findByText("Alice Wang")).toBeInTheDocument();
 });

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
@@ -15,19 +15,29 @@ class CurrentUser:
     name: str
     email: str
     department: str
-    sysid: str
+    sysid: int
     role: str
 
 
 def get_current_user(
+    request: Request,
     x_account: str | None = Header(default=None),
     x_name: str | None = Header(default=None),
     x_email: str | None = Header(default=None),
     x_department: str | None = Header(default=None),
     x_sysid: str | None = Header(default=None),
-    x_role: str | None = Header(default="user"),
+    x_role: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> CurrentUser:
+    session_auth = request.session.get("auth_context") if hasattr(request, "session") else None
+    if isinstance(session_auth, dict):
+        x_account = x_account or session_auth.get("account")
+        x_name = x_name or session_auth.get("name")
+        x_email = x_email or session_auth.get("email")
+        x_department = x_department or session_auth.get("department")
+        x_sysid = x_sysid or session_auth.get("sysid")
+        x_role = x_role or session_auth.get("role")
+
     missing = [
         key
         for key, value in {
@@ -46,6 +56,13 @@ def get_current_user(
     if role not in {"user", "admin"}:
         raise ApiError("VALIDATION_ERROR", "invalid role", 422)
 
+    try:
+        normalized_sysid = int(x_sysid or "")
+    except ValueError as exc:
+        raise ApiError("VALIDATION_ERROR", "x-sysid must be numeric", 422) from exc
+    if normalized_sysid <= 0:
+        raise ApiError("VALIDATION_ERROR", "x-sysid must be positive integer", 422)
+
     if role == "admin":
         repo = SQLAlchemyAdminRepository(db)
         admin = repo.get_by_account(x_account or "")
@@ -56,7 +73,7 @@ def get_current_user(
                     name=x_name or "",
                     email=x_email or "",
                     department=x_department or "",
-                    sysid=x_sysid or "",
+                    sysid=normalized_sysid,
                 ),
                 created_by=x_account or "system",
             )
@@ -70,6 +87,6 @@ def get_current_user(
         name=x_name or "",
         email=(x_email or "").lower(),
         department=x_department or "",
-        sysid=x_sysid or "",
+        sysid=normalized_sysid,
         role=role,
     )

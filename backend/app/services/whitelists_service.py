@@ -14,15 +14,18 @@ class WhitelistsService:
         self.session = session
         self.repo = SQLAlchemyWhitelistRepository(session)
 
-    def create(self, current_user: CurrentUser, email: str, note: str | None) -> dict:
-        if self.repo.get_by_email(email) is not None:
-            raise ApiError("WHITELIST_EMAIL_DUPLICATED", "whitelist email already exists", 409)
+    def create(self, current_user: CurrentUser, sysid: int, note: str | None) -> dict:
+        if sysid <= 0:
+            raise ApiError("VALIDATION_ERROR", "sysid must be positive integer", 422)
+        if self.repo.get_by_sysid(sysid) is not None:
+            raise ApiError("WHITELIST_SYSID_DUPLICATED", "whitelist sysid already exists", 409)
 
         try:
             item = self.repo.create(
                 WhitelistCreateInput(
                     id=str(uuid4()),
-                    email=email.lower(),
+                    sysid=sysid,
+                    email=None,
                     created_by=current_user.account,
                     note=note,
                 )
@@ -30,10 +33,11 @@ class WhitelistsService:
             self.session.commit()
         except IntegrityError as exc:
             self.session.rollback()
-            raise ApiError("WHITELIST_EMAIL_DUPLICATED", "whitelist email already exists", 409) from exc
+            raise ApiError("WHITELIST_SYSID_DUPLICATED", "whitelist sysid already exists", 409) from exc
 
         return {
             "id": item.id,
+            "sysid": item.sysid,
             "email": item.email,
             "status": item.status,
             "note": item.note,
@@ -53,6 +57,7 @@ class WhitelistsService:
             "items": [
                 {
                     "id": item.id,
+                    "sysid": item.sysid,
                     "email": item.email,
                     "status": item.status,
                     "note": item.note,
@@ -82,6 +87,7 @@ class WhitelistsService:
         self.session.commit()
         return {
             "id": item.id,
+            "sysid": item.sysid,
             "email": item.email,
             "status": item.status,
             "note": item.note,

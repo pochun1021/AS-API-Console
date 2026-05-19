@@ -97,7 +97,7 @@ const initialWhitelists = [
     id: "wl_001",
     email: "jane.doe@company.com",
     account: "jane.doe",
-    sysid: "user_123",
+    sysid: 123,
     name: "Jane Doe",
     status: "active",
     remark: "platform team",
@@ -108,7 +108,7 @@ const initialWhitelists = [
     id: "wl_002",
     email: "legacy.user@company.com",
     account: "legacy.user",
-    sysid: "user_999",
+    sysid: 999,
     name: "Legacy User",
     status: "inactive",
     remark: "offboarded",
@@ -119,7 +119,7 @@ const initialWhitelists = [
     id: "wl_003",
     email: "bob.lin@company.com",
     account: "bob.lin",
-    sysid: "user_654",
+    sysid: 654,
     name: "Bob Lin",
     status: "active",
     remark: "qa team",
@@ -130,7 +130,7 @@ const initialWhitelists = [
     id: "wl_004",
     email: "sam.chen@company.com",
     account: "sam.chen",
-    sysid: "user_789",
+    sysid: 789,
     name: "Sam Chen",
     status: "active",
     remark: "secops automation",
@@ -143,7 +143,7 @@ const initialUsers = [
   {
     id: "usr_001",
     account: "jane.doe",
-    sysid: "user_123",
+    sysid: 123,
     name: "Jane Doe",
     email: "jane.doe@company.com",
     role: "user",
@@ -153,7 +153,7 @@ const initialUsers = [
   {
     id: "usr_002",
     account: "john.admin",
-    sysid: "admin_001",
+    sysid: 1,
     name: "John Admin",
     email: "john.admin@company.com",
     role: "admin",
@@ -163,7 +163,7 @@ const initialUsers = [
   {
     id: "usr_003",
     account: "alice.wang",
-    sysid: "user_456",
+    sysid: 456,
     name: "Alice Wang",
     email: "alice.wang@company.com",
     role: "user",
@@ -173,7 +173,7 @@ const initialUsers = [
   {
     id: "usr_004",
     account: "sam.chen",
-    sysid: "user_789",
+    sysid: 789,
     name: "Sam Chen",
     email: "sam.chen@company.com",
     role: "user",
@@ -183,7 +183,7 @@ const initialUsers = [
   {
     id: "usr_005",
     account: "mike.li",
-    sysid: "user_999",
+    sysid: 999,
     name: "Mike Li",
     email: "mike.li@company.com",
     role: "user",
@@ -245,7 +245,7 @@ function validateApplication(payload, auth) {
     throw createError("VALIDATION_ERROR", "請填寫用途");
   }
 
-  const activeWhitelist = whitelists.find((item) => item.email === auth.email && item.status === "active");
+  const activeWhitelist = whitelists.find((item) => item.sysid === auth.sysid && item.status === "active");
   if (!activeWhitelist) {
     throw createError("APPLICANT_NOT_ELIGIBLE", "申請者不符合資格", 403);
   }
@@ -504,7 +504,7 @@ export const mockApiProvider = {
     }
 
     const items = users.filter((item) =>
-      [item.sysid, item.account, item.name, item.email].some((value) => value.toLowerCase().includes(q))
+      [item.sysid, item.account, item.name, item.email].some((value) => String(value).toLowerCase().includes(q))
     );
 
     return { items: items.map(mapUserForAdminPage) };
@@ -563,23 +563,23 @@ export const mockApiProvider = {
     await delay();
     ensureAdmin(auth);
 
-    const email = payload.email?.trim().toLowerCase();
-    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-      throw createError("VALIDATION_ERROR", "Email 格式不正確");
+    const sysid = Number(payload.sysid);
+    if (!Number.isInteger(sysid) || sysid <= 0) {
+      throw createError("VALIDATION_ERROR", "SysID 不可為空");
     }
 
-    if (whitelists.some((item) => item.email.toLowerCase() === email)) {
-      throw createError("WHITELIST_EMAIL_DUPLICATED", "Email 已存在於特殊人員名單");
+    if (whitelists.some((item) => item.sysid === sysid)) {
+      throw createError("WHITELIST_SYSID_DUPLICATED", "SysID 已存在於特殊人員名單");
     }
 
     const now = new Date().toISOString();
     const item = {
       id: `wl_${String(whitelists.length + 1).padStart(3, "0")}`,
-      email,
+      email: payload.email?.trim().toLowerCase() || "",
       account: payload.account || "",
       status: "active",
       remark: payload.remark?.trim() || "",
-      sysid: payload.sysid || "",
+      sysid,
       name: payload.name || "",
       created_at: now,
       updated_at: now
@@ -692,6 +692,11 @@ export const mockApiProvider = {
       revealed: firstRead && target.type === "api_key_issued",
       api_key_plaintext: firstRead && target.type === "api_key_issued" ? "AS-mockmockmockmockmockmockmockmo" : null
     };
+  },
+
+  async logout() {
+    await delay();
+    return { status: "ok" };
   },
 
   resetForTests() {

@@ -8,13 +8,15 @@ class AuthIdentity:
     name: str
     email: str
     department: str
-    sysid: str
+    sysid: int
 
 
 @dataclass(slots=True)
 class ApplicationCreateInput:
-    user_id: str
+    user_id: int
     identity: AuthIdentity
+    operator_identity: AuthIdentity
+    is_proxy_submission: bool
     application_date: date
     duration_months: int
     purpose: str
@@ -106,7 +108,8 @@ class ApiKeyAliasUpdateInput:
 @dataclass(slots=True)
 class WhitelistCreateInput:
     id: str
-    email: str
+    sysid: int
+    email: str | None
     created_by: str
     note: str | None = None
 

@@ -7,7 +7,7 @@ const userAuth = {
   name: "Jane Doe",
   email: "jane.doe@company.com",
   department: "Platform Engineering",
-  sysid: "user_123",
+  sysid: 123,
   role: "user"
 };
 
@@ -76,4 +76,18 @@ test("admin sees whitelist nav", () => {
   expect(screen.getByRole("link", { name: "特殊人員名單管理" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "管理者名單" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "管理者統計" })).toBeInTheDocument();
+});
+
+test("clicking logout icon triggers onLogout", () => {
+  const onLogout = vi.fn();
+  render(
+    <MemoryRouter>
+      <AppLayout auth={userAuth} onLogout={onLogout}>
+        <div>content</div>
+      </AppLayout>
+    </MemoryRouter>
+  );
+
+  fireEvent.click(screen.getByLabelText("登出"));
+  expect(onLogout).toHaveBeenCalledTimes(1);
 });

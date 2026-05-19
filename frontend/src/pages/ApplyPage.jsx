@@ -33,6 +33,7 @@ function toErrorMessage(error, t) {
   const map = {
     APPLICANT_NOT_ELIGIBLE: t("apply_error_not_eligible"),
     RESEARCH_LIST_SERVICE_UNAVAILABLE: t("apply_error_research_unavailable"),
+    DIRECTORY_SERVICE_UNAVAILABLE: t("apply_error_directory_unavailable"),
     INVALID_APPLICATION_DATE: t("apply_error_invalid_date"),
     INVALID_DURATION_MONTHS: t("apply_error_invalid_duration"),
     VALIDATION_ERROR: t("apply_error_validation")
@@ -67,6 +68,10 @@ export default function ApplyPage({ auth }) {
   const isZh = locale === "zh-TW";
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [form, setForm] = useState({ application_date: today, duration_months: 6, purpose: "" });
+  const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [targetIdentity, setTargetIdentity] = useState({
+    account: ""
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [issued, setIssued] = useState(null);
@@ -83,6 +88,9 @@ export default function ApplyPage({ auth }) {
   const onChange = (key) => (event) => {
     const value = key === "duration_months" ? Number(event.target.value) : event.target.value;
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+  const onTargetChange = (key) => (event) => {
+    setTargetIdentity((prev) => ({ ...prev, [key]: event.target.value }));
   };
 
   async function onSubmit(event) {
@@ -103,6 +111,12 @@ export default function ApplyPage({ auth }) {
       setError(t("apply_error_required_purpose"));
       return;
     }
+    if (auth.role === "admin" && proxyEnabled) {
+      if (!targetIdentity.account.trim()) {
+        setError(t("apply_error_required_proxy_identity"));
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       const payload = {
@@ -110,6 +124,11 @@ export default function ApplyPage({ auth }) {
         duration_months: form.duration_months,
         purpose: form.purpose
       };
+      if (auth.role === "admin" && proxyEnabled) {
+        payload.target_identity = {
+          account: targetIdentity.account.trim()
+        };
+      }
       const response = await apiClient.createApplication(payload, auth);
       setIssued(response);
       setForm((prev) => ({ ...prev, purpose: "" }));
@@ -171,10 +190,39 @@ export default function ApplyPage({ auth }) {
           <CardContent>
             <Box component="form" onSubmit={onSubmit}>
               <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isZh ? "帳號" : "Account"} value={auth.account} InputProps={{ readOnly: true }} /></Grid>
-                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isZh ? "姓名" : "Name"} value={auth.name} InputProps={{ readOnly: true }} /></Grid>
-                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Email" value={auth.email} InputProps={{ readOnly: true }} /></Grid>
-                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isZh ? "單位" : "Department"} value={auth.department} InputProps={{ readOnly: true }} /></Grid>
+                {auth.role === "admin" ? (
+                  <Grid size={12}>
+                    <FormControl>
+                      <FormLabel id="proxy-apply-label">{t("apply_proxy_mode")}</FormLabel>
+                      <RadioGroup
+                        row
+                        aria-labelledby="proxy-apply-label"
+                        value={proxyEnabled ? "proxy" : "self"}
+                        onChange={(event) => setProxyEnabled(event.target.value === "proxy")}
+                      >
+                        <FormControlLabel value="self" control={<Radio />} label={t("apply_proxy_self")} />
+                        <FormControlLabel value="proxy" control={<Radio />} label={t("apply_proxy_for_other")} />
+                      </RadioGroup>
+                    </FormControl>
+                  </Grid>
+                ) : null}
+                {auth.role === "admin" && proxyEnabled ? (
+                  <Grid size={12}>
+                    <Alert severity="info">{t("apply_proxy_account_lookup_hint")}</Alert>
+                  </Grid>
+                ) : null}
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <TextField fullWidth label={isZh ? "帳號" : "Account"} value={auth.role === "admin" && proxyEnabled ? targetIdentity.account : auth.account} onChange={auth.role === "admin" && proxyEnabled ? onTargetChange("account") : undefined} InputProps={{ readOnly: !(auth.role === "admin" && proxyEnabled) }} />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <TextField fullWidth label={isZh ? "姓名" : "Name"} value={auth.name} InputProps={{ readOnly: true }} />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <TextField fullWidth label="Email" value={auth.email} InputProps={{ readOnly: true }} />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <TextField fullWidth label={isZh ? "單位" : "Department"} value={auth.department} InputProps={{ readOnly: true }} />
+                </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <DatePicker
                     label={isZh ? "申請日期" : "Application Date"}

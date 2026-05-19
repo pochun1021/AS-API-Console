@@ -5,7 +5,7 @@ function buildHeaders(auth) {
     "x-name": auth.name,
     "x-email": auth.email,
     "x-department": auth.department,
-    "x-sysid": auth.sysid,
+    "x-sysid": String(auth.sysid),
     "x-role": auth.role || "user"
   };
 }
@@ -24,9 +24,10 @@ function mapErrorPayload(status, body) {
 }
 
 async function request(path, { method = "GET", auth, body } = {}) {
+  const headers = auth ? buildHeaders(auth) : { "Content-Type": "application/json" };
   const response = await fetch(path, {
     method,
-    headers: buildHeaders(auth),
+    headers,
     body: body ? JSON.stringify(body) : undefined
   });
 
@@ -140,7 +141,7 @@ export const httpApiProvider = {
     return request("/api/v1/whitelists", {
       method: "POST",
       auth,
-      body: { email: payload.email, note: payload.remark || null }
+      body: { sysid: payload.sysid, note: payload.remark || null }
     }).then(mapWhitelistItem);
   },
 
@@ -197,6 +198,10 @@ export const httpApiProvider = {
 
   markNotificationRead(id, auth) {
     return request(`/api/v1/notifications/${id}/read`, { method: "PATCH", auth });
+  },
+
+  logout() {
+    return request("/logout", { method: "POST" });
   },
 
 };

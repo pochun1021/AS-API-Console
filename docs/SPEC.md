@@ -10,7 +10,7 @@
 - 撤銷
 - 到期失效
 
-重點是先提供最小可用流程，並保留後續 SSO/OAuth、審核流程與安全等級擴充能力。
+重點是先提供最小可用流程，並保留後續審核流程與安全等級擴充能力。
 
 ## 資料儲存策略
 - MVP 階段採用 MariaDB 作為主要資料庫。
@@ -21,8 +21,8 @@
 
 ## 使用者流程
 1. 使用者透過 SSO/OAuth 登入時，系統先檢查進入資格：優先查外部研究人員名單（以職稱代碼判斷），未命中再檢查本系統特殊人員名單（原白名單，僅 `active` 可通過）。
-2. 通過進入資格後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`。
-3. 使用者填寫姓名、Email、單位、申請日期、用途與 API 生效時長。
+2. 通過進入資格後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`（對應 OAuth claims：`cn`、`chName`、`email`、`instCode`、`sysId`）。
+3. 一般使用者填寫申請日期、用途與 API 生效時長；管理者可選擇代他人送出申請，僅需填寫目標 `account`，其餘身份欄位由系統查詢補齊。
 4. 送出申請前再次檢查資格：優先查外部研究人員名單（職稱代碼），未命中再檢查特殊人員名單（`active`）。
 5. 資格檢查通過後系統建立 pending 申請，待管理者審理選擇核發模式後立即補發 API Key。
 5-1. 建立 pending 申請後，系統需寄送 Email 給所有 `active` 管理者（通知有新申請待審）與申請者本人（通知已收到申請、請等待配發）。
@@ -38,15 +38,18 @@
   - `name`（必填，唯讀，自 SSO/OAuth 登入帶入）
   - `email`（必填，唯讀，自 SSO/OAuth 登入帶入）
   - `department`（必填，唯讀，自 SSO/OAuth 登入帶入）
-  - `sysid`（必填，唯讀，自 SSO/OAuth 登入帶入）
+  - `sysid`（必填，唯讀，自 SSO/OAuth 登入帶入；純數字）
   - `application_date`（必填，使用者可選）
   - `duration_months`（必填，選單：`1|6|12`）
   - `purpose`（必填）
+  - `target_identity`（選填；僅 `admin` 可傳，欄位：`account`）
 - 驗證：
   - `email` 格式檢查
+  - `sysid` 必須為純數字（整數語意）
   - 申請資格需通過：研究人員名單職稱代碼命中，或特殊人員名單為 `active`
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
   - `duration_months` 僅允許 `1|6|12`
+  - `admin` 代申請時，`target_identity.account` 必填；`name`、`email`、`department`、`sysid` 由後端目錄查詢補齊
   - 限制策略由管理者透過模板資源維護；一般使用者申請時不可提交策略細節
 - 成功送出後顯示一次性 key，並提供複製操作；複製成功需有明確視覺回饋（check icon 後恢復）。
 - 複製流程以 Clipboard API 為唯一可驗證複製路徑；若不可用或複製失敗，需提示使用者手動複製。
@@ -123,6 +126,7 @@
 ## 功能需求
 ### Must Have（MVP）
 - 權限模型僅區分 `user` 與 `admin`
+- 提供 OAuth/SSO 登入入口（`GET /login`、`GET /auth/callback`）並建立 session auth context
 - 僅符合資格的人員可進入系統與申請 API Key（研究人員名單職稱代碼命中，或特殊人員名單 `active` 命中）
 - 特殊人員名單管理能力（新增、查詢、停用/啟用）
 - 研究人員名單由外部服務提供並以職稱代碼判斷
@@ -142,7 +146,6 @@
 - 管理者可啟用/停用其他使用者的管理者身分
 
 ### Nice to Have（後續）
-- OAuth/SSO 串接優化（完善 `sysid` 對接與身分映射）
 - 多安全等級與長度策略（隨機段長度 24-30 碼可配置）
 - 使用量監控與配額管理
 
@@ -157,7 +160,7 @@
 - `email` (string, required, unique, lowercase)
 - `name` (string, required)
 - `department` (string, nullable)
-- `sysid` (string, required)
+- `sysid` (integer, required)
 - `status` (enum: `active` | `inactive`)
 - `created_by` (string)
 - `updated_by` (string)
@@ -166,7 +169,8 @@
 
 ### Entity: `api_key_whitelist`
 - `id` (string/uuid)
-- `email` (string, required, unique, lowercase)
+- `sysid` (integer, required, unique)
+- `email` (string, nullable, lowercase；僅供顯示，不作放行比對)
 - `status` (enum: `active` | `inactive`)
 - `note` (string, nullable)
 - `created_by` (string)
@@ -177,7 +181,7 @@
 ### Entity: `api_key_applications`
 - `id` (string/uuid)
 - `account` (string, required)
-- `user_id` (string, required；存 auth `sysid`，不再綁定 `users` FK)
+- `user_id` (integer, required；存 auth `sysid`，不再綁定 `users` FK)
 - `name` (string, required)
 - `email` (string, required)
 - `department` (string, required)
@@ -190,7 +194,13 @@
 - `issued_at` (datetime)
 - `expires_at` (datetime)
 - `revoked_at` (datetime, nullable)
-- `sysid` (string, required, SSO/OAuth 主體唯一識別碼)
+- `sysid` (integer, required, SSO/OAuth 主體唯一識別碼)
+- `is_proxy_submission` (bool, required；是否為管理者代申請)
+- `operator_account` (string, required；實際操作者帳號)
+- `operator_name` (string, required；實際操作者姓名)
+- `operator_email` (string, required；實際操作者 email)
+- `operator_department` (string, required；實際操作者單位)
+- `operator_sysid` (integer, required；實際操作者 sysid)
 - `created_at` (datetime)
 - `updated_at` (datetime)
 
@@ -209,7 +219,7 @@
 
 ### Entity: `notifications`
 - `id` (string/uuid)
-- `sysid` (string, required；通知收件者，對應 auth context 的 `sysid`)
+- `sysid` (integer, required；通知收件者，對應 auth context 的 `sysid`)
 - `type` (string, required)
 - `title` (string, required)
 - `message` (string, required)
@@ -219,6 +229,22 @@
 - `email_error` (string, nullable)
 - `created_at` (datetime)
 - `read_at` (datetime, nullable)
+
+### Entity: `auth_audit_logs`
+- `id` (string/uuid)
+- `provider` (string, required)
+- `request_id` (string, required)
+- `result` (enum: `success` | `failure`)
+- `error_code` (string, nullable)
+- `account` (string, nullable)
+- `name` (string, nullable)
+- `email` (string, nullable)
+- `department` (string, nullable)
+- `sysid` (integer, nullable)
+- `role` (string, nullable；本期固定 `user`)
+- `detail` (string, nullable)
+- `created_at` (datetime)
+- 不得記錄 access token、refresh token、password、client secret 等敏感憑證
 
 ## 權限規則（MVP）
 - `user`：可使用 `GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`POST /api/v1/api-keys/{id}/revoke`，但僅可查詢/停用本人 `active` key。
@@ -230,18 +256,39 @@
 ## API 草案
 Base path：`/api/v1`
 
+### Auth Login Entry
+- `GET /login`
+  - 用途：導向 OAuth provider auth endpoint。
+  - 規則：建立 request_id（state）並寫入 session，用於 callback 對帳。
+- `GET /auth/callback`
+  - 用途：接收 provider callback，交換 access token，取得 basic identity claims，建立本機 session auth context。
+  - 規則：
+    - OAuth claims 來源：`sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
+    - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
+    - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
+    - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
+    - 登入放行規則：`tCode` 以 `B` 開頭可直接放行；否則需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.sysid`）
+    - 成功與失敗皆須寫入 `auth_audit_logs`
+    - 嚴禁落地 token/secret 類敏感資訊
+
 ### 1) 申請並核發 API Key
 - `POST /api/v1/api-keys/applications`
 - 前置條件：
   - 請求必須為已登入使用者（`account`、`name`、`email`、`department`、`sysid` 由 auth context 提供，並以 auth context 為準）
+  - `sysid` 必須為純數字；若為非數字，回傳 `VALIDATION_ERROR`。
+  - `user` 僅能以 auth context 申請本人；`admin` 可選擇代他人申請（透過 `target_identity`）
   - 申請資格必須通過：研究人員名單職稱代碼命中，或特殊人員名單 `active` 命中
+  - `admin` 代申請時，後端需先依 `target_identity.account` 查人員目錄取得唯一身份，再以該身份的 `email/sysid` 檢查申請資格
   - 若研究人員名單服務失敗（timeout/5xx），本 API 回傳拒絕，不得建立申請資料
 - Request：
 ```json
 {
   "application_date": "2026-05-04",
   "duration_months": 6,
-  "purpose": "integration for internal service"
+  "purpose": "integration for internal service",
+  "target_identity": {
+    "account": "target.user"
+  }
 }
 ```
 - Response（201）：
@@ -406,7 +453,7 @@ Base path：`/api/v1`
 ```
 
 ### 5) 特殊人員名單管理 API（沿用受保護路徑）
-- `POST /api/v1/whitelists`：新增特殊人員名單 email
+- `POST /api/v1/whitelists`：新增特殊人員名單 sysid
 - `GET /api/v1/whitelists`：查詢特殊人員名單列表
 - `PATCH /api/v1/whitelists/{id}`：更新狀態（`active/inactive`）與備註
 - 規則：僅 `admin` 可使用。
@@ -416,20 +463,23 @@ Base path：`/api/v1`
 - 用途：供管理者查詢既有管理者名單（`admins`）資料。
 - 規則：僅 `admin` 可使用；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`status`。
 
-### 5-2) 目前使用者語言偏好 API（暫停）
+### 5-2) 目前使用者語言偏好 API
 - `GET /api/v1/users/preferences/locale`
-  - 本階段停用，回傳 `410 FEATURE_DISABLED`
+  - 回傳格式：`{ "preferred_locale": "zh-TW" | "en" | null }`
 - `PATCH /api/v1/users/preferences/locale`
-  - 本階段停用，回傳 `410 FEATURE_DISABLED`
+  - Request body：`{ "preferred_locale": "zh-TW" | "en" }`
+  - 僅允許 `zh-TW|en`，其餘值回傳 `422 VALIDATION_ERROR`
 
-### 前端語言規則（MVP，停用後降級）
+### 前端語言規則（MVP）
 - 僅支援 `zh-TW`、`en`。
-- 啟動語言優先序：`系統語言判定 > fallback en`（本階段不寫回 DB）。
+- 啟動語言優先序：
+  - 若 DB 已有偏好（`preferred_locale`），直接套用 DB。
+  - 若 DB 無偏好（`null`），依系統語言規則判定，並立即寫回 DB 作為初始值。
 - 系統語言判定規則：
   - `navigator.language` / `navigator.languages` 命中 `zh*` -> `zh-TW`
   - 命中 `en*` -> `en`
   - 其他語系 -> `en`
-- 手動切換語言後，需更新 UI 文案（本階段不寫回 `preferred_locale`）。
+- 手動切換語言後，需更新 UI 文案並寫回 `preferred_locale`。
 - DataGrid locale 文案需跟隨語言切換。
 
 ### 6) 管理者啟用/停用 API
@@ -466,7 +516,8 @@ Base path：`/api/v1`
 - `MISSING_RATE_LIMIT_FIELDS`
 - `APPLICANT_NOT_ELIGIBLE`
 - `RESEARCH_LIST_SERVICE_UNAVAILABLE`
-- `WHITELIST_EMAIL_DUPLICATED`
+- `WHITELIST_SYSID_DUPLICATED`
+- `LOGIN_NOT_ELIGIBLE`
 - `USER_NOT_FOUND`
 - `KEY_NOT_OWNED_BY_USER`
 - `KEY_NOT_ACTIVE`
@@ -497,6 +548,7 @@ Base path：`/api/v1`
 15. `user` 呼叫 `GET /api/v1/api-keys` 時僅可看到本人資料；`admin` 可看到全域資料。
 16. `user` 查詢或停用非本人 key 時，API 回傳 `403`（或既有錯誤碼）。
 17. 非 `admin` 使用特殊人員名單管理 API（`/api/v1/whitelists*`）時，回傳 `403`。
+17-1. 特殊人員名單比對主鍵為 `sysid`，新增重複 `sysid` 時需回傳 `409` 與 `WHITELIST_SYSID_DUPLICATED`。
 18. 管理者可成功啟用/停用其他使用者的管理者身分（`/api/v1/admins/{id}/enable|disable`）。
 18-1. 管理者名單需顯示狀態欄位；停用後該管理者仍保留於名單，狀態改為 `inactive`。
 19. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
@@ -518,29 +570,41 @@ Base path：`/api/v1`
 35. 系統語言 `en-US` 首次進站時（DB 無偏好）需顯示英文。
 36. 系統語言非 `zh*|en*`（例如 `ja-JP`）首次進站時（DB 無偏好）需 fallback 顯示英文。
 37. 手動切換語言後，重新登入需沿用 DB 偏好。
-38. `GET/PATCH /api/v1/users/preferences/locale` 於本階段需回傳 `410` 與 `FEATURE_DISABLED`。
-39. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
-40. `GET /api/v1/api-keys` 與 `GET /api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳 `for_{owner_account}`。
-41. `admin` 可透過 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`。
-42. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
-43. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
-44. 限制策略設定僅 `admin` 可讀取與更新（`/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。
-45. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
-46. Provider timeout/5xx 或金鑰條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
-47. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
-48. `GET/PATCH /api/v1/notifications*` 需可用，且僅可查詢/操作本人 `sysid` 的通知資料。
-49. `POST /api/v1/api-keys/applications` 成功建立 pending 後，需寄送 Email 給所有 `active` 管理者與申請者本人。
-50. 第 49 項通知信內容需中英並列（中文在前、英文在後）。
-51. 第 49 項若寄信失敗，`POST /api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
-52. `POST /api/v1/api-keys/applications/{id}/issue` 成功配發後，需寄送「已配發」Email 給申請者本人。
-53. 第 52 項若寄信失敗，`issue` 仍需維持 `issued` 且回傳 `email_warning`。
-54. 當配發模式為 `local` 時，`issue` 需可在不連線外部 provider 的情況下成功 `issued`。
-55. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
-56. 第 52 項通知信不得包含 `Application ID`。
-57. `PATCH /api/v1/notifications/{id}/read` 僅通知本人可操作；即使為 `admin` 也不得代替他人已讀。
-58. `api_key_issued` 通知首次由本人標記已讀時，API 可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
-59. 通知中心文案需支援 `zh-TW|en` 切換，且僅單筆 `PATCH /api/v1/notifications/{id}/read` 可用於已讀操作。
-60. 通知中心金鑰 Dialog 提示文案需依目前語系顯示單一語言，不得中英並列。
+38. `GET /api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 成功後可立即由 `GET` 讀回。
+39. `PATCH /api/v1/users/preferences/locale` 僅允許 `zh-TW|en`；非法值（如 `ja-JP`）需回傳 `422` 與 `VALIDATION_ERROR`。
+40. 首次登入 DB 無偏好時，前端需依系統語言規則決定語系並觸發一次寫回。
+41. 手動切換語言後，重新登入需沿用 DB 偏好。
+42. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
+43. `GET /api/v1/api-keys` 與 `GET /api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳 `for_{owner_account}`。
+44. `admin` 可透過 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`。
+45. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
+46. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
+47. 限制策略設定僅 `admin` 可讀取與更新（`/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。
+48. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
+49. Provider timeout/5xx 或金鑰條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
+50. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
+51. `GET/PATCH /api/v1/notifications*` 需可用，且僅可查詢/操作本人 `sysid` 的通知資料。
+52. `POST /api/v1/api-keys/applications` 成功建立 pending 後，需寄送 Email 給所有 `active` 管理者與申請者本人。
+53. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
+54. 第 52 項若寄信失敗，`POST /api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
+55. `POST /api/v1/api-keys/applications/{id}/issue` 成功配發後，需寄送「已配發」Email 給申請者本人。
+56. 第 55 項若寄信失敗，`issue` 仍需維持 `issued` 且回傳 `email_warning`。
+57. 當配發模式為 `local` 時，`issue` 需可在不連線外部 provider 的情況下成功 `issued`。
+58. 第 55 項通知信內容需中英並列（中文在前、英文在後）。
+59. 第 55 項通知信不得包含 `Application ID`。
+60. `PATCH /api/v1/notifications/{id}/read` 僅通知本人可操作；即使為 `admin` 也不得代替他人已讀。
+61. `api_key_issued` 通知首次由本人標記已讀時，API 可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
+62. 通知中心文案需支援 `zh-TW|en` 切換，且僅單筆 `PATCH /api/v1/notifications/{id}/read` 可用於已讀操作。
+63. 通知中心金鑰 Dialog 提示文案需依目前語系顯示單一語言，不得中英並列。
+64. `GET /login` 需可導向 OAuth provider，並附帶 state/request_id。
+65. `GET /auth/callback` 成功時需建立 session auth context 並 redirect `/`。
+66. `GET /auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失、state mismatch）需回錯，且寫入 failure audit。
+67. OAuth 成功登入寫入的角色需固定為 `user`，不得由 OAuth payload 直接升權為 `admin`。
+68. `auth_audit_logs` 不得包含 access token/refresh token/password/client secret。
+69. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。
+70. `tCode` 以 `B` 開頭者可登入；非 `B*` 者需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.sysid`），否則回 `403 LOGIN_NOT_ELIGIBLE`。
+71. `admin` 可於 `POST /api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
+72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若目錄服務 timeout/5xx，API 回傳 `503 DIRECTORY_SERVICE_UNAVAILABLE`。
 
 ## Roadmap
 ### Phase 1：Foundation

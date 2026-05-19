@@ -45,7 +45,7 @@ def _build_admins(now: datetime) -> list[Admin]:
             email="admin.seed@example.com",
             name="Admin Seed",
             department="Security",
-            sysid="admin-seed-001",
+            sysid=900001,
             status="active",
             created_by="seed_script",
             updated_by="seed_script",
@@ -58,7 +58,7 @@ def _build_admins(now: datetime) -> list[Admin]:
             email="admin.inactive.seed@example.com",
             name="Admin Inactive Seed",
             department="Security",
-            sysid="admin-seed-002",
+            sysid=900002,
             status="inactive",
             created_by="seed_script",
             updated_by="seed_script",
@@ -74,6 +74,7 @@ def _build_whitelists(now: datetime) -> list[ApiKeyWhitelist]:
         whitelists.append(
             ApiKeyWhitelist(
                 id=str(uuid.uuid4()),
+                sysid=910000 + idx,
                 email=f"user{idx}@example.com",
                 status="active",
                 note="seed active",
@@ -87,6 +88,7 @@ def _build_whitelists(now: datetime) -> list[ApiKeyWhitelist]:
         whitelists.append(
             ApiKeyWhitelist(
                 id=str(uuid.uuid4()),
+                sysid=910000 + idx,
                 email=f"user{idx}@example.com",
                 status="inactive",
                 note="seed inactive",
@@ -120,7 +122,7 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
 
     for idx, status in enumerate(statuses, start=1):
         user_no = ((idx - 1) % 6) + 1
-        user_id = f"user-seed-{user_no:03d}"
+        user_id = 920000 + user_no
         account = f"user{user_no}"
         email = f"user{user_no}@example.com"
         issued_at = now - timedelta(days=idx * 7)
@@ -170,7 +172,7 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
 
 
 def _reset_seed_scope(session: Session) -> None:
-    seed_user_ids = [f"user-seed-{idx:03d}" for idx in range(1, 7)] + ["admin-seed-001", "admin-seed-002"]
+    seed_user_ids = [920000 + idx for idx in range(1, 7)] + [900001, 900002]
     app_ids = [row[0] for row in session.query(ApiKeyApplication.id).filter(ApiKeyApplication.user_id.in_(seed_user_ids)).all()]
     if app_ids:
         session.execute(delete(ApiKey).where(ApiKey.application_id.in_(app_ids)))
