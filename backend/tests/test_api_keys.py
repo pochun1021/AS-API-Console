@@ -181,12 +181,12 @@ def test_admin_proxy_application_target_account_not_unique(client, admin_headers
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
-def test_application_immediate_issue_does_not_send_mail(client, admin_headers, user_headers, monkeypatch):
+def test_application_immediate_issue_sends_mail(client, admin_headers, user_headers, monkeypatch):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
-    calls: list[str] = []
+    calls: list[dict] = []
 
     async def _fake_applicant_mail(self, **kwargs):
-        calls.append("applicant")
+        calls.append(kwargs)
 
     monkeypatch.setattr(
         "app.services.mail_service.MailService.send_application_received_to_applicant",
@@ -200,7 +200,28 @@ def test_application_immediate_issue_does_not_send_mail(client, admin_headers, u
     )
     assert resp.status_code == 201
     assert resp.json()["issuance_status"] == "issued"
-    assert calls == []
+    assert len(calls) == 1
+    assert calls[0]["to_email"] == user_headers["x-email"]
+
+
+def test_application_mail_failure_does_not_block_success(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    async def _raise_mail_error(self, **kwargs):
+        raise RuntimeError("smtp unavailable")
+
+    monkeypatch.setattr(
+        "app.services.mail_service.MailService.send_application_received_to_applicant",
+        _raise_mail_error,
+    )
+
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify failure"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["issuance_status"] == "issued"
 
 
 def test_application_provider_timeout_returns_503(client, admin_headers, user_headers, monkeypatch):

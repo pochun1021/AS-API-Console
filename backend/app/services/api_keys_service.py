@@ -158,6 +158,18 @@ class ApiKeysService:
 
         self.session.add(application)
         self.session.commit()
+        if application.issuance_status == "issued":
+            try:
+                run_async(
+                    self.mail_service.send_application_received_to_applicant(
+                        to_email=application.email,
+                        owner_name=application.name,
+                        application_id=application.id,
+                        app_domain=self.settings.app_domain,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logging.exception("failed to send application received email to applicant")
 
         return {
             "application": {
