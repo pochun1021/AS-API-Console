@@ -26,7 +26,7 @@ beforeEach(() => {
   mockApiProvider.resetForTests();
 });
 
-test("shows revoke icon only for active rows", async () => {
+test("shows revoke button only for active rows", async () => {
   render(
     <MemoryRouter>
       <MyApiKeysPage auth={auth} />
@@ -36,6 +36,8 @@ test("shows revoke icon only for active rows", async () => {
   expect(await screen.findByText("API Keys")).toBeInTheDocument();
   const revokeButtons = await screen.findAllByRole("button", { name: "停用金鑰" });
   expect(revokeButtons).toHaveLength(1);
+  const renewButtons = await screen.findAllByRole("button", { name: "更新金鑰" });
+  expect(renewButtons).toHaveLength(1);
   expect(await screen.findAllByRole("button", { name: "查看詳情" })).toHaveLength(2);
   expect(screen.queryByRole("columnheader", { name: "建立時間" })).not.toBeInTheDocument();
 });
@@ -103,4 +105,23 @@ test("admin can edit key alias in list dialog", async () => {
   await user.click(screen.getByRole("button", { name: "儲存" }));
   expect(await screen.findByText("Key Alias 已更新。")).toBeInTheDocument();
   expect(await screen.findByText("service_ops")).toBeInTheDocument();
+});
+
+test("user renew hides old key from list", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={auth} />
+    </MemoryRouter>
+  );
+
+  expect(await screen.findByText("AS-...mn56")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "更新金鑰" }));
+  expect(await screen.findByText("確認更新")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "確認" }));
+  expect(await screen.findByText("金鑰已更新。")).toBeInTheDocument();
+  expect(await screen.findByText("金鑰已更新")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.queryByText("AS-...mn56")).not.toBeInTheDocument();
+  });
 });

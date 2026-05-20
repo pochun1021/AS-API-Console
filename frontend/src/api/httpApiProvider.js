@@ -90,6 +90,10 @@ export const httpApiProvider = {
     return request(`/api/v1/api-keys/${id}/revoke`, { method: "POST", auth });
   },
 
+  renewApiKey(id, auth) {
+    return request(`/api/v1/api-keys/${id}/renew`, { method: "POST", auth });
+  },
+
   listApiKeyUserStatistics(params, auth) {
     const query = new URLSearchParams();
     if (params.page) query.set("page", String(params.page));
@@ -183,32 +187,11 @@ export const httpApiProvider = {
     return request("/api/v1/api-keys/applications/pending", { auth });
   },
 
-  updateApplicationIssuanceMode(id, mode, auth) {
-    return request(`/api/v1/api-keys/applications/${id}/issuance-mode`, {
-      method: "PATCH",
-      auth,
-      body: { mode }
-    });
-  },
-
   issueApplication(id, auth) {
     return request(`/api/v1/api-keys/applications/${id}/issue`, {
       method: "POST",
       auth
     });
-  },
-
-  listNotifications(params, auth) {
-    const query = new URLSearchParams();
-    if (params?.page) query.set("page", String(params.page));
-    if (params?.page_size) query.set("page_size", String(params.page_size));
-    if (typeof params?.is_read === "boolean") query.set("is_read", String(params.is_read));
-    const suffix = query.toString() ? `?${query.toString()}` : "";
-    return request(`/api/v1/notifications${suffix}`, { auth });
-  },
-
-  markNotificationRead(id, auth) {
-    return request(`/api/v1/notifications/${id}/read`, { method: "PATCH", auth });
   },
 
   logout() {

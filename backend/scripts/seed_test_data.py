@@ -131,20 +131,12 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
         application_id = str(uuid.uuid4())
         sysid = user_id
         revoked_at = issued_at + timedelta(days=3) if status == "revoked" else None
-        # Keep seed rows aligned with current non-null application schema.
-        selected_mode = "budget" if idx % 2 == 0 else "rate_limit"
-        if selected_mode == "budget":
-            limit_strategy = "budget"
-            max_budget = "1000"
-            budget_duration = "monthly"
-            tpm_limit = None
-            rpm_limit = None
-        else:
-            limit_strategy = "rate_limit"
-            max_budget = None
-            budget_duration = None
-            tpm_limit = 10000
-            rpm_limit = 120
+        # Keep seed rows aligned with combined strategy policy.
+        limit_strategy = "budget+rate_limit"
+        max_budget = "1000"
+        budget_duration = "monthly"
+        tpm_limit = 10000
+        rpm_limit = 120
 
         application = ApiKeyApplication(
             id=application_id,
@@ -162,7 +154,6 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
             tpm_limit=tpm_limit,
             rpm_limit=rpm_limit,
             issuance_status="issued",
-            selected_issuance_mode=selected_mode,
             pending_issued_at=None,
             status=status,
             issued_at=issued_at,

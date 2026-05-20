@@ -25,45 +25,8 @@ class ApplicationSummary(BaseModel):
 
 class ApplicationCreateResponse(BaseModel):
     application: ApplicationSummary
-    issuance_status: Literal["issued", "pending"]
+    issuance_status: Literal["issued"]
     api_key_plaintext: str | None = None
-    pending_reason: str | None = None
-
-
-class PendingApplicationItemResponse(BaseModel):
-    id: str
-    account: str
-    name: str
-    email: str
-    department: str
-    purpose: str
-    application_date: date
-    duration_months: int
-    selected_issuance_mode: Literal["budget", "rate_limit"] | None = None
-    created_at: datetime
-
-
-class PendingApplicationListResponse(BaseModel):
-    items: list[PendingApplicationItemResponse]
-    total: int
-
-
-class PendingApplicationModeUpdateRequest(BaseModel):
-    mode: Literal["budget", "rate_limit"]
-
-
-class PendingApplicationModeUpdateResponse(BaseModel):
-    id: str
-    selected_issuance_mode: Literal["budget", "rate_limit"]
-    issuance_status: Literal["pending", "issued"]
-
-
-class PendingApplicationIssueResponse(BaseModel):
-    application: ApplicationSummary
-    issuance_status: Literal["pending", "issued"]
-    api_key_plaintext: str | None = None
-    pending_reason: str | None = None
-    email_warning: str | None = None
 
 
 class ApiKeyListItemResponse(BaseModel):
@@ -103,6 +66,16 @@ class ApiKeyDetailResponse(BaseModel):
 class RevokeResponse(BaseModel):
     id: str
     status: str
+
+
+class RenewResponse(BaseModel):
+    id: str
+    status: str
+    expires_at: datetime
+    issuance_status: Literal["issued"]
+    renewed_from_key_id: str
+    api_key_plaintext: str | None = None
+    email_warning: str | None = None
 
 
 class ApiKeyRevealResponse(BaseModel):

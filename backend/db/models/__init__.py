@@ -3,7 +3,6 @@ from db.models.admins import Admin
 from db.models.applications import ApiKeyApplication
 from db.models.auth_audit_logs import AuthAuditLog
 from db.models.limit_strategy_config import LimitStrategyConfig
-from db.models.notifications import Notification
 from db.models.operation_audit_logs import OperationAuditLog
 from db.models.user_preferences import UserPreference
 from db.models.whitelist import ApiKeyWhitelist
@@ -16,6 +15,5 @@ __all__ = [
     "AuthAuditLog",
     "OperationAuditLog",
     "LimitStrategyConfig",
-    "Notification",
     "UserPreference",
 ]

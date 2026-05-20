@@ -73,7 +73,6 @@ def test_revoke_logs_success_and_failure(client, admin_headers):
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit"},
     )
     app_id = create_resp.json()["application"]["id"]
-    client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
     client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
     key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
 
@@ -87,6 +86,35 @@ def test_revoke_logs_success_and_failure(client, admin_headers):
     by_request = {row.request_id: row for row in logs}
     failure_row = by_request["req-revoke-fail"]
     success_row = by_request["req-revoke-ok"]
+    assert failure_row.result == "failure"
+    assert failure_row.error_code == "KEY_NOT_OWNED_BY_USER"
+    assert success_row.result == "success"
+
+
+def test_renew_logs_success_and_failure(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
+    _create_whitelist(client, admin_headers, 2001)
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit renew"},
+    )
+    app_id = create_resp.json()["application"]["id"]
+    client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
+    key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
+    client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user1)
+
+    fail = client.post(f"/api/v1/api-keys/{key_id}/renew", headers={**user2, "x-request-id": "req-renew-fail"})
+    assert fail.status_code == 403
+    ok = client.post(f"/api/v1/api-keys/{key_id}/renew", headers={**user1, "x-request-id": "req-renew-ok"})
+    assert ok.status_code == 200
+
+    logs = _query_logs("api_key", "renew")
+    assert len(logs) == 2
+    by_request = {row.request_id: row for row in logs}
+    failure_row = by_request["req-renew-fail"]
+    success_row = by_request["req-renew-ok"]
     assert failure_row.result == "failure"
     assert failure_row.error_code == "KEY_NOT_OWNED_BY_USER"
     assert success_row.result == "success"

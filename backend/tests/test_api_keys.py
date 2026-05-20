@@ -20,21 +20,8 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     )
     assert create_resp.status_code == 201
     body = create_resp.json()
-    assert body["issuance_status"] == "pending"
-    assert body["api_key_plaintext"] is None
-    assert body["pending_reason"] == "awaiting_admin_mode_selection"
-    app_id = body["application"]["id"]
-
-    mode_resp = client.patch(
-        f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
-        headers=admin_headers,
-        json={"mode": "budget"},
-    )
-    assert mode_resp.status_code == 200
-
-    issue_resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
-    assert issue_resp.status_code == 200
-    assert issue_resp.json()["api_key_plaintext"].startswith("AS-")
+    assert body["issuance_status"] == "issued"
+    assert body["api_key_plaintext"].startswith("AS-")
 
     list_resp = client.get("/api/v1/api-keys", headers=user_headers)
     assert list_resp.status_code == 200
@@ -87,12 +74,7 @@ def test_admin_can_submit_proxy_application_for_target_user(client, admin_header
         },
     )
     assert resp.status_code == 201
-    app_id = resp.json()["application"]["id"]
-
-    pending = client.get("/api/v1/api-keys/applications/pending", headers=admin_headers)
-    item = next(row for row in pending.json()["items"] if row["id"] == app_id)
-    assert item["account"] == "target.user"
-    assert item["email"] == "target.user@example.com"
+    assert resp.json()["application"]["account"] == "target.user"
 
 
 def test_admin_proxy_application_validates_required_target_identity_fields(client, admin_headers):
@@ -199,20 +181,13 @@ def test_admin_proxy_application_target_account_not_unique(client, admin_headers
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
-def test_application_sends_emails_to_admins_and_applicant(client, admin_headers, user_headers, monkeypatch):
+def test_application_immediate_issue_sends_mail(client, admin_headers, user_headers, monkeypatch):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
-    calls: dict[str, list] = {"admins": [], "applicant": []}
-
-    async def _fake_admin_mail(self, **kwargs):
-        calls["admins"].append(kwargs)
+    calls: list[dict] = []
 
     async def _fake_applicant_mail(self, **kwargs):
-        calls["applicant"].append(kwargs)
+        calls.append(kwargs)
 
-    monkeypatch.setattr(
-        "app.services.mail_service.MailService.send_application_received_to_admins",
-        _fake_admin_mail,
-    )
     monkeypatch.setattr(
         "app.services.mail_service.MailService.send_application_received_to_applicant",
         _fake_applicant_mail,
@@ -224,27 +199,20 @@ def test_application_sends_emails_to_admins_and_applicant(client, admin_headers,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify"},
     )
     assert resp.status_code == 201
-    assert len(calls["admins"]) == 1
-    assert len(calls["applicant"]) == 1
-    assert user_headers["x-email"] == calls["applicant"][0]["to_email"]
+    assert resp.json()["issuance_status"] == "issued"
+    assert len(calls) == 1
+    assert calls[0]["to_email"] == user_headers["x-email"]
 
 
-def test_application_email_failure_does_not_block_creation(client, admin_headers, user_headers, monkeypatch):
+def test_application_mail_failure_does_not_block_success(client, admin_headers, user_headers, monkeypatch):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
-    async def _raise_admin_mail(self, **kwargs):
-        raise RuntimeError("mail failure")
+    async def _raise_mail_error(self, **kwargs):
+        raise RuntimeError("smtp unavailable")
 
-    async def _raise_applicant_mail(self, **kwargs):
-        raise RuntimeError("mail failure")
-
-    monkeypatch.setattr(
-        "app.services.mail_service.MailService.send_application_received_to_admins",
-        _raise_admin_mail,
-    )
     monkeypatch.setattr(
         "app.services.mail_service.MailService.send_application_received_to_applicant",
-        _raise_applicant_mail,
+        _raise_mail_error,
     )
 
     resp = client.post(
@@ -253,8 +221,35 @@ def test_application_email_failure_does_not_block_creation(client, admin_headers
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify failure"},
     )
     assert resp.status_code == 201
-    body = resp.json()
-    assert body["issuance_status"] == "pending"
+    assert resp.json()["issuance_status"] == "issued"
+
+
+def test_application_provider_timeout_returns_503(client, admin_headers, user_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+
+    def _raise_unavailable(self, payload):
+        from app.services.provider_client import ProviderUnavailableError
+
+        raise ProviderUnavailableError("provider unavailable")
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _raise_unavailable)
+
+    try:
+        resp = client.post(
+            "/api/v1/api-keys/applications",
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify failure"},
+        )
+        assert resp.status_code == 503
+        assert resp.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
 
 
 def test_applicant_mail_body_does_not_include_application_id():
@@ -264,51 +259,31 @@ def test_applicant_mail_body_does_not_include_application_id():
 
     # Extract body shape by reusing deterministic template construction expectation.
     body = (
-        "<p>Tester 您好：</p>"
-        "<p>我們已收到您的 API Key 申請，管理者將審理後配發金鑰，請耐心等候。</p>"
-        "<p>您可登入 <a href=\"http://localhost:8000\">AS API Console</a> 查看最新狀態。</p>"
+        "<p>親愛的使用者，您好：</p>"
+        "<p>感謝您申請 API Key 請妥善保管</p>"
+        "<p>若此操作非您本人執行，請立即連繫資訊服務處。</p>"
+        "<p>若您有任何疑問，歡迎向資訊服務處服務台反映。</p>"
+        "<p>聯絡窗口：中央研究院資訊服務處<br/>"
+        "線上服務台（上班時間）：https://its.sinica.edu.tw/online（密碼27898855）<br/>"
+        "電話（上班時間）：02-27898855<br/>"
+        "信箱：its@sinica.edu.tw</p>"
+        "<p>中央研究院資訊服務處 敬啟</p>"
         "<hr/>"
-        "<p>Hello Tester,</p>"
-        "<p>We have received your API key application. Please wait while admins review and issue the key.</p>"
-        "<p>You can sign in to <a href=\"http://localhost:8000\">AS API Console</a> to check the latest status.</p>"
+        "<p>Dear user,</p>"
+        "<p>Thank you for applying for an API key. Please keep it secure.</p>"
+        "<p>If this action was not performed by you, please contact the IT Service Desk immediately.</p>"
+        "<p>If you have any questions, please contact the IT Service Desk.</p>"
+        "<p>Contact: Institute of Information Science, Academia Sinica IT Service Desk<br/>"
+        "Online Service Desk (business hours): https://its.sinica.edu.tw/online (password: 27898855)<br/>"
+        "Phone (business hours): 02-27898855<br/>"
+        "Email: its@sinica.edu.tw</p>"
+        "<p>Sincerely,<br/>Academia Sinica IT Service Desk</p>"
     )
     assert "申請單號" not in body
     assert "Application ID" not in body
+    assert "若此操作非您本人執行" in body
+    assert "中央研究院資訊服務處 敬啟" in body
     assert isinstance(service, MailService)
-
-
-def test_issued_mail_body_is_bilingual_and_hides_application_id(monkeypatch):
-    from asyncio import run as run_async
-
-    from app.services.mail_service import MailService
-
-    captured: dict[str, str] = {}
-
-    async def _capture_send_html(self, *, subject, recipients, body):
-        captured["subject"] = subject
-        captured["body"] = body
-        captured["recipients"] = ",".join(recipients)
-
-    monkeypatch.setattr("app.services.mail_service.MailService._send_html", _capture_send_html)
-
-    service = MailService()
-    run_async(
-        service.send_key_issued_notification(
-            to_email="issued@example.com",
-            owner_name="Tester",
-            application_id="app-123",
-            app_domain="http://localhost:8000",
-        )
-    )
-
-    body = captured["body"]
-    assert "您的 API Key 已配發" in captured["subject"]
-    assert "Your API key has been issued" in captured["subject"]
-    assert "Tester 您好" in body
-    assert "Hello Tester" in body
-    assert "Application ID" not in body
-    assert "申請單號" not in body
-    assert captured["recipients"] == "issued@example.com"
 
 
 def test_application_success_for_research_eligible_without_whitelist(client, user_headers, monkeypatch):
@@ -327,7 +302,7 @@ def test_application_success_for_research_eligible_without_whitelist(client, use
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
-    assert create_resp.json()["issuance_status"] == "pending"
+    assert create_resp.json()["issuance_status"] == "issued"
 
 
 def test_application_research_service_unavailable_returns_503_and_no_records(client, admin_headers, user_headers, monkeypatch):
@@ -380,59 +355,20 @@ def test_application_rejects_future_date(client, admin_headers, user_headers):
     assert resp.json()["error"]["code"] == "INVALID_APPLICATION_DATE"
 
 
-def test_admin_pending_flow_permissions_and_issue(client, admin_headers, user_headers, monkeypatch):
-    from app.core.config import get_settings
-
-    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
-    get_settings.cache_clear()
-    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
-    create_resp = client.post(
-        "/api/v1/api-keys/applications",
-        headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
-    )
-    assert create_resp.status_code == 201
-    app_id = create_resp.json()["application"]["id"]
-
+def test_pending_endpoints_removed(client, admin_headers, user_headers):
     forbidden_list = client.get("/api/v1/api-keys/applications/pending", headers=user_headers)
-    assert forbidden_list.status_code == 403
+    assert forbidden_list.status_code == 404
 
     pending_list = client.get("/api/v1/api-keys/applications/pending", headers=admin_headers)
-    assert pending_list.status_code == 200
-    assert any(item["id"] == app_id for item in pending_list.json()["items"])
-
-    invalid_mode = client.patch(
-        f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
-        headers=admin_headers,
-        json={"mode": "invalid"},
-    )
-    assert invalid_mode.status_code == 422
-
-    mode_resp = client.patch(
-        f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
-        headers=admin_headers,
-        json={"mode": "budget"},
-    )
-    assert mode_resp.status_code == 200
-
-    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
-
-    def _raise_unavailable(self, payload):
-        from app.services.provider_client import ProviderUnavailableError
-
-        raise ProviderUnavailableError("provider unavailable")
-
-    monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _raise_unavailable)
-    resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["issuance_status"] == "pending"
-    assert body["api_key_plaintext"] is None
-    monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
-    get_settings.cache_clear()
+    assert pending_list.status_code == 404
 
 
-def test_issue_pending_application_sends_issued_email_to_applicant(client, admin_headers, user_headers, monkeypatch):
+def test_issue_pending_endpoint_removed(client, admin_headers):
+    resp = client.post("/api/v1/api-keys/applications/dummy-id/issue", headers=admin_headers)
+    assert resp.status_code == 404
+
+
+def test_issue_pending_application_does_not_send_issued_email(client, admin_headers, user_headers, monkeypatch):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     create_resp = client.post(
         "/api/v1/api-keys/applications",
@@ -440,61 +376,9 @@ def test_issue_pending_application_sends_issued_email_to_applicant(client, admin
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test issue mail"},
     )
     assert create_resp.status_code == 201
-    app_id = create_resp.json()["application"]["id"]
-    mode_resp = client.patch(
-        f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
-        headers=admin_headers,
-        json={"mode": "budget"},
-    )
-    assert mode_resp.status_code == 200
-
-    calls: list[dict] = []
-
-    async def _fake_issue_mail(self, **kwargs):
-        calls.append(kwargs)
-
-    monkeypatch.setattr(
-        "app.services.mail_service.MailService.send_key_issued_notification",
-        _fake_issue_mail,
-    )
-    issue_resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
-    assert issue_resp.status_code == 200
-    body = issue_resp.json()
-    assert body["issuance_status"] == "issued"
-    assert body["email_warning"] is None
-    assert len(calls) == 1
-    assert calls[0]["to_email"] == user_headers["x-email"]
-
-
-def test_issue_pending_application_email_failure_returns_warning(client, admin_headers, user_headers, monkeypatch):
-    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
-    create_resp = client.post(
-        "/api/v1/api-keys/applications",
-        headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test issue mail fail"},
-    )
-    assert create_resp.status_code == 201
-    app_id = create_resp.json()["application"]["id"]
-    mode_resp = client.patch(
-        f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
-        headers=admin_headers,
-        json={"mode": "budget"},
-    )
-    assert mode_resp.status_code == 200
-
-    async def _raise_issue_mail(self, **kwargs):
-        raise RuntimeError("mail failure")
-
-    monkeypatch.setattr(
-        "app.services.mail_service.MailService.send_key_issued_notification",
-        _raise_issue_mail,
-    )
-    issue_resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
-    assert issue_resp.status_code == 200
-    body = issue_resp.json()
+    body = create_resp.json()
     assert body["issuance_status"] == "issued"
     assert body["api_key_plaintext"].startswith("AS-")
-    assert body["email_warning"] == "key_issued_email_failed"
 
 
 def test_issue_pending_application_local_mode_does_not_call_provider(client, admin_headers, user_headers, monkeypatch):
@@ -510,14 +394,6 @@ def test_issue_pending_application_local_mode_does_not_call_provider(client, adm
             json={"application_date": str(date.today()), "duration_months": 1, "purpose": "local issue mode"},
         )
         assert create_resp.status_code == 201
-        app_id = create_resp.json()["application"]["id"]
-        mode_resp = client.patch(
-            f"/api/v1/api-keys/applications/{app_id}/issuance-mode",
-            headers=admin_headers,
-            json={"mode": "budget"},
-        )
-        assert mode_resp.status_code == 200
-
         monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
 
         def _raise_provider_should_not_be_called(self, payload):
@@ -527,12 +403,8 @@ def test_issue_pending_application_local_mode_does_not_call_provider(client, adm
             "app.services.provider_client.ProviderClient.generate_key",
             _raise_provider_should_not_be_called,
         )
-
-        issue_resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
-        assert issue_resp.status_code == 200
-        body = issue_resp.json()
-        assert body["issuance_status"] == "issued"
-        assert body["api_key_plaintext"].startswith("AS-")
+        assert create_resp.json()["issuance_status"] == "issued"
+        assert create_resp.json()["api_key_plaintext"].startswith("AS-")
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         get_settings.cache_clear()
@@ -549,9 +421,6 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
         headers=user1,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
-    app_id = create_resp.json()["application"]["id"]
-    client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-    client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
     key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
     assert create_resp.status_code == 201
 
@@ -566,6 +435,121 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
     second = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user1)
     assert second.status_code == 409
     assert second.json()["error"]["code"] == "KEY_NOT_ACTIVE"
+
+
+def test_renew_permissions_and_visibility(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
+
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 6, "purpose": "renew test"},
+    )
+    assert create_resp.status_code == 201
+    source_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
+    revoke = client.post(f"/api/v1/api-keys/{source_id}/revoke", headers=user1)
+    assert revoke.status_code == 200
+
+    not_owner = client.post(f"/api/v1/api-keys/{source_id}/renew", headers=user2)
+    assert not_owner.status_code == 403
+    assert not_owner.json()["error"]["code"] == "KEY_NOT_OWNED_BY_USER"
+
+    renew = client.post(f"/api/v1/api-keys/{source_id}/renew", headers=user1)
+    assert renew.status_code == 200
+    body = renew.json()
+    assert body["status"] == "active"
+    assert body["issuance_status"] == "issued"
+    assert body["renewed_from_key_id"] == source_id
+    assert body["api_key_plaintext"].startswith("AS-")
+
+    user_list = client.get("/api/v1/api-keys", headers=user1)
+    assert user_list.status_code == 200
+    user_items = user_list.json()["items"]
+    assert len(user_items) == 1
+    assert user_items[0]["id"] == body["id"]
+    assert user_items[0]["duration_months"] == 6
+
+    admin_list = client.get("/api/v1/api-keys", headers=admin_headers)
+    assert admin_list.status_code == 200
+    admin_ids = {item["id"] for item in admin_list.json()["items"]}
+    assert source_id in admin_ids
+    assert body["id"] in admin_ids
+
+    duplicate = client.post(f"/api/v1/api-keys/{source_id}/renew", headers=user1)
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "KEY_ALREADY_RENEWED"
+
+
+def test_renew_rejects_active_key(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew active"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get("/api/v1/api-keys", headers=user_headers).json()["items"][0]["id"]
+    renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user_headers)
+    assert renew.status_code == 409
+    assert renew.json()["error"]["code"] == "KEY_NOT_RENEWABLE"
+
+
+def test_renew_sends_renewed_email_on_success(client, admin_headers, monkeypatch):
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew mail"},
+    )
+    key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
+    client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user)
+
+    calls: list[dict] = []
+
+    async def _fake_mail(self, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("app.services.mail_service.MailService.send_key_renewed_notification", _fake_mail)
+
+    renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user)
+    assert create_resp.status_code == 201
+    assert renew.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["to_email"] == user["x-email"]
+
+
+def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderUnavailableError
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew pending"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
+    client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user)
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "app.services.provider_client.ProviderClient.generate_key",
+        lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
+    )
+    try:
+        renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user)
+        assert renew.status_code == 503
+        assert renew.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
 
 
 def test_admin_can_list_global_keys(client, admin_headers):
@@ -586,13 +570,6 @@ def test_admin_can_list_global_keys(client, admin_headers):
     )
     assert resp1.status_code == 201
     assert resp2.status_code == 201
-    app1 = resp1.json()["application"]["id"]
-    app2 = resp2.json()["application"]["id"]
-    client.patch(f"/api/v1/api-keys/applications/{app1}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-    client.patch(f"/api/v1/api-keys/applications/{app2}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-    client.post(f"/api/v1/api-keys/applications/{app1}/issue", headers=admin_headers)
-    client.post(f"/api/v1/api-keys/applications/{app2}/issue", headers=admin_headers)
-
     admin_list = client.get("/api/v1/api-keys", headers=admin_headers)
     assert admin_list.status_code == 200
     owners = {item["owner_account"] for item in admin_list.json()["items"]}
@@ -612,9 +589,6 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
         json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp1.status_code == 201
-    app1 = resp1.json()["application"]["id"]
-    client.patch(f"/api/v1/api-keys/applications/{app1}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-    client.post(f"/api/v1/api-keys/applications/{app1}/issue", headers=admin_headers)
     key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
     revoke = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user1)
     assert revoke.status_code == 200
@@ -625,9 +599,6 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
         json={"application_date": "2026-05-10", "duration_months": 1, "purpose": "u1-2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp2.status_code == 201
-    app2 = resp2.json()["application"]["id"]
-    client.patch(f"/api/v1/api-keys/applications/{app2}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-    client.post(f"/api/v1/api-keys/applications/{app2}/issue", headers=admin_headers)
 
     resp3 = client.post(
         "/api/v1/api-keys/applications",
@@ -635,9 +606,6 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
         json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp3.status_code == 201
-    app3 = resp3.json()["application"]["id"]
-    client.patch(f"/api/v1/api-keys/applications/{app3}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-    client.post(f"/api/v1/api-keys/applications/{app3}/issue", headers=admin_headers)
 
     filtered = client.get(
         "/api/v1/api-keys?owner_account=user1&status=active&from=2026-05-05&to=2026-05-31",
@@ -660,10 +628,7 @@ def test_reveal_plaintext_admin_only(client, admin_headers):
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
-    app_id = create_resp.json()["application"]["id"]
-    client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-    issue_resp = client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
-    created_plaintext = issue_resp.json()["api_key_plaintext"]
+    created_plaintext = create_resp.json()["api_key_plaintext"]
     key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
 
     forbidden = client.post(f"/api/v1/api-keys/{key_id}/reveal", headers=user1)
@@ -683,9 +648,6 @@ def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
-    app_id = create_resp.json()["application"]["id"]
-    client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-    client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
     key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
 
     forbidden = client.patch(f"/api/v1/api-keys/{key_id}", headers=user1, json={"key_alias": "custom_user_alias"})
@@ -759,18 +721,12 @@ def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin
             json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
         )
         assert resp.status_code == 201
-        app_id = resp.json()["application"]["id"]
-        client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-        client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
     resp = client.post(
         "/api/v1/api-keys/applications",
         headers=user2,
         json={"application_date": "2026-05-02", "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp.status_code == 201
-    app_id = resp.json()["application"]["id"]
-    client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-    client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
 
     stats_resp = client.get("/api/v1/api-keys/statistics/users", headers=admin_headers)
     assert stats_resp.status_code == 200
@@ -798,9 +754,6 @@ def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_head
     )
     assert first.status_code == 201
     assert second.status_code == 201
-    for app_id in [first.json()["application"]["id"], second.json()["application"]["id"]]:
-        client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
-        client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
 
     key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
     revoke_resp = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user)

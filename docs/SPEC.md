@@ -24,10 +24,10 @@
 2. 通過進入資格後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`（對應 OAuth claims：`cn`、`chName`、`email`、`instCode`、`sysId`）。
 3. 一般使用者填寫申請日期、用途與 API 生效時長；管理者可選擇代他人送出申請，僅需填寫目標 `account`，其餘身份欄位由系統查詢補齊。
 4. 送出申請前再次檢查資格：優先查外部研究人員名單（職稱代碼），未命中再檢查特殊人員名單（`active`）。
-5. 資格檢查通過後系統建立 pending 申請，待管理者審理選擇核發模式後立即補發 API Key。
-5-1. 建立 pending 申請後，系統需寄送 Email 給所有 `active` 管理者（通知有新申請待審）與申請者本人（通知已收到申請、請等待配發）。
+5. 資格檢查通過後系統立即核發 API Key 並回傳一次性明文；不需經過常態管理者審核。
+5-1. 若 provider timeout/5xx 導致無法即時核發，系統需直接回傳 `503 PROVIDER_UNAVAILABLE`，不得建立 pending 申請。
 6. 系統只顯示一次明文 API Key，使用者需立即保存。
-7. 一般使用者可在「我的 API Key 紀錄」查看本人全部歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩（`AS-...` + 後 4 碼）。
+7. 一般使用者可在「我的 API Key 紀錄」查看本人歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩（`AS-...` + 後 4 碼）；若舊 key 已被 renew，該舊 key 對一般使用者隱藏。
 8. 一般使用者可自行停用本人已生效（`active`）的 Key。
 9. 使用者可於列表/詳情查看狀態、到期時間與遮罩 key（`AS-...XXXX`）。
 
@@ -56,11 +56,14 @@
 - 透過複製 icon 觸發時不得要求使用者先反白金鑰文字，系統需直接完成複製。
 
 ### 2) My API Keys Page（一般使用者我的紀錄頁）
-- 顯示範圍：僅本人帳號的全部歷史紀錄（`active|revoked|expired`）。
+- 顯示範圍：僅本人帳號歷史紀錄（`active|revoked|expired`）；若舊 key 已被 renew，對一般使用者隱藏。
 - 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（`AS-...` + 後 4 碼）。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
 - 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示 `for_{owner_account}`。
-- 操作：僅對本人 `active` key 顯示「停用」按鈕。
+- 操作：
+  - 對 `active` key 顯示「停用」按鈕。
+  - 對 `revoked|expired` key 顯示「續發（renew）」按鈕（icon + 文字）。
+  - renew 會建立新 key，沿用原 `duration_months` 與原 `purpose`。
 
 ### 3) API Key Detail Dialog（詳情視窗）
 - 顯示完整申請資訊與狀態。
@@ -132,7 +135,7 @@
 - 研究人員名單由外部服務提供並以職稱代碼判斷
 - 本系統不同步維護本地研究人員名單；申請時以外部服務即時查詢為準
 - 外部研究人員服務失敗（timeout/5xx）時：允許進入系統，但阻擋申請
-- 申請後進入 pending 佇列，由管理者逐筆選模式後立即補發 API Key
+- 申請成功時立即核發 API Key；provider timeout/5xx 時直接回傳 `503 PROVIDER_UNAVAILABLE`
 - API 生效時長固定月數選單（`1|6|12`）
 - API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
 - API Key 明文只顯示一次
@@ -188,7 +191,7 @@
 - `application_date` (date, required)
 - `duration_months` (int, required, allowed: `1|6|12`)
 - `purpose` (string, required)
-- `issuance_status` (enum: `issued` | `pending`)
+- `issuance_status` (enum: `issued`)
 - `pending_issued_at` (datetime, nullable)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `issued_at` (datetime)
@@ -216,19 +219,6 @@
 - `security_level` (enum, MVP 固定 `high`)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `created_at` (datetime)
-
-### Entity: `notifications`
-- `id` (string/uuid)
-- `sysid` (integer, required；通知收件者，對應 auth context 的 `sysid`)
-- `type` (string, required)
-- `title` (string, required)
-- `message` (string, required)
-- `is_read` (bool, required)
-- `metadata_json` (string, nullable)
-- `email_delivery_status` (string, nullable)
-- `email_error` (string, nullable)
-- `created_at` (datetime)
-- `read_at` (datetime, nullable)
 
 ### Entity: `auth_audit_logs`
 - `id` (string/uuid)
@@ -266,7 +256,7 @@
 - 不得記錄 API key 明文、token、password、client secret 等敏感憑證。
 
 ## 權限規則（MVP）
-- `user`：可使用 `GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`POST /api/v1/api-keys/{id}/revoke`，但僅可查詢/停用本人 `active` key。
+- `user`：可使用 `GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`POST /api/v1/api-keys/{id}/revoke`、`POST /api/v1/api-keys/{id}/renew`，僅可操作本人 key。
 - `user`：不可更新 `key_alias`。
 - `admin`：可查詢全部 API Key 與申請紀錄，可管理特殊人員名單（沿用受保護路徑 `/api/v1/whitelists*`），可啟用/停用其他使用者管理者身分（沿用受保護路徑 `/api/v1/admins/{id}/enable|disable`）。
 - `admin`：可使用 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`。
@@ -321,30 +311,23 @@ Base path：`/api/v1`
     "expires_at": "..."
   },
   "issuance_status": "issued",
-  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "pending_reason": null
+  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 }
 ```
-- Response（201，provider timeout/5xx）：
+- Response（503，provider timeout/5xx）：
 ```json
 {
-  "application": {
-    "id": "...",
-    "account": "jane.doe",
-    "status": "active",
-    "issued_at": "...",
-    "expires_at": "..."
-  },
-  "issuance_status": "pending",
-  "api_key_plaintext": null,
-  "pending_reason": "awaiting_admin_mode_selection"
+  "error": {
+    "code": "PROVIDER_UNAVAILABLE",
+    "message": "provider unavailable"
+  }
 }
 ```
 
 ### 1-1) 全域金鑰條件設定（Admin only）
 - `GET /api/v1/limit-strategy-config`
 - `PATCH /api/v1/limit-strategy-config`
-- 全域固定兩種模式設定（皆可編輯）：
+- 全域固定單一金鑰條件組合（皆可編輯）：
   - `budget`（額度）：`max_budget`、`budget_duration`
   - `rate_limit`（速度）：`tpm_limit`、`rpm_limit`
 - 欄位語意同金鑰條件模板：
@@ -352,35 +335,8 @@ Base path：`/api/v1`
   - `budget_duration`：重置週期（`daily|weekly|monthly`）。
   - `tpm_limit`：每分鐘 Token 數限制。
   - `rpm_limit`：每分鐘請求數限制。
-- 全域設定提供兩種模式的參數來源；pending 審理時由 admin 逐筆選擇 `budget|rate_limit` 後立即補發。
+- 每把 API Key 需同時套用 `budget` 與 `rate_limit` 兩種限制；不提供二選一模式。
 - 一般使用者不可查看或修改金鑰條件設定。
-
-### 1-2) Pending 申請審理（Admin only）
-- `GET /api/v1/api-keys/applications/pending`
-- `PATCH /api/v1/api-keys/applications/{id}/issuance-mode`
-- `POST /api/v1/api-keys/applications/{id}/issue`
-- 規則：
-  - pending 申請可由 admin 設定 `issuance_mode`（`budget|rate_limit`）。
-  - admin 觸發 `issue` 後，系統讀取該筆 mode 與全域設定參數執行補發。
-  - 配發來源支援 `external|local`；`local` 模式需強制使用系統內建產 key 流程，不呼叫外部 provider。
-  - 成功時 `issuance_status=issued`；失敗時維持 `pending`。
-  - `issue` 成功後需寄送「已配發」Email 給申請者本人。
-  - 「已配發」Email 內容需中英並列（中文在前、英文在後）。
-  - 「已配發」Email 不得包含 `Application ID`。
-  - 若「已配發」Email 發送失敗，不可影響 `issued` 結果；API 仍回 `200`，並於 response 回傳 `email_warning` 提示。
-  - 本階段語言偏好功能停用（見 5-2）。
-  - 申請建立後的 Email 通知採中英並列內容（中文在前、英文在後）。
-  - 申請建立後若 Email 發送失敗，不可影響申請建立結果；API 仍回 `201`，並以後端 log 記錄失敗。
-
-### 1-3) 通知中心
-- `GET /api/v1/notifications`
-- `PATCH /api/v1/notifications/{id}/read`
-- 規則：
-  - 僅可查詢與操作本人 `sysid` 的通知資料。
-  - `PATCH /notifications/{id}/read` 僅可標記本人通知；管理者不得代替他人標記已讀。
-  - 通知文案需支援 `zh-TW|en` 切換，並由前端依通知 `type` 與 `metadata` 產生對應語系顯示。
-  - `PATCH /notifications/{id}/read` 於 `api_key_issued` 通知首次由本人標記已讀時，可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
-  - 通知中心 Dialog 保存提醒文案由前端 i18n 顯示單一語言（`zh-TW` 或 `en`），不得中英並列。
 
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
@@ -448,6 +404,16 @@ Base path：`/api/v1`
 ### 4) 停用 API Key
 - `POST /api/v1/api-keys/{id}/revoke`
 - 規則：`user` 僅可停用本人 `active` key；`admin` 可停用任意 `active` key；停用為軟停用（`status=revoked`）。
+
+### 4-2) 續發（Renew）API Key
+- `POST /api/v1/api-keys/{id}/renew`
+- 規則：
+  - `user` 僅可續發本人 `revoked|expired` key；`admin` 可續發任意 `revoked|expired` key。
+  - renew 會建立新 key（`status=active`），不是把舊 key 改回 `active`。
+  - 新 key 的 `duration_months` 與 `purpose` 需沿用來源 key 的原資料。
+- renew 即時成功（`issuance_status=issued`）時，回傳一次性 `api_key_plaintext`。
+  - renew 成功後需寄送 Email 通知申請者「已更新金鑰」；通知信不得包含明文 key。
+  - 續發成功後，來源 key 對 `user` 列表需隱藏；`admin` 列表仍需可見完整歷史。
 
 ### 4-0) 更新 API Key Alias
 - `PATCH /api/v1/api-keys/{id}`
@@ -565,11 +531,10 @@ Base path：`/api/v1`
 - `KEY_NOT_ACTIVE`
 - `RATE_LIMITED`
 - `INTERNAL_ERROR`
-- `APPLICATION_NOT_PENDING`
-- `ISSUANCE_MODE_REQUIRED`
-- `ISSUANCE_MODE_INVALID`
 - `ISSUANCE_CONFIG_INCOMPLETE`
 - `APPLICATION_ALREADY_ISSUED`
+- `KEY_NOT_RENEWABLE`
+- `KEY_ALREADY_RENEWED`
 
 ## 驗收標準
 1. 研究人員名單職稱代碼命中者可成功核發 API Key，格式為 `AS-` + 30 碼隨機字元（總長 33）。
@@ -586,8 +551,10 @@ Base path：`/api/v1`
 11. 一般使用者可停用本人 `active` key，停用後狀態轉為 `revoked`。
 12. 一般使用者停用非本人 key 時，API 回傳 `KEY_NOT_OWNED_BY_USER`。
 13. 一般使用者停用非 `active` key 時，API 回傳 `KEY_NOT_ACTIVE`。
+13-1. 一般使用者可續發本人 `revoked|expired` key；續發 `active` key 時，API 回傳 `KEY_NOT_RENEWABLE`。
+13-2. 同一把舊 key 不可重複續發；重複續發時 API 回傳 `KEY_ALREADY_RENEWED`。
 14. 未通過資格檢查或驗證失敗請求不得建立 `api_key_applications` 或 `api_keys` 紀錄。
-15. `user` 呼叫 `GET /api/v1/api-keys` 時僅可看到本人資料；`admin` 可看到全域資料。
+15. `user` 呼叫 `GET /api/v1/api-keys` 時僅可看到本人資料；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料。
 16. `user` 查詢或停用非本人 key 時，API 回傳 `403`（或既有錯誤碼）。
 17. 非 `admin` 使用特殊人員名單管理 API（`/api/v1/whitelists*`）時，回傳 `403`。
 17-1. 特殊人員名單比對主鍵為 `sysid`，新增重複 `sysid` 時需回傳 `409` 與 `WHITELIST_SYSID_DUPLICATED`。
@@ -624,21 +591,15 @@ Base path：`/api/v1`
 46. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
 47. 限制策略設定僅 `admin` 可讀取與更新（`/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。
 48. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
-49. Provider timeout/5xx 或金鑰條件設定不完整時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
+49. Provider timeout/5xx 時，`POST /api/v1/api-keys/applications` 需回 `503 PROVIDER_UNAVAILABLE`，且不得建立 pending 申請。
 50. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
-51. `GET/PATCH /api/v1/notifications*` 需可用，且僅可查詢/操作本人 `sysid` 的通知資料。
-52. `POST /api/v1/api-keys/applications` 成功建立 pending 後，需寄送 Email 給所有 `active` 管理者與申請者本人。
+50-1. 每把 API Key 的限制策略需同時包含 `budget` 與 `rate_limit`；不得提供二選一 `issuance_mode`。
+50-2. 不提供 pending 補發端點；前端不得提供待審申請頁面入口。
+52. `POST /api/v1/api-keys/applications` 成功即時配發（`issuance_status=issued`）後，需寄送 Email 給申請者本人（不需寄送給管理者）。
 53. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
 54. 第 52 項若寄信失敗，`POST /api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
-55. `POST /api/v1/api-keys/applications/{id}/issue` 成功配發後，需寄送「已配發」Email 給申請者本人。
-56. 第 55 項若寄信失敗，`issue` 仍需維持 `issued` 且回傳 `email_warning`。
-57. 當配發模式為 `local` 時，`issue` 需可在不連線外部 provider 的情況下成功 `issued`。
-58. 第 55 項通知信內容需中英並列（中文在前、英文在後）。
-59. 第 55 項通知信不得包含 `Application ID`。
-60. `PATCH /api/v1/notifications/{id}/read` 僅通知本人可操作；即使為 `admin` 也不得代替他人已讀。
-61. `api_key_issued` 通知首次由本人標記已讀時，API 可回傳一次性 `api_key_plaintext`；後續重複已讀不得再次回傳明文。
-62. 通知中心文案需支援 `zh-TW|en` 切換，且僅單筆 `PATCH /api/v1/notifications/{id}/read` 可用於已讀操作。
-63. 通知中心金鑰 Dialog 提示文案需依目前語系顯示單一語言，不得中英並列。
+54-1. `POST /api/v1/api-keys/applications` 若 provider timeout/5xx，需回 `503 PROVIDER_UNAVAILABLE`。
+57. 當配發模式為 `local` 時，申請與 renew 需可在不連線外部 provider 的情況下成功 `issued`。
 64. `GET /login` 需可導向 OAuth provider，並附帶 state/request_id。
 65. `GET /auth/callback` 成功時需建立 session auth context 並 redirect `/`。
 66. `GET /auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失、state mismatch）需回錯，且寫入 failure audit。
@@ -648,8 +609,8 @@ Base path：`/api/v1`
 70. `tCode` 以 `B` 開頭者可登入；非 `B*` 者需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.sysid`），否則回 `403 LOGIN_NOT_ELIGIBLE`。
 71. `admin` 可於 `POST /api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若目錄服務 timeout/5xx，API 回傳 `503 DIRECTORY_SERVICE_UNAVAILABLE`。
-73. `POST /api/v1/api-keys/applications`、`POST /api/v1/api-keys/{id}/revoke`、`POST /api/v1/whitelists`、`PATCH /api/v1/whitelists/{id}`、`POST /api/v1/admins/{id}/enable`、`POST /api/v1/admins/{id}/disable`、`PATCH /api/v1/limit-strategy-config` 成功時皆需寫入 `operation_audit_logs`。
-74. 第 73 項 7 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。
+73. `POST /api/v1/api-keys/applications`、`POST /api/v1/api-keys/{id}/revoke`、`POST /api/v1/api-keys/{id}/renew`、`POST /api/v1/whitelists`、`PATCH /api/v1/whitelists/{id}`、`POST /api/v1/admins/{id}/enable`、`POST /api/v1/admins/{id}/disable`、`PATCH /api/v1/limit-strategy-config` 成功時皆需寫入 `operation_audit_logs`。
+74. 第 73 項 8 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。
 75. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證（token/password/client secret）。
 76. `operation_audit_logs.metadata_json` 僅允許白名單欄位（例如 `application_id`、`key_id`、`whitelist_id`、`target_admin_id`、`status`、`duration_months`），不得落地原始敏感 payload。
 77. 關鍵操作稽核功能不得改動既有受保護 API 路徑與角色模型（`user|admin`）。

@@ -11,14 +11,11 @@ from app.schemas.api_keys import (
     ApiKeyListResponse,
     ApiKeyRevealResponse,
     ApiKeyUserStatisticsResponse,
-    PendingApplicationIssueResponse,
-    PendingApplicationListResponse,
-    PendingApplicationModeUpdateRequest,
-    PendingApplicationModeUpdateResponse,
     LimitStrategyConfigResponse,
     LimitStrategyConfigUpdateRequest,
     ApplicationCreateRequest,
     ApplicationCreateResponse,
+    RenewResponse,
     RevokeResponse,
 )
 from app.services.api_keys_service import ApiKeysService
@@ -98,51 +95,6 @@ def create_application(
     return result
 
 
-@router.get("/api-keys/applications/pending", response_model=PendingApplicationListResponse)
-def list_pending_applications(
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    return service.list_pending_applications(current_user=current_user)
-
-
-@router.patch(
-    "/api-keys/applications/{application_id}/issuance-mode",
-    response_model=PendingApplicationModeUpdateResponse,
-)
-def update_pending_application_mode(
-    application_id: str,
-    payload: PendingApplicationModeUpdateRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    try:
-        return service.update_pending_application_mode(
-            current_user=current_user,
-            application_id=application_id,
-            mode=payload.mode,
-        )
-    except Exception:
-        db.rollback()
-        raise
-
-
-@router.post("/api-keys/applications/{application_id}/issue", response_model=PendingApplicationIssueResponse)
-def issue_pending_application(
-    application_id: str,
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    try:
-        return service.issue_pending_application(current_user=current_user, application_id=application_id)
-    except Exception:
-        db.rollback()
-        raise
-
-
 @router.get("/api-keys", response_model=ApiKeyListResponse)
 def list_api_keys(
     page: int = Query(default=1, ge=1),
@@ -218,6 +170,62 @@ def revoke_api_key(
     service = ApiKeysService(db)
     try:
         result = service.revoke_key(current_user=current_user, key_id=key_id)
+    except ApiError as exc:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=key_id,
+            context=context,
+            metadata={"key_id": key_id},
+        )
+        raise
+    except Exception:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=key_id,
+            context=context,
+            metadata={"key_id": key_id},
+        )
+        raise
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["id"],
+        context=context,
+        metadata={"key_id": result["id"], "status": result["status"]},
+    )
+    return result
+
+
+@router.post("/api-keys/{key_id}/renew", response_model=RenewResponse)
+def renew_api_key(
+    key_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "api_key"
+    action = "renew"
+    target_type = "api_key"
+    service = ApiKeysService(db)
+    try:
+        result = service.renew_key(current_user=current_user, key_id=key_id)
     except ApiError as exc:
         db.rollback()
         audit.log(

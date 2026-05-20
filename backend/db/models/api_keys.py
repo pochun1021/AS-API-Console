@@ -18,6 +18,7 @@ class ApiKey(Base):
     application_id: Mapped[str] = mapped_column(
         ForeignKey("api_key_applications.id"), nullable=False, unique=True, index=True
     )
+    renewed_to_key_id: Mapped[str | None] = mapped_column(ForeignKey("api_keys.id"), nullable=True, index=True)
     key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     key_prefix: Mapped[str] = mapped_column(String(10), default="AS-", nullable=False)
     masked_key: Mapped[str] = mapped_column(String(32), nullable=False)
