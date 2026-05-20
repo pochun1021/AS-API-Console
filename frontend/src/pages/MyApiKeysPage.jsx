@@ -30,7 +30,7 @@ const actionCellSx = {
   alignItems: "center",
   width: "100%",
   height: "100%",
-  gap: 0.5,
+  gap: 1,
   whiteSpace: "nowrap"
 };
 
@@ -229,16 +229,16 @@ export default function MyApiKeysPage({ auth }) {
               </Tooltip>
             ) : null}
             {params.row.status === "active" ? (
-              <Tooltip title={t("mykeys_revoke_key")}>
-                <IconButton
-                  aria-label={t("mykeys_revoke_key")}
-                  size="small"
-                  color="warning"
-                  onClick={() => setPendingRevokeId(params.row.id)}
-                >
-                  <BlockIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+              <Button
+                aria-label={t("mykeys_revoke_key")}
+                size="small"
+                color="warning"
+                variant="outlined"
+                startIcon={<BlockIcon fontSize="small" />}
+                onClick={() => setPendingRevokeId(params.row.id)}
+              >
+                {locale === "zh-TW" ? "停用" : "Revoke"}
+              </Button>
             ) : null}
           </Box>
         )

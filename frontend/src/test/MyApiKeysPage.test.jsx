@@ -26,7 +26,7 @@ beforeEach(() => {
   mockApiProvider.resetForTests();
 });
 
-test("shows revoke icon only for active rows", async () => {
+test("shows revoke button only for active rows", async () => {
   render(
     <MemoryRouter>
       <MyApiKeysPage auth={auth} />
