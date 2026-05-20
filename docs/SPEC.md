@@ -25,7 +25,7 @@
 3. 一般使用者填寫申請日期、用途與 API 生效時長；管理者可選擇代他人送出申請，僅需填寫目標 `account`，其餘身份欄位由系統查詢補齊。
 4. 送出申請前再次檢查資格：優先查外部研究人員名單（職稱代碼），未命中再檢查特殊人員名單（`active`）。
 5. 資格檢查通過後系統立即核發 API Key 並回傳一次性明文；不需經過常態管理者審核。
-5-1. 若 provider timeout/5xx 導致無法即時核發，系統仍需建立 pending 申請作為故障補發佇列，並寄送 Email 給所有 `active` 管理者（通知需介入補發）與申請者本人（通知系統稍後補發）。
+5-1. 若 provider timeout/5xx 導致無法即時核發，系統需直接回傳 `503 PROVIDER_UNAVAILABLE`，不得建立 pending 申請。
 6. 系統只顯示一次明文 API Key，使用者需立即保存。
 7. 一般使用者可在「我的 API Key 紀錄」查看本人歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩（`AS-...` + 後 4 碼）；若舊 key 已被 renew，該舊 key 對一般使用者隱藏。
 8. 一般使用者可自行停用本人已生效（`active`）的 Key。
@@ -135,7 +135,7 @@
 - 研究人員名單由外部服務提供並以職稱代碼判斷
 - 本系統不同步維護本地研究人員名單；申請時以外部服務即時查詢為準
 - 外部研究人員服務失敗（timeout/5xx）時：允許進入系統，但阻擋申請
-- 申請成功時立即核發 API Key；僅 provider timeout/5xx 時進入 pending 佇列待補發
+- 申請成功時立即核發 API Key；provider timeout/5xx 時直接回傳 `503 PROVIDER_UNAVAILABLE`
 - API 生效時長固定月數選單（`1|6|12`）
 - API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
 - API Key 明文只顯示一次
@@ -191,7 +191,7 @@
 - `application_date` (date, required)
 - `duration_months` (int, required, allowed: `1|6|12`)
 - `purpose` (string, required)
-- `issuance_status` (enum: `issued` | `pending`)
+- `issuance_status` (enum: `issued`)
 - `pending_issued_at` (datetime, nullable)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `issued_at` (datetime)
@@ -311,23 +311,16 @@ Base path：`/api/v1`
     "expires_at": "..."
   },
   "issuance_status": "issued",
-  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "pending_reason": null
+  "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 }
 ```
-- Response（201，provider timeout/5xx）：
+- Response（503，provider timeout/5xx）：
 ```json
 {
-  "application": {
-    "id": "...",
-    "account": "jane.doe",
-    "status": "active",
-    "issued_at": "...",
-    "expires_at": "..."
-  },
-  "issuance_status": "pending",
-  "api_key_plaintext": null,
-  "pending_reason": "provider_unavailable"
+  "error": {
+    "code": "PROVIDER_UNAVAILABLE",
+    "message": "provider unavailable"
+  }
 }
 ```
 
@@ -343,26 +336,7 @@ Base path：`/api/v1`
   - `tpm_limit`：每分鐘 Token 數限制。
   - `rpm_limit`：每分鐘請求數限制。
 - 每把 API Key 需同時套用 `budget` 與 `rate_limit` 兩種限制；不提供二選一模式。
-- 故障補發時，`issue` 直接套用上述單一組合策略。
 - 一般使用者不可查看或修改金鑰條件設定。
-
-### 1-2) Pending 申請補發（Admin only，故障備援）
-- `GET /api/v1/api-keys/applications/pending`
-- `POST /api/v1/api-keys/applications/{id}/issue`
-- 規則：
-  - 此三個端點僅用於故障補發（例如 provider timeout/5xx）；非一般核發主路徑。
-  - 前端不提供待審申請頁面；pending 補發由後端 API 流程處理（供後台或腳本操作）。
-  - admin 觸發 `issue` 後，系統讀取全域設定中的 `budget + rate_limit` 組合參數執行補發。
-  - 配發來源支援 `external|local`；`local` 模式需強制使用系統內建產 key 流程，不呼叫外部 provider。
-  - 成功時 `issuance_status=issued`；失敗時維持 `pending`。
-  - `issue` 成功後需寄送「已配發」Email 給申請者本人。
-  - 「已配發」Email 內容需中英並列（中文在前、英文在後）。
-  - 「已配發」Email 不得包含 `Application ID`。
-  - 若「已配發」Email 發送失敗，不可影響 `issued` 結果；API 仍回 `200`，並於 response 回傳 `email_warning` 提示。
-  - 本階段語言偏好功能停用（見 5-2）。
-  - `POST /api/v1/api-keys/applications` 一般成功（即時配發）後僅通知申請者本人。
-  - `POST /api/v1/api-keys/applications` 若進入 pending（provider timeout/5xx）時，需通知申請者本人與所有 `active` 管理者。
-  - 上述通知信內容採中英並列（中文在前、英文在後）；若寄信失敗，不可影響申請建立結果，API 仍回 `201`。
 
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
@@ -437,7 +411,7 @@ Base path：`/api/v1`
   - `user` 僅可續發本人 `revoked|expired` key；`admin` 可續發任意 `revoked|expired` key。
   - renew 會建立新 key（`status=active`），不是把舊 key 改回 `active`。
   - 新 key 的 `duration_months` 與 `purpose` 需沿用來源 key 的原資料。
-  - renew 即時成功（`issuance_status=issued`）時，回傳一次性 `api_key_plaintext`；pending 時 `api_key_plaintext=null`。
+- renew 即時成功（`issuance_status=issued`）時，回傳一次性 `api_key_plaintext`。
   - renew 成功後需寄送 Email 通知申請者「已更新金鑰」；通知信不得包含明文 key。
   - 續發成功後，來源 key 對 `user` 列表需隱藏；`admin` 列表仍需可見完整歷史。
 
@@ -557,7 +531,6 @@ Base path：`/api/v1`
 - `KEY_NOT_ACTIVE`
 - `RATE_LIMITED`
 - `INTERNAL_ERROR`
-- `APPLICATION_NOT_PENDING`
 - `ISSUANCE_CONFIG_INCOMPLETE`
 - `APPLICATION_ALREADY_ISSUED`
 - `KEY_NOT_RENEWABLE`
@@ -618,19 +591,15 @@ Base path：`/api/v1`
 46. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
 47. 限制策略設定僅 `admin` 可讀取與更新（`/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。
 48. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
-49. Provider timeout/5xx 時，系統需建立 application 並回 `201` + `issuance_status=pending`，且 `api_key_plaintext` 為 `null`。
+49. Provider timeout/5xx 時，`POST /api/v1/api-keys/applications` 需回 `503 PROVIDER_UNAVAILABLE`，且不得建立 pending 申請。
 50. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
 50-1. 每把 API Key 的限制策略需同時包含 `budget` 與 `rate_limit`；不得提供二選一 `issuance_mode`。
-50-2. 故障補發流程僅保留 `GET /api/v1/api-keys/applications/pending` 與 `POST /api/v1/api-keys/applications/{id}/issue`；前端不得提供待審申請頁面入口。
+50-2. 不提供 pending 補發端點；前端不得提供待審申請頁面入口。
 52. `POST /api/v1/api-keys/applications` 成功即時配發（`issuance_status=issued`）後，需寄送 Email 給申請者本人（不需寄送給管理者）。
 53. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
 54. 第 52 項若寄信失敗，`POST /api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
-54-1. `POST /api/v1/api-keys/applications` 若因 provider timeout/5xx 進入 pending，需寄送 Email 給所有 `active` 管理者與申請者本人。
-55. `POST /api/v1/api-keys/applications/{id}/issue` 成功配發後，需寄送「已配發」Email 給申請者本人。
-56. 第 55 項若寄信失敗，`issue` 仍需維持 `issued` 且回傳 `email_warning`。
-57. 當配發模式為 `local` 時，`issue` 需可在不連線外部 provider 的情況下成功 `issued`。
-58. 第 55 項通知信內容需中英並列（中文在前、英文在後）。
-59. 第 55 項通知信不得包含 `Application ID`。
+54-1. `POST /api/v1/api-keys/applications` 若 provider timeout/5xx，需回 `503 PROVIDER_UNAVAILABLE`。
+57. 當配發模式為 `local` 時，申請與 renew 需可在不連線外部 provider 的情況下成功 `issued`。
 64. `GET /login` 需可導向 OAuth provider，並附帶 state/request_id。
 65. `GET /auth/callback` 成功時需建立 session auth context 並 redirect `/`。
 66. `GET /auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失、state mismatch）需回錯，且寫入 failure audit。

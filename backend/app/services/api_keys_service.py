@@ -23,7 +23,7 @@ from app.services.research_eligibility_service import ResearchEligibilityService
 from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
 from db.models.limit_strategy_config import LimitStrategyConfig
-from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
+from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
 from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
 
 
@@ -58,7 +58,6 @@ class ApiKeysService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.settings = get_settings()
-        self.admin_repo = SQLAlchemyAdminRepository(session)
         self.whitelist_repo = SQLAlchemyWhitelistRepository(session)
         self.key_repo = SQLAlchemyApiKeyRepository(session)
         self.research_eligibility = ResearchEligibilityService()
@@ -156,22 +155,6 @@ class ApiKeysService:
             )
         )
         plaintext = self._issue_application(application)
-        email_warning: str | None = None
-        if application.issuance_status == "issued":
-            try:
-                run_async(
-                    self.mail_service.send_key_issued_notification(
-                        to_email=application.email,
-                        owner_name=application.name,
-                        application_id=application.id,
-                        app_domain=self.settings.app_domain,
-                    )
-                )
-            except Exception:  # noqa: BLE001
-                logging.exception("failed to send key issued email to applicant")
-                email_warning = "key_issued_email_failed"
-        else:
-            self._send_application_pending_emails(application)
 
         self.session.add(application)
         self.session.commit()
@@ -186,107 +169,6 @@ class ApiKeysService:
             },
             "issuance_status": application.issuance_status,
             "api_key_plaintext": plaintext,
-            "pending_reason": "provider_unavailable" if application.issuance_status == "pending" else None,
-            "email_warning": email_warning,
-        }
-
-    def _send_application_pending_emails(self, application: ApiKeyApplication) -> None:
-        try:
-            active_admin_emails = self.admin_repo.list_active_emails()
-            run_async(
-                self.mail_service.send_application_received_to_admins(
-                    recipients=active_admin_emails,
-                    application_id=application.id,
-                    applicant_account=application.account,
-                    applicant_name=application.name,
-                    applicant_email=application.email,
-                    applicant_department=application.department,
-                    application_date=str(application.application_date),
-                    duration_months=application.duration_months,
-                    purpose=application.purpose,
-                    app_domain=self.settings.app_domain,
-                )
-            )
-        except Exception:  # noqa: BLE001
-            logging.exception("failed to send application received email to admins")
-
-        try:
-            run_async(
-                self.mail_service.send_application_received_to_applicant(
-                    to_email=application.email,
-                    owner_name=application.name,
-                    application_id=application.id,
-                    app_domain=self.settings.app_domain,
-                )
-            )
-        except Exception:  # noqa: BLE001
-            logging.exception("failed to send application received email to applicant")
-
-    def list_pending_applications(self, current_user: CurrentUser) -> dict:
-        if current_user.role != "admin":
-            raise ApiError("FORBIDDEN", "admin role required", 403)
-        stmt = (
-            self.session.query(ApiKeyApplication)
-            .filter(ApiKeyApplication.issuance_status == "pending")
-            .order_by(ApiKeyApplication.created_at.desc())
-        )
-        items = stmt.all()
-        return {
-            "items": [
-                {
-                    "id": app.id,
-                    "account": app.account,
-                    "name": app.name,
-                    "email": app.email,
-                    "department": app.department,
-                    "purpose": app.purpose,
-                    "application_date": app.application_date,
-                    "duration_months": app.duration_months,
-                    "created_at": app.created_at,
-                }
-                for app in items
-            ],
-            "total": len(items),
-        }
-
-    def issue_pending_application(self, current_user: CurrentUser, application_id: str) -> dict:
-        if current_user.role != "admin":
-            raise ApiError("FORBIDDEN", "admin role required", 403)
-        application = self.session.get(ApiKeyApplication, application_id)
-        if application is None:
-            raise ApiError("VALIDATION_ERROR", "application not found", 404)
-        if application.issuance_status == "issued":
-            raise ApiError("APPLICATION_ALREADY_ISSUED", "application already issued", 409)
-        if application.issuance_status != "pending":
-            raise ApiError("APPLICATION_NOT_PENDING", "application is not pending", 409)
-        plaintext = self._issue_application(application)
-        email_warning: str | None = None
-        if application.issuance_status == "issued":
-            try:
-                run_async(
-                    self.mail_service.send_key_issued_notification(
-                        to_email=application.email,
-                        owner_name=application.name,
-                        application_id=application.id,
-                        app_domain=self.settings.app_domain,
-                    )
-                )
-            except Exception:  # noqa: BLE001
-                logging.exception("failed to send key issued email to applicant")
-                email_warning = "key_issued_email_failed"
-        self.session.commit()
-        return {
-            "application": {
-                "id": application.id,
-                "account": application.account,
-                "status": application.status,
-                "issued_at": application.issued_at,
-                "expires_at": application.expires_at,
-            },
-            "issuance_status": application.issuance_status,
-            "api_key_plaintext": plaintext,
-            "pending_reason": "provider_unavailable" if application.issuance_status == "pending" else None,
-            "email_warning": email_warning,
         }
 
     def _issue_application(self, application: ApiKeyApplication) -> str | None:
@@ -339,9 +221,8 @@ class ApiKeysService:
             application.pending_issued_at = datetime.now(UTC)
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
-        except ProviderUnavailableError:
-            application.issuance_status = "pending"
-            plaintext = None
+        except ProviderUnavailableError as exc:
+            raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
         application.updated_at = datetime.now(UTC)
         self.session.add(application)
         return plaintext
@@ -605,19 +486,6 @@ class ApiKeysService:
             except Exception:  # noqa: BLE001
                 logging.exception("failed to send key renewed email to applicant")
                 email_warning = "key_renewed_email_failed"
-        else:
-            try:
-                run_async(
-                    self.mail_service.send_key_renew_pending_notification(
-                        to_email=source_app.email,
-                        owner_name=source_app.name,
-                        app_domain=self.settings.app_domain,
-                    )
-                )
-            except Exception:  # noqa: BLE001
-                logging.exception("failed to send key renew pending email to applicant")
-                email_warning = "key_renew_pending_email_failed"
-
         if issued_key is None and application.issuance_status == "issued":
             raise ApiError("INTERNAL_ERROR", "renew issued without key record", 500)
 
@@ -634,7 +502,6 @@ class ApiKeysService:
             "issuance_status": application.issuance_status,
             "renewed_from_key_id": source_key.id,
             "api_key_plaintext": plaintext,
-            "pending_reason": "provider_unavailable" if application.issuance_status == "pending" else None,
             "email_warning": email_warning,
         }
 

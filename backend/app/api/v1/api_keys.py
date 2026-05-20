@@ -11,8 +11,6 @@ from app.schemas.api_keys import (
     ApiKeyListResponse,
     ApiKeyRevealResponse,
     ApiKeyUserStatisticsResponse,
-    PendingApplicationIssueResponse,
-    PendingApplicationListResponse,
     LimitStrategyConfigResponse,
     LimitStrategyConfigUpdateRequest,
     ApplicationCreateRequest,
@@ -95,29 +93,6 @@ def create_application(
         },
     )
     return result
-
-
-@router.get("/api-keys/applications/pending", response_model=PendingApplicationListResponse)
-def list_pending_applications(
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    return service.list_pending_applications(current_user=current_user)
-
-
-@router.post("/api-keys/applications/{application_id}/issue", response_model=PendingApplicationIssueResponse)
-def issue_pending_application(
-    application_id: str,
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    try:
-        return service.issue_pending_application(current_user=current_user, application_id=application_id)
-    except Exception:
-        db.rollback()
-        raise
 
 
 @router.get("/api-keys", response_model=ApiKeyListResponse)

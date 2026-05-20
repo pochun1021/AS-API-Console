@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Iterable
-
 try:
     from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 except ModuleNotFoundError:  # pragma: no cover - dependency guard for environments not yet synced
@@ -55,30 +53,6 @@ class MailService:
         fm = FastMail(conf)
         await fm.send_message(message)
 
-    async def send_key_issued_notification(
-        self,
-        *,
-        to_email: str,
-        owner_name: str,
-        application_id: str,
-        app_domain: str,
-    ) -> None:
-        await self._send_html(
-            subject="[AS API Console] 您的 API Key 已配發 / Your API key has been issued",
-            recipients=[to_email],
-            body=(
-                f"<p>{owner_name} 您好：</p>"
-                "<p>您申請的 API Key 已完成配發。</p>"
-                f"<p>請登入 <a href=\"{app_domain}\">AS API Console</a> 查看金鑰資訊。</p>"
-                "<p>此通知不包含 API Key 明文內容。</p>"
-                "<hr/>"
-                f"<p>Hello {owner_name},</p>"
-                "<p>Your API key application has been issued.</p>"
-                f"<p>Please sign in to <a href=\"{app_domain}\">AS API Console</a> to review key details.</p>"
-                "<p>This notification does not contain plaintext API key content.</p>"
-            ),
-        )
-
     async def send_key_renewed_notification(
         self,
         *,
@@ -87,39 +61,28 @@ class MailService:
         app_domain: str,
     ) -> None:
         await self._send_html(
-            subject="[AS API Console] 金鑰已更新 / Your API key has been renewed",
+            subject="[AS API Console] API Key 已更新 / API key renew",
             recipients=[to_email],
             body=(
-                f"<p>{owner_name} 您好：</p>"
-                "<p>您的 API Key 更新（Renew）已完成，請使用最新金鑰。</p>"
-                f"<p>請登入 <a href=\"{app_domain}\">AS API Console</a> 查看金鑰資訊。</p>"
-                "<p>此通知不包含 API Key 明文內容。</p>"
+                "<p>親愛的使用者，您好：</p>"
+                "<p>您已成功更新 API Key 請妥善保管</p>"
+                "<p>若此操作非您本人執行，請立即連繫資訊服務處。</p>"
+                "<p>若您有任何疑問，歡迎向資訊服務處服務台反映。</p>"
+                "<p>聯絡窗口：中央研究院資訊服務處<br/>"
+                "線上服務台（上班時間）：https://its.sinica.edu.tw/online（密碼27898855）<br/>"
+                "電話（上班時間）：02-27898855<br/>"
+                "信箱：its@sinica.edu.tw</p>"
+                "<p>中央研究院資訊服務處 敬啟</p>"
                 "<hr/>"
-                f"<p>Hello {owner_name},</p>"
-                "<p>Your API key renew action has completed. Please use the latest key.</p>"
-                f"<p>Please sign in to <a href=\"{app_domain}\">AS API Console</a> to review key details.</p>"
-                "<p>This notification does not contain plaintext API key content.</p>"
-            ),
-        )
-
-    async def send_key_renew_pending_notification(
-        self,
-        *,
-        to_email: str,
-        owner_name: str,
-        app_domain: str,
-    ) -> None:
-        await self._send_html(
-            subject="[AS API Console] 金鑰更新處理中 / API key renew is pending",
-            recipients=[to_email],
-            body=(
-                f"<p>{owner_name} 您好：</p>"
-                "<p>您剛剛發起的 API Key 更新（Renew）尚在處理中，系統完成後會再通知您。</p>"
-                f"<p>請登入 <a href=\"{app_domain}\">AS API Console</a> 查看最新狀態。</p>"
-                "<hr/>"
-                f"<p>Hello {owner_name},</p>"
-                "<p>Your API key renew action is currently pending. We will notify you once issuance is completed.</p>"
-                f"<p>Please sign in to <a href=\"{app_domain}\">AS API Console</a> to check the latest status.</p>"
+                f"<p>Dear user,</p>"
+                "<p>You have successfully renewed your API key. Please keep it secure.</p>"
+                "<p>If this action was not performed by you, please contact the IT Service Desk immediately.</p>"
+                "<p>If you have any questions, please contact the IT Service Desk.</p>"
+                "<p>Contact: Institute of Information Science, Academia Sinica IT Service Desk<br/>"
+                "Online Service Desk (business hours): https://its.sinica.edu.tw/online (password: 27898855)<br/>"
+                "Phone (business hours): 02-27898855<br/>"
+                "Email: its@sinica.edu.tw</p>"
+                "<p>Sincerely,<br/>Academia Sinica IT Service Desk</p>"
             ),
         )
 
@@ -132,55 +95,27 @@ class MailService:
         app_domain: str,
     ) -> None:
         await self._send_html(
-            subject="[AS API Console] 已收到您的申請 / We received your application",
+            subject="[AS API Console] 成功申請 API Key / API key application successful",
             recipients=[to_email],
             body=(
-                f"<p>{owner_name} 您好：</p>"
-                "<p>我們已收到您的 API Key 申請，管理者將審理後配發金鑰，請耐心等候。</p>"
-                f"<p>您可登入 <a href=\"{app_domain}\">AS API Console</a> 查看最新狀態。</p>"
+                "<p>親愛的使用者，您好：</p>"
+                "<p>感謝您申請 API Key 請妥善保管</p>"
+                "<p>若此操作非您本人執行，請立即連繫資訊服務處。</p>"
+                "<p>若您有任何疑問，歡迎向資訊服務處服務台反映。</p>"
+                "<p>聯絡窗口：中央研究院資訊服務處<br/>"
+                "線上服務台（上班時間）：https://its.sinica.edu.tw/online（密碼27898855）<br/>"
+                "電話（上班時間）：02-27898855<br/>"
+                "信箱：its@sinica.edu.tw</p>"
+                "<p>中央研究院資訊服務處 敬啟</p>"
                 "<hr/>"
-                f"<p>Hello {owner_name},</p>"
-                "<p>We have received your API key application. Please wait while admins review and issue the key.</p>"
-                f"<p>You can sign in to <a href=\"{app_domain}\">AS API Console</a> to check the latest status.</p>"
-            ),
-        )
-
-    async def send_application_received_to_admins(
-        self,
-        *,
-        recipients: Iterable[str],
-        application_id: str,
-        applicant_account: str,
-        applicant_name: str,
-        applicant_email: str,
-        applicant_department: str,
-        application_date: str,
-        duration_months: int,
-        purpose: str,
-        app_domain: str,
-    ) -> None:
-        to_list = [r for r in dict.fromkeys(recipients) if r]
-        if not to_list:
-            return
-
-        await self._send_html(
-            subject="[AS API Console] 新申請待審 / New application pending review",
-            recipients=to_list,
-            body=(
-                "<p>管理者您好：</p>"
-                "<p>有新的 API Key 申請待審，請前往後台審理與配發。</p>"
-                f"<p>申請單號：<b>{application_id}</b></p>"
-                f"<p>申請者：{applicant_account} / {applicant_name} / {applicant_email} / {applicant_department}</p>"
-                f"<p>申請日期：{application_date}；時長：{duration_months} 個月</p>"
-                f"<p>用途：{purpose}</p>"
-                f"<p><a href=\"{app_domain}\">前往 AS API Console</a></p>"
-                "<hr/>"
-                "<p>Hello Admin,</p>"
-                "<p>A new API key application is pending review. Please review and issue it in the console.</p>"
-                f"<p>Application ID: <b>{application_id}</b></p>"
-                f"<p>Applicant: {applicant_account} / {applicant_name} / {applicant_email} / {applicant_department}</p>"
-                f"<p>Application date: {application_date}; Duration: {duration_months} month(s)</p>"
-                f"<p>Purpose: {purpose}</p>"
-                f"<p><a href=\"{app_domain}\">Open AS API Console</a></p>"
+                "<p>Dear user,</p>"
+                "<p>Thank you for applying for an API key. Please keep it secure.</p>"
+                "<p>If this action was not performed by you, please contact the IT Service Desk immediately.</p>"
+                "<p>If you have any questions, please contact the IT Service Desk.</p>"
+                "<p>Contact: Institute of Information Science, Academia Sinica IT Service Desk<br/>"
+                "Online Service Desk (business hours): https://its.sinica.edu.tw/online (password: 27898855)<br/>"
+                "Phone (business hours): 02-27898855<br/>"
+                "Email: its@sinica.edu.tw</p>"
+                "<p>Sincerely,<br/>Academia Sinica IT Service Desk</p>"
             ),
         )
