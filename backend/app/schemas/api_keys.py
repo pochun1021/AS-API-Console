@@ -39,23 +39,12 @@ class PendingApplicationItemResponse(BaseModel):
     purpose: str
     application_date: date
     duration_months: int
-    selected_issuance_mode: Literal["budget", "rate_limit"] | None = None
     created_at: datetime
 
 
 class PendingApplicationListResponse(BaseModel):
     items: list[PendingApplicationItemResponse]
     total: int
-
-
-class PendingApplicationModeUpdateRequest(BaseModel):
-    mode: Literal["budget", "rate_limit"]
-
-
-class PendingApplicationModeUpdateResponse(BaseModel):
-    id: str
-    selected_issuance_mode: Literal["budget", "rate_limit"]
-    issuance_status: Literal["pending", "issued"]
 
 
 class PendingApplicationIssueResponse(BaseModel):

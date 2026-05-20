@@ -9,8 +9,6 @@ import { useLocale } from "../i18n/locale";
 const navItems = [
   { labelKey: "nav_apply", path: "/apply", roles: ["user", "admin"] },
   { labelKey: "nav_api_keys", path: "/api-keys", roles: ["user", "admin"] },
-  { labelKey: "nav_notifications", path: "/notifications", roles: ["user", "admin"] },
-  { labelKey: "nav_pending_applications", path: "/pending-applications", roles: ["admin"] },
   { labelKey: "nav_whitelists", path: "/whitelists", roles: ["admin"] },
   { labelKey: "nav_limit_strategies", path: "/limit-strategies", roles: ["admin"] },
   { labelKey: "nav_admins", path: "/users", roles: ["admin"] },

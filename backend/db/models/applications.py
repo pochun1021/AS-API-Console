@@ -28,7 +28,6 @@ class ApiKeyApplication(Base):
     tpm_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rpm_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     issuance_status: Mapped[str] = mapped_column(String(20), default="issued", nullable=False)
-    selected_issuance_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     pending_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

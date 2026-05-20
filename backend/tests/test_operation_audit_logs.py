@@ -73,7 +73,6 @@ def test_revoke_logs_success_and_failure(client, admin_headers):
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit"},
     )
     app_id = create_resp.json()["application"]["id"]
-    client.patch(f"/api/v1/api-keys/applications/{app_id}/issuance-mode", headers=admin_headers, json={"mode": "budget"})
     client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
     key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
 

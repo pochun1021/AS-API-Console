@@ -13,8 +13,6 @@ from app.schemas.api_keys import (
     ApiKeyUserStatisticsResponse,
     PendingApplicationIssueResponse,
     PendingApplicationListResponse,
-    PendingApplicationModeUpdateRequest,
-    PendingApplicationModeUpdateResponse,
     LimitStrategyConfigResponse,
     LimitStrategyConfigUpdateRequest,
     ApplicationCreateRequest,
@@ -105,28 +103,6 @@ def list_pending_applications(
 ) -> dict:
     service = ApiKeysService(db)
     return service.list_pending_applications(current_user=current_user)
-
-
-@router.patch(
-    "/api-keys/applications/{application_id}/issuance-mode",
-    response_model=PendingApplicationModeUpdateResponse,
-)
-def update_pending_application_mode(
-    application_id: str,
-    payload: PendingApplicationModeUpdateRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    service = ApiKeysService(db)
-    try:
-        return service.update_pending_application_mode(
-            current_user=current_user,
-            application_id=application_id,
-            mode=payload.mode,
-        )
-    except Exception:
-        db.rollback()
-        raise
 
 
 @router.post("/api-keys/applications/{application_id}/issue", response_model=PendingApplicationIssueResponse)

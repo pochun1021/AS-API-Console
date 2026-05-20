@@ -46,9 +46,6 @@ export const apiClient = {
   getLimitStrategyConfig: (auth) => provider.getLimitStrategyConfig(auth),
   updateLimitStrategyConfig: (payload, auth) => provider.updateLimitStrategyConfig(payload, auth),
   listPendingApplications: (auth) => provider.listPendingApplications(auth),
-  updateApplicationIssuanceMode: (id, mode, auth) => provider.updateApplicationIssuanceMode(id, mode, auth),
   issueApplication: (id, auth) => provider.issueApplication(id, auth),
-  listNotifications: (params, auth) => provider.listNotifications(params, auth),
-  markNotificationRead: (id, auth) => provider.markNotificationRead(id, auth),
   logout: () => provider.logout()
 };
