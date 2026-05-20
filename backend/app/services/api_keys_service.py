@@ -529,6 +529,115 @@ class ApiKeysService:
         self.session.commit()
         return {"id": key.id, "status": key.status}
 
+    def renew_key(self, current_user: CurrentUser, key_id: str) -> dict:
+        exists = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
+        if exists is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+
+        allowed = self.key_repo.get_key_detail(key_id, current_user.role, current_user.account)
+        if allowed is None:
+            raise ApiError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403)
+
+        row = (
+            self.session.query(ApiKey, ApiKeyApplication)
+            .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
+            .filter(ApiKey.id == key_id)
+            .first()
+        )
+        if row is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+
+        source_key, source_app = row
+        if source_key.status not in {"revoked", "expired"}:
+            raise ApiError("KEY_NOT_RENEWABLE", "only revoked or expired key can be renewed", 409)
+        if source_key.renewed_to_key_id:
+            raise ApiError("KEY_ALREADY_RENEWED", "key already renewed", 409)
+
+        identity = AuthIdentity(
+            account=source_app.account,
+            name=source_app.name,
+            email=source_app.email,
+            department=source_app.department,
+            sysid=source_app.sysid,
+        )
+        operator_identity = AuthIdentity(
+            account=current_user.account,
+            name=current_user.name,
+            email=current_user.email,
+            department=current_user.department,
+            sysid=current_user.sysid,
+        )
+        now = datetime.now(UTC)
+        application = self.key_repo.create_application(
+            ApplicationCreateInput(
+                user_id=source_app.user_id,
+                identity=identity,
+                operator_identity=operator_identity,
+                is_proxy_submission=current_user.role == "admin" and current_user.account != source_app.account,
+                application_date=date.today(),
+                duration_months=source_app.duration_months,
+                purpose=source_app.purpose,
+                limit_strategy="",
+                max_budget=None,
+                budget_duration=None,
+                tpm_limit=None,
+                rpm_limit=None,
+                issuance_status="issued",
+                pending_issued_at=None,
+                issued_at=now,
+                expires_at=_calc_expiration(now, source_app.duration_months),
+            )
+        )
+        plaintext = self._issue_application(application)
+
+        issued_key = self.session.query(ApiKey).filter(ApiKey.application_id == application.id).one_or_none()
+        email_warning: str | None = None
+
+        if application.issuance_status == "issued":
+            try:
+                run_async(
+                    self.mail_service.send_key_renewed_notification(
+                        to_email=source_app.email,
+                        owner_name=source_app.name,
+                        app_domain=self.settings.app_domain,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logging.exception("failed to send key renewed email to applicant")
+                email_warning = "key_renewed_email_failed"
+        else:
+            try:
+                run_async(
+                    self.mail_service.send_key_renew_pending_notification(
+                        to_email=source_app.email,
+                        owner_name=source_app.name,
+                        app_domain=self.settings.app_domain,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logging.exception("failed to send key renew pending email to applicant")
+                email_warning = "key_renew_pending_email_failed"
+
+        if issued_key is None and application.issuance_status == "issued":
+            raise ApiError("INTERNAL_ERROR", "renew issued without key record", 500)
+
+        if issued_key is not None:
+            source_key.renewed_to_key_id = issued_key.id
+        source_app.updated_at = datetime.now(UTC)
+        self.session.add(source_key)
+        self.session.add(source_app)
+        self.session.commit()
+        return {
+            "id": issued_key.id if issued_key is not None else source_key.id,
+            "status": issued_key.status if issued_key is not None else source_key.status,
+            "expires_at": application.expires_at,
+            "issuance_status": application.issuance_status,
+            "renewed_from_key_id": source_key.id,
+            "api_key_plaintext": plaintext,
+            "pending_reason": "provider_unavailable" if application.issuance_status == "pending" else None,
+            "email_warning": email_warning,
+        }
+
     def reveal_key_plaintext(self, current_user: CurrentUser, key_id: str) -> dict:
         if current_user.role != "admin":
             raise ApiError("FORBIDDEN", "admin role required", 403)

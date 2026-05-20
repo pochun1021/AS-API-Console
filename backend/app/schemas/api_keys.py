@@ -94,6 +94,17 @@ class RevokeResponse(BaseModel):
     status: str
 
 
+class RenewResponse(BaseModel):
+    id: str
+    status: str
+    expires_at: datetime
+    issuance_status: Literal["pending", "issued"]
+    renewed_from_key_id: str
+    api_key_plaintext: str | None = None
+    pending_reason: str | None = None
+    email_warning: str | None = None
+
+
 class ApiKeyRevealResponse(BaseModel):
     id: str
     api_key_plaintext: str

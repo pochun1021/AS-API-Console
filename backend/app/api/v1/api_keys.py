@@ -17,6 +17,7 @@ from app.schemas.api_keys import (
     LimitStrategyConfigUpdateRequest,
     ApplicationCreateRequest,
     ApplicationCreateResponse,
+    RenewResponse,
     RevokeResponse,
 )
 from app.services.api_keys_service import ApiKeysService
@@ -194,6 +195,62 @@ def revoke_api_key(
     service = ApiKeysService(db)
     try:
         result = service.revoke_key(current_user=current_user, key_id=key_id)
+    except ApiError as exc:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=key_id,
+            context=context,
+            metadata={"key_id": key_id},
+        )
+        raise
+    except Exception:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=key_id,
+            context=context,
+            metadata={"key_id": key_id},
+        )
+        raise
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["id"],
+        context=context,
+        metadata={"key_id": result["id"], "status": result["status"]},
+    )
+    return result
+
+
+@router.post("/api-keys/{key_id}/renew", response_model=RenewResponse)
+def renew_api_key(
+    key_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "api_key"
+    action = "renew"
+    target_type = "api_key"
+    service = ApiKeysService(db)
+    try:
+        result = service.renew_key(current_user=current_user, key_id=key_id)
     except ApiError as exc:
         db.rollback()
         audit.log(

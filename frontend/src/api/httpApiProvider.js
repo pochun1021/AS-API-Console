@@ -90,6 +90,10 @@ export const httpApiProvider = {
     return request(`/api/v1/api-keys/${id}/revoke`, { method: "POST", auth });
   },
 
+  renewApiKey(id, auth) {
+    return request(`/api/v1/api-keys/${id}/renew`, { method: "POST", auth });
+  },
+
   listApiKeyUserStatistics(params, auth) {
     const query = new URLSearchParams();
     if (params.page) query.set("page", String(params.page));

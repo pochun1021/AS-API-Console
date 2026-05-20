@@ -79,6 +79,50 @@ class MailService:
             ),
         )
 
+    async def send_key_renewed_notification(
+        self,
+        *,
+        to_email: str,
+        owner_name: str,
+        app_domain: str,
+    ) -> None:
+        await self._send_html(
+            subject="[AS API Console] 金鑰已更新 / Your API key has been renewed",
+            recipients=[to_email],
+            body=(
+                f"<p>{owner_name} 您好：</p>"
+                "<p>您的 API Key 更新（Renew）已完成，請使用最新金鑰。</p>"
+                f"<p>請登入 <a href=\"{app_domain}\">AS API Console</a> 查看金鑰資訊。</p>"
+                "<p>此通知不包含 API Key 明文內容。</p>"
+                "<hr/>"
+                f"<p>Hello {owner_name},</p>"
+                "<p>Your API key renew action has completed. Please use the latest key.</p>"
+                f"<p>Please sign in to <a href=\"{app_domain}\">AS API Console</a> to review key details.</p>"
+                "<p>This notification does not contain plaintext API key content.</p>"
+            ),
+        )
+
+    async def send_key_renew_pending_notification(
+        self,
+        *,
+        to_email: str,
+        owner_name: str,
+        app_domain: str,
+    ) -> None:
+        await self._send_html(
+            subject="[AS API Console] 金鑰更新處理中 / API key renew is pending",
+            recipients=[to_email],
+            body=(
+                f"<p>{owner_name} 您好：</p>"
+                "<p>您剛剛發起的 API Key 更新（Renew）尚在處理中，系統完成後會再通知您。</p>"
+                f"<p>請登入 <a href=\"{app_domain}\">AS API Console</a> 查看最新狀態。</p>"
+                "<hr/>"
+                f"<p>Hello {owner_name},</p>"
+                "<p>Your API key renew action is currently pending. We will notify you once issuance is completed.</p>"
+                f"<p>Please sign in to <a href=\"{app_domain}\">AS API Console</a> to check the latest status.</p>"
+            ),
+        )
+
     async def send_application_received_to_applicant(
         self,
         *,

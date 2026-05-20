@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import BlockIcon from "@mui/icons-material/Block";
 import EditIcon from "@mui/icons-material/Edit";
+import AutorenewIcon from "@mui/icons-material/Autorenew";
+import CheckIcon from "@mui/icons-material/Check";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import {
   Alert,
   Box,
@@ -52,6 +55,18 @@ function formatMaskedKey(value) {
   return `AS-...${tail}`;
 }
 
+async function copyText(text) {
+  if (!window.isSecureContext) return { ok: false, reason: "insecure_context" };
+  if (!navigator?.clipboard?.writeText) return { ok: false, reason: "clipboard_unavailable" };
+  try {
+    await navigator.clipboard.writeText(text);
+    return { ok: true };
+  } catch (error) {
+    if (error?.name === "NotAllowedError") return { ok: false, reason: "permission_denied" };
+    return { ok: false, reason: "unknown" };
+  }
+}
+
 export default function MyApiKeysPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const [items, setItems] = useState([]);
@@ -64,10 +79,15 @@ export default function MyApiKeysPage({ auth }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [pendingRevokeId, setPendingRevokeId] = useState("");
+  const [pendingRenewId, setPendingRenewId] = useState("");
   const [pendingAliasEditItem, setPendingAliasEditItem] = useState(null);
   const [aliasInputValue, setAliasInputValue] = useState("");
   const [aliasSaving, setAliasSaving] = useState(false);
   const [detailAliasValue, setDetailAliasValue] = useState("");
+  const [renewIssued, setRenewIssued] = useState(null);
+  const [renewCopySucceeded, setRenewCopySucceeded] = useState(false);
+  const [renewCopyError, setRenewCopyError] = useState("");
+  const renewCopyResetTimerRef = useRef(null);
 
   async function load() {
     setLoading(true);
@@ -94,6 +114,65 @@ export default function MyApiKeysPage({ auth }) {
     } catch (e) {
       setBanner(e?.payload?.error?.message || t("mykeys_revoke_failed"));
     }
+  }
+
+  async function renew(id) {
+    setBanner("");
+    try {
+      const response = await apiClient.renewApiKey(id, auth);
+      if (response?.issuance_status === "issued" && response?.api_key_plaintext) {
+        setRenewIssued(response);
+        setRenewCopySucceeded(false);
+        setRenewCopyError("");
+      } else {
+        setBanner(t("mykeys_renew_pending"));
+      }
+      setBanner((prev) => prev || t("mykeys_renew_done"));
+      await load();
+      if (detailOpen && detailId === id) {
+        closeDetail();
+      }
+    } catch (e) {
+      setBanner(e?.payload?.error?.message || t("mykeys_renew_failed"));
+    }
+  }
+
+  function closeRenewIssuedDialog() {
+    if (renewCopyResetTimerRef.current) {
+      clearTimeout(renewCopyResetTimerRef.current);
+      renewCopyResetTimerRef.current = null;
+    }
+    setRenewIssued(null);
+    setRenewCopySucceeded(false);
+    setRenewCopyError("");
+  }
+
+  async function onCopyRenewKey() {
+    if (!renewIssued?.api_key_plaintext) {
+      setRenewCopyError(locale === "zh-TW" ? "目前無法複製金鑰，請手動複製。" : "Unable to copy key now. Please copy manually.");
+      return;
+    }
+    const result = await copyText(renewIssued.api_key_plaintext);
+    if (!result.ok) {
+      if (result.reason === "insecure_context") {
+        setRenewCopyError(locale === "zh-TW" ? "目前環境不支援自動複製（需 HTTPS 或 localhost），請手動複製。" : "Auto copy is unavailable in this environment (HTTPS or localhost required).");
+      } else if (result.reason === "clipboard_unavailable") {
+        setRenewCopyError(locale === "zh-TW" ? "目前瀏覽器不支援自動複製，請手動複製。" : "Clipboard API is unavailable. Please copy manually.");
+      } else if (result.reason === "permission_denied") {
+        setRenewCopyError(locale === "zh-TW" ? "剪貼簿權限被拒絕，請允許後再試，或手動複製。" : "Clipboard permission denied. Please allow and retry, or copy manually.");
+      } else {
+        setRenewCopyError(locale === "zh-TW" ? "目前無法複製金鑰，請手動複製。" : "Unable to copy key now. Please copy manually.");
+      }
+      return;
+    }
+
+    setRenewCopySucceeded(true);
+    setRenewCopyError("");
+    if (renewCopyResetTimerRef.current) clearTimeout(renewCopyResetTimerRef.current);
+    renewCopyResetTimerRef.current = setTimeout(() => {
+      setRenewCopySucceeded(false);
+      renewCopyResetTimerRef.current = null;
+    }, 1500);
   }
 
   async function loadDetail(id) {
@@ -146,6 +225,10 @@ export default function MyApiKeysPage({ auth }) {
 
   useEffect(() => {
     load();
+  }, []);
+
+  useEffect(() => () => {
+    if (renewCopyResetTimerRef.current) clearTimeout(renewCopyResetTimerRef.current);
   }, []);
 
   const columns = useMemo(
@@ -240,13 +323,25 @@ export default function MyApiKeysPage({ auth }) {
                 {locale === "zh-TW" ? "停用" : "Revoke"}
               </Button>
             ) : null}
+            {["revoked", "expired"].includes(params.row.status) ? (
+              <Button
+                aria-label={t("mykeys_renew_key")}
+                size="small"
+                color="primary"
+                variant="outlined"
+                startIcon={<AutorenewIcon fontSize="small" />}
+                onClick={() => setPendingRenewId(params.row.id)}
+              >
+                {locale === "zh-TW" ? "更新" : "Renew"}
+              </Button>
+            ) : null}
           </Box>
         )
       });
 
       return baseColumns;
     },
-    [auth.role, t]
+    [auth.role, locale, t]
   );
 
   return (
@@ -291,6 +386,46 @@ export default function MyApiKeysPage({ auth }) {
           >
             {locale === "zh-TW" ? "確認" : "Confirm"}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(pendingRenewId)} onClose={() => setPendingRenewId("")}>
+        <DialogTitle>{t("mykeys_dialog_renew_title")}</DialogTitle>
+        <DialogContent>{t("mykeys_dialog_renew_body")}</DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingRenewId("")}>{locale === "zh-TW" ? "取消" : "Cancel"}</Button>
+          <Button
+            onClick={async () => {
+              const targetId = pendingRenewId;
+              setPendingRenewId("");
+              await renew(targetId);
+            }}
+          >
+            {locale === "zh-TW" ? "確認" : "Confirm"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(renewIssued)} onClose={closeRenewIssuedDialog}>
+        <DialogTitle>{locale === "zh-TW" ? "金鑰已更新" : "API Key Renewed"}</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 1 }}>
+            {locale === "zh-TW" ? "此明文金鑰只會顯示一次，請立即保存。" : "This plaintext key is shown only once. Save it now."}
+          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography sx={{ fontFamily: "monospace", bgcolor: "grey.100", p: 1, borderRadius: 1, flex: 1, userSelect: "text", wordBreak: "break-all" }}>
+              {renewIssued?.api_key_plaintext}
+            </Typography>
+            <Tooltip title={renewCopySucceeded ? (locale === "zh-TW" ? "已複製" : "Copied") : (locale === "zh-TW" ? "複製金鑰" : "Copy Key")}>
+              <IconButton aria-label={renewCopySucceeded ? (locale === "zh-TW" ? "已複製金鑰" : "Copied Key") : (locale === "zh-TW" ? "複製金鑰" : "Copy Key")} onClick={onCopyRenewKey}>
+                {renewCopySucceeded ? <CheckIcon /> : <ContentCopyIcon />}
+              </IconButton>
+            </Tooltip>
+          </Box>
+          {renewCopyError ? <Alert severity="error" sx={{ mt: 1 }}>{renewCopyError}</Alert> : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeRenewIssuedDialog}>{locale === "zh-TW" ? "我知道了" : "Saved"}</Button>
         </DialogActions>
       </Dialog>
 

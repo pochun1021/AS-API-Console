@@ -528,6 +528,125 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
     assert second.json()["error"]["code"] == "KEY_NOT_ACTIVE"
 
 
+def test_renew_permissions_and_visibility(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
+
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 6, "purpose": "renew test"},
+    )
+    assert create_resp.status_code == 201
+    source_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
+    revoke = client.post(f"/api/v1/api-keys/{source_id}/revoke", headers=user1)
+    assert revoke.status_code == 200
+
+    not_owner = client.post(f"/api/v1/api-keys/{source_id}/renew", headers=user2)
+    assert not_owner.status_code == 403
+    assert not_owner.json()["error"]["code"] == "KEY_NOT_OWNED_BY_USER"
+
+    renew = client.post(f"/api/v1/api-keys/{source_id}/renew", headers=user1)
+    assert renew.status_code == 200
+    body = renew.json()
+    assert body["status"] == "active"
+    assert body["issuance_status"] == "issued"
+    assert body["renewed_from_key_id"] == source_id
+    assert body["api_key_plaintext"].startswith("AS-")
+    assert body["pending_reason"] is None
+
+    user_list = client.get("/api/v1/api-keys", headers=user1)
+    assert user_list.status_code == 200
+    user_items = user_list.json()["items"]
+    assert len(user_items) == 1
+    assert user_items[0]["id"] == body["id"]
+    assert user_items[0]["duration_months"] == 6
+
+    admin_list = client.get("/api/v1/api-keys", headers=admin_headers)
+    assert admin_list.status_code == 200
+    admin_ids = {item["id"] for item in admin_list.json()["items"]}
+    assert source_id in admin_ids
+    assert body["id"] in admin_ids
+
+    duplicate = client.post(f"/api/v1/api-keys/{source_id}/renew", headers=user1)
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "KEY_ALREADY_RENEWED"
+
+
+def test_renew_rejects_active_key(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew active"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get("/api/v1/api-keys", headers=user_headers).json()["items"][0]["id"]
+    renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user_headers)
+    assert renew.status_code == 409
+    assert renew.json()["error"]["code"] == "KEY_NOT_RENEWABLE"
+
+
+def test_renew_sends_renewed_email_on_success(client, admin_headers, monkeypatch):
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew mail"},
+    )
+    key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
+    client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user)
+
+    calls: list[dict] = []
+
+    async def _fake_mail(self, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("app.services.mail_service.MailService.send_key_renewed_notification", _fake_mail)
+
+    renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user)
+    assert create_resp.status_code == 201
+    assert renew.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["to_email"] == user["x-email"]
+
+
+def test_renew_provider_unavailable_returns_pending(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderUnavailableError
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew pending"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
+    client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user)
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "app.services.provider_client.ProviderClient.generate_key",
+        lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
+    )
+    try:
+        renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user)
+        assert renew.status_code == 200
+        body = renew.json()
+        assert body["issuance_status"] == "pending"
+        assert body["api_key_plaintext"] is None
+        assert body["pending_reason"] == "provider_unavailable"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
 def test_admin_can_list_global_keys(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")

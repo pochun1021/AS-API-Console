@@ -191,6 +191,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         key = ApiKey(
             id=str(uuid4()),
             application_id=data.application_id,
+            renewed_to_key_id=None,
             key_hash=data.key_hash,
             key_prefix="AS-",
             masked_key=data.masked_key,
@@ -223,6 +224,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         )
         if requester_role == "user":
             stmt = stmt.where(ApiKeyApplication.account == requester_account)
+            stmt = stmt.where(ApiKey.renewed_to_key_id.is_(None))
         if filters.status:
             stmt = stmt.where(ApiKey.status == filters.status)
         if filters.owner_account:

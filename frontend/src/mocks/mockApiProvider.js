@@ -12,7 +12,8 @@ const initialApiKeys = [
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString(),
     owner_account: "jane.doe",
-    owner_name: "Jane Doe"
+    owner_name: "Jane Doe",
+    renewed_to_key_id: null
   },
   {
     id: "key_002",
@@ -25,7 +26,8 @@ const initialApiKeys = [
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
     owner_account: "jane.doe",
-    owner_name: "Jane Doe"
+    owner_name: "Jane Doe",
+    renewed_to_key_id: null
   },
   {
     id: "key_003",
@@ -38,7 +40,8 @@ const initialApiKeys = [
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
     owner_account: "john.admin",
-    owner_name: "John Admin"
+    owner_name: "John Admin",
+    renewed_to_key_id: null
   },
   {
     id: "key_004",
@@ -49,7 +52,8 @@ const initialApiKeys = [
     created_at: "2025-04-01T08:00:00.000Z",
     expires_at: "2025-05-01T08:00:00.000Z",
     owner_account: "john.admin",
-    owner_name: "John Admin"
+    owner_name: "John Admin",
+    renewed_to_key_id: null
   },
   {
     id: "key_005",
@@ -62,7 +66,8 @@ const initialApiKeys = [
     created_at: "2026-04-15T09:30:00.000Z",
     expires_at: "2026-10-15T09:30:00.000Z",
     owner_account: "alice.wang",
-    owner_name: "Alice Wang"
+    owner_name: "Alice Wang",
+    renewed_to_key_id: null
   },
   {
     id: "key_006",
@@ -75,7 +80,8 @@ const initialApiKeys = [
     created_at: "2026-03-10T02:20:00.000Z",
     expires_at: "2027-03-10T02:20:00.000Z",
     owner_account: "sam.chen",
-    owner_name: "Sam Chen"
+    owner_name: "Sam Chen",
+    renewed_to_key_id: null
   },
   {
     id: "key_007",
@@ -88,7 +94,8 @@ const initialApiKeys = [
     created_at: "2025-12-01T05:00:00.000Z",
     expires_at: "2026-01-01T05:00:00.000Z",
     owner_account: "mike.li",
-    owner_name: "Mike Li"
+    owner_name: "Mike Li",
+    renewed_to_key_id: null
   }
 ];
 
@@ -366,7 +373,8 @@ export const mockApiProvider = {
         created_at: now.toISOString(),
         expires_at: expires.toISOString(),
         owner_account: auth.account,
-        owner_name: auth.name
+        owner_name: auth.name,
+        renewed_to_key_id: null
       },
       ...apiKeys
     ];
@@ -390,7 +398,9 @@ export const mockApiProvider = {
     const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
     const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
 
-    let items = auth.role === "admin" ? [...apiKeys] : apiKeys.filter((item) => item.owner_account === auth.account);
+    let items = auth.role === "admin"
+      ? [...apiKeys]
+      : apiKeys.filter((item) => item.owner_account === auth.account && !item.renewed_to_key_id);
 
     if (auth.role === "admin" && params.owner_account) {
       items = items.filter((item) => item.owner_account === params.owner_account);
@@ -486,6 +496,59 @@ export const mockApiProvider = {
     }
     target.status = "revoked";
     return { success: true };
+  },
+
+  async renewApiKey(id, auth) {
+    await delay();
+    const target = findApiKeyById(id);
+    if (!target) {
+      throw createError("VALIDATION_ERROR", "id not found", 404);
+    }
+    if (auth.role !== "admin" && target.owner_account !== auth.account) {
+      throw createError("KEY_NOT_OWNED_BY_USER", "key is not owned by user", 403);
+    }
+    if (!["revoked", "expired"].includes(target.status)) {
+      throw createError("KEY_NOT_RENEWABLE", "only revoked or expired key can be renewed", 409);
+    }
+    if (target.renewed_to_key_id) {
+      throw createError("KEY_ALREADY_RENEWED", "key already renewed", 409);
+    }
+
+    const idNew = `key_${String(apiKeys.length + 1).padStart(3, "0")}`;
+    const now = new Date();
+    const expires = new Date(now);
+    expires.setMonth(expires.getMonth() + target.duration_months);
+    const plain = generatePlainKey();
+
+    apiKeys = [
+      {
+        id: idNew,
+        status: "active",
+        masked_key: `AS-...${plain.slice(-4)}`,
+        application_date: now.toISOString().slice(0, 10),
+        duration_months: target.duration_months,
+        purpose: target.purpose || "",
+        key_alias: `for_${target.owner_account}`,
+        department: target.department,
+        created_at: now.toISOString(),
+        expires_at: expires.toISOString(),
+        owner_account: target.owner_account,
+        owner_name: target.owner_name,
+        renewed_to_key_id: null
+      },
+      ...apiKeys
+    ];
+
+    target.renewed_to_key_id = idNew;
+    return {
+      id: idNew,
+      status: "active",
+      expires_at: expires.toISOString(),
+      issuance_status: "issued",
+      renewed_from_key_id: target.id,
+      api_key_plaintext: plain,
+      pending_reason: null
+    };
   },
 
   async listWhitelists(auth) {
