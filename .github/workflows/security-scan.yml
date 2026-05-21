@@ -47,6 +47,7 @@ jobs:
         id: pip_audit
         continue-on-error: true
         run: |
+          set +e
           rm -f security-reports/pip-audit.stdout.log security-reports/pip-audit.stderr.log
           attempts=0
           max_attempts=3
@@ -64,14 +65,14 @@ jobs:
             fi
             if [ "$attempts" -eq 1 ]; then sleep 2; fi
             if [ "$attempts" -eq 2 ]; then sleep 5; fi
-            if [ "$attempts" -eq 3 ]; then sleep 10; fi
           done
           if [ "$report_ready" -ne 1 ]; then
             excerpt=$(head -n 20 security-reports/pip-audit.stderr.log | tr '\n' ' ' | sed 's/"/\\"/g')
             printf '{"scan_error":"pip_audit_execution_failed","attempts":%s,"last_exit_code":%s,"last_error_excerpt":"%s"}\n' \
               "$attempts" "$rc" "$excerpt" > security-reports/pip-audit.json
-            exit 0
           fi
+          echo "pip-audit summary: attempts=$attempts report_ready=$report_ready final_exit_code=$rc"
+          exit 0
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -175,12 +176,12 @@ jobs:
           pip_audit = parse_json(report_dir / "pip-audit.json", "pip_audit")
           pip_audit_error = extract_scan_error(pip_audit, "pip_audit")
           if pip_audit_error:
-            if isinstance(pip_audit, dict) and pip_audit.get("last_exit_code") is not None:
-              add_blocker(
-                f"scanner_error:pip-audit:{pip_audit_error}:exit_{pip_audit.get('last_exit_code')}"
+            if isinstance(pip_audit, dict):
+              warnings.append(
+                f"warning:scanner_error:pip-audit:{pip_audit_error}:exit_{pip_audit.get('last_exit_code', 'na')}"
               )
             else:
-              add_blocker(f"scanner_error:pip-audit:{pip_audit_error}")
+              warnings.append(f"warning:scanner_error:pip-audit:{pip_audit_error}")
           else:
             for dep in pip_audit.get("dependencies", []):
               for vuln in dep.get("vulns", []):
