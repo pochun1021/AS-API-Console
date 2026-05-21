@@ -1,7 +1,7 @@
 from functools import lru_cache
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlsplit
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +52,19 @@ class Settings(BaseSettings):
     oauth_client_secret: str | None = None
     oauth_redirect_uri: str | None = None
     oauth_scope: str = "basic"
+
+    @field_validator("provider_base_url")
+    @classmethod
+    def validate_provider_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        parsed = urlsplit(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("PROVIDER_BASE_URL must be a valid http(s) URL")
+        return normalized
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

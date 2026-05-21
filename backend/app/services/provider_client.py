@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from urllib import error, request
+from urllib.parse import urlsplit
 import json
 
 from app.core.config import get_settings
@@ -18,10 +19,20 @@ class ProviderBadRequestError(RuntimeError):
     pass
 
 
+def _normalize_provider_base_url(base_url: str | None) -> str:
+    normalized = (base_url or "").strip()
+    if not normalized:
+        return ""
+    parsed = urlsplit(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ProviderUnavailableError("provider base url must use http or https")
+    return normalized.rstrip("/")
+
+
 class ProviderClient:
     def __init__(self) -> None:
         settings = get_settings()
-        self.base_url = (settings.provider_base_url or "").rstrip("/")
+        self.base_url = _normalize_provider_base_url(settings.provider_base_url)
         self.master_key = settings.provider_master_key or ""
         self.timeout_seconds = settings.provider_timeout_seconds
 
@@ -43,7 +54,7 @@ class ProviderClient:
         )
 
         try:
-            with request.urlopen(req, timeout=self.timeout_seconds) as resp:
+            with request.urlopen(req, timeout=self.timeout_seconds) as resp:  # nosec B310
                 data = json.loads(resp.read().decode("utf-8") or "{}")
         except error.HTTPError as exc:
             if 400 <= exc.code < 500:
