@@ -57,11 +57,7 @@ jobs:
             pip-audit -r backend/requirements.txt --format=json --output=security-reports/pip-audit.json \
               >> security-reports/pip-audit.stdout.log 2>> security-reports/pip-audit.stderr.log
             rc=$?
-            if [ -s security-reports/pip-audit.json ] && python - <<'PY'
-import json
-from pathlib import Path
-json.loads(Path("security-reports/pip-audit.json").read_text())
-PY
+            if [ -s security-reports/pip-audit.json ] && python -c 'import json, pathlib; json.loads(pathlib.Path("security-reports/pip-audit.json").read_text())'
             then
               report_ready=1
               break
