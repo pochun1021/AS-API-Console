@@ -132,11 +132,19 @@ jobs:
             except Exception as exc:
               return {"scan_error": f"{tool}_invalid_json:{exc}"}
 
+          def extract_scan_error(payload, tool: str):
+            if isinstance(payload, dict):
+              return payload.get("scan_error")
+            if isinstance(payload, list):
+              return None
+            return f"{tool}_invalid_payload_type:{type(payload).__name__}"
+
           nonlocal_has_blocker = [False]
 
           bandit = parse_json(report_dir / "bandit.json", "bandit")
-          if bandit.get("scan_error"):
-            add_blocker(f"scanner_error:bandit:{bandit['scan_error']}")
+          bandit_error = extract_scan_error(bandit, "bandit")
+          if bandit_error:
+            add_blocker(f"scanner_error:bandit:{bandit_error}")
           else:
             for item in bandit.get("results", []):
               sev = str(item.get("issue_severity", "")).upper()
@@ -147,8 +155,9 @@ jobs:
                 warnings.append(f"warning:bandit:{test_id}:{sev}")
 
           pip_audit = parse_json(report_dir / "pip-audit.json", "pip_audit")
-          if pip_audit.get("scan_error"):
-            add_blocker(f"scanner_error:pip-audit:{pip_audit['scan_error']}")
+          pip_audit_error = extract_scan_error(pip_audit, "pip_audit")
+          if pip_audit_error:
+            add_blocker(f"scanner_error:pip-audit:{pip_audit_error}")
           else:
             for dep in pip_audit.get("dependencies", []):
               for vuln in dep.get("vulns", []):
@@ -160,8 +169,9 @@ jobs:
                   warnings.append(f"warning:pip-audit:{vuln_id}:{sev}")
 
           npm_audit = parse_json(report_dir / "npm-audit.json", "npm_audit")
-          if npm_audit.get("scan_error"):
-            add_blocker(f"scanner_error:npm-audit:{npm_audit['scan_error']}")
+          npm_audit_error = extract_scan_error(npm_audit, "npm_audit")
+          if npm_audit_error:
+            add_blocker(f"scanner_error:npm-audit:{npm_audit_error}")
           else:
             vulnerabilities = npm_audit.get("vulnerabilities", {})
             for pkg, info in vulnerabilities.items():
@@ -172,8 +182,9 @@ jobs:
                 warnings.append(f"warning:npm-audit:{pkg}:{sev}")
 
           trivy = parse_json(report_dir / "trivy.json", "trivy")
-          if trivy.get("scan_error"):
-            add_blocker(f"scanner_error:trivy:{trivy['scan_error']}")
+          trivy_error = extract_scan_error(trivy, "trivy")
+          if trivy_error:
+            add_blocker(f"scanner_error:trivy:{trivy_error}")
           else:
             for result in trivy.get("Results", []):
               target = result.get("Target", "unknown")
@@ -193,8 +204,9 @@ jobs:
                   warnings.append(f"warning:trivy-misconfig:{target}:{mis_id}:{sev}")
 
           gitleaks = parse_json(report_dir / "gitleaks.json", "gitleaks")
-          if gitleaks.get("scan_error"):
-            add_blocker(f"scanner_error:gitleaks:{gitleaks['scan_error']}")
+          gitleaks_error = extract_scan_error(gitleaks, "gitleaks")
+          if gitleaks_error:
+            add_blocker(f"scanner_error:gitleaks:{gitleaks_error}")
           else:
             if isinstance(gitleaks, list):
               findings = gitleaks
