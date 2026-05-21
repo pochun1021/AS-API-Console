@@ -33,20 +33,27 @@ jobs:
         run: mkdir -p security-reports
 
       - name: Install backend scan tools
-        run: python -m pip install --upgrade pip bandit pip-audit
+        run: python -m pip install --upgrade pip "bandit==1.9.4" "pip-audit==2.10.0"
 
       - name: Bandit scan (backend)
         continue-on-error: true
         run: |
-          bandit -r backend/app -f json -o security-reports/bandit.json
+          bandit -r backend/app -f json -o security-reports/bandit.json || true
+          if [ ! -f security-reports/bandit.json ]; then
+            echo '{"scan_error":"bandit_report_missing"}' > security-reports/bandit.json
+          fi
 
       - name: pip-audit scan (backend deps)
+        id: pip_audit
         continue-on-error: true
         run: |
-          pip-audit \
-            -r backend/requirements.txt \
-            --format=json \
-            --output=security-reports/pip-audit.json
+          if ! pip-audit -r backend/requirements.txt --format=json --output=security-reports/pip-audit.json; then
+            echo '{"scan_error":"pip_audit_execution_failed"}' > security-reports/pip-audit.json
+            exit 0
+          fi
+          if [ ! -s security-reports/pip-audit.json ]; then
+            echo '{"scan_error":"pip_audit_report_missing"}' > security-reports/pip-audit.json
+          fi
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -56,16 +63,32 @@ jobs:
         continue-on-error: true
         working-directory: frontend
         run: |
-          npm audit --omit=dev --json > ../security-reports/npm-audit.json
+          npm audit --omit=dev --json > ../security-reports/npm-audit.json || true
+          if [ ! -s ../security-reports/npm-audit.json ]; then
+            echo '{"scan_error":"npm_audit_report_missing"}' > ../security-reports/npm-audit.json
+          fi
+
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=8.24.2
+          wget -q "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
 
       - name: Run gitleaks (secrets)
         id: gitleaks
-        uses: gitleaks/gitleaks-action@v2
         continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
-          GITLEAKS_ENABLE_SUMMARY: true
+        run: |
+          set +e
+          gitleaks dir . \
+            --report-format json \
+            --report-path security-reports/gitleaks.json
+          rc=$?
+          set -e
+          if [ ! -f security-reports/gitleaks.json ]; then
+            echo '{"scan_error":"gitleaks_report_missing"}' > security-reports/gitleaks.json
+          fi
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
 
       - name: Install Trivy
         run: |
@@ -80,23 +103,15 @@ jobs:
             --scanners vuln,misconfig \
             --format json \
             --output security-reports/trivy.json \
-            .
-
-      - name: Normalize gitleaks report
-        run: |
-          if [ -f results.sarif ]; then
-            cp results.sarif security-reports/gitleaks.sarif
-          elif [ -f gitleaks-report.json ]; then
-            cp gitleaks-report.json security-reports/gitleaks.json
-          else
-            echo '{"findings":[]}' > security-reports/gitleaks.json
+            . || true
+          if [ ! -s security-reports/trivy.json ]; then
+            echo '{"scan_error":"trivy_report_missing"}' > security-reports/trivy.json
           fi
 
       - name: Evaluate gate policy
         run: |
           python - <<'PY'
           import json
-          import os
           import pathlib
           import sys
 
@@ -105,77 +120,90 @@ jobs:
           warnings = []
           blockers = []
 
-          def load_json(path: pathlib.Path):
+          def add_blocker(msg: str):
+            nonlocal_has_blocker[0] = True
+            blockers.append(msg)
+
+          def parse_json(path: pathlib.Path, tool: str):
             if not path.exists():
-              warnings.append(f"missing report: {path.name}")
-              return None
+              return {"scan_error": f"{tool}_report_missing"}
             try:
               return json.loads(path.read_text())
             except Exception as exc:
-              warnings.append(f"invalid json {path.name}: {exc}")
-              return None
+              return {"scan_error": f"{tool}_invalid_json:{exc}"}
 
-          bandit = load_json(report_dir / "bandit.json")
-          if bandit:
+          nonlocal_has_blocker = [False]
+
+          bandit = parse_json(report_dir / "bandit.json", "bandit")
+          if bandit.get("scan_error"):
+            add_blocker(f"scanner_error:bandit:{bandit['scan_error']}")
+          else:
             for item in bandit.get("results", []):
               sev = str(item.get("issue_severity", "")).upper()
               test_id = item.get("test_id", "UNKNOWN")
               if sev in {"HIGH", "CRITICAL"}:
-                has_blocker = True
-                blockers.append(f"bandit:{test_id}:{sev}")
+                add_blocker(f"high_critical:bandit:{test_id}:{sev}")
               elif sev in {"MEDIUM", "LOW"}:
-                warnings.append(f"bandit:{test_id}:{sev}")
+                warnings.append(f"warning:bandit:{test_id}:{sev}")
 
-          pip_audit = load_json(report_dir / "pip-audit.json")
-          if pip_audit:
+          pip_audit = parse_json(report_dir / "pip-audit.json", "pip_audit")
+          if pip_audit.get("scan_error"):
+            add_blocker(f"scanner_error:pip-audit:{pip_audit['scan_error']}")
+          else:
             for dep in pip_audit.get("dependencies", []):
               for vuln in dep.get("vulns", []):
                 sev = str(vuln.get("severity", "unknown")).upper()
                 vuln_id = vuln.get("id", "UNKNOWN")
                 if sev in {"HIGH", "CRITICAL"}:
-                  has_blocker = True
-                  blockers.append(f"pip-audit:{vuln_id}:{sev}")
+                  add_blocker(f"high_critical:pip-audit:{vuln_id}:{sev}")
                 else:
-                  warnings.append(f"pip-audit:{vuln_id}:{sev}")
+                  warnings.append(f"warning:pip-audit:{vuln_id}:{sev}")
 
-          npm_audit = load_json(report_dir / "npm-audit.json")
-          if npm_audit:
+          npm_audit = parse_json(report_dir / "npm-audit.json", "npm_audit")
+          if npm_audit.get("scan_error"):
+            add_blocker(f"scanner_error:npm-audit:{npm_audit['scan_error']}")
+          else:
             vulnerabilities = npm_audit.get("vulnerabilities", {})
             for pkg, info in vulnerabilities.items():
               sev = str(info.get("severity", "")).upper()
               if sev in {"HIGH", "CRITICAL"}:
-                has_blocker = True
-                blockers.append(f"npm-audit:{pkg}:{sev}")
+                add_blocker(f"high_critical:npm-audit:{pkg}:{sev}")
               elif sev in {"MODERATE", "LOW"}:
-                warnings.append(f"npm-audit:{pkg}:{sev}")
+                warnings.append(f"warning:npm-audit:{pkg}:{sev}")
 
-          trivy = load_json(report_dir / "trivy.json")
-          if trivy:
+          trivy = parse_json(report_dir / "trivy.json", "trivy")
+          if trivy.get("scan_error"):
+            add_blocker(f"scanner_error:trivy:{trivy['scan_error']}")
+          else:
             for result in trivy.get("Results", []):
               target = result.get("Target", "unknown")
               for vuln in result.get("Vulnerabilities", []) or []:
                 sev = str(vuln.get("Severity", "")).upper()
                 vuln_id = vuln.get("VulnerabilityID", "UNKNOWN")
                 if sev in {"HIGH", "CRITICAL"}:
-                  has_blocker = True
-                  blockers.append(f"trivy:{target}:{vuln_id}:{sev}")
+                  add_blocker(f"high_critical:trivy:{target}:{vuln_id}:{sev}")
                 elif sev in {"MEDIUM", "LOW"}:
-                  warnings.append(f"trivy:{target}:{vuln_id}:{sev}")
+                  warnings.append(f"warning:trivy:{target}:{vuln_id}:{sev}")
               for misconfig in result.get("Misconfigurations", []) or []:
                 sev = str(misconfig.get("Severity", "")).upper()
                 mis_id = misconfig.get("ID", "UNKNOWN")
                 if sev in {"HIGH", "CRITICAL"}:
-                  has_blocker = True
-                  blockers.append(f"trivy-misconfig:{target}:{mis_id}:{sev}")
+                  add_blocker(f"high_critical:trivy-misconfig:{target}:{mis_id}:{sev}")
                 elif sev in {"MEDIUM", "LOW"}:
-                  warnings.append(f"trivy-misconfig:{target}:{mis_id}:{sev}")
+                  warnings.append(f"warning:trivy-misconfig:{target}:{mis_id}:{sev}")
 
-          # Secrets must fail: gitleaks action exits non-zero when findings exist.
-          # continue-on-error keeps workflow alive; we enforce by checking outcome env.
-          gitleaks_outcome = os.getenv("GITLEAKS_OUTCOME", "unknown")
-          if gitleaks_outcome != "success":
-            has_blocker = True
-            blockers.append("gitleaks:secrets-detected-or-scan-failed")
+          gitleaks = parse_json(report_dir / "gitleaks.json", "gitleaks")
+          if gitleaks.get("scan_error"):
+            add_blocker(f"scanner_error:gitleaks:{gitleaks['scan_error']}")
+          else:
+            if isinstance(gitleaks, list):
+              findings = gitleaks
+            elif isinstance(gitleaks, dict):
+              findings = gitleaks.get("findings", [])
+            else:
+              findings = []
+            if findings:
+              add_blocker(f"secrets_found:gitleaks:{len(findings)}")
 
           if warnings:
             print("Warnings (non-blocking):")
@@ -187,11 +215,9 @@ jobs:
             for b in blockers:
               print(f"- {b}")
 
-          if has_blocker:
+          if nonlocal_has_blocker[0]:
             sys.exit(1)
           PY
-        env:
-          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
 
       - name: Upload security reports
         if: always()
