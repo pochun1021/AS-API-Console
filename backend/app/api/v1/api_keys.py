@@ -8,6 +8,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.core.security import csrf_protected, enforce_rate_limit, validate_date_window, validate_search_keyword
+from app.schemas.common import ErrorResponse
 from app.schemas.api_keys import (
     ApiKeyDetailResponse,
     ApiKeyAliasUpdateRequest,
@@ -157,7 +158,14 @@ def list_api_key_user_statistics(
     )
 
 
-@router.get("/api-keys/{key_id}", response_model=ApiKeyDetailResponse)
+@router.get(
+    "/api-keys/{key_id}",
+    response_model=ApiKeyDetailResponse,
+    responses={
+        403: {"model": ErrorResponse, "description": "User is not allowed to access this key"},
+        404: {"model": ErrorResponse, "description": "API key was not found"},
+    },
+)
 def get_api_key_detail(
     key_id: str,
     current_user: CurrentUser = Depends(get_current_user),
@@ -331,6 +339,10 @@ def get_limit_strategy_config(
     "/limit-strategy-config",
     response_model=LimitStrategyConfigResponse,
     dependencies=[Depends(csrf_protected), enforce_rate_limit("limit-strategy-update", settings.admin_mutation_rate_limit)],
+    responses={
+        403: {"model": ErrorResponse, "description": "CSRF token is invalid or admin role is required"},
+        422: {"model": ErrorResponse, "description": "Limit strategy payload is invalid"},
+    },
 )
 def update_limit_strategy_config(
     payload: LimitStrategyConfigUpdateRequest,

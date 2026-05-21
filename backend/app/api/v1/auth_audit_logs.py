@@ -6,13 +6,21 @@ from sqlalchemy.orm import Session
 from app.core.auth import CurrentUser, get_current_user
 from app.core.security import validate_date_window
 from app.schemas.auth_audit_logs import AuthAuditLogListResponse
+from app.schemas.common import ErrorResponse
 from app.services.auth_audit_query_service import AuthAuditQueryService
 from db.session import get_db
 
 router = APIRouter()
 
 
-@router.get("/auth-audit-logs", response_model=AuthAuditLogListResponse)
+@router.get(
+    "/auth-audit-logs",
+    response_model=AuthAuditLogListResponse,
+    responses={
+        403: {"model": ErrorResponse, "description": "Admin role is required"},
+        422: {"model": ErrorResponse, "description": "Query parameters are invalid"},
+    },
+)
 def list_auth_audit_logs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),

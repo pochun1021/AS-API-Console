@@ -284,6 +284,9 @@ Base path：`/api/v1`
 - `GET /login`
   - 用途：導向 OAuth provider auth endpoint。
   - 規則：建立 request_id（state）並寫入 session，用於 callback 對帳。
+  - Response：
+    - 成功回 `302` redirect 至 OAuth provider
+    - 若 OAuth 設定缺失或不合法，回 `500 INTERNAL_ERROR`
 - `GET /auth/callback`
   - 用途：接收 provider callback，交換 access token，取得 basic identity claims，建立本機 session auth context。
   - 規則：
@@ -295,6 +298,11 @@ Base path：`/api/v1`
     - 登入放行規則：`tCode` 以 `B` 開頭可直接放行；否則需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.sysid`）
     - 成功與失敗皆須寫入 `auth_audit_logs`
     - 嚴禁落地 token/secret 類敏感資訊
+  - Response：
+    - 成功回 `302` redirect `/`
+    - `401`：`OAUTH_STATE_MISSING`、`OAUTH_STATE_MISMATCH`
+    - `403`：`LOGIN_NOT_ELIGIBLE`
+    - `422`：`OAUTH_CODE_MISSING`、`OAUTH_IDENTITY_INVALID`
 - `GET /api/v1/users/me`
   - 用途：回傳目前 session 使用者資訊與 CSRF token。
   - 規則：
@@ -359,6 +367,7 @@ Base path：`/api/v1`
   - `rpm_limit`：每分鐘請求數限制。
 - 每把 API Key 需同時套用 `budget` 與 `rate_limit` 兩種限制；不提供二選一模式。
 - 一般使用者不可查看或修改金鑰條件設定。
+- `PATCH /api/v1/limit-strategy-config` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
 
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
@@ -428,6 +437,9 @@ Base path：`/api/v1`
 - 回傳可包含申請人識別欄位 `owner_account`、`owner_name`（供管理者辨識申請來源）。
 - 回傳應包含 `purpose` 供詳情頁顯示；若歷史資料未留存用途，前端顯示 `-`。
 - 回傳應包含 `department` 供詳情頁顯示；若歷史資料未留存單位，前端顯示 `-`。
+- 錯誤回應：
+  - `403 FORBIDDEN` / `KEY_NOT_OWNED_BY_USER`：使用者不可查他人 key
+  - `404 VALIDATION_ERROR`：key 不存在
 
 ### 3-1) 背景同步（Expired 狀態回填）
 - 目的：將 `api_keys.status='active'` 且 `expires_at < now(UTC)` 的資料，批次回填為 `expired`。
@@ -480,11 +492,17 @@ Base path：`/api/v1`
 - `GET /api/v1/whitelists`：查詢特殊人員名單列表
 - `PATCH /api/v1/whitelists/{id}`：更新狀態（`active/inactive`）與備註
 - 規則：僅 `admin` 可使用。
+- `POST /api/v1/whitelists`、`PATCH /api/v1/whitelists/{id}` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
+- `POST /api/v1/whitelists` 若 `sysid` 重複需回 `409 WHITELIST_SYSID_DUPLICATED`。
 
 ### 5-1) 特殊人員名單新增前使用者查詢 API
 - `GET /api/v1/users?q={keyword}`
 - 用途：供管理者透過外部人員目錄 API 查詢候選人資料（供新增管理者/特殊人員前使用）。
 - 規則：僅 `admin` 可使用；`q` 僅用於 `account`、`name` 查詢；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`status`。
+- 錯誤回應：
+  - `403 FORBIDDEN`：非 `admin`
+  - `422 VALIDATION_ERROR`：`q` 不合法
+  - `503 DIRECTORY_SERVICE_UNAVAILABLE`：目錄服務 timeout/5xx
 
 ### 5-2) 目前使用者語言偏好 API
 - `GET /api/v1/users/preferences/locale`
@@ -540,6 +558,7 @@ Base path：`/api/v1`
 - 預設熱資料窗：若未提供 `from/to`，回傳最近 7 天資料。
 - 排序：`created_at desc`（最新優先）。
 - 回傳欄位（精簡）：`created_at`、`provider`、`result`、`account`、`sysid`、`role`、`error_code`、`request_id`。
+- `created_at` 格式需為 UTC `date-time`（RFC 3339，例如 `2026-05-21T08:28:20Z`）。
 - 回傳不得包含敏感憑證資訊（access token、refresh token、password、client secret）。
 
 ### 7) 外部研究人員名單服務（整合介面）

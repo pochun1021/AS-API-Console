@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.core.security import csrf_protected, enforce_rate_limit, ensure_csrf_token
+from app.schemas.common import ErrorResponse
 from app.services.auth_audit_service import AuthAuditService
 from app.services.oauth_service import OAuthService
 from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyWhitelistRepository
@@ -16,7 +17,16 @@ router = APIRouter()
 settings = get_settings()
 
 
-@router.get("/login", dependencies=[enforce_rate_limit("login", settings.login_rate_limit)])
+@router.get(
+    "/login",
+    status_code=302,
+    response_class=RedirectResponse,
+    dependencies=[enforce_rate_limit("login", settings.login_rate_limit)],
+    responses={
+        302: {"description": "Redirect to OAuth provider"},
+        500: {"model": ErrorResponse, "description": "OAuth configuration is invalid or incomplete"},
+    },
+)
 def login(request: Request) -> RedirectResponse:
     request_id = str(uuid4())
     request.session["oauth_request_id"] = request_id
@@ -25,7 +35,18 @@ def login(request: Request) -> RedirectResponse:
     return RedirectResponse(service.build_login_url(request_id), status_code=302)
 
 
-@router.get("/auth/callback", dependencies=[enforce_rate_limit("oauth_callback", settings.login_rate_limit)])
+@router.get(
+    "/auth/callback",
+    status_code=302,
+    response_class=RedirectResponse,
+    dependencies=[enforce_rate_limit("oauth_callback", settings.login_rate_limit)],
+    responses={
+        302: {"description": "OAuth callback success and redirect to frontend"},
+        401: {"model": ErrorResponse, "description": "OAuth state is missing or mismatched"},
+        403: {"model": ErrorResponse, "description": "User is not eligible to login"},
+        422: {"model": ErrorResponse, "description": "OAuth callback payload is invalid"},
+    },
+)
 def oauth_callback(
     request: Request,
     code: str | None = None,

@@ -5,6 +5,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.core.security import csrf_protected, enforce_rate_limit, ensure_csrf_token, validate_search_keyword
+from app.schemas.common import ErrorResponse
 from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
 from app.schemas.users import (
     CurrentUserResponse,
@@ -50,7 +51,15 @@ def get_current_user_profile(
     }
 
 
-@router.get("/users", response_model=UserListResponse)
+@router.get(
+    "/users",
+    response_model=UserListResponse,
+    responses={
+        403: {"model": ErrorResponse, "description": "Admin role is required"},
+        422: {"model": ErrorResponse, "description": "Query parameters are invalid"},
+        503: {"model": ErrorResponse, "description": "Directory service is unavailable"},
+    },
+)
 def list_users(
     q: str = Query(default=""),
     current_user: CurrentUser = Depends(get_current_user),

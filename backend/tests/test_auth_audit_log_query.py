@@ -51,6 +51,10 @@ def test_auth_audit_logs_default_hot_window_and_filters(client, admin_headers):
     body = resp.json()
     assert body["total"] == 2
     assert all(item["provider"] in {"test-oauth", "other-oauth"} for item in body["items"])
+    created_at = body["items"][0]["created_at"]
+    parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    assert parsed.tzinfo is not None
+    assert created_at.endswith("Z") or created_at.endswith("+00:00")
 
     filtered = client.get(
         "/api/v1/auth-audit-logs?provider=other-oauth&result=failure",

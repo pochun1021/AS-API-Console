@@ -5,6 +5,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.core.security import csrf_protected, enforce_rate_limit
+from app.schemas.common import ErrorResponse
 from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
 from app.schemas.whitelists import (
     WhitelistCreateRequest,
@@ -29,6 +30,11 @@ def _require_admin(current_user: CurrentUser) -> None:
     response_model=WhitelistItemResponse,
     status_code=201,
     dependencies=[Depends(csrf_protected), enforce_rate_limit("whitelist-create", settings.admin_mutation_rate_limit)],
+    responses={
+        403: {"model": ErrorResponse, "description": "CSRF token is invalid or admin role is required"},
+        409: {"model": ErrorResponse, "description": "Whitelist sysid already exists"},
+        422: {"model": ErrorResponse, "description": "Request payload is invalid"},
+    },
 )
 def create_whitelist(
     payload: WhitelistCreateRequest,
@@ -97,7 +103,13 @@ def create_whitelist(
     return result
 
 
-@router.get("/whitelists", response_model=WhitelistListResponse)
+@router.get(
+    "/whitelists",
+    response_model=WhitelistListResponse,
+    responses={
+        403: {"model": ErrorResponse, "description": "Admin role is required"},
+    },
+)
 def list_whitelists(
     status: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -114,6 +126,11 @@ def list_whitelists(
     "/whitelists/{whitelist_id}",
     response_model=WhitelistItemResponse,
     dependencies=[Depends(csrf_protected), enforce_rate_limit("whitelist-update", settings.admin_mutation_rate_limit)],
+    responses={
+        403: {"model": ErrorResponse, "description": "CSRF token is invalid or admin role is required"},
+        404: {"model": ErrorResponse, "description": "Whitelist item was not found"},
+        422: {"model": ErrorResponse, "description": "Request payload is invalid"},
+    },
 )
 def update_whitelist(
     whitelist_id: str,
