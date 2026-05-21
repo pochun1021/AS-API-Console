@@ -32,6 +32,11 @@ jobs:
       - name: Prepare report directory
         run: mkdir -p security-reports
 
+      - name: Install backend scan system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmariadb-dev libmariadb-dev-compat
+
       - name: Install backend scan tools
         run: python -m pip install --upgrade pip "bandit==1.9.4" "pip-audit==2.10.0"
 
@@ -46,6 +51,8 @@ jobs:
       - name: pip-audit scan (backend deps)
         id: pip_audit
         continue-on-error: true
+        env:
+          MARIADB_CONFIG: /usr/bin/mariadb_config
         run: |
           set +e
           rm -f security-reports/pip-audit.stdout.log security-reports/pip-audit.stderr.log
