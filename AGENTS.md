@@ -54,6 +54,15 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - If Python dependencies changed, ensure `requirements.txt` exists and is updated consistently with `pyproject.toml`.
 - If frontend files were modified, `npm run build` has been executed in `frontend` successfully.
 
+## CI / Workflow Trigger Rules
+- Security scan workflow uses:
+  - `pull_request` (runs on PR open/sync/reopen)
+  - `push` on `main` (runs again after PR merge)
+- If a workflow should run only after merge, use:
+  - `pull_request` with `types: [closed]` and condition `github.event.pull_request.merged == true`
+  - or `push` to target branch only.
+- Any workflow trigger change must be documented in this file and in PR description.
+
 ## Commit Guidance
 - Use focused commit messages like:
   - `spec: ...`
