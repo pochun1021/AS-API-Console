@@ -167,6 +167,24 @@ Seed completed: admins=2, whitelists=8, applications=20, api_keys=20, reset=True
 - `reset=True` 代表本次先清除既有 seed 範圍再重建；`reset=False` 代表追加模式（`--no-reset`）。
 - 詳細驗證與常見錯誤處理請見 `docs/runbook-db.md` 的「測試資料（seed）操作」章節。
 
+## API Key Expired 回填排程
+- 狀態策略採混合模式：
+  - API 查詢端以 effective status 即時計算（`active` 且 `expires_at` 已過，對外視為 `expired`）。
+  - 背景排程將符合條件資料回填落地為 `expired`（條件：`api_keys.status=active` 且 `expires_at` 已過，不要求 application 狀態），提升資料一致性與查詢效率。
+- 內建腳本：
+```bash
+cd backend
+./scripts/run_expire_sync.sh
+```
+- 參數範例：
+```bash
+cd backend
+./scripts/run_expire_sync.sh --batch-size 2000
+./scripts/run_expire_sync.sh --dry-run
+```
+- 預設建議頻率：每日 `00:10`。
+- 正式部署排程設定請見 `docs/deploy-ubuntu-nginx.md`（systemd timer 與 cron 兩種方案）。
+
 ## 測試
 Backend：
 ```bash

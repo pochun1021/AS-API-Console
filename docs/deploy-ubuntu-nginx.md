@@ -338,3 +338,77 @@ sudo systemctl restart as-api-console
 - 以最小權限原則設定 DB 帳號
 - 使用 `ufw` 或雲端安全群組限制不必要對外 port
 - 搭配集中式 log/監控（例如 journal forwarding、APM）
+
+## 16. API Key Expired 回填排程部署
+
+狀態策略採混合模式：
+- 對外顯示以 effective status 即時計算（`active` + `expires_at` 已過 => `expired`）。
+- 透過排程執行 `backend/scripts/run_expire_sync.sh`，將 DB 狀態回填落地。
+- 建議頻率：每日 `00:10`。
+
+### 16.1 方案 A（建議）：systemd timer
+
+建立 `/etc/systemd/system/as-api-expire-sync.service`：
+```ini
+[Unit]
+Description=AS API Console Expired API Key Sync
+After=network.target mariadb.service
+
+[Service]
+Type=oneshot
+User=asapi
+Group=asapi
+WorkingDirectory=/opt/as-api-console/backend
+ExecStart=/opt/as-api-console/backend/scripts/run_expire_sync.sh
+```
+
+建立 `/etc/systemd/system/as-api-expire-sync.timer`：
+```ini
+[Unit]
+Description=Run expired API key sync daily at 00:10
+
+[Timer]
+OnCalendar=*-*-* 00:10:00
+Persistent=true
+Unit=as-api-expire-sync.service
+
+[Install]
+WantedBy=timers.target
+```
+
+啟用與驗證：
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now as-api-expire-sync.timer
+sudo systemctl list-timers as-api-expire-sync.timer --all
+sudo systemctl status as-api-expire-sync.timer --no-pager
+```
+
+手動觸發與看 log：
+```bash
+sudo systemctl start as-api-expire-sync.service
+sudo journalctl -u as-api-expire-sync.service -n 200 --no-pager
+```
+
+### 16.2 方案 B：cron
+
+以 `asapi` 使用者設定 crontab：
+```bash
+sudo -u asapi crontab -e
+```
+
+加入：
+```cron
+10 0 * * * /opt/as-api-console/backend/scripts/run_expire_sync.sh >> /var/log/as-api-expire-sync.log 2>&1
+```
+
+檢查：
+```bash
+sudo -u asapi crontab -l
+sudo tail -n 200 /var/log/as-api-expire-sync.log
+```
+
+### 16.3 排錯重點
+- `.env` 未設定或 DB 參數錯誤：確認 `/opt/as-api-console/backend/.env` 內容。
+- 執行環境找不到 `uv`：腳本會自動 fallback 到 `.venv/bin/python` 或 `python`，但仍需先安裝依賴。
+- 權限問題：確認 `asapi` 對專案目錄可讀執行，且可連線 DB。

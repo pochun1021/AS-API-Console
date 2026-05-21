@@ -260,7 +260,10 @@
 - `user`：不可更新 `key_alias`。
 - `admin`：可查詢全部 API Key 與申請紀錄，可管理特殊人員名單（沿用受保護路徑 `/api/v1/whitelists*`），可啟用/停用其他使用者管理者身分（沿用受保護路徑 `/api/v1/admins/{id}/enable|disable`）。
 - `admin`：可使用 `PATCH /api/v1/api-keys/{id}` 更新 `key_alias`。
-- 金鑰啟用狀態以 `api_keys.status` 為唯一判斷來源：`active`=啟用，`revoked|expired`=不可用。
+- 金鑰對外狀態判斷採 effective status：
+  - 若 `api_keys.status='active'` 且 `expires_at < now(UTC)`，則對外一律視為 `expired`。
+  - 其餘狀態沿用 `api_keys.status`（`active|revoked|expired`）。
+  - 背景回填作業需定期將上述 effective `expired` 同步落地到 `api_keys.status`（與 `api_key_applications.status`）。
 
 ## API 草案
 Base path：`/api/v1`
@@ -406,6 +409,14 @@ Base path：`/api/v1`
 - 回傳可包含申請人識別欄位 `owner_account`、`owner_name`（供管理者辨識申請來源）。
 - 回傳應包含 `purpose` 供詳情頁顯示；若歷史資料未留存用途，前端顯示 `-`。
 - 回傳應包含 `department` 供詳情頁顯示；若歷史資料未留存單位，前端顯示 `-`。
+
+### 3-1) 背景同步（Expired 狀態回填）
+- 目的：將 `api_keys.status='active'` 且 `expires_at < now(UTC)` 的資料，批次回填為 `expired`。
+- 條件：以 `api_keys.status` 與 `expires_at` 為準，不要求 `api_key_applications.status='active'`，用於修復歷史 key/app 狀態不一致資料。
+- 同步範圍：需同步 `api_keys.status` 與 `api_key_applications.status`，避免跨表狀態不一致。
+- 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每日 `00:10` 執行。
+- 失敗容錯：排程失敗不得影響查詢/統計/renew 的到期口徑正確性（仍以 effective status 判斷）。
+- 稽核與維運：排程需輸出執行時間、更新筆數、錯誤訊息，供維運追蹤。
 
 ### 4) 停用 API Key
 - `POST /api/v1/api-keys/{id}/revoke`
@@ -641,6 +652,8 @@ Base path：`/api/v1`
 86. `GET /api/v1/api-keys` 與 `GET /api/v1/api-keys/{id}` 回傳狀態需以 `expires_at` 即時計算到期口徑；已過期者對外顯示為 `expired`。
 87. `POST /api/v1/api-keys/{id}/renew` 判定需採與查詢一致的到期口徑；已過期且未續發過之 key 可續發。
 88. `GET /api/v1/api-keys/statistics/users` 的 `scope` 與 `active/revoked/expired` 計數需採同一到期口徑，避免已過期 key 被算入 `active`。
+89. 即使 expired 回填排程停用或失敗，`GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`GET /api/v1/api-keys/statistics/users` 仍需依 effective status 正確呈現 expired。
+90. expired 回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked` 資料。
 
 ## Roadmap
 ### Phase 1：Foundation

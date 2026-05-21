@@ -217,6 +217,45 @@ WHERE masked_key = 'AS-xxxx****xxxx';
 
 ## 常見問題
 
+## Expired 回填作業驗證
+
+### 1) 先看待回填筆數
+```bash
+mariadb -h <host> -u <user> -p as_api_console -e "
+SELECT COUNT(*) AS pending_expired
+FROM api_keys k
+JOIN api_key_applications a ON a.id = k.application_id
+WHERE k.status='active'
+  AND a.expires_at < UTC_TIMESTAMP();
+"
+```
+
+### 2) 執行回填腳本
+使用 `uv`：
+```bash
+cd backend
+./scripts/run_expire_sync.sh
+```
+
+先看 dry-run：
+```bash
+cd backend
+./scripts/run_expire_sync.sh --dry-run
+```
+
+### 3) 檢查回填結果
+```bash
+mariadb -h <host> -u <user> -p as_api_console -e "
+SELECT status, COUNT(*) FROM api_keys GROUP BY status ORDER BY status;
+SELECT status, COUNT(*) FROM api_key_applications GROUP BY status ORDER BY status;
+"
+```
+
+### 4) 安全檢查
+- `revoked` 不應被回填腳本改為 `expired`。
+- 回填條件以 `api_keys.status='active'` 與 `expires_at < UTC_TIMESTAMP()` 為準；`api_key_applications.status` 是否已為 `expired` 不影響回填判定。
+- 若排程失敗，API 仍應依 effective status 顯示 expired（查詢端正確性不依賴排程）。
+
 ### `target database is not up to date`
 - 先確認 migration 分支是否一致：
 ```bash
