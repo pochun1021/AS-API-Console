@@ -27,6 +27,7 @@ export function setApiProvider(nextProvider) {
 }
 
 export const apiClient = {
+  getCurrentUser: (auth) => provider.getCurrentUser(auth),
   createApplication: (payload, auth) => provider.createApplication(payload, auth),
   listApiKeys: (paramsOrAuth, maybeAuth) => provider.listApiKeys(paramsOrAuth, maybeAuth),
   getApiKeyById: (id, auth) => provider.getApiKeyById(id, auth),
@@ -49,5 +50,5 @@ export const apiClient = {
   updateLimitStrategyConfig: (payload, auth) => provider.updateLimitStrategyConfig(payload, auth),
   listPendingApplications: (auth) => provider.listPendingApplications(auth),
   issueApplication: (id, auth) => provider.issueApplication(id, auth),
-  logout: () => provider.logout()
+  logout: (auth) => provider.logout(auth)
 };

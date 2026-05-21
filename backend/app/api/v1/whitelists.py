@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.core.security import csrf_protected, enforce_rate_limit
 from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
 from app.schemas.whitelists import (
     WhitelistCreateRequest,
@@ -14,6 +16,7 @@ from app.services.whitelists_service import WhitelistsService
 from db.session import get_db
 
 router = APIRouter()
+settings = get_settings()
 
 
 def _require_admin(current_user: CurrentUser) -> None:
@@ -21,7 +24,12 @@ def _require_admin(current_user: CurrentUser) -> None:
         raise ApiError("VALIDATION_ERROR", "admin role required", 403)
 
 
-@router.post("/whitelists", response_model=WhitelistItemResponse, status_code=201)
+@router.post(
+    "/whitelists",
+    response_model=WhitelistItemResponse,
+    status_code=201,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("whitelist-create", settings.admin_mutation_rate_limit)],
+)
 def create_whitelist(
     payload: WhitelistCreateRequest,
     request: Request,
@@ -102,7 +110,11 @@ def list_whitelists(
     return service.list(status=status, page=page, page_size=page_size)
 
 
-@router.patch("/whitelists/{whitelist_id}", response_model=WhitelistItemResponse)
+@router.patch(
+    "/whitelists/{whitelist_id}",
+    response_model=WhitelistItemResponse,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("whitelist-update", settings.admin_mutation_rate_limit)],
+)
 def update_whitelist(
     whitelist_id: str,
     payload: WhitelistUpdateRequest,

@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 import httpx
 
 from app.core.config import get_settings
+from app.core.outbound import build_safe_httpx_client, validate_outbound_url
 from app.core.errors import ApiError
 
 
@@ -28,7 +29,7 @@ class OAuthService:
         return value
 
     def build_login_url(self, state: str) -> str:
-        auth_uri = self._required(self.settings.oauth_auth_uri, "OAUTH_AUTH_URI")
+        auth_uri = validate_outbound_url(self._required(self.settings.oauth_auth_uri, "OAUTH_AUTH_URI"), config_name="OAUTH_AUTH_URI")
         query = urlencode(
             {
                 "client_id": self._required(self.settings.oauth_client_id, "OAUTH_CLIENT_ID"),
@@ -41,7 +42,7 @@ class OAuthService:
         return f"{auth_uri}?{query}"
 
     def exchange_code_for_token(self, code: str) -> str:
-        token_uri = self._required(self.settings.oauth_token_uri, "OAUTH_TOKEN_URI")
+        token_uri = validate_outbound_url(self._required(self.settings.oauth_token_uri, "OAUTH_TOKEN_URI"), config_name="OAUTH_TOKEN_URI")
         payload = {
             "grant_type": "authorization_code",
             "client_id": self._required(self.settings.oauth_client_id, "OAUTH_CLIENT_ID"),
@@ -49,7 +50,7 @@ class OAuthService:
             "redirect_uri": self._required(self.settings.oauth_redirect_uri, "OAUTH_REDIRECT_URI"),
             "code": code,
         }
-        with httpx.Client(timeout=10.0) as client:
+        with build_safe_httpx_client(timeout_seconds=10.0) as client:
             response = client.post(token_uri, data=payload)
         if response.status_code != 200:
             raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed", 401)
@@ -59,8 +60,8 @@ class OAuthService:
         return token
 
     def fetch_identity(self, access_token: str) -> OAuthIdentity:
-        basic_uri = self._required(self.settings.oauth_basic_uri, "OAUTH_BASIC_URI")
-        with httpx.Client(timeout=10.0) as client:
+        basic_uri = validate_outbound_url(self._required(self.settings.oauth_basic_uri, "OAUTH_BASIC_URI"), config_name="OAUTH_BASIC_URI")
+        with build_safe_httpx_client(timeout_seconds=10.0) as client:
             response = client.post(basic_uri, data={"access_token": access_token})
         if response.status_code != 200:
             raise ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed", 401)

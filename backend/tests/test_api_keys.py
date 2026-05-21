@@ -711,6 +711,16 @@ def test_reveal_plaintext_admin_only(client, admin_headers):
     reveal_resp = client.post(f"/api/v1/api-keys/{key_id}/reveal", headers=admin_headers)
     assert reveal_resp.status_code == 200
     assert reveal_resp.json()["api_key_plaintext"] == created_plaintext
+    assert reveal_resp.headers["cache-control"] == "no-store"
+
+
+def test_statistics_rejects_excessive_query_range(client, admin_headers):
+    resp = client.get(
+        "/api/v1/api-keys/statistics/users?from=2026-01-01&to=2026-02-15",
+        headers=admin_headers,
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):

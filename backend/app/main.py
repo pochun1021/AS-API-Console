@@ -5,11 +5,14 @@ from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.test_auth import router as test_auth_router
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
+from app.core.security import apply_security_headers
 
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -19,10 +22,28 @@ FRONTEND_ASSETS = FRONTEND_DIST / "assets"
 def create_app() -> FastAPI:
     app = FastAPI(title="AS API Console", version="0.1.0")
     settings = get_settings()
-    app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
+    allowed_hosts = [host.strip() for host in settings.allowed_hosts.split(",") if host.strip()]
+    if allowed_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.session_secret_key,
+        session_cookie=settings.session_cookie_name,
+        max_age=settings.session_max_age_seconds,
+        same_site="lax",
+        https_only=settings.session_https_only,
+    )
     register_exception_handlers(app)
     app.include_router(auth_router)
+    if settings.app_env.lower() == "test":
+        app.include_router(test_auth_router)
     app.include_router(api_router, prefix="/api/v1")
+
+    @app.middleware("http")
+    async def security_headers_middleware(request, call_next):
+        response = await call_next(request)
+        apply_security_headers(request, response.headers)
+        return response
 
     @app.get("/health")
     async def health() -> dict[str, str]:

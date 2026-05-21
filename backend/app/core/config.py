@@ -52,6 +52,19 @@ class Settings(BaseSettings):
     oauth_client_secret: str | None = None
     oauth_redirect_uri: str | None = None
     oauth_scope: str = "basic"
+    allow_header_auth: bool | None = None
+    session_cookie_name: str = "as_api_console_session"
+    session_max_age_seconds: int = 8 * 60 * 60
+    csrf_header_name: str = "x-csrf-token"
+    csrf_safe_methods: str = "GET,HEAD,OPTIONS"
+    allowed_hosts: str = "localhost,127.0.0.1,testserver"
+    allowed_origins: str = ""
+    require_https_outbound: bool = True
+    allow_private_outbound_hosts: bool = False
+    login_rate_limit: str = "10/minute"
+    application_rate_limit: str = "10/hour"
+    reveal_rate_limit: str = "5/hour"
+    admin_mutation_rate_limit: str = "20/hour"
 
     @field_validator("provider_base_url")
     @classmethod
@@ -65,6 +78,29 @@ class Settings(BaseSettings):
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("PROVIDER_BASE_URL must be a valid http(s) URL")
         return normalized
+
+    @field_validator("research_list_api_url", "directory_identity_api_url", "oauth_auth_uri", "oauth_token_uri", "oauth_basic_uri", "oauth_redirect_uri")
+    @classmethod
+    def validate_optional_urls(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        parsed = urlsplit(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("configured URL must be a valid http(s) URL")
+        return normalized
+
+    @property
+    def header_auth_enabled(self) -> bool:
+        if self.allow_header_auth is not None:
+            return self.allow_header_auth
+        return self.app_env.lower() in {"dev", "test"}
+
+    @property
+    def session_https_only(self) -> bool:
+        return self.app_env.lower() not in {"dev", "test"}
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

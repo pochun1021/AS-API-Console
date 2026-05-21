@@ -1,4 +1,5 @@
 from app.services.oauth_service import OAuthIdentity
+from app.core.config import get_settings
 from tests.conftest import build_headers
 
 
@@ -46,6 +47,12 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
     locale_resp = client.get("/api/v1/users/preferences/locale")
     assert locale_resp.status_code == 200
     assert locale_resp.json() == {"preferred_locale": None}
+
+    me_resp = client.get("/api/v1/users/me")
+    assert me_resp.status_code == 200
+    assert me_resp.json()["account"] == "oauth.user"
+    assert me_resp.json()["role"] == "user"
+    assert me_resp.json()["csrf_token"]
 
 
 def test_callback_missing_code_returns_error_and_audits(client):
@@ -111,3 +118,68 @@ def test_callback_allows_non_b_tcode_when_whitelisted(client, monkeypatch):
     callback = client.get(f"/auth/callback?code=ok-code&state={state}", follow_redirects=False)
     assert callback.status_code == 302
     assert callback.headers["location"] == "/"
+
+
+def test_session_mutation_requires_csrf_token(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.build_login_url",
+        lambda self, state: f"https://oauth.example/auth?state={state}",
+    )
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.exchange_code_for_token",
+        lambda self, code: "token-1",
+    )
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.fetch_identity",
+        lambda self, token: OAuthIdentity(
+            account="oauth.user4",
+            name="OAuth User4",
+            email="oauth.user4@example.com",
+            department="IT",
+            sysid=3004,
+            tcode="B123",
+            role="user",
+        ),
+    )
+    login = client.get("/login", follow_redirects=False)
+    state = login.headers["location"].split("state=")[-1]
+    callback = client.get(f"/auth/callback?code=ok-code&state={state}", follow_redirects=False)
+    assert callback.status_code == 302
+
+    no_csrf = client.patch("/api/v1/users/preferences/locale", json={"preferred_locale": "en"})
+    assert no_csrf.status_code == 403
+    assert no_csrf.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_production_rejects_header_only_auth(client, monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("ALLOW_HEADER_AUTH", "false")
+    headers = build_headers(role="user", account="prod.user", email="prod.user@example.com", sysid=9001)
+    resp = client.get("/api/v1/users/me", headers=headers)
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "UNAUTHORIZED"
+    get_settings.cache_clear()
+
+
+def test_test_session_login_bootstraps_session_and_csrf(client):
+    resp = client.post(
+        "/test/session-login",
+        json={
+            "account": "test.admin",
+            "name": "Test Admin",
+            "email": "test.admin@example.com",
+            "department": "Security",
+            "sysid": 930001,
+            "role": "admin",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["role"] == "admin"
+    assert body["csrf_token"]
+
+    me = client.get("/api/v1/users/me")
+    assert me.status_code == 200
+    assert me.json()["account"] == "test.admin"
+    assert me.json()["role"] == "admin"

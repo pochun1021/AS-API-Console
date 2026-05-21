@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from urllib import error, request
-from urllib.parse import urlsplit
 import json
 
 from app.core.config import get_settings
+from app.core.outbound import validate_outbound_url
 
 
 @dataclass(slots=True)
@@ -23,10 +23,10 @@ def _normalize_provider_base_url(base_url: str | None) -> str:
     normalized = (base_url or "").strip()
     if not normalized:
         return ""
-    parsed = urlsplit(normalized)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ProviderUnavailableError("provider base url must use http or https")
-    return normalized.rstrip("/")
+    try:
+        return validate_outbound_url(normalized, config_name="PROVIDER_BASE_URL").rstrip("/")
+    except Exception as exc:
+        raise ProviderUnavailableError("provider base url must use http or https") from exc
 
 
 class ProviderClient:

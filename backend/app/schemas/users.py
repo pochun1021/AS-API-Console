@@ -28,3 +28,13 @@ class UserLocalePreferenceResponse(BaseModel):
 
 class UserLocalePreferenceUpdateRequest(BaseModel):
     preferred_locale: str
+
+
+class CurrentUserResponse(BaseModel):
+    account: str
+    name: str
+    email: str
+    department: str
+    sysid: int
+    role: str
+    csrf_token: str

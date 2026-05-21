@@ -6,23 +6,26 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.core.security import csrf_protected, enforce_rate_limit, ensure_csrf_token
 from app.services.auth_audit_service import AuthAuditService
 from app.services.oauth_service import OAuthService
 from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyWhitelistRepository
 from db.session import get_db
 
 router = APIRouter()
+settings = get_settings()
 
 
-@router.get("/login")
+@router.get("/login", dependencies=[enforce_rate_limit("login", settings.login_rate_limit)])
 def login(request: Request) -> RedirectResponse:
     request_id = str(uuid4())
     request.session["oauth_request_id"] = request_id
+    ensure_csrf_token(request)
     service = OAuthService()
     return RedirectResponse(service.build_login_url(request_id), status_code=302)
 
 
-@router.get("/auth/callback")
+@router.get("/auth/callback", dependencies=[enforce_rate_limit("oauth_callback", settings.login_rate_limit)])
 def oauth_callback(
     request: Request,
     code: str | None = None,
@@ -38,7 +41,11 @@ def oauth_callback(
     if not code:
         audit.log(provider=provider, request_id=request_id, result="failure", error_code="OAUTH_CODE_MISSING")
         raise ApiError("OAUTH_CODE_MISSING", "oauth callback code missing", 422)
-    if state and expected_state and state != expected_state:
+    if not expected_state:
+        audit.log(provider=provider, request_id=request_id, result="failure", error_code="OAUTH_STATE_MISSING")
+        raise ApiError("OAUTH_STATE_MISSING", "oauth state missing", 401)
+    if not state or state != expected_state:
+        request.session.pop("oauth_request_id", None)
         audit.log(provider=provider, request_id=request_id, result="failure", error_code="OAUTH_STATE_MISMATCH")
         raise ApiError("OAUTH_STATE_MISMATCH", "oauth state mismatch", 401)
 
@@ -69,6 +76,7 @@ def oauth_callback(
         "role": "user",
     }
     request.session.pop("oauth_request_id", None)
+    ensure_csrf_token(request)
     audit.log(
         provider=provider,
         request_id=request_id,
@@ -83,8 +91,9 @@ def oauth_callback(
     return RedirectResponse("/", status_code=302)
 
 
-@router.post("/logout")
+@router.post("/logout", dependencies=[Depends(csrf_protected), enforce_rate_limit("logout", settings.login_rate_limit)])
 def logout(request: Request) -> dict[str, str]:
     request.session.pop("auth_context", None)
     request.session.pop("oauth_request_id", None)
+    request.session.pop("csrf_token", None)
     return {"status": "ok"}

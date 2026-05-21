@@ -2,9 +2,12 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.core.security import csrf_protected, enforce_rate_limit, ensure_csrf_token, validate_search_keyword
 from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
 from app.schemas.users import (
+    CurrentUserResponse,
     UserListResponse,
     UserLocalePreferenceResponse,
     UserLocalePreferenceUpdateRequest,
@@ -14,11 +17,37 @@ from app.services.users_service import UsersService
 from db.session import get_db
 
 router = APIRouter()
+settings = get_settings()
 
 
 def _require_admin(current_user: CurrentUser) -> None:
     if current_user.role != "admin":
         raise ApiError("VALIDATION_ERROR", "admin role required", 403)
+
+
+@router.get("/users/me", response_model=CurrentUserResponse)
+def get_current_user_profile(
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    if "auth_context" not in request.session:
+        request.session["auth_context"] = {
+            "account": current_user.account,
+            "name": current_user.name,
+            "email": current_user.email,
+            "department": current_user.department,
+            "sysid": current_user.sysid,
+            "role": current_user.role,
+        }
+    return {
+        "account": current_user.account,
+        "name": current_user.name,
+        "email": current_user.email,
+        "department": current_user.department,
+        "sysid": current_user.sysid,
+        "role": current_user.role,
+        "csrf_token": ensure_csrf_token(request),
+    }
 
 
 @router.get("/users", response_model=UserListResponse)
@@ -28,11 +57,16 @@ def list_users(
     db: Session = Depends(get_db),
 ) -> dict:
     _require_admin(current_user)
+    validate_search_keyword(q)
     service = UsersService(db)
     return service.search(q=q)
 
 
-@router.post("/admins/{user_id}/enable", response_model=UserRoleMutationResponse)
+@router.post(
+    "/admins/{user_id}/enable",
+    response_model=UserRoleMutationResponse,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("admin-enable", settings.admin_mutation_rate_limit)],
+)
 def enable_admin(
     user_id: str,
     request: Request,
@@ -104,7 +138,11 @@ def enable_admin(
     return result
 
 
-@router.post("/admins/{user_id}/disable", response_model=UserRoleMutationResponse)
+@router.post(
+    "/admins/{user_id}/disable",
+    response_model=UserRoleMutationResponse,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("admin-disable", settings.admin_mutation_rate_limit)],
+)
 def disable_admin(
     user_id: str,
     request: Request,
@@ -185,7 +223,7 @@ def get_locale_preference(
     return service.get_locale_preference(current_user)
 
 
-@router.patch("/users/preferences/locale", response_model=UserLocalePreferenceResponse)
+@router.patch("/users/preferences/locale", response_model=UserLocalePreferenceResponse, dependencies=[Depends(csrf_protected)])
 def update_locale_preference(
     payload: UserLocalePreferenceUpdateRequest,
     current_user: CurrentUser = Depends(get_current_user),

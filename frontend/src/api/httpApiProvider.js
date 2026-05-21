@@ -1,13 +1,19 @@
-function buildHeaders(auth) {
-  return {
-    "Content-Type": "application/json",
-    "x-account": auth.account,
-    "x-name": auth.name,
-    "x-email": auth.email,
-    "x-department": auth.department,
-    "x-sysid": String(auth.sysid),
-    "x-role": auth.role || "user"
+function buildHeaders(auth, method) {
+  const headers = {
+    "Content-Type": "application/json"
   };
+  if (import.meta.env.DEV && auth?.account) {
+    headers["x-account"] = auth.account;
+    headers["x-name"] = auth.name;
+    headers["x-email"] = auth.email;
+    headers["x-department"] = auth.department;
+    headers["x-sysid"] = String(auth.sysid);
+    headers["x-role"] = auth.role || "user";
+  }
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && auth?.csrf_token) {
+    headers["x-csrf-token"] = auth.csrf_token;
+  }
+  return headers;
 }
 
 function mapErrorPayload(status, body) {
@@ -24,10 +30,11 @@ function mapErrorPayload(status, body) {
 }
 
 async function request(path, { method = "GET", auth, body } = {}) {
-  const headers = auth ? buildHeaders(auth) : { "Content-Type": "application/json" };
+  const headers = buildHeaders(auth, method);
   const response = await fetch(path, {
     method,
     headers,
+    credentials: "same-origin",
     body: body ? JSON.stringify(body) : undefined
   });
 
@@ -59,6 +66,10 @@ function mapWhitelistItem(item) {
 }
 
 export const httpApiProvider = {
+  getCurrentUser(auth) {
+    return request("/api/v1/users/me", { auth });
+  },
+
   createApplication(payload, auth) {
     return request("/api/v1/api-keys/applications", { method: "POST", auth, body: payload });
   },
@@ -194,8 +205,8 @@ export const httpApiProvider = {
     });
   },
 
-  logout() {
-    return request("/logout", { method: "POST" });
+  logout(auth) {
+    return request("/logout", { method: "POST", auth });
   },
 
 };

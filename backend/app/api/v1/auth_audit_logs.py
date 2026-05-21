@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.security import validate_date_window
 from app.schemas.auth_audit_logs import AuthAuditLogListResponse
 from app.services.auth_audit_query_service import AuthAuditQueryService
 from db.session import get_db
@@ -23,6 +24,7 @@ def list_auth_audit_logs(
     db: Session = Depends(get_db),
 ) -> dict:
     service = AuthAuditQueryService(db)
+    validate_date_window(from_date, to_date)
     return service.list_logs(
         current_user=current_user,
         page=page,

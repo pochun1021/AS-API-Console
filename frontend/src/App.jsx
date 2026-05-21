@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { apiClient } from "./api/client";
 import AppLayout from "./components/AppLayout";
@@ -12,12 +12,11 @@ import LimitStrategiesPage from "./pages/LimitStrategiesPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 
 export default function App() {
-  const [oauthAuth, setOAuthAuth] = useState(readOAuthAuthContext);
+  const [auth, setAuth] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [logoutInProgress, setLogoutInProgress] = useState(false);
   const [localeReady, setLocaleReady] = useState(false);
   const { setLocale } = useLocale();
-
-  const auth = useMemo(() => oauthAuth, [oauthAuth]);
 
   function changeLocale(nextLocale) {
     setLocale(nextLocale);
@@ -30,12 +29,12 @@ export default function App() {
     if (logoutInProgress) return;
     setLogoutInProgress(true);
     try {
-      await apiClient.logout();
+      await apiClient.logout(auth);
     } catch {
       // Best effort logout: clear local auth state and force re-login.
     } finally {
       clearOAuthAuthContext();
-      setOAuthAuth(null);
+      setAuth(null);
       setLogoutInProgress(false);
       if (typeof window !== "undefined") {
         window.location.assign("/login");
@@ -44,20 +43,32 @@ export default function App() {
   }
 
   useEffect(() => {
-    setOAuthAuth(readOAuthAuthContext());
+    let canceled = false;
+    async function bootstrapAuth() {
+      try {
+        const devAuth = readOAuthAuthContext();
+        const currentUser = await apiClient.getCurrentUser(devAuth);
+        if (!canceled) {
+          setAuth(currentUser);
+        }
+      } catch {
+        if (!canceled && typeof window !== "undefined") {
+          window.location.assign("/login");
+        }
+      } finally {
+        if (!canceled) {
+          setAuthReady(true);
+        }
+      }
+    }
+    bootstrapAuth();
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!auth && typeof window !== "undefined") {
-      window.location.assign("/login");
-    }
-  }, [auth]);
-
-  if (!auth) {
-    return null;
-  }
-
-  useEffect(() => {
+    if (!auth) return;
     let canceled = false;
     async function initLocale() {
       try {
@@ -86,7 +97,7 @@ export default function App() {
     };
   }, [auth, setLocale]);
 
-  if (!localeReady) {
+  if (!authReady || !auth || !localeReady) {
     return null;
   }
 

@@ -1,4 +1,5 @@
 from collections.abc import Generator
+import os
 from pathlib import Path
 import sys
 
@@ -8,9 +9,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("APP_ENV", "test")
 
 from app.main import app
 from app.core.config import get_settings
+from app.core.security import rate_limiter
 from db.base import Base
 from db import models  # noqa: F401
 from db.session import get_db
@@ -19,6 +22,7 @@ from db.session import get_db
 @pytest.fixture(autouse=True)
 def disable_provider_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: False)
+    rate_limiter.reset()
 
 
 @pytest.fixture()

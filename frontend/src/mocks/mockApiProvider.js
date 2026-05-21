@@ -338,6 +338,7 @@ function findOrCreateUserByAuth(auth) {
     sysid: auth.sysid,
     name: auth.name,
     email: auth.email,
+    department: auth.department || "",
     role: auth.role || "user",
     status: "active",
     preferred_locale: null
@@ -407,6 +408,27 @@ function applyDateRange(items, { from, to }) {
 }
 
 export const mockApiProvider = {
+  async getCurrentUser(auth) {
+    await delay();
+    const user = findOrCreateUserByAuth(auth || {
+      account: "jane.doe",
+      name: "Jane Doe",
+      email: "jane.doe@company.com",
+      department: "Platform Engineering",
+      sysid: 123,
+      role: "user"
+    });
+    return {
+      account: user.account,
+      name: user.name,
+      email: user.email,
+      department: user.department || "Platform Engineering",
+      sysid: user.sysid,
+      role: user.role,
+      csrf_token: "mock-csrf-token"
+    };
+  },
+
   async createApplication(payload, auth) {
     await delay();
     validateApplication(payload, auth);

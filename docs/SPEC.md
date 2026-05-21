@@ -130,6 +130,8 @@
 ### Must Have（MVP）
 - 權限模型僅區分 `user` 與 `admin`
 - 提供 OAuth/SSO 登入入口（`GET /login`、`GET /auth/callback`）並建立 session auth context
+- 正式環境僅允許以 session auth context 驗證；header auth 僅限 `dev/test`
+- 所有會變更資料的 API 皆需通過 CSRF 驗證
 - 僅符合資格的人員可進入系統與申請 API Key（研究人員名單職稱代碼命中，或特殊人員名單 `active` 命中）
 - 特殊人員名單管理能力（新增、查詢、停用/啟用）
 - 研究人員名單由外部服務提供並以職稱代碼判斷
@@ -268,6 +270,16 @@
 ## API 草案
 Base path：`/api/v1`
 
+### OWASP API Security Baseline
+- 正式環境僅接受 session 作為瀏覽器認證來源；不得信任前端自行送出的身分欄位。
+- `dev/test` 可透過 `ALLOW_HEADER_AUTH=true` 啟用 header auth 供開發與測試使用。
+- 所有 `POST`、`PATCH` 端點需驗證 `X-CSRF-Token` 與 session 內 token 一致；header auth 模式除外。
+- 所有清單查詢 `page_size` 上限為 `100`。
+- 稽核與統計查詢的 `from/to` 視窗上限為 `31` 天。
+- `GET /api/v1/users?q=...` 查詢字串上限為 `100` 字元。
+- `POST /api/v1/api-keys/{id}/reveal` 回應需帶 `Cache-Control: no-store`。
+- 非 `dev/test` 環境之外部整合 URL 必須為 `https`，且不得解析到 loopback / private / link-local 位址。
+
 ### Auth Login Entry
 - `GET /login`
   - 用途：導向 OAuth provider auth endpoint。
@@ -278,10 +290,17 @@ Base path：`/api/v1`
     - OAuth claims 來源：`sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
     - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
     - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
+    - state 僅可使用一次；callback 完成後需自 session 清除
     - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
     - 登入放行規則：`tCode` 以 `B` 開頭可直接放行；否則需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.sysid`）
     - 成功與失敗皆須寫入 `auth_audit_logs`
     - 嚴禁落地 token/secret 類敏感資訊
+- `GET /api/v1/users/me`
+  - 用途：回傳目前 session 使用者資訊與 CSRF token。
+  - 規則：
+    - 回傳欄位：`account`、`name`、`email`、`department`、`sysid`、`role`、`csrf_token`
+    - 若目前帳號命中 `active admins`，`role` 需回傳 `admin`
+    - 可在 `dev/test` 透過 header auth bootstrap session
 
 ### 1) 申請並核發 API Key
 - `POST /api/v1/api-keys/applications`
@@ -446,6 +465,7 @@ Base path：`/api/v1`
 ### 4-1) 受控回取 API Key 明文（Reveal）
 - `POST /api/v1/api-keys/{id}/reveal`
 - 規則：僅 `admin` 可使用；此端點為受控流程，不屬一般列表/詳情查詢。
+- 規則：回應需帶 `Cache-Control: no-store`。
 - Response（200）：
 ```json
 {
@@ -630,6 +650,7 @@ Base path：`/api/v1`
 64. `GET /login` 需可導向 OAuth provider，並附帶 state/request_id。
 65. `GET /auth/callback` 成功時需建立 session auth context 並 redirect `/`。
 66. `GET /auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失、state mismatch）需回錯，且寫入 failure audit。
+66-1. 正式環境不得接受 header auth 作為正式認證來源；僅 `dev/test` 可啟用。
 67. OAuth 成功登入寫入的角色需固定為 `user`，不得由 OAuth payload 直接升權為 `admin`。
 68. `auth_audit_logs` 不得包含 access token/refresh token/password/client secret。
 69. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。
@@ -654,6 +675,11 @@ Base path：`/api/v1`
 88. `GET /api/v1/api-keys/statistics/users` 的 `scope` 與 `active/revoked/expired` 計數需採同一到期口徑，避免已過期 key 被算入 `active`。
 89. 即使 expired 回填排程停用或失敗，`GET /api/v1/api-keys`、`GET /api/v1/api-keys/{id}`、`GET /api/v1/api-keys/statistics/users` 仍需依 effective status 正確呈現 expired。
 90. expired 回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked` 資料。
+91. `GET /api/v1/users/me` 需回傳目前使用者資料與 `csrf_token`。
+92. 所有 `POST/PATCH` 端點在 session auth 模式下，缺少或錯誤 `X-CSRF-Token` 需回 `403 FORBIDDEN`。
+93. `GET /api/v1/api-keys/statistics/users`、`GET /api/v1/operation-audit-logs`、`GET /api/v1/auth-audit-logs` 的 `from/to` 查詢區間不得超過 `31` 天。
+94. `GET /api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
+95. `POST /api/v1/api-keys/{id}/reveal` 回應需包含 `Cache-Control: no-store`。
 
 ## Roadmap
 ### Phase 1：Foundation

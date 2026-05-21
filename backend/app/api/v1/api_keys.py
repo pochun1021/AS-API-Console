@@ -1,10 +1,13 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi import Response
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.core.security import csrf_protected, enforce_rate_limit, validate_date_window, validate_search_keyword
 from app.schemas.api_keys import (
     ApiKeyDetailResponse,
     ApiKeyAliasUpdateRequest,
@@ -23,9 +26,15 @@ from app.services.operation_audit_service import OperationAuditService, extract_
 from db.session import get_db
 
 router = APIRouter()
+settings = get_settings()
 
 
-@router.post("/api-keys/applications", response_model=ApplicationCreateResponse, status_code=201)
+@router.post(
+    "/api-keys/applications",
+    response_model=ApplicationCreateResponse,
+    status_code=201,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("api-key-application", settings.application_rate_limit)],
+)
 def create_application(
     payload: ApplicationCreateRequest,
     request: Request,
@@ -107,6 +116,7 @@ def list_api_keys(
     db: Session = Depends(get_db),
 ) -> dict:
     service = ApiKeysService(db)
+    validate_date_window(from_date, to_date)
     return service.list_keys(
         current_user=current_user,
         page=page,
@@ -132,6 +142,8 @@ def list_api_key_user_statistics(
     db: Session = Depends(get_db),
 ) -> dict:
     service = ApiKeysService(db)
+    validate_date_window(from_date, to_date)
+    validate_search_keyword(q)
     return service.list_user_statistics(
         current_user=current_user,
         page=page,
@@ -155,7 +167,11 @@ def get_api_key_detail(
     return service.get_key_detail(current_user=current_user, key_id=key_id)
 
 
-@router.post("/api-keys/{key_id}/revoke", response_model=RevokeResponse)
+@router.post(
+    "/api-keys/{key_id}/revoke",
+    response_model=RevokeResponse,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("api-key-revoke", settings.application_rate_limit)],
+)
 def revoke_api_key(
     key_id: str,
     request: Request,
@@ -211,7 +227,11 @@ def revoke_api_key(
     return result
 
 
-@router.post("/api-keys/{key_id}/renew", response_model=RenewResponse)
+@router.post(
+    "/api-keys/{key_id}/renew",
+    response_model=RenewResponse,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("api-key-renew", settings.application_rate_limit)],
+)
 def renew_api_key(
     key_id: str,
     request: Request,
@@ -267,17 +287,23 @@ def renew_api_key(
     return result
 
 
-@router.post("/api-keys/{key_id}/reveal", response_model=ApiKeyRevealResponse)
+@router.post(
+    "/api-keys/{key_id}/reveal",
+    response_model=ApiKeyRevealResponse,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("api-key-reveal", settings.reveal_rate_limit)],
+)
 def reveal_api_key(
     key_id: str,
+    response: Response,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     service = ApiKeysService(db)
     return service.reveal_key_plaintext(current_user=current_user, key_id=key_id)
 
 
-@router.patch("/api-keys/{key_id}", response_model=ApiKeyDetailResponse)
+@router.patch("/api-keys/{key_id}", response_model=ApiKeyDetailResponse, dependencies=[Depends(csrf_protected)])
 def update_api_key_alias(
     key_id: str,
     payload: ApiKeyAliasUpdateRequest,
@@ -301,7 +327,11 @@ def get_limit_strategy_config(
     return service.get_limit_strategy_config(current_user=current_user)
 
 
-@router.patch("/limit-strategy-config", response_model=LimitStrategyConfigResponse)
+@router.patch(
+    "/limit-strategy-config",
+    response_model=LimitStrategyConfigResponse,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("limit-strategy-update", settings.admin_mutation_rate_limit)],
+)
 def update_limit_strategy_config(
     payload: LimitStrategyConfigUpdateRequest,
     request: Request,

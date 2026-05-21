@@ -41,7 +41,7 @@ test("admin can search users and enable admin role", async () => {
   expect(await screen.findByText("管理者名單")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
   const searchDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
-  expect(within(searchDialog).getByText("可用 sysid / 帳號 / 姓名 / email")).toBeInTheDocument();
+  expect(within(searchDialog).getByText("可用帳號 / 姓名查詢")).toBeInTheDocument();
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "alice");
   await user.click(within(searchDialog).getByRole("button", { name: "查詢使用者" }));
   const aliceCell = await within(searchDialog).findByText("Alice Wang");

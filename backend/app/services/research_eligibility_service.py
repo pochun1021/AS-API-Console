@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import httpx
 
 from app.core.config import get_settings
+from app.core.outbound import build_safe_httpx_client, validate_outbound_url
 
 
 def _normalize_title_code(value: str) -> str:
@@ -32,13 +33,14 @@ class ResearchEligibilityService:
     def check_eligibility(self, *, email: str, sysid: int) -> ResearchEligibilityResult:
         if not self.api_url:
             return ResearchEligibilityResult(eligible=False, title_code=None)
+        api_url = validate_outbound_url(self.api_url, config_name="RESEARCH_LIST_API_URL")
 
         try:
-            response = httpx.get(
-                self.api_url,
-                params={"email": email, "sysid": str(sysid)},
-                timeout=self.timeout_seconds,
-            )
+            with build_safe_httpx_client(timeout_seconds=self.timeout_seconds) as client:
+                response = client.get(
+                    api_url,
+                    params={"email": email, "sysid": str(sysid)},
+                )
         except httpx.RequestError as exc:
             raise RuntimeError("research list service request failed") from exc
 

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import httpx
 
 from app.core.config import get_settings
+from app.core.outbound import build_safe_httpx_client, validate_outbound_url
 from db.repositories.types import AuthIdentity
 
 
@@ -34,12 +35,13 @@ class DirectoryIdentityService:
     def resolve_by_account(self, account: str) -> AuthIdentity:
         if not self.api_url:
             raise DirectoryLookupUnavailableError("directory service is not configured")
+        api_url = validate_outbound_url(self.api_url, config_name="DIRECTORY_IDENTITY_API_URL")
         try:
-            response = httpx.get(
-                self.api_url,
-                params={"account": account},
-                timeout=self.timeout_seconds,
-            )
+            with build_safe_httpx_client(timeout_seconds=self.timeout_seconds) as client:
+                response = client.get(
+                    api_url,
+                    params={"account": account},
+                )
         except httpx.RequestError as exc:
             raise DirectoryLookupUnavailableError("directory service request failed") from exc
 
@@ -88,12 +90,13 @@ class DirectoryIdentityService:
     def search_by_keyword(self, keyword: str, limit: int = 20) -> list[AuthIdentity]:
         if not self.api_url:
             raise DirectoryLookupUnavailableError("directory service is not configured")
+        api_url = validate_outbound_url(self.api_url, config_name="DIRECTORY_IDENTITY_API_URL")
         try:
-            response = httpx.get(
-                self.api_url,
-                params={"q": keyword},
-                timeout=self.timeout_seconds,
-            )
+            with build_safe_httpx_client(timeout_seconds=self.timeout_seconds) as client:
+                response = client.get(
+                    api_url,
+                    params={"q": keyword},
+                )
         except httpx.RequestError as exc:
             raise DirectoryLookupUnavailableError("directory service request failed") from exc
 

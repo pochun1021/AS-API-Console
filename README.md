@@ -90,6 +90,9 @@ cp .env.example .env
 - `PROVIDER_MASTER_KEY`：可選，呼叫 provider `/key/generate` 使用的主金鑰
 - `PROVIDER_TIMEOUT_SECONDS`：可選，provider timeout 秒數（預設 `3.0`）
 - `SESSION_SECRET_KEY`：必填（正式環境），FastAPI session 簽章密鑰
+- `ALLOW_HEADER_AUTH`：可選；僅供 `dev/test` 使用的 header auth bootstrap，正式環境應為 `false`
+- `ALLOWED_HOSTS`：可選；允許的 Host 清單（逗號分隔）
+- `SESSION_MAX_AGE_SECONDS`：可選；session 有效秒數
 - `OAUTH_PROVIDER`：可選，OAuth provider 名稱（寫入 auth audit）
 - `OAUTH_AUTH_URI` / `OAUTH_TOKEN_URI` / `OAUTH_BASIC_URI`：OAuth auth/token/basic 端點
 - `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` / `OAUTH_REDIRECT_URI`：OAuth client 設定
@@ -127,7 +130,9 @@ npm run build
 
 ## 開發備註
 - 後端提供 OAuth 登入入口：`GET /login` 與 callback `GET /auth/callback`，成功後以 session 注入 auth context（`account/name/email/department/sysid`，role 固定 `user`）。
-- 若有第三方 OAuth 整合，前端會優先使用 OAuth 回傳身分（需包含 `account`、`name`、`email`、`department`、`sysid`、`role`）：
+- 前端啟動時會呼叫 `GET /api/v1/users/me` 取得目前 session 使用者資訊與 `csrf_token`。
+- `POST/PATCH` API 會以 `X-CSRF-Token` 搭配 session 驗證；正式環境不得以前端自送 header 當作正式認證來源。
+- 若在 `dev/test` 啟用 `ALLOW_HEADER_AUTH=true`，前端可用開發身分 bootstrap session（需包含 `account`、`name`、`email`、`department`、`sysid`、`role`）：
   - `window.__AS_AUTH_CONTEXT__ = { ... }`，或
   - `sessionStorage["as-api-console-auth-context"] = JSON.stringify({ ... })`
 - Vite dev server 已設定 `/api` proxy 到 `http://127.0.0.1:8000`（若需 `npm run dev` 分離開發可直接使用）。
@@ -205,6 +210,13 @@ Frontend：
 cd frontend
 npm run test
 ```
+
+Security validation：
+- CI `security-scan` workflow now includes:
+  - baseline scanners: `Bandit`, `pip-audit`, `npm audit`, `gitleaks`, `Trivy`
+  - extended SAST: `Semgrep`
+  - API dynamic validation: `Schemathesis` + custom API DAST smoke
+- Test-only session bootstrap endpoint `POST /test/session-login` is available only when `APP_ENV=test`; it is intended for CI / automated API security validation, not for production use.
 
 ## 規格文件
 - 產品與功能規格：`docs/SPEC.md`
