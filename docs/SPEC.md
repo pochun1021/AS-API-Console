@@ -495,6 +495,15 @@ Base path：`/api/v1`
 - 排序：`created_at desc`（最新優先）。
 - 回傳欄位（精簡）：`created_at`、`event_type`、`action`、`result`、`actor_account`、`target_type`、`target_id`、`error_code`。
 
+### 6-3) 登入稽核熱資料查詢（v1）
+- `GET /api/v1/auth-audit-logs`
+- 規則：僅 `admin` 可使用。
+- 查詢參數：`page`、`page_size`、`from`、`to`、`provider`、`result(success|failure)`。
+- 預設熱資料窗：若未提供 `from/to`，回傳最近 7 天資料。
+- 排序：`created_at desc`（最新優先）。
+- 回傳欄位（精簡）：`created_at`、`provider`、`result`、`account`、`sysid`、`role`、`error_code`、`request_id`。
+- 回傳不得包含敏感憑證資訊（access token、refresh token、password、client secret）。
+
 ### 7) 外部研究人員名單服務（整合介面）
 - 用途：供「進入系統」與「送出申請」時檢查是否命中研究人員資格。
 - 資格判斷：以外部服務回傳之職稱代碼判斷是否符合研究人員資格。
@@ -618,6 +627,10 @@ Base path：`/api/v1`
 79. 操作稽核查詢在未提供 `from/to` 時，需預設回傳最近 7 天熱資料。
 80. 操作稽核查詢結果需依 `created_at desc` 排序，並支援 `page/page_size` 分頁。
 81. 操作稽核查詢需支援 `event_type` 與 `result` 篩選，且回傳不得包含敏感憑證資訊。
+82. `GET /api/v1/auth-audit-logs` 僅 `admin` 可呼叫，`user` 呼叫需回 `403`。
+83. 登入稽核查詢在未提供 `from/to` 時，需預設回傳最近 7 天熱資料。
+84. 登入稽核查詢結果需依 `created_at desc` 排序，並支援 `page/page_size` 分頁。
+85. 登入稽核查詢需支援 `provider` 與 `result` 篩選，且回傳不得包含敏感憑證資訊。
 
 ## Roadmap
 ### Phase 1：Foundation

@@ -118,6 +118,17 @@ export const httpApiProvider = {
     return request(`/api/v1/operation-audit-logs?${query.toString()}`, { auth });
   },
 
+  listAuthAuditLogs(params, auth) {
+    const query = new URLSearchParams();
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.page_size) query.set("page_size", String(params.page_size));
+    if (params?.from) query.set("from", params.from);
+    if (params?.to) query.set("to", params.to);
+    if (params?.provider) query.set("provider", params.provider);
+    if (params?.result) query.set("result", params.result);
+    return request(`/api/v1/auth-audit-logs?${query.toString()}`, { auth });
+  },
+
   listUsers(auth) {
     return request("/api/v1/users", { auth });
   },

@@ -35,6 +35,7 @@ export const apiClient = {
   renewApiKey: (id, auth) => provider.renewApiKey(id, auth),
   listApiKeyUserStatistics: (params, auth) => provider.listApiKeyUserStatistics(params, auth),
   listOperationAuditLogs: (params, auth) => provider.listOperationAuditLogs(params, auth),
+  listAuthAuditLogs: (params, auth) => provider.listAuthAuditLogs(params, auth),
   listUsers: (auth) => provider.listUsers(auth),
   searchUsers: (keyword, auth) => provider.searchUsers(keyword, auth),
   enableAdmin: (id, auth) => provider.enableAdmin(id, auth),

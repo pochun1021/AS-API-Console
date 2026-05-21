@@ -221,6 +221,54 @@ let notifications = [
     metadata: { application_id: "app_mock_001", key_id: "key_001" }
   }
 ];
+let operationAuditLogs = [
+  {
+    id: "oplog_001",
+    created_at: new Date().toISOString(),
+    event_type: "api_key",
+    action: "create",
+    result: "success",
+    actor_account: "john.admin",
+    target_type: "api_key",
+    target_id: "key_003",
+    error_code: null
+  },
+  {
+    id: "oplog_002",
+    created_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+    event_type: "whitelist",
+    action: "update",
+    result: "failure",
+    actor_account: "john.admin",
+    target_type: "whitelist",
+    target_id: "wl_001",
+    error_code: "VALIDATION_ERROR"
+  }
+];
+let authAuditLogs = [
+  {
+    id: "authlog_001",
+    created_at: new Date().toISOString(),
+    provider: "sso",
+    result: "success",
+    account: "jane.doe",
+    sysid: 123,
+    role: "user",
+    error_code: null,
+    request_id: "req-auth-001"
+  },
+  {
+    id: "authlog_002",
+    created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+    provider: "sso",
+    result: "failure",
+    account: null,
+    sysid: null,
+    role: null,
+    error_code: "LOGIN_NOT_ELIGIBLE",
+    request_id: "req-auth-002"
+  }
+];
 
 function createError(code, message, status = 400) {
   const error = new Error(message);
@@ -349,6 +397,15 @@ function buildUserStatistics(items, { q = "", scope = "all", from, to }) {
   return Array.from(byOwner.values());
 }
 
+function applyDateRange(items, { from, to }) {
+  return items.filter((item) => {
+    const date = item.created_at.slice(0, 10);
+    if (from && date < from) return false;
+    if (to && date > to) return false;
+    return true;
+  });
+}
+
 export const mockApiProvider = {
   async createApplication(payload, auth) {
     await delay();
@@ -450,6 +507,44 @@ export const mockApiProvider = {
       page,
       page_size: pageSize,
       total: sorted.length
+    };
+  },
+
+  async listOperationAuditLogs(params, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const page = Number(params?.page || 1);
+    const pageSize = Number(params?.page_size || 20);
+    const filtered = applyDateRange(operationAuditLogs, params || {})
+      .filter((item) => (params?.event_type ? item.event_type === params.event_type : true))
+      .filter((item) => (params?.result ? item.result === params.result : true))
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+    const start = (page - 1) * pageSize;
+    return {
+      items: filtered.slice(start, start + pageSize),
+      page,
+      page_size: pageSize,
+      total: filtered.length
+    };
+  },
+
+  async listAuthAuditLogs(params, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const page = Number(params?.page || 1);
+    const pageSize = Number(params?.page_size || 20);
+    const filtered = applyDateRange(authAuditLogs, params || {})
+      .filter((item) => (params?.provider ? item.provider === params.provider : true))
+      .filter((item) => (params?.result ? item.result === params.result : true))
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+    const start = (page - 1) * pageSize;
+    return {
+      items: filtered.slice(start, start + pageSize),
+      page,
+      page_size: pageSize,
+      total: filtered.length
     };
   },
 
@@ -783,6 +878,54 @@ export const mockApiProvider = {
         created_at: new Date().toISOString(),
         read_at: null,
         metadata: { application_id: "app_mock_001", key_id: "key_001" }
+      }
+    ];
+    operationAuditLogs = [
+      {
+        id: "oplog_001",
+        created_at: new Date().toISOString(),
+        event_type: "api_key",
+        action: "create",
+        result: "success",
+        actor_account: "john.admin",
+        target_type: "api_key",
+        target_id: "key_003",
+        error_code: null
+      },
+      {
+        id: "oplog_002",
+        created_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+        event_type: "whitelist",
+        action: "update",
+        result: "failure",
+        actor_account: "john.admin",
+        target_type: "whitelist",
+        target_id: "wl_001",
+        error_code: "VALIDATION_ERROR"
+      }
+    ];
+    authAuditLogs = [
+      {
+        id: "authlog_001",
+        created_at: new Date().toISOString(),
+        provider: "sso",
+        result: "success",
+        account: "jane.doe",
+        sysid: 123,
+        role: "user",
+        error_code: null,
+        request_id: "req-auth-001"
+      },
+      {
+        id: "authlog_002",
+        created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+        provider: "sso",
+        result: "failure",
+        account: null,
+        sysid: null,
+        role: null,
+        error_code: "LOGIN_NOT_ELIGIBLE",
+        request_id: "req-auth-002"
       }
     ];
   }
