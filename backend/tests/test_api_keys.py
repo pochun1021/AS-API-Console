@@ -387,7 +387,7 @@ def test_pending_endpoints_removed(client, admin_headers, user_headers):
 
 def test_issue_pending_endpoint_removed(client, admin_headers):
     resp = client.post("/api/v1/api-keys/applications/dummy-id/issue", headers=admin_headers)
-    assert resp.status_code == 404
+    assert resp.status_code == 405
 
 
 def test_issue_pending_application_does_not_send_issued_email(client, admin_headers, user_headers, monkeypatch):

@@ -1,0 +1,264 @@
+name: security-scan
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Prepare report directory
+        run: mkdir -p security-reports
+
+      - name: Install backend scan tools
+        run: python -m pip install --upgrade pip "bandit==1.9.4" "pip-audit==2.10.0"
+
+      - name: Bandit scan (backend)
+        continue-on-error: true
+        run: |
+          bandit -r backend/app -f json -o security-reports/bandit.json || true
+          if [ ! -f security-reports/bandit.json ]; then
+            echo '{"scan_error":"bandit_report_missing"}' > security-reports/bandit.json
+          fi
+
+      - name: pip-audit scan (backend deps)
+        id: pip_audit
+        continue-on-error: true
+        run: |
+          set +e
+          rm -f security-reports/pip-audit.stdout.log security-reports/pip-audit.stderr.log
+          attempts=0
+          max_attempts=3
+          report_ready=0
+          rc=0
+          while [ "$attempts" -lt "$max_attempts" ]; do
+            attempts=$((attempts + 1))
+            pip-audit -r backend/requirements.txt --format=json --output=security-reports/pip-audit.json \
+              >> security-reports/pip-audit.stdout.log 2>> security-reports/pip-audit.stderr.log
+            rc=$?
+            if [ -s security-reports/pip-audit.json ] && python -c 'import json, pathlib; json.loads(pathlib.Path("security-reports/pip-audit.json").read_text())'
+            then
+              report_ready=1
+              break
+            fi
+            if [ "$attempts" -eq 1 ]; then sleep 2; fi
+            if [ "$attempts" -eq 2 ]; then sleep 5; fi
+          done
+          if [ "$report_ready" -ne 1 ]; then
+            excerpt=$(head -n 20 security-reports/pip-audit.stderr.log | tr '\n' ' ' | sed 's/"/\\"/g')
+            printf '{"scan_error":"pip_audit_execution_failed","attempts":%s,"last_exit_code":%s,"last_error_excerpt":"%s"}\n' \
+              "$attempts" "$rc" "$excerpt" > security-reports/pip-audit.json
+          fi
+          echo "pip-audit summary: attempts=$attempts report_ready=$report_ready final_exit_code=$rc"
+          exit 0
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm audit (production deps)
+        continue-on-error: true
+        working-directory: frontend
+        run: |
+          npm audit --omit=dev --json > ../security-reports/npm-audit.json || true
+          if [ ! -s ../security-reports/npm-audit.json ]; then
+            echo '{"scan_error":"npm_audit_report_missing"}' > ../security-reports/npm-audit.json
+          fi
+
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=8.24.2
+          wget -q "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+
+      - name: Run gitleaks (secrets)
+        id: gitleaks
+        continue-on-error: true
+        run: |
+          set +e
+          gitleaks dir . \
+            --report-format json \
+            --report-path security-reports/gitleaks.json
+          rc=$?
+          set -e
+          if [ ! -f security-reports/gitleaks.json ]; then
+            echo '{"scan_error":"gitleaks_report_missing"}' > security-reports/gitleaks.json
+          fi
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget
+          wget -qO- https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+
+      - name: Trivy fs scan (vuln + misconfig)
+        continue-on-error: true
+        run: |
+          trivy fs \
+            --scanners vuln,misconfig \
+            --format json \
+            --output security-reports/trivy.json \
+            . || true
+          if [ ! -s security-reports/trivy.json ]; then
+            echo '{"scan_error":"trivy_report_missing"}' > security-reports/trivy.json
+          fi
+
+      - name: Evaluate gate policy
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          report_dir = pathlib.Path("security-reports")
+          has_blocker = False
+          warnings = []
+          blockers = []
+
+          def add_blocker(msg: str):
+            nonlocal_has_blocker[0] = True
+            blockers.append(msg)
+
+          def parse_json(path: pathlib.Path, tool: str):
+            if not path.exists():
+              return {"scan_error": f"{tool}_report_missing"}
+            try:
+              return json.loads(path.read_text())
+            except Exception as exc:
+              return {"scan_error": f"{tool}_invalid_json:{exc}"}
+
+          def extract_scan_error(payload, tool: str):
+            if isinstance(payload, dict):
+              return payload.get("scan_error")
+            if isinstance(payload, list):
+              return None
+            return f"{tool}_invalid_payload_type:{type(payload).__name__}"
+
+          nonlocal_has_blocker = [False]
+
+          bandit = parse_json(report_dir / "bandit.json", "bandit")
+          bandit_error = extract_scan_error(bandit, "bandit")
+          if bandit_error:
+            add_blocker(f"scanner_error:bandit:{bandit_error}")
+          else:
+            for item in bandit.get("results", []):
+              sev = str(item.get("issue_severity", "")).upper()
+              test_id = item.get("test_id", "UNKNOWN")
+              if sev in {"HIGH", "CRITICAL"}:
+                add_blocker(f"high_critical:bandit:{test_id}:{sev}")
+              elif sev in {"MEDIUM", "LOW"}:
+                warnings.append(f"warning:bandit:{test_id}:{sev}")
+
+          pip_audit = parse_json(report_dir / "pip-audit.json", "pip_audit")
+          pip_audit_error = extract_scan_error(pip_audit, "pip_audit")
+          if pip_audit_error:
+            if isinstance(pip_audit, dict):
+              warnings.append(
+                f"warning:scanner_error:pip-audit:{pip_audit_error}:exit_{pip_audit.get('last_exit_code', 'na')}"
+              )
+            else:
+              warnings.append(f"warning:scanner_error:pip-audit:{pip_audit_error}")
+          else:
+            for dep in pip_audit.get("dependencies", []):
+              for vuln in dep.get("vulns", []):
+                sev = str(vuln.get("severity", "unknown")).upper()
+                vuln_id = vuln.get("id", "UNKNOWN")
+                if sev in {"HIGH", "CRITICAL"}:
+                  add_blocker(f"high_critical:pip-audit:{vuln_id}:{sev}")
+                else:
+                  warnings.append(f"warning:pip-audit:{vuln_id}:{sev}")
+
+          npm_audit = parse_json(report_dir / "npm-audit.json", "npm_audit")
+          npm_audit_error = extract_scan_error(npm_audit, "npm_audit")
+          if npm_audit_error:
+            add_blocker(f"scanner_error:npm-audit:{npm_audit_error}")
+          else:
+            vulnerabilities = npm_audit.get("vulnerabilities", {})
+            for pkg, info in vulnerabilities.items():
+              sev = str(info.get("severity", "")).upper()
+              if sev in {"HIGH", "CRITICAL"}:
+                add_blocker(f"high_critical:npm-audit:{pkg}:{sev}")
+              elif sev in {"MODERATE", "LOW"}:
+                warnings.append(f"warning:npm-audit:{pkg}:{sev}")
+
+          trivy = parse_json(report_dir / "trivy.json", "trivy")
+          trivy_error = extract_scan_error(trivy, "trivy")
+          if trivy_error:
+            add_blocker(f"scanner_error:trivy:{trivy_error}")
+          else:
+            for result in trivy.get("Results", []):
+              target = result.get("Target", "unknown")
+              for vuln in result.get("Vulnerabilities", []) or []:
+                sev = str(vuln.get("Severity", "")).upper()
+                vuln_id = vuln.get("VulnerabilityID", "UNKNOWN")
+                if sev in {"HIGH", "CRITICAL"}:
+                  add_blocker(f"high_critical:trivy:{target}:{vuln_id}:{sev}")
+                elif sev in {"MEDIUM", "LOW"}:
+                  warnings.append(f"warning:trivy:{target}:{vuln_id}:{sev}")
+              for misconfig in result.get("Misconfigurations", []) or []:
+                sev = str(misconfig.get("Severity", "")).upper()
+                mis_id = misconfig.get("ID", "UNKNOWN")
+                if sev in {"HIGH", "CRITICAL"}:
+                  add_blocker(f"high_critical:trivy-misconfig:{target}:{mis_id}:{sev}")
+                elif sev in {"MEDIUM", "LOW"}:
+                  warnings.append(f"warning:trivy-misconfig:{target}:{mis_id}:{sev}")
+
+          gitleaks = parse_json(report_dir / "gitleaks.json", "gitleaks")
+          gitleaks_error = extract_scan_error(gitleaks, "gitleaks")
+          if gitleaks_error:
+            add_blocker(f"scanner_error:gitleaks:{gitleaks_error}")
+          else:
+            if isinstance(gitleaks, list):
+              findings = gitleaks
+            elif isinstance(gitleaks, dict):
+              findings = gitleaks.get("findings", [])
+            else:
+              findings = []
+            if findings:
+              add_blocker(f"secrets_found:gitleaks:{len(findings)}")
+
+          if warnings:
+            print("Warnings (non-blocking):")
+            for w in warnings:
+              print(f"- {w}")
+
+          if blockers:
+            print("Blockers:")
+            for b in blockers:
+              print(f"- {b}")
+
+          if nonlocal_has_blocker[0]:
+            sys.exit(1)
+          PY
+
+      - name: Upload security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-${{ github.run_id }}
+          path: security-reports
+          if-no-files-found: warn
