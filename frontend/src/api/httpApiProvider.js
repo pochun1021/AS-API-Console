@@ -194,17 +194,6 @@ export const httpApiProvider = {
     });
   },
 
-  listPendingApplications(auth) {
-    return request("/api/v1/api-keys/applications/pending", { auth });
-  },
-
-  issueApplication(id, auth) {
-    return request(`/api/v1/api-keys/applications/${id}/issue`, {
-      method: "POST",
-      auth
-    });
-  },
-
   logout() {
     return request("/logout", { method: "POST" });
   },

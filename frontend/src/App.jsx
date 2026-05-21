@@ -9,8 +9,6 @@ import MyApiKeysPage from "./pages/MyApiKeysPage";
 import AdminPage from "./pages/AdminPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import LimitStrategiesPage from "./pages/LimitStrategiesPage";
-import NotificationsPage from "./pages/NotificationsPage";
-import PendingApplicationsPage from "./pages/PendingApplicationsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 
 export default function App() {
@@ -98,7 +96,6 @@ export default function App() {
         <Route path="/" element={<Navigate to="/apply" replace />} />
         <Route path="/apply" element={<ApplyPage auth={auth} />} />
         <Route path="/api-keys" element={<MyApiKeysPage auth={auth} />} />
-        <Route path="/notifications" element={<NotificationsPage auth={auth} />} />
         <Route
           path="/whitelists"
           element={
@@ -114,16 +111,6 @@ export default function App() {
           element={
             auth.role === "admin" ? (
               <LimitStrategiesPage auth={auth} />
-            ) : (
-              <Navigate to="/apply" replace />
-            )
-          }
-        />
-        <Route
-          path="/pending-applications"
-          element={
-            auth.role === "admin" ? (
-              <PendingApplicationsPage auth={auth} />
             ) : (
               <Navigate to="/apply" replace />
             )
