@@ -54,6 +54,13 @@ def _default_alias(owner_account: str) -> str:
     return f"for_{owner_account}"
 
 
+def _effective_status(*, status: str, expires_at: datetime) -> str:
+    expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
+    if status == "active" and expires_at_utc < datetime.now(UTC):
+        return "expired"
+    return status
+
+
 class ApiKeysService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -312,7 +319,7 @@ class ApiKeysService:
         if current_user.role != "admin":
             normalized_owner_account = None
 
-        items = self.key_repo.list_keys(
+        items, total = self.key_repo.list_keys(
             requester_role=current_user.role,
             requester_account=current_user.account,
             filters=ApiKeyListFilter(
@@ -329,7 +336,7 @@ class ApiKeysService:
             "items": [
                 {
                     "id": item.id,
-                    "status": item.status,
+                    "status": _effective_status(status=item.status, expires_at=item.expires_at),
                     "masked_key": item.masked_key,
                     "key_alias": item.key_alias or _default_alias(item.owner_account),
                     "application_date": item.application_date,
@@ -342,7 +349,7 @@ class ApiKeysService:
             ],
             "page": page,
             "page_size": page_size,
-            "total": len(items),
+            "total": total,
         }
 
     def get_key_detail(self, current_user: CurrentUser, key_id: str) -> dict:
@@ -356,7 +363,7 @@ class ApiKeysService:
 
         return {
             "id": scoped.id,
-            "status": scoped.status,
+            "status": _effective_status(status=scoped.status, expires_at=scoped.expires_at),
             "masked_key": scoped.masked_key,
             "key_alias": scoped.key_alias or _default_alias(scoped.owner_account),
             "owner_account": scoped.owner_account,
@@ -441,7 +448,8 @@ class ApiKeysService:
             raise ApiError("VALIDATION_ERROR", "key not found", 404)
 
         source_key, source_app = row
-        if source_key.status not in {"revoked", "expired"}:
+        source_effective_status = _effective_status(status=source_key.status, expires_at=source_app.expires_at)
+        if source_effective_status not in {"revoked", "expired"}:
             raise ApiError("KEY_NOT_RENEWABLE", "only revoked or expired key can be renewed", 409)
         if source_key.renewed_to_key_id:
             raise ApiError("KEY_ALREADY_RENEWED", "key already renewed", 409)

@@ -214,43 +214,62 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         filters: ApiKeyListFilter,
         limit: int = 20,
         offset: int = 0,
-    ) -> list[ApiKeyListItem]:
-        stmt = (
-            select(ApiKey, ApiKeyApplication)
+    ) -> tuple[list[ApiKeyListItem], int]:
+        effective_status = case(
+            (
+                (ApiKey.status == "active") & (ApiKeyApplication.expires_at < func.utc_timestamp()),
+                "expired",
+            ),
+            else_=ApiKey.status,
+        ).label("effective_status")
+        base_stmt = (
+            select(ApiKey, ApiKeyApplication, effective_status)
             .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
-            .order_by(ApiKey.created_at.desc())
-            .limit(limit)
-            .offset(offset)
         )
         if requester_role == "user":
-            stmt = stmt.where(ApiKeyApplication.account == requester_account)
-            stmt = stmt.where(ApiKey.renewed_to_key_id.is_(None))
+            base_stmt = base_stmt.where(ApiKeyApplication.account == requester_account)
+            base_stmt = base_stmt.where(ApiKey.renewed_to_key_id.is_(None))
         if filters.status:
-            stmt = stmt.where(ApiKey.status == filters.status)
+            base_stmt = base_stmt.where(effective_status == filters.status)
         if filters.owner_account:
-            stmt = stmt.where(ApiKeyApplication.account == filters.owner_account)
+            base_stmt = base_stmt.where(ApiKeyApplication.account == filters.owner_account)
         if filters.from_date:
-            stmt = stmt.where(ApiKeyApplication.application_date >= filters.from_date)
+            base_stmt = base_stmt.where(ApiKeyApplication.application_date >= filters.from_date)
         if filters.to_date:
-            stmt = stmt.where(ApiKeyApplication.application_date <= filters.to_date)
+            base_stmt = base_stmt.where(ApiKeyApplication.application_date <= filters.to_date)
+
+        total_stmt = select(func.count()).select_from(base_stmt.order_by(None).subquery())
+        total = int(self.session.scalar(total_stmt) or 0)
+
+        stmt = base_stmt.order_by(ApiKey.created_at.desc()).limit(limit).offset(offset)
         rows = self.session.execute(stmt).all()
-        return [
-            ApiKeyListItem(
-                id=row.ApiKey.id,
-                status=row.ApiKey.status,
-                masked_key=row.ApiKey.masked_key,
-                key_alias=row.ApiKey.key_alias,
-                application_date=row.ApiKeyApplication.application_date,
-                duration_months=row.ApiKeyApplication.duration_months,
-                owner_account=row.ApiKeyApplication.account,
-                owner_name=row.ApiKeyApplication.name,
-                expires_at=row.ApiKeyApplication.expires_at,
-            )
-            for row in rows
-        ]
+        return (
+            [
+                ApiKeyListItem(
+                    id=row.ApiKey.id,
+                    status=row.effective_status,
+                    masked_key=row.ApiKey.masked_key,
+                    key_alias=row.ApiKey.key_alias,
+                    application_date=row.ApiKeyApplication.application_date,
+                    duration_months=row.ApiKeyApplication.duration_months,
+                    owner_account=row.ApiKeyApplication.account,
+                    owner_name=row.ApiKeyApplication.name,
+                    expires_at=row.ApiKeyApplication.expires_at,
+                )
+                for row in rows
+            ],
+            total,
+        )
 
     def get_key_detail(self, key_id: str, requester_role: str, requester_account: str) -> ApiKeyDetail | None:
-        stmt = select(ApiKey, ApiKeyApplication).join(
+        effective_status = case(
+            (
+                (ApiKey.status == "active") & (ApiKeyApplication.expires_at < func.utc_timestamp()),
+                "expired",
+            ),
+            else_=ApiKey.status,
+        ).label("effective_status")
+        stmt = select(ApiKey, ApiKeyApplication, effective_status).join(
             ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id
         )
         stmt = stmt.where(ApiKey.id == key_id)
@@ -263,7 +282,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
 
         return ApiKeyDetail(
             id=row.ApiKey.id,
-            status=row.ApiKey.status,
+            status=row.effective_status,
             masked_key=row.ApiKey.masked_key,
             key_alias=row.ApiKey.key_alias,
             owner_account=row.ApiKeyApplication.account,
@@ -368,9 +387,16 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[ApiKeyUserStatisticsItem], int]:
-        active_count = func.sum(case((ApiKey.status == "active", 1), else_=0)).label("active_count")
-        revoked_count = func.sum(case((ApiKey.status == "revoked", 1), else_=0)).label("revoked_count")
-        expired_count = func.sum(case((ApiKey.status == "expired", 1), else_=0)).label("expired_count")
+        effective_status = case(
+            (
+                (ApiKey.status == "active") & (ApiKeyApplication.expires_at < func.utc_timestamp()),
+                "expired",
+            ),
+            else_=ApiKey.status,
+        )
+        active_count = func.sum(case((effective_status == "active", 1), else_=0)).label("active_count")
+        revoked_count = func.sum(case((effective_status == "revoked", 1), else_=0)).label("revoked_count")
+        expired_count = func.sum(case((effective_status == "expired", 1), else_=0)).label("expired_count")
         total_applications = func.count(ApiKeyApplication.id).label("total_applications")
         last_applied_at = func.max(ApiKeyApplication.application_date).label("last_applied_at")
 
@@ -390,7 +416,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         )
 
         if scope != "all":
-            stmt = stmt.where(ApiKey.status == scope)
+            stmt = stmt.where(effective_status == scope)
         if from_date is not None:
             stmt = stmt.where(ApiKeyApplication.application_date >= from_date)
         if to_date is not None:

@@ -125,3 +125,25 @@ test("user renew hides old key from list", async () => {
     expect(screen.queryByText("AS-...mn56")).not.toBeInTheDocument();
   });
 });
+
+test("list uses server pagination params", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeys");
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={adminAuth} />
+    </MemoryRouter>
+  );
+
+  expect(await screen.findByText("API Keys")).toBeInTheDocument();
+  expect((await screen.findAllByText("jane.doe / Jane Doe")).length).toBeGreaterThan(0);
+  await waitFor(() => {
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 10 }), adminAuth);
+  });
+
+  await user.click(screen.getByRole("combobox", { name: /每頁數量|Rows per page/i }));
+  await user.click(screen.getByRole("option", { name: "20" }));
+  await waitFor(() => {
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 20 }), adminAuth);
+  });
+});

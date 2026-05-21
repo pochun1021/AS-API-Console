@@ -1,5 +1,8 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
+from sqlalchemy import create_engine, text
+
+from app.core.config import get_settings
 from db.repositories.types import AuthIdentity
 from app.services.research_eligibility_service import ResearchEligibilityResult
 from tests.conftest import build_headers
@@ -8,6 +11,25 @@ from tests.conftest import build_headers
 def _create_whitelist(client, admin_headers, sysid: str) -> None:
     resp = client.post("/api/v1/whitelists", headers=admin_headers, json={"sysid": int(sysid), "note": "seed"})
     assert resp.status_code == 201
+
+
+def _set_key_expires_at_past(key_id: str) -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    past = datetime.now(UTC) - timedelta(days=1)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE api_key_applications a
+                JOIN api_keys k ON k.application_id = a.id
+                SET a.expires_at = :past
+                WHERE k.id = :key_id
+                """
+            ),
+            {"past": past, "key_id": key_id},
+        )
 
 
 def test_application_success_and_no_plaintext_in_queries(client, admin_headers, user_headers):
@@ -496,6 +518,30 @@ def test_renew_rejects_active_key(client, admin_headers, user_headers):
     assert renew.json()["error"]["code"] == "KEY_NOT_RENEWABLE"
 
 
+def test_expired_is_visible_and_renewable_by_expires_at(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "expire-visible"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get("/api/v1/api-keys", headers=user_headers).json()["items"][0]["id"]
+    _set_key_expires_at_past(key_id)
+
+    listed = client.get("/api/v1/api-keys", headers=user_headers)
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["status"] == "expired"
+
+    detail = client.get(f"/api/v1/api-keys/{key_id}", headers=user_headers)
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "expired"
+
+    renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user_headers)
+    assert renew.status_code == 200
+    assert renew.json()["status"] == "active"
+
+
 def test_renew_sends_renewed_email_on_success(client, admin_headers, monkeypatch):
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user["x-sysid"])
@@ -617,6 +663,34 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
     assert items[0]["owner_account"] == "user1"
     assert items[0]["status"] == "active"
     assert items[0]["application_date"] == "2026-05-10"
+
+
+def test_list_api_keys_total_is_full_match_count_not_page_size(client, admin_headers):
+    user = build_headers(role="user", account="pager", email="pager@example.com", sysid="2201")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+
+    for i in range(3):
+        resp = client.post(
+            "/api/v1/api-keys/applications",
+            headers=user,
+            json={
+                "application_date": str(date.today()),
+                "duration_months": 1,
+                "purpose": f"pager-{i}",
+                "max_budget": "1000",
+                "budget_duration": "monthly",
+            },
+        )
+        assert resp.status_code == 201
+
+    page1 = client.get("/api/v1/api-keys?page=1&page_size=1", headers=user)
+    page2 = client.get("/api/v1/api-keys?page=2&page_size=1", headers=user)
+    assert page1.status_code == 200
+    assert page2.status_code == 200
+    assert len(page1.json()["items"]) == 1
+    assert len(page2.json()["items"]) == 1
+    assert page1.json()["total"] == 3
+    assert page2.json()["total"] == 3
 
 
 def test_reveal_plaintext_admin_only(client, admin_headers):
@@ -755,8 +829,11 @@ def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_head
     assert first.status_code == 201
     assert second.status_code == 201
 
-    key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
-    revoke_resp = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user)
+    ids = [item["id"] for item in client.get("/api/v1/api-keys", headers=user).json()["items"]]
+    revoke_target_id = ids[0]
+    expire_target_id = ids[1]
+    _set_key_expires_at_past(expire_target_id)
+    revoke_resp = client.post(f"/api/v1/api-keys/{revoke_target_id}/revoke", headers=user)
     assert revoke_resp.status_code == 200
 
     all_resp = client.get("/api/v1/api-keys/statistics/users?scope=all", headers=admin_headers)
@@ -775,14 +852,13 @@ def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_head
     assert ranged_resp.status_code == 200
 
     all_item = all_resp.json()["items"][0]
-    active_item = active_resp.json()["items"][0]
     revoked_item = revoked_resp.json()["items"][0]
     ranged_item = ranged_resp.json()["items"][0]
 
     assert all_item["total_applications"] == 2
-    assert active_item["total_applications"] == 1
+    assert active_resp.json()["total"] == 0
     assert revoked_item["total_applications"] == 1
-    assert expired_resp.json()["total"] == 0
+    assert expired_resp.json()["total"] == 1
     assert ranged_item["total_applications"] == 1
 
     forbidden = client.get("/api/v1/api-keys/statistics/users", headers=user)

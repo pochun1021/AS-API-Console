@@ -70,6 +70,9 @@ async function copyText(text) {
 export default function MyApiKeysPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
@@ -93,10 +96,16 @@ export default function MyApiKeysPage({ auth }) {
     setLoading(true);
     setError("");
     try {
-      const response = await apiClient.listApiKeys(auth);
-      setItems(response.items);
+      const response = await apiClient.listApiKeys(
+        { page: page + 1, page_size: pageSize },
+        auth
+      );
+      setItems(response.items || []);
+      setTotal(response.total || 0);
     } catch (e) {
       setError(e?.payload?.error?.message || t("mykeys_load_failed"));
+      setItems([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -225,7 +234,7 @@ export default function MyApiKeysPage({ auth }) {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [page, pageSize]);
 
   useEffect(() => () => {
     if (renewCopyResetTimerRef.current) clearTimeout(renewCopyResetTimerRef.current);
@@ -360,8 +369,14 @@ export default function MyApiKeysPage({ auth }) {
                 rows={items}
                 columns={columns}
                 getRowId={(row) => row.id}
+                paginationMode="server"
+                rowCount={total}
+                paginationModel={{ page, pageSize }}
+                onPaginationModelChange={(model) => {
+                  setPage(model.page);
+                  setPageSize(model.pageSize);
+                }}
                 pageSizeOptions={[10, 20, 50]}
-                initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
                 disableRowSelectionOnClick
                 rowHeight={56}
                 localeText={gridLocaleText}

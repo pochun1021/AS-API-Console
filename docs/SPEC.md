@@ -341,9 +341,12 @@ Base path：`/api/v1`
 ### 2) 查詢 API Key 清單
 - `GET /api/v1/api-keys`
 - 規則：`user` 僅回傳 auth 使用者本人的資料；`admin` 可查全部資料。
+- 到期口徑：`expires_at` 早於查詢當下（UTC）且原始狀態為 `active` 時，API 對外狀態需視為 `expired`（即使 DB 原始欄位尚未同步更新）。
 - Query（草案）：`page`, `page_size`, `status`, `owner_account`, `from`, `to`
+  - `page_size` 定義為每頁顯示筆數（非全量上限）。
   - `owner_account` 僅 `admin` 可用於指定申請人篩選；`user` 不得跨人查詢
   - `from`、`to` 格式為 `YYYY-MM-DD`，基準欄位為 `application_date`
+  - 前端清單需採伺服器分頁，透過 `page/page_size` 可翻頁讀取完整資料集（不限於首 20 筆）。
 - Response（200）：
 ```json
 {
@@ -363,10 +366,12 @@ Base path：`/api/v1`
   "total": 1
 }
 ```
+- `total` 定義為符合目前篩選條件的總筆數（非當頁 `items` 長度）。
 
 ### 2-1) 查詢每位使用者 API Key 申請統計（Admin Dashboard）
 - `GET /api/v1/api-keys/statistics/users`
 - 規則：僅 `admin` 可使用；回傳為申請人維度聚合結果，不得包含明文 key。
+- 統計口徑：`active/revoked/expired` 與 `scope` 篩選需採相同到期口徑（`expires_at` 已過且原始 `active` 視為 `expired`）。
 - Query（草案）：`page`, `page_size`, `q`, `scope`, `from`, `to`, `sort_by`, `sort_dir`
   - `scope` allowed: `all|active|revoked|expired`（預設 `all`）
   - `from`、`to` 格式為 `YYYY-MM-DD`，基準欄位為 `application_date`
@@ -396,6 +401,7 @@ Base path：`/api/v1`
 ### 3) 查詢單筆 API Key 紀錄
 - `GET /api/v1/api-keys/{id}`
 - 規則：`user` 僅可查本人資料；`admin` 可查任意資料；不可回傳明文 key。
+- 到期口徑：`expires_at` 早於查詢當下（UTC）且原始狀態為 `active` 時，API 對外狀態需視為 `expired`。
 - 回傳 `key_alias`；若資料未設定則回傳預設值 `for_{owner_account}`。
 - 回傳可包含申請人識別欄位 `owner_account`、`owner_name`（供管理者辨識申請來源）。
 - 回傳應包含 `purpose` 供詳情頁顯示；若歷史資料未留存用途，前端顯示 `-`。
@@ -409,6 +415,7 @@ Base path：`/api/v1`
 - `POST /api/v1/api-keys/{id}/renew`
 - 規則：
   - `user` 僅可續發本人 `revoked|expired` key；`admin` 可續發任意 `revoked|expired` key。
+  - 續發判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可續發。
   - renew 會建立新 key（`status=active`），不是把舊 key 改回 `active`。
   - 新 key 的 `duration_months` 與 `purpose` 需沿用來源 key 的原資料。
 - renew 即時成功（`issuance_status=issued`）時，回傳一次性 `api_key_plaintext`。
@@ -631,6 +638,9 @@ Base path：`/api/v1`
 83. 登入稽核查詢在未提供 `from/to` 時，需預設回傳最近 7 天熱資料。
 84. 登入稽核查詢結果需依 `created_at desc` 排序，並支援 `page/page_size` 分頁。
 85. 登入稽核查詢需支援 `provider` 與 `result` 篩選，且回傳不得包含敏感憑證資訊。
+86. `GET /api/v1/api-keys` 與 `GET /api/v1/api-keys/{id}` 回傳狀態需以 `expires_at` 即時計算到期口徑；已過期者對外顯示為 `expired`。
+87. `POST /api/v1/api-keys/{id}/renew` 判定需採與查詢一致的到期口徑；已過期且未續發過之 key 可續發。
+88. `GET /api/v1/api-keys/statistics/users` 的 `scope` 與 `active/revoked/expired` 計數需採同一到期口徑，避免已過期 key 被算入 `active`。
 
 ## Roadmap
 ### Phase 1：Foundation
