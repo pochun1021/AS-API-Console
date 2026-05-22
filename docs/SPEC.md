@@ -498,7 +498,7 @@ Base path：`/api/v1`
 ### 5-1) 特殊人員名單新增前使用者查詢 API
 - `GET /api/v1/users?q={keyword}`
 - 用途：供管理者透過外部人員目錄 API 查詢候選人資料（供新增管理者/特殊人員前使用）。
-- 規則：僅 `admin` 可使用；`q` 僅用於 `account`、`name` 查詢；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`status`。
+- 規則：僅 `admin` 可使用；`q` 僅用於 `account`、`name` 查詢；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`（對應單位代碼 `instCode`）、`status`。
 - 錯誤回應：
   - `403 FORBIDDEN`：非 `admin`
   - `422 VALIDATION_ERROR`：`q` 不合法

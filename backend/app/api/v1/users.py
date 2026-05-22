@@ -61,13 +61,14 @@ def get_current_user_profile(
     },
 )
 def list_users(
+    request: Request,
     q: str = Query(default=""),
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     _require_admin(current_user)
     validate_search_keyword(q)
-    service = UsersService(db)
+    service = UsersService(db, persnl_service=request.app.state.persnl_soap_service)
     return service.search(q=q)
 
 

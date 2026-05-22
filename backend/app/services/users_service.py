@@ -4,30 +4,31 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
 from app.core.errors import ApiError
-from app.services.directory_identity_service import DirectoryIdentityService, DirectoryLookupUnavailableError
+from app.services.persnl_soap_service import PersnlSoapService, PersnlSoapUnavailableError
 from db.models.user_preferences import UserPreference
 from db.repositories import SQLAlchemyAdminRepository
 
 
 class UsersService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, persnl_service: PersnlSoapService | None = None) -> None:
         self.session = session
         self.repo = SQLAlchemyAdminRepository(session)
-        self.directory = DirectoryIdentityService()
+        self.persnl = persnl_service or PersnlSoapService()
 
     def search(self, q: str, limit: int = 20) -> dict:
         try:
-            users = self.directory.search_by_keyword(q, limit=limit)
-        except DirectoryLookupUnavailableError as exc:
+            users = self.persnl.search_by_keyword(q, limit=limit)
+        except PersnlSoapUnavailableError as exc:
             raise ApiError("DIRECTORY_SERVICE_UNAVAILABLE", "directory service unavailable", 503) from exc
         return {
             "items": [
                 {
-                    "id": str(user.sysid),
-                    "sysid": user.sysid,
-                    "account": user.account,
-                    "name": user.name,
-                    "email": user.email,
+                    "id": str(user["sysId"]),
+                    "sysid": int(user["sysId"]),
+                    "account": user["cn"],
+                    "name": user["chName"],
+                    "email": user["email"],
+                    "department": user["instCode"],
                     "role": "user",
                     "status": "active",
                 }

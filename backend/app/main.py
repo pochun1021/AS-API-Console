@@ -1,4 +1,5 @@
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -13,6 +14,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.security import apply_security_headers
+from app.services.persnl_soap_service import PersnlSoapService
 
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -20,7 +22,12 @@ FRONTEND_ASSETS = FRONTEND_DIST / "assets"
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="AS API Console", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        app.state.persnl_soap_service.initialize()
+        yield
+
+    app = FastAPI(title="AS API Console", version="0.1.0", lifespan=lifespan)
     settings = get_settings()
     allowed_hosts = [host.strip() for host in settings.allowed_hosts.split(",") if host.strip()]
     if allowed_hosts:
@@ -34,6 +41,8 @@ def create_app() -> FastAPI:
         https_only=settings.session_https_only,
     )
     register_exception_handlers(app)
+    app.state.persnl_soap_service = PersnlSoapService()
+
     app.include_router(auth_router)
     if settings.app_env.lower() == "test":
         app.include_router(test_auth_router)

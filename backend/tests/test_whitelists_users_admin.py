@@ -1,6 +1,6 @@
 
 from tests.conftest import build_headers
-from db.repositories.types import AuthIdentity
+from app.services.persnl_soap_service import PersnlSoapUnavailableError
 
 
 def test_whitelist_admin_only(client, admin_headers, user_headers):
@@ -32,18 +32,10 @@ def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
 
     def fake_search_by_keyword(self, keyword, limit=20):
         assert keyword == "u1"
-        return [
-            AuthIdentity(
-                account="u1",
-                name="User One",
-                email="u1@example.com",
-                department="IT",
-                sysid=7003,
-            )
-        ]
+        return [{"sysId": "7003", "cn": "u1", "chName": "User One", "email": "u1@example.com", "instCode": "01", "tCode": "A01"}]
 
     monkeypatch.setattr(
-        "app.services.directory_identity_service.DirectoryIdentityService.search_by_keyword",
+        "app.services.persnl_soap_service.PersnlSoapService.search_by_keyword",
         fake_search_by_keyword,
     )
 
@@ -54,6 +46,7 @@ def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
     user_id = user_item["id"]
     assert "sysid" in user_item
     assert str(user_item["sysid"]) == user_item["id"]
+    assert user_item["department"] == "01"
 
     enable = client.post(f"/api/v1/admins/{user_id}/enable", headers=admin_headers)
     assert enable.status_code == 200
@@ -74,3 +67,17 @@ def test_user_not_found_for_role_mutation(client, admin_headers):
     resp = client.post("/api/v1/admins/not-exist/enable", headers=admin_headers)
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "USER_NOT_FOUND"
+
+
+def test_users_returns_503_when_persnl_unavailable(client, admin_headers, monkeypatch):
+    def fake_search_by_keyword(self, keyword, limit=20):
+        raise PersnlSoapUnavailableError("down")
+
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.search_by_keyword",
+        fake_search_by_keyword,
+    )
+
+    users = client.get("/api/v1/users?q=u1", headers=admin_headers)
+    assert users.status_code == 503
+    assert users.json()["error"]["code"] == "DIRECTORY_SERVICE_UNAVAILABLE"

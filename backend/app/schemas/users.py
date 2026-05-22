@@ -7,6 +7,7 @@ class UserListItemResponse(BaseModel):
     account: str
     name: str
     email: str
+    department: str
     role: str
     status: str
 

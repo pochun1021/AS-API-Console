@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     research_list_allowed_title_codes: str = ""
     directory_identity_api_url: str | None = None
     directory_identity_timeout_seconds: float = 3.0
+    persnl_soap_url: str | None = None
+    persnl_soap_wsdl_url: str | None = None
+    persnl_soap_user: str | None = None
+    persnl_soap_password: str | None = None
+    persnl_soap_timeout_seconds: float = 3.0
     api_key_encryption_secret: str = "dev-only-change-me"
     api_key_kek_version: str = "v1"
     provider_base_url: str | None = None
@@ -79,7 +84,16 @@ class Settings(BaseSettings):
             raise ValueError("PROVIDER_BASE_URL must be a valid http(s) URL")
         return normalized
 
-    @field_validator("research_list_api_url", "directory_identity_api_url", "oauth_auth_uri", "oauth_token_uri", "oauth_basic_uri", "oauth_redirect_uri")
+    @field_validator(
+        "research_list_api_url",
+        "directory_identity_api_url",
+        "persnl_soap_url",
+        "persnl_soap_wsdl_url",
+        "oauth_auth_uri",
+        "oauth_token_uri",
+        "oauth_basic_uri",
+        "oauth_redirect_uri",
+    )
     @classmethod
     def validate_optional_urls(cls, value: str | None) -> str | None:
         if value is None:
