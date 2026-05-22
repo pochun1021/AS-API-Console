@@ -432,3 +432,92 @@ sudo -u asapi -H bash -lc 'cd /opt/as-api-console/backend && ./scripts/run_expir
 ```bash
 sudo -u asapi tail -n 100 /opt/as-api-console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
+
+## 17. 單位主檔同步排程部署
+
+單位主檔同步採背景差異同步模式：
+- 資料來源：`Persnl.getInstitutes`
+- 執行腳本：`backend/scripts/sync_institutes.py`
+- 建議頻率：每日 `00:20`（與 expired 回填 `00:10` 錯峰）
+
+### 17.1 方案 A（建議）：systemd timer
+
+建立 `/etc/systemd/system/as-api-institute-sync.service`：
+```ini
+[Unit]
+Description=AS API Console Institute Master Sync
+After=network.target mariadb.service
+
+[Service]
+Type=oneshot
+User=asapi
+Group=asapi
+WorkingDirectory=/opt/as-api-console/backend
+ExecStart=/opt/as-api-console/backend/.venv/bin/python /opt/as-api-console/backend/scripts/sync_institutes.py
+```
+
+建立 `/etc/systemd/system/as-api-institute-sync.timer`：
+```ini
+[Unit]
+Description=Run institute master sync daily at 00:20
+
+[Timer]
+OnCalendar=*-*-* 00:20:00
+Persistent=true
+Unit=as-api-institute-sync.service
+
+[Install]
+WantedBy=timers.target
+```
+
+啟用與驗證：
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now as-api-institute-sync.timer
+sudo systemctl list-timers as-api-institute-sync.timer --all
+sudo systemctl status as-api-institute-sync.timer --no-pager
+```
+
+手動觸發與看 log：
+```bash
+sudo systemctl start as-api-institute-sync.service
+sudo journalctl -u as-api-institute-sync.service -n 200 --no-pager
+```
+
+### 17.2 方案 B：cron
+
+以 `asapi` 使用者設定 crontab：
+```bash
+sudo -u asapi crontab -e
+```
+
+加入：
+```cron
+20 0 * * * cd /opt/as-api-console/backend && /opt/as-api-console/backend/.venv/bin/python scripts/sync_institutes.py
+```
+
+檢查：
+```bash
+sudo -u asapi crontab -l
+```
+
+### 17.3 排錯重點
+- OAuth/SOAP 登入失敗：檢查 `backend/.env` 內 SOAP/OAuth 相關設定與可連線性。
+- 外部服務不可用：若 `Persnl.getInstitutes` timeout/5xx，腳本會失敗退出，請先確認外部服務狀態。
+- DB 連線錯誤：確認 `DB_*` 或 `DATABASE_URL` 設定與 MariaDB 權限。
+- Python/venv 路徑錯誤：確認 `.venv` 已建立且依賴已安裝。
+
+### 17.4 驗證清單（建議）
+1. 檢查排程已啟用：
+```bash
+sudo systemctl list-timers as-api-institute-sync.timer --all
+sudo -u asapi crontab -l
+```
+2. 手動 dry-run：
+```bash
+sudo -u asapi -H bash -lc 'cd /opt/as-api-console/backend && . .venv/bin/activate && python scripts/sync_institutes.py --dry-run'
+```
+3. 實際同步一次：
+```bash
+sudo -u asapi -H bash -lc 'cd /opt/as-api-console/backend && . .venv/bin/activate && python scripts/sync_institutes.py'
+```

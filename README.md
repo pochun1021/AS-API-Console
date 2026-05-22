@@ -197,6 +197,22 @@ cd backend
 - 正式部署排程設定請見 `docs/deploy-ubuntu-nginx.md`（systemd timer 與 cron 兩種方案）。
 - 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 第 16 節為準。
 
+## 單位主檔同步排程
+- 單位主檔同步來源為 `Persnl.getInstitutes`，使用背景排程執行差異同步（新增/更新/停用）。
+- 內建腳本：
+```bash
+cd backend
+python scripts/sync_institutes.py
+```
+- dry-run 驗證：
+```bash
+cd backend
+python scripts/sync_institutes.py --dry-run
+```
+- 預設建議頻率：每日 `00:20`（與 expired 回填 `00:10` 錯峰）。
+- 正式部署排程設定請見 `docs/deploy-ubuntu-nginx.md`（systemd timer 與 cron 兩種方案）。
+- 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 第 17 節為準。
+
 ## 測試
 Backend：
 ```bash
