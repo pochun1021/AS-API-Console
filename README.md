@@ -84,6 +84,10 @@ cp .env.example .env
 - `RESEARCH_LIST_ALLOWED_TITLE_CODES`：可選，允許通過的職稱代碼清單（逗號分隔，例如 `RS01,RS02`）
 - `DIRECTORY_IDENTITY_API_URL`：可選，代申請帳號身份解析 API URL（admin 代申請需可用）
 - `DIRECTORY_IDENTITY_TIMEOUT_SECONDS`：可選，帳號解析 timeout 秒數（預設 `3.0`）
+- `PERSNL_SOAP_URL`：可選，Persnl SOAP runtime endpoint（設定時會優先作為實際呼叫位址）
+- `PERSNL_SOAP_WSDL_URL`：可選，Persnl SOAP WSDL URL（設定後可使用 WSDL client）
+- `PERSNL_SOAP_USER` / `PERSNL_SOAP_PASSWORD`：單位主檔同步（`sync_institutes.py`）使用的 SOAP 帳密
+- `PERSNL_SOAP_TIMEOUT_SECONDS`：可選，SOAP 呼叫 timeout 秒數（預設 `3.0`）
 - `API_KEY_ENCRYPTION_SECRET`：必填（正式環境），用於 API key 密文加解密的主密鑰來源
 - `API_KEY_KEK_VERSION`：可選，金鑰版本標記（預設 `v1`）
 - `PROVIDER_BASE_URL`：可選，外部 key provider base URL（例如 `https://provider.internal`）
@@ -210,6 +214,7 @@ cd backend
 python scripts/sync_institutes.py --dry-run
 ```
 - 預設建議頻率：每日 `00:20`（與 expired 回填 `00:10` 錯峰）。
+- 前置條件：需先設定 `PERSNL_SOAP_*`；未設定時 `sync_institutes.py` 會以 `persnl soap is not configured` 失敗退出。
 - 正式部署排程設定請見 `docs/deploy-ubuntu-nginx.md`（systemd timer 與 cron 兩種方案）。
 - 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 第 17 節為準。
 

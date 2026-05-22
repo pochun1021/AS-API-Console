@@ -122,6 +122,12 @@ cp -n .env.example .env
 - `API_KEY_ENCRYPTION_SECRET=<strong-random-secret>`
 - `ISSUANCE_PROVIDER_MODE=external`（若暫不串 provider 可改 `local`）
 - `SESSION_SECRET_KEY=<strong-random-secret>`
+- Persnl SOAP（單位主檔同步使用）：
+  - `PERSNL_SOAP_URL`（可選，runtime endpoint）
+  - `PERSNL_SOAP_WSDL_URL`（可選，WSDL endpoint）
+  - `PERSNL_SOAP_USER`（建議必填）
+  - `PERSNL_SOAP_PASSWORD`（建議必填）
+  - `PERSNL_SOAP_TIMEOUT_SECONDS=3.0`（可選）
 - OAuth 必填欄位（依你環境提供）：
   - `OAUTH_AUTH_URI`
   - `OAUTH_TOKEN_URI`
@@ -517,7 +523,8 @@ sudo -u asapi crontab -l
 ```bash
 sudo -u asapi -H bash -lc 'cd /opt/as-api-console/backend && . .venv/bin/activate && python scripts/sync_institutes.py --dry-run'
 ```
-3. 實際同步一次：
+3. 若出現 `persnl soap is not configured`，先補齊 `.env` 的 `PERSNL_SOAP_URL` 或 `PERSNL_SOAP_WSDL_URL`，以及 `PERSNL_SOAP_USER`、`PERSNL_SOAP_PASSWORD`。
+4. 實際同步一次：
 ```bash
 sudo -u asapi -H bash -lc 'cd /opt/as-api-console/backend && . .venv/bin/activate && python scripts/sync_institutes.py'
 ```
