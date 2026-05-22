@@ -1,9 +1,7 @@
 from dataclasses import dataclass
 
-import httpx
-
 from app.core.config import get_settings
-from app.core.outbound import build_safe_httpx_client, validate_outbound_url
+from app.services.persnl_soap_service import PersnlSoapService, PersnlSoapUnavailableError
 
 
 def _normalize_title_code(value: str) -> str:
@@ -16,53 +14,38 @@ class ResearchEligibilityResult:
     title_code: str | None
 
 
+class ResearchEligibilityUnavailableError(RuntimeError):
+    pass
+
+
 class ResearchEligibilityService:
     def __init__(self) -> None:
         settings = get_settings()
-        self.api_url = settings.research_list_api_url
-        self.timeout_seconds = settings.research_list_timeout_seconds
         self.allowed_title_codes = {
             _normalize_title_code(code)
             for code in settings.research_list_allowed_title_codes.split(",")
             if code.strip()
         }
+        self.persnl = PersnlSoapService()
 
     def is_configured(self) -> bool:
-        return bool(self.api_url)
+        return self.persnl.is_configured()
 
     def check_eligibility(self, *, email: str, sysid: int) -> ResearchEligibilityResult:
-        if not self.api_url:
+        del email  # Current SOAP query path resolves by sysid-based identity and tCode only.
+        if not self.persnl.is_configured():
             return ResearchEligibilityResult(eligible=False, title_code=None)
-        api_url = validate_outbound_url(self.api_url, config_name="RESEARCH_LIST_API_URL")
 
         try:
-            with build_safe_httpx_client(timeout_seconds=self.timeout_seconds) as client:
-                response = client.get(
-                    api_url,
-                    params={"email": email, "sysid": str(sysid)},
-                )
-        except httpx.RequestError as exc:
-            raise RuntimeError("research list service request failed") from exc
+            matches = self.persnl.search_person_by_sysid(sysid, on_job="1")
+            if not matches:
+                return ResearchEligibilityResult(eligible=False, title_code=None)
+            title_code = str(matches[0].get("tCode", "")).strip()
+        except PersnlSoapUnavailableError as exc:
+            raise ResearchEligibilityUnavailableError("persnl soap unavailable") from exc
 
-        if response.status_code >= 500:
-            raise RuntimeError("research list service unavailable")
-
-        if response.status_code == 404:
-            return ResearchEligibilityResult(eligible=False, title_code=None)
-
-        if response.status_code >= 400:
-            raise RuntimeError("research list service unavailable")
-
-        payload = response.json()
-        if bool(payload.get("eligible")):
-            return ResearchEligibilityResult(eligible=True, title_code=None)
-
-        title_code = payload.get("title_code")
-        if isinstance(title_code, str):
-            normalized = _normalize_title_code(title_code)
-            return ResearchEligibilityResult(
-                eligible=normalized in self.allowed_title_codes,
-                title_code=normalized,
-            )
-
+        normalized = _normalize_title_code(title_code) if title_code else None
+        # Keep existing baseline rule: all B* titles are eligible; allowed list extends eligibility.
+        if normalized and (normalized.startswith("B") or normalized in self.allowed_title_codes):
+            return ResearchEligibilityResult(eligible=True, title_code=normalized)
         return ResearchEligibilityResult(eligible=False, title_code=None)

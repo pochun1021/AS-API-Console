@@ -82,7 +82,7 @@ def test_users_returns_503_when_persnl_unavailable(client, admin_headers, monkey
 
     users = client.get("/api/v1/users?q=u1", headers=admin_headers)
     assert users.status_code == 503
-    assert users.json()["error"]["code"] == "DIRECTORY_SERVICE_UNAVAILABLE"
+    assert users.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
 
 
 def test_list_institutes_returns_active_only(client, admin_headers):

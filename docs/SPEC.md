@@ -497,13 +497,13 @@ Base path：`/api/v1`
 
 ### 5-1) 特殊人員名單新增前使用者查詢 API
 - `GET /api/v1/users?q={keyword}`
-- 用途：供管理者透過外部人員目錄 API 查詢候選人資料（供新增管理者/特殊人員前使用）。
+- 用途：供管理者透過 Persnl SOAP 查詢候選人資料（供新增管理者/特殊人員前使用）。
 - 規則：僅 `admin` 可使用；`q` 僅用於 `account`、`name` 查詢；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`（對應單位代碼 `instCode`）、`status`。
 - 單位主檔同步：`Persnl.getInstitutes` 僅供背景同步作業使用（首次入庫 + 後續排程差異同步），不得放在此 API 請求路徑中每次即時呼叫。
 - 錯誤回應：
   - `403 FORBIDDEN`：非 `admin`
   - `422 VALIDATION_ERROR`：`q` 不合法
-  - `503 DIRECTORY_SERVICE_UNAVAILABLE`：目錄服務 timeout/5xx
+  - `503 SOAP_SERVICE_UNAVAILABLE`：Persnl SOAP timeout/5xx
 
 ### 5-2) 目前使用者語言偏好 API
 - `GET /api/v1/users/preferences/locale`
@@ -585,14 +585,15 @@ Base path：`/api/v1`
 - `created_at` 格式需為 UTC `date-time`（RFC 3339，例如 `2026-05-21T08:28:20Z`）。
 - 回傳不得包含敏感憑證資訊（access token、refresh token、password、client secret）。
 
-### 7) 外部研究人員名單服務（整合介面）
+### 7) 研究資格與目錄查詢服務（Persnl SOAP）
 - 用途：供「進入系統」與「送出申請」時檢查是否命中研究人員資格。
-- 資格判斷：以外部服務回傳之職稱代碼判斷是否符合研究人員資格。
-- 本系統僅維護可通過之職稱代碼規則，不同步儲存研究人員名單明細資料。
+- 資格判斷：以 Persnl SOAP 回傳之 `tCode` 判斷研究資格。
+- 放行規則：`tCode` 以 `B*` 開頭者直接通過；非 `B*` 可由可配置職稱代碼清單補充放行。
+- 本系統僅維護可通過之補充職稱代碼規則，不同步儲存研究人員名單明細資料。
 - 回應結果：
   - 命中：可直接通過資格檢查（不需再檢查特殊人員名單）。
   - 未命中：需再檢查特殊人員名單是否為 `active`。
-  - timeout/5xx：允許進入系統，但阻擋申請 API。
+  - timeout/5xx：允許進入系統，但阻擋申請 API（`503 SOAP_SERVICE_UNAVAILABLE`）。
 
 ### 錯誤回應格式（建議）
 ```json
@@ -613,7 +614,7 @@ Base path：`/api/v1`
 - `MISSING_BUDGET_FIELDS`
 - `MISSING_RATE_LIMIT_FIELDS`
 - `APPLICANT_NOT_ELIGIBLE`
-- `RESEARCH_LIST_SERVICE_UNAVAILABLE`
+- `SOAP_SERVICE_UNAVAILABLE`
 - `WHITELIST_SYSID_DUPLICATED`
 - `LOGIN_NOT_ELIGIBLE`
 - `USER_NOT_FOUND`
@@ -630,7 +631,7 @@ Base path：`/api/v1`
 1. 研究人員名單職稱代碼命中者可成功核發 API Key，格式為 `AS-` + 30 碼隨機字元（總長 33）。
 2. 研究名單未命中但特殊人員名單 `active` 命中者可成功核發 API Key。
 3. 研究名單未命中且特殊人員名單未命中者，系統不得允許進入，且申請 API 回傳 `403` 與 `APPLICANT_NOT_ELIGIBLE`。
-4. 研究人員名單服務失敗（timeout/5xx）時，允許進入系統，但申請 API 回傳 `503` 與 `RESEARCH_LIST_SERVICE_UNAVAILABLE`。
+4. Persnl SOAP 服務失敗（timeout/5xx）時，允許進入系統，但申請 API 回傳 `503` 與 `SOAP_SERVICE_UNAVAILABLE`。
 5. `duration_months` 非 `1|6|12` 時，API 回傳 `INVALID_DURATION_MONTHS`。
 6. `application_date` 非法或晚於申請當日，API 回傳 `INVALID_APPLICATION_DATE`。
 7. 明文 key 預設僅於建立成功當下回傳一次；一般查詢端點不得回傳明文。
@@ -699,7 +700,7 @@ Base path：`/api/v1`
 69. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。
 70. `tCode` 以 `B` 開頭者可登入；非 `B*` 者需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.sysid`），否則回 `403 LOGIN_NOT_ELIGIBLE`。
 71. `admin` 可於 `POST /api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
-72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若目錄服務 timeout/5xx，API 回傳 `503 DIRECTORY_SERVICE_UNAVAILABLE`。
+72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 73. `POST /api/v1/api-keys/applications`、`POST /api/v1/api-keys/{id}/revoke`、`POST /api/v1/api-keys/{id}/renew`、`POST /api/v1/whitelists`、`PATCH /api/v1/whitelists/{id}`、`POST /api/v1/admins/{id}/enable`、`POST /api/v1/admins/{id}/disable`、`PATCH /api/v1/limit-strategy-config` 成功時皆需寫入 `operation_audit_logs`。
 74. 第 73 項 8 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。
 75. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證（token/password/client secret）。

@@ -19,7 +19,7 @@ class UsersService:
         try:
             users = self.persnl.search_by_keyword(q, limit=limit)
         except PersnlSoapUnavailableError as exc:
-            raise ApiError("DIRECTORY_SERVICE_UNAVAILABLE", "directory service unavailable", 503) from exc
+            raise ApiError("SOAP_SERVICE_UNAVAILABLE", "soap service unavailable", 503) from exc
         return {
             "items": [
                 {

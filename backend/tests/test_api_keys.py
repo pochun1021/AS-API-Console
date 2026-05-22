@@ -171,7 +171,7 @@ def test_admin_proxy_application_directory_unavailable(client, admin_headers, mo
         },
     )
     assert resp.status_code == 503
-    assert resp.json()["error"]["code"] == "DIRECTORY_SERVICE_UNAVAILABLE"
+    assert resp.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
 
 
 def test_admin_proxy_application_target_account_not_unique(client, admin_headers, monkeypatch):
@@ -351,7 +351,7 @@ def test_application_research_service_unavailable_returns_503_and_no_records(cli
     after = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
 
     assert resp.status_code == 503
-    assert resp.json()["error"]["code"] == "RESEARCH_LIST_SERVICE_UNAVAILABLE"
+    assert resp.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
     assert before == after
 
 

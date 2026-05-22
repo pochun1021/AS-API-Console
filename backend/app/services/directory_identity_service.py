@@ -1,9 +1,6 @@
 from dataclasses import dataclass
 
-import httpx
-
-from app.core.config import get_settings
-from app.core.outbound import build_safe_httpx_client, validate_outbound_url
+from app.services.persnl_soap_service import PersnlSoapService, PersnlSoapUnavailableError
 from db.repositories.types import AuthIdentity
 
 
@@ -21,46 +18,21 @@ class DirectoryLookupUnavailableError(RuntimeError):
 
 @dataclass(slots=True)
 class DirectoryIdentityService:
-    api_url: str | None = None
-    timeout_seconds: float = 3.0
+    persnl: PersnlSoapService
 
     def __init__(self) -> None:
-        settings = get_settings()
-        self.api_url = settings.directory_identity_api_url
-        self.timeout_seconds = settings.directory_identity_timeout_seconds
+        self.persnl = PersnlSoapService()
 
     def is_configured(self) -> bool:
-        return bool(self.api_url)
+        return self.persnl.is_configured()
 
     def resolve_by_account(self, account: str) -> AuthIdentity:
-        if not self.api_url:
+        if not self.persnl.is_configured():
             raise DirectoryLookupUnavailableError("directory service is not configured")
-        api_url = validate_outbound_url(self.api_url, config_name="DIRECTORY_IDENTITY_API_URL")
         try:
-            with build_safe_httpx_client(timeout_seconds=self.timeout_seconds) as client:
-                response = client.get(
-                    api_url,
-                    params={"account": account},
-                )
-        except httpx.RequestError as exc:
+            items = self.persnl.search_person_by_account(account)
+        except PersnlSoapUnavailableError as exc:
             raise DirectoryLookupUnavailableError("directory service request failed") from exc
-
-        if response.status_code >= 500:
-            raise DirectoryLookupUnavailableError("directory service unavailable")
-        if response.status_code == 404:
-            raise DirectoryLookupNotFoundError("target account not found")
-        if response.status_code >= 400:
-            raise DirectoryLookupUnavailableError("directory service unavailable")
-
-        payload = response.json()
-        if isinstance(payload, list):
-            items = payload
-        elif isinstance(payload, dict) and isinstance(payload.get("items"), list):
-            items = payload.get("items") or []
-        elif isinstance(payload, dict):
-            items = [payload]
-        else:
-            items = []
 
         if not items:
             raise DirectoryLookupNotFoundError("target account not found")
@@ -68,13 +40,7 @@ class DirectoryIdentityService:
             raise DirectoryLookupNotUniqueError("target account is not unique")
 
         item = items[0]
-        normalized = AuthIdentity(
-            account=str(item.get("account", "")).strip(),
-            name=str(item.get("name", "")).strip(),
-            email=str(item.get("email", "")).strip().lower(),
-            department=str(item.get("department", "")).strip(),
-            sysid=self._normalize_sysid(item.get("sysid")),
-        )
+        normalized = self._to_auth_identity(item)
         if not all(
             [
                 normalized.account,
@@ -88,44 +54,18 @@ class DirectoryIdentityService:
         return normalized
 
     def search_by_keyword(self, keyword: str, limit: int = 20) -> list[AuthIdentity]:
-        if not self.api_url:
+        if not self.persnl.is_configured():
             raise DirectoryLookupUnavailableError("directory service is not configured")
-        api_url = validate_outbound_url(self.api_url, config_name="DIRECTORY_IDENTITY_API_URL")
         try:
-            with build_safe_httpx_client(timeout_seconds=self.timeout_seconds) as client:
-                response = client.get(
-                    api_url,
-                    params={"q": keyword},
-                )
-        except httpx.RequestError as exc:
+            raw_items = self.persnl.search_by_keyword(keyword, limit=limit * 2)
+        except PersnlSoapUnavailableError as exc:
             raise DirectoryLookupUnavailableError("directory service request failed") from exc
-
-        if response.status_code >= 500:
-            raise DirectoryLookupUnavailableError("directory service unavailable")
-        if response.status_code >= 400:
-            raise DirectoryLookupUnavailableError("directory service unavailable")
-
-        payload = response.json()
-        if isinstance(payload, list):
-            raw_items = payload
-        elif isinstance(payload, dict) and isinstance(payload.get("items"), list):
-            raw_items = payload.get("items") or []
-        elif isinstance(payload, dict):
-            raw_items = [payload]
-        else:
-            raw_items = []
 
         normalized_keyword = keyword.strip().lower()
         identities: list[AuthIdentity] = []
         for item in raw_items:
             try:
-                identity = AuthIdentity(
-                    account=str(item.get("account", "")).strip(),
-                    name=str(item.get("name", "")).strip(),
-                    email=str(item.get("email", "")).strip().lower(),
-                    department=str(item.get("department", "")).strip(),
-                    sysid=self._normalize_sysid(item.get("sysid")),
-                )
+                identity = self._to_auth_identity(item)
             except (TypeError, ValueError):
                 continue
 
@@ -149,3 +89,12 @@ class DirectoryIdentityService:
         if not text.isdigit():
             raise ValueError("invalid sysid")
         return int(text)
+
+    def _to_auth_identity(self, item: dict) -> AuthIdentity:
+        return AuthIdentity(
+            account=str(item.get("cn", "")).strip(),
+            name=str(item.get("chName", "")).strip(),
+            email=str(item.get("email", "")).strip().lower(),
+            department=str(item.get("instCode", "")).strip(),
+            sysid=self._normalize_sysid(item.get("sysId")),
+        )

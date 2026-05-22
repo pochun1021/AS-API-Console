@@ -22,11 +22,7 @@ class Settings(BaseSettings):
     test_db_host: str | None = None
     test_db_port: int | None = None
     test_db_name: str = "as_api_console_test"
-    research_list_api_url: str | None = None
-    research_list_timeout_seconds: float = 3.0
     research_list_allowed_title_codes: str = ""
-    directory_identity_api_url: str | None = None
-    directory_identity_timeout_seconds: float = 3.0
     persnl_soap_url: str | None = None
     persnl_soap_wsdl_url: str | None = None
     persnl_soap_user: str | None = None
@@ -85,8 +81,6 @@ class Settings(BaseSettings):
         return normalized
 
     @field_validator(
-        "research_list_api_url",
-        "directory_identity_api_url",
         "persnl_soap_url",
         "persnl_soap_wsdl_url",
         "oauth_auth_uri",

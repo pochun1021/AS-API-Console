@@ -70,6 +70,9 @@ class PersnlSoapService:
     def search_person_by_account(self, account: str, on_job: str = "1") -> list[dict]:
         return self._query_users({"cn": account, "onJob": on_job})
 
+    def search_person_by_sysid(self, sysid: int, on_job: str = "1") -> list[dict]:
+        return self._query_users({"sysId": str(sysid), "onJob": on_job})
+
     def search_by_keyword(self, keyword: str, limit: int = 20) -> list[dict]:
         normalized = keyword.strip().lower()
         if not normalized:

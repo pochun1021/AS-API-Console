@@ -19,7 +19,7 @@ from app.services.directory_identity_service import (
 )
 from app.services.mail_service import MailService
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
-from app.services.research_eligibility_service import ResearchEligibilityService
+from app.services.research_eligibility_service import ResearchEligibilityService, ResearchEligibilityUnavailableError
 from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
 from db.models.limit_strategy_config import LimitStrategyConfig
@@ -102,7 +102,7 @@ class ApiKeysService:
             if not target_account:
                 raise ApiError("VALIDATION_ERROR", "target_identity.account is required for admin proxy submission", 422)
             if not self.directory_identity.is_configured():
-                raise ApiError("DIRECTORY_SERVICE_UNAVAILABLE", "directory service unavailable", 503)
+                raise ApiError("SOAP_SERVICE_UNAVAILABLE", "soap service unavailable", 503)
             try:
                 identity = self.directory_identity.resolve_by_account(target_account)
             except DirectoryLookupNotFoundError as exc:
@@ -110,7 +110,7 @@ class ApiKeysService:
             except DirectoryLookupNotUniqueError as exc:
                 raise ApiError("VALIDATION_ERROR", "target account is not unique", 422) from exc
             except DirectoryLookupUnavailableError as exc:
-                raise ApiError("DIRECTORY_SERVICE_UNAVAILABLE", "directory service unavailable", 503) from exc
+                raise ApiError("SOAP_SERVICE_UNAVAILABLE", "soap service unavailable", 503) from exc
             is_proxy_submission = True
 
         research_eligible = False
@@ -121,10 +121,10 @@ class ApiKeysService:
                     sysid=identity.sysid,
                 )
                 research_eligible = result.eligible
-            except RuntimeError as exc:
+            except (ResearchEligibilityUnavailableError, RuntimeError) as exc:
                 raise ApiError(
-                    "RESEARCH_LIST_SERVICE_UNAVAILABLE",
-                    "research list service unavailable",
+                    "SOAP_SERVICE_UNAVAILABLE",
+                    "soap service unavailable",
                     503,
                 ) from exc
 
