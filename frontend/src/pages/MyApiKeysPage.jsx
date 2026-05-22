@@ -26,6 +26,7 @@ import { DataGrid } from "@mui/x-data-grid";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { useDepartmentDisplay } from "../utils/departmentDisplay";
 
 const actionCellSx = {
   display: "flex",
@@ -69,6 +70,7 @@ async function copyText(text) {
 
 export default function MyApiKeysPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
+  const { formatDepartment } = useDepartmentDisplay(auth);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -460,7 +462,7 @@ export default function MyApiKeysPage({ auth }) {
                   {t("mykeys_col_owner")}: {detailItem.owner_account || "-"} / {detailItem.owner_name || "-"}
                 </Typography>
               ) : null}
-              <Typography>{t("mykeys_detail_department")}: {detailItem.department || "-"}</Typography>
+              <Typography>{t("mykeys_detail_department")}: {formatDepartment(detailItem.department, locale)}</Typography>
               <Typography>{t("mykeys_detail_application_date")}: {detailItem.application_date}</Typography>
               <Typography>{t("mykeys_detail_duration")}: {detailItem.duration_months} {t("mykeys_duration_suffix")}</Typography>
               <Typography>

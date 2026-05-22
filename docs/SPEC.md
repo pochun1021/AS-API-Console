@@ -499,6 +499,7 @@ Base path：`/api/v1`
 - `GET /api/v1/users?q={keyword}`
 - 用途：供管理者透過外部人員目錄 API 查詢候選人資料（供新增管理者/特殊人員前使用）。
 - 規則：僅 `admin` 可使用；`q` 僅用於 `account`、`name` 查詢；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`（對應單位代碼 `instCode`）、`status`。
+- 單位主檔同步：`Persnl.getInstitutes` 僅供背景同步作業使用（首次入庫 + 後續排程差異同步），不得放在此 API 請求路徑中每次即時呼叫。
 - 錯誤回應：
   - `403 FORBIDDEN`：非 `admin`
   - `422 VALIDATION_ERROR`：`q` 不合法
@@ -522,6 +523,29 @@ Base path：`/api/v1`
   - 其他語系 -> `en`
 - 手動切換語言後，需更新 UI 文案並寫回 `preferred_locale`。
 - DataGrid locale 文案需跟隨語言切換。
+
+### 5-3) 單位主檔查詢 API
+- `GET /api/v1/institutes`
+- 用途：提供前端依 `department` 代碼轉換顯示文字（中/英文）。
+- 規則：
+  - `department` 在系統內資料儲存以代碼為主。
+  - 前端顯示時依語系使用單位主檔欄位轉換（`zh-TW` 顯示 `inst_name`，`en` 顯示 `einst_name`，缺值可 fallback）。
+  - 單位主檔來源為背景同步資料（`Persnl.getInstitutes`），本 API 僅回傳本地 `active` 主檔資料。
+- Response（200）：
+```json
+{
+  "items": [
+    {
+      "inst_code": "01",
+      "inst_name": "院本部",
+      "abb_inst_name": "院本部",
+      "einst_name": "Headquarters",
+      "division": "1"
+    }
+  ],
+  "total": 1
+}
+```
 
 ### 6) 管理者啟用/停用 API
 - `POST /api/v1/admins/{id}/enable`：啟用指定使用者管理者身分

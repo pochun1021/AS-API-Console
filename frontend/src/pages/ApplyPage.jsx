@@ -27,6 +27,7 @@ import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { useLocale } from "../i18n/locale";
+import { useDepartmentDisplay } from "../utils/departmentDisplay";
 
 function toErrorMessage(error, t) {
   const code = error?.payload?.error?.code;
@@ -66,6 +67,7 @@ async function copyText(text) {
 export default function ApplyPage({ auth }) {
   const { locale, t } = useLocale();
   const isZh = locale === "zh-TW";
+  const { formatDepartment } = useDepartmentDisplay(auth);
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [form, setForm] = useState({ application_date: today, duration_months: 6, purpose: "" });
   const [proxyEnabled, setProxyEnabled] = useState(false);
@@ -221,7 +223,12 @@ export default function ApplyPage({ auth }) {
                   <TextField fullWidth label="Email" value={auth.email} InputProps={{ readOnly: true }} />
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField fullWidth label={isZh ? "單位" : "Department"} value={auth.department} InputProps={{ readOnly: true }} />
+                  <TextField
+                    fullWidth
+                    label={isZh ? "單位" : "Department"}
+                    value={formatDepartment(auth.department, locale)}
+                    InputProps={{ readOnly: true }}
+                  />
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <DatePicker

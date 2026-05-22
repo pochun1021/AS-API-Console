@@ -1,4 +1,11 @@
 const today = new Date().toISOString().slice(0, 10);
+const mockInstitutes = [
+  { inst_code: "01", inst_name: "院本部", abb_inst_name: "院本部", einst_name: "Headquarters", division: "1" },
+  { inst_code: "02", inst_name: "資訊所", abb_inst_name: "資訊所", einst_name: "Institute of Information Science", division: "2" },
+  { inst_code: "03", inst_name: "資安中心", abb_inst_name: "資安", einst_name: "Security Center", division: "2" },
+  { inst_code: "04", inst_name: "資料平台", abb_inst_name: "資料平台", einst_name: "Data Platform", division: "2" },
+  { inst_code: "05", inst_name: "營運處", abb_inst_name: "營運處", einst_name: "Operations", division: "3" }
+];
 
 const initialApiKeys = [
   {
@@ -8,7 +15,7 @@ const initialApiKeys = [
     application_date: today,
     duration_months: 6,
     purpose: "integration test for platform service",
-    department: "Platform Engineering",
+    department: "02",
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString(),
     owner_account: "jane.doe",
@@ -22,7 +29,7 @@ const initialApiKeys = [
     application_date: today,
     duration_months: 1,
     purpose: "legacy integration",
-    department: "Platform Engineering",
+    department: "02",
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
     owner_account: "jane.doe",
@@ -36,7 +43,7 @@ const initialApiKeys = [
     application_date: today,
     duration_months: 12,
     purpose: "admin automation",
-    department: "Security",
+    department: "03",
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
     owner_account: "john.admin",
@@ -62,7 +69,7 @@ const initialApiKeys = [
     application_date: "2026-04-15",
     duration_months: 6,
     purpose: "reporting service integration",
-    department: "Data Platform",
+    department: "04",
     created_at: "2026-04-15T09:30:00.000Z",
     expires_at: "2026-10-15T09:30:00.000Z",
     owner_account: "alice.wang",
@@ -76,7 +83,7 @@ const initialApiKeys = [
     application_date: "2026-03-10",
     duration_months: 12,
     purpose: "security scanner",
-    department: "Security",
+    department: "03",
     created_at: "2026-03-10T02:20:00.000Z",
     expires_at: "2027-03-10T02:20:00.000Z",
     owner_account: "sam.chen",
@@ -90,7 +97,7 @@ const initialApiKeys = [
     application_date: "2025-12-01",
     duration_months: 1,
     purpose: "legacy webhook client",
-    department: "Operations",
+    department: "05",
     created_at: "2025-12-01T05:00:00.000Z",
     expires_at: "2026-01-01T05:00:00.000Z",
     owner_account: "mike.li",
@@ -354,6 +361,7 @@ function mapUserForAdminPage(user) {
     sysid: user.sysid,
     name: user.name,
     email: user.email,
+    department: user.department || "",
     status: user.status || "active"
   };
 }
@@ -414,7 +422,7 @@ export const mockApiProvider = {
       account: "jane.doe",
       name: "Jane Doe",
       email: "jane.doe@company.com",
-      department: "Platform Engineering",
+      department: "02",
       sysid: 123,
       role: "user"
     });
@@ -422,7 +430,7 @@ export const mockApiProvider = {
       account: user.account,
       name: user.name,
       email: user.email,
-      department: user.department || "Platform Engineering",
+      department: user.department || "02",
       sysid: user.sysid,
       role: user.role,
       csrf_token: "mock-csrf-token"
@@ -694,6 +702,14 @@ export const mockApiProvider = {
     await delay();
     ensureAdmin(auth);
     return { items: users.filter((item) => item.role === "admin").map(mapUserForAdminPage) };
+  },
+
+  async listInstitutes(auth) {
+    await delay();
+    if (!auth?.account) {
+      throw createError("UNAUTHORIZED", "unauthorized", 401);
+    }
+    return { items: mockInstitutes, total: mockInstitutes.length };
   },
 
   async enableAdmin(id, auth) {

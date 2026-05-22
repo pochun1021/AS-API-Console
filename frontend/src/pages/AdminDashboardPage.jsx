@@ -29,6 +29,7 @@ import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { useDepartmentDisplay } from "../utils/departmentDisplay";
 
 function statusColor(status) {
   if (status === "active") return "success";
@@ -45,6 +46,7 @@ function formatMaskedKey(value) {
 
 export default function AdminDashboardPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
+  const { formatDepartment } = useDepartmentDisplay(auth);
   const scopeOptions = ["all", "active", "revoked", "expired"];
   const topNOptions = [5, 10, 20];
   const xAxisOptions = [
@@ -122,7 +124,13 @@ export default function AdminDashboardPage({ auth }) {
       { field: "owner_account", headerName: t("dashboard_col_owner_account"), flex: 1, minWidth: 140 },
       { field: "owner_name", headerName: t("dashboard_col_owner_name"), flex: 1, minWidth: 140 },
       { field: "owner_email", headerName: t("dashboard_col_owner_email"), flex: 1.6, minWidth: 220 },
-      { field: "owner_department", headerName: t("dashboard_col_owner_department"), flex: 1, minWidth: 140 },
+      {
+        field: "owner_department",
+        headerName: t("dashboard_col_owner_department"),
+        flex: 1,
+        minWidth: 140,
+        renderCell: (params) => formatDepartment(params.row.owner_department, locale)
+      },
       {
         field: "total_applications",
         headerName: t("dashboard_col_total_applications"),
@@ -151,7 +159,7 @@ export default function AdminDashboardPage({ auth }) {
       { field: "expired_count", headerName: t("dashboard_col_expired_count"), type: "number", flex: 0.8, minWidth: 120 },
       { field: "last_applied_at", headerName: t("dashboard_col_last_applied_at"), flex: 1, minWidth: 140 }
     ],
-    [t, fromDate, toDate, auth]
+    [t, fromDate, toDate, auth, formatDepartment, locale]
   );
 
   const chartItems = useMemo(() => {
@@ -162,10 +170,10 @@ export default function AdminDashboardPage({ auth }) {
       return bv - av;
     });
     return sorted.slice(0, topN).map((item) => ({
-      label: xAxisField === "department" ? item.owner_department || "-" : item.owner_account,
+      label: xAxisField === "department" ? formatDepartment(item.owner_department, locale) : item.owner_account,
       value: Number(item[yAxisField] || 0)
     }));
-  }, [items, topN, xAxisField, yAxisField]);
+  }, [items, topN, xAxisField, yAxisField, formatDepartment, locale]);
 
   async function load() {
     if (auth.role !== "admin") return;

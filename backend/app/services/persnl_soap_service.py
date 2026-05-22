@@ -92,6 +92,41 @@ class PersnlSoapService:
                 break
         return deduped
 
+    def get_institutes(self) -> list[dict]:
+        self._ensure_available()
+        result = self._soap_call("Persnl.getInstitutes", [])
+        try:
+            payload = json.loads(result)
+        except json.JSONDecodeError:
+            return []
+
+        raw_items: list[dict] = []
+        if isinstance(payload, dict):
+            for value in payload.values():
+                if isinstance(value, dict):
+                    raw_items.append(value)
+        elif isinstance(payload, list):
+            raw_items = [item for item in payload if isinstance(item, dict)]
+        else:
+            return []
+
+        institutes: list[dict] = []
+        for item in raw_items:
+            inst_code = str(item.get("instCode", "")).strip()
+            inst_name = str(item.get("instName", "")).strip()
+            if not inst_code or not inst_name:
+                continue
+            institutes.append(
+                {
+                    "instCode": inst_code,
+                    "instName": inst_name,
+                    "abb_instName": str(item.get("abb_instName", "")).strip() or None,
+                    "einstName": str(item.get("einstName", "")).strip() or None,
+                    "division": str(item.get("division", "")).strip() or None,
+                }
+            )
+        return institutes
+
     def _query_users(self, filters: dict[str, str]) -> list[dict]:
         self._ensure_available()
         attrs = ["sysId", "cn", "chName", "email", "instCode", "tCode"]

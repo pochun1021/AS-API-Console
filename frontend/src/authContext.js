@@ -3,7 +3,7 @@ export const devAuthProfiles = {
     account: "abcd1234",
     name: "abcd1234",
     email: "s880632520@gmail.com",
-    department: "IT",
+    department: "02",
     sysid: 100001,
     role: "admin"
   },
@@ -11,7 +11,7 @@ export const devAuthProfiles = {
     account: "pochen",
     name: "Pochen",
     email: "pochen@as.edu.tw",
-    department: "IT",
+    department: "02",
     sysid: 200001,
     role: "user"
   }

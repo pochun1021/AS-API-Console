@@ -10,7 +10,7 @@ const adminAuth = {
   account: "john.admin",
   name: "John Admin",
   email: "john.admin@company.com",
-  department: "Security",
+  department: "03",
   sysid: 1,
   role: "admin"
 };
@@ -19,7 +19,7 @@ const userAuth = {
   account: "jane.doe",
   name: "Jane Doe",
   email: "jane.doe@company.com",
-  department: "Platform Engineering",
+  department: "02",
   sysid: 123,
   role: "user"
 };

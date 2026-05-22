@@ -8,7 +8,7 @@ const auth = {
   account: "jane.doe",
   name: "Jane Doe",
   email: "jane.doe@company.com",
-  department: "Platform Engineering",
+  department: "02",
   sysid: 123,
   role: "user"
 };
@@ -17,7 +17,7 @@ const adminAuth = {
   account: "john.admin",
   name: "John Admin",
   email: "john.admin@company.com",
-  department: "Security",
+  department: "03",
   sysid: 1,
   role: "admin"
 };
@@ -66,7 +66,7 @@ test("shows detail in dialog and can revoke active key with confirm", async () =
   expect(await screen.findByText("API Key 詳情")).toBeInTheDocument();
   expect(await screen.findByText("ID: key_001")).toBeInTheDocument();
   expect(await screen.findByText("用途: integration test for platform service")).toBeInTheDocument();
-  expect(await screen.findByText("單位: Platform Engineering")).toBeInTheDocument();
+  expect(await screen.findByText("單位: 資訊所")).toBeInTheDocument();
   expect(screen.queryByText("申請人:")).not.toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: "停用金鑰" }));

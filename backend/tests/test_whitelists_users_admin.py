@@ -1,6 +1,8 @@
 
 from tests.conftest import build_headers
 from app.services.persnl_soap_service import PersnlSoapUnavailableError
+from db.session import get_db
+from db.models.institute import Institute
 
 
 def test_whitelist_admin_only(client, admin_headers, user_headers):
@@ -81,3 +83,36 @@ def test_users_returns_503_when_persnl_unavailable(client, admin_headers, monkey
     users = client.get("/api/v1/users?q=u1", headers=admin_headers)
     assert users.status_code == 503
     assert users.json()["error"]["code"] == "DIRECTORY_SERVICE_UNAVAILABLE"
+
+
+def test_list_institutes_returns_active_only(client, admin_headers):
+    override_get_db = client.app.dependency_overrides[get_db]
+    db = next(override_get_db())
+    db.add(
+        Institute(
+            inst_code="01",
+            inst_name="院本部",
+            abb_inst_name="院本部",
+            einst_name="HQ",
+            division="1",
+            status="active",
+        )
+    )
+    db.add(
+        Institute(
+            inst_code="99",
+            inst_name="停用單位",
+            abb_inst_name="停用",
+            einst_name="Inactive",
+            division="9",
+            status="inactive",
+        )
+    )
+    db.commit()
+    db.close()
+
+    resp = client.get("/api/v1/institutes", headers=admin_headers)
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["inst_code"] == "01"

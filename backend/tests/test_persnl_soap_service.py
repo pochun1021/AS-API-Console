@@ -55,3 +55,27 @@ def test_app_startup_initializes_service(monkeypatch):
         pass
 
     assert called["ok"] is True
+
+
+def test_get_institutes_parses_payload(monkeypatch):
+    service = PersnlSoapService()
+    service.logged_in = True
+    monkeypatch.setattr(
+        PersnlSoapService,
+        "_soap_call",
+        lambda self, method, params: (
+            '{"01":{"instCode":"01","instName":"院本部","abb_instName":"院本部","einstName":"HQ","division":"1"}}'
+        ),
+    )
+
+    result = service.get_institutes()
+
+    assert result == [
+        {
+            "instCode": "01",
+            "instName": "院本部",
+            "abb_instName": "院本部",
+            "einstName": "HQ",
+            "division": "1",
+        }
+    ]

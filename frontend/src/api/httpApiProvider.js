@@ -144,6 +144,10 @@ export const httpApiProvider = {
     return request("/api/v1/users", { auth });
   },
 
+  listInstitutes(auth) {
+    return request("/api/v1/institutes", { auth });
+  },
+
   searchUsers(keyword, auth) {
     const q = encodeURIComponent(keyword || "");
     return request(`/api/v1/users?q=${q}`, { auth });
