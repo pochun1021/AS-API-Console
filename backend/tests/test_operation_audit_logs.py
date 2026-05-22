@@ -160,7 +160,7 @@ def test_whitelist_create_and_update_logs_success_and_failure(client, admin_head
 
 
 def test_admin_enable_disable_logs_success_and_failure(client, admin_headers, user_headers):
-    fail_enable = client.post("/api/v1/admins/not-exist/enable", headers=admin_headers)
+    fail_enable = client.post("/api/v1/admins/999999/enable", headers=admin_headers)
     assert fail_enable.status_code == 404
 
     target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)

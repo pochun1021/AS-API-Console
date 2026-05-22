@@ -66,7 +66,7 @@ def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
 
 
 def test_user_not_found_for_role_mutation(client, admin_headers):
-    resp = client.post("/api/v1/admins/not-exist/enable", headers=admin_headers)
+    resp = client.post("/api/v1/admins/999999/enable", headers=admin_headers)
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "USER_NOT_FOUND"
 

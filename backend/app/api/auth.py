@@ -82,7 +82,7 @@ def oauth_callback(
     admin_repo = SQLAlchemyAdminRepository(db)
     allow_by_tcode = identity.tcode.upper().startswith("B")
     allow_by_whitelist = whitelist_repo.find_active_by_sysid(identity.sysid) is not None
-    admin = admin_repo.get_by_sysid(identity.sysid)
+    admin = admin_repo.get_by_id(identity.sysid)
     allow_by_admin = admin is not None and admin.status == "active"
     if not (allow_by_tcode or allow_by_whitelist or allow_by_admin):
         audit.log(provider=provider, request_id=request_id, result="failure", error_code="LOGIN_NOT_ELIGIBLE")

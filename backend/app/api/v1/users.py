@@ -26,6 +26,15 @@ def _require_admin(current_user: CurrentUser) -> None:
         raise ApiError("VALIDATION_ERROR", "admin role required", 403)
 
 
+def _parse_admin_id(user_id: str) -> int:
+    if not user_id.isdigit():
+        raise ApiError("VALIDATION_ERROR", "admin id must be numeric", 422)
+    parsed = int(user_id)
+    if parsed <= 0:
+        raise ApiError("VALIDATION_ERROR", "admin id must be positive integer", 422)
+    return parsed
+
+
 @router.get("/users/me", response_model=CurrentUserResponse)
 def get_current_user_profile(
     request: Request,
@@ -89,6 +98,7 @@ def enable_admin(
     action = "enable"
     target_type = "admin"
     target_id = user_id
+    parsed_admin_id = _parse_admin_id(user_id)
     try:
         _require_admin(current_user)
     except ApiError as exc:
@@ -107,7 +117,7 @@ def enable_admin(
 
     service = UsersService(db)
     try:
-        result = service.enable_admin(current_user=current_user, user_id=user_id)
+        result = service.enable_admin(current_user=current_user, user_id=parsed_admin_id)
     except ApiError as exc:
         audit.log(
             event_type=event_type,
@@ -165,6 +175,7 @@ def disable_admin(
     action = "disable"
     target_type = "admin"
     target_id = user_id
+    parsed_admin_id = _parse_admin_id(user_id)
     try:
         _require_admin(current_user)
     except ApiError as exc:
@@ -183,7 +194,7 @@ def disable_admin(
 
     service = UsersService(db)
     try:
-        result = service.disable_admin(current_user=current_user, user_id=user_id)
+        result = service.disable_admin(current_user=current_user, user_id=parsed_admin_id)
     except ApiError as exc:
         audit.log(
             event_type=event_type,

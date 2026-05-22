@@ -28,22 +28,18 @@ class SQLAlchemyAdminRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def get_by_id(self, admin_id: str) -> Admin | None:
+    def get_by_id(self, admin_id: int) -> Admin | None:
         return self.session.get(Admin, admin_id)
 
     def get_by_account(self, account: str) -> Admin | None:
         stmt = select(Admin).where(Admin.account == account)
         return self.session.scalar(stmt)
 
-    def get_by_sysid(self, sysid: int) -> Admin | None:
-        stmt = select(Admin).where(Admin.sysid == sysid)
-        return self.session.scalar(stmt)
-
     def search(self, keyword: str, limit: int = 20) -> list[Admin]:
         like = f"%{keyword}%"
         where_clause = Admin.account.like(like) | Admin.email.like(like) | Admin.name.like(like)
         if keyword.isdigit():
-            where_clause = where_clause | (Admin.sysid == int(keyword))
+            where_clause = where_clause | (Admin.id == int(keyword))
         stmt = select(Admin).where(where_clause).limit(limit)
         return list(self.session.scalars(stmt).all())
 
@@ -53,16 +49,15 @@ class SQLAlchemyAdminRepository:
         return [str(row[0]).lower() for row in rows if row[0]]
 
     def upsert_from_auth(self, identity: AuthIdentity, *, created_by: str) -> Admin:
-        admin = self.get_by_sysid(identity.sysid) or self.get_by_account(identity.account)
+        admin = self.get_by_id(identity.sysid) or self.get_by_account(identity.account)
         now = datetime.now(timezone.utc)
         if admin is None:
             admin = Admin(
-                id=str(identity.sysid),
+                id=identity.sysid,
                 account=identity.account,
                 email=identity.email.lower(),
                 name=identity.name,
                 department=identity.department,
-                sysid=identity.sysid,
                 status="active",
                 created_by=created_by,
                 updated_by=created_by,
@@ -81,7 +76,7 @@ class SQLAlchemyAdminRepository:
         self.session.flush()
         return admin
 
-    def set_status(self, admin_id: str, *, status: str, updated_by: str) -> Admin | None:
+    def set_status(self, admin_id: int, *, status: str, updated_by: str) -> Admin | None:
         admin = self.get_by_id(admin_id)
         if admin is None:
             return None

@@ -40,7 +40,7 @@ def _generate_seed_api_key() -> str:
 def _build_admins(now: datetime) -> list[Admin]:
     return [
         Admin(
-            id="admin-seed-001",
+            id=900001,
             account="admin.seed",
             email="admin.seed@example.com",
             name="Admin Seed",
@@ -53,7 +53,7 @@ def _build_admins(now: datetime) -> list[Admin]:
             updated_at=now,
         ),
         Admin(
-            id="admin-seed-002",
+            id=900002,
             account="admin.inactive.seed",
             email="admin.inactive.seed@example.com",
             name="Admin Inactive Seed",
@@ -197,7 +197,7 @@ def _reset_seed_scope(session: Session) -> None:
         session.execute(delete(ApiKey).where(ApiKey.application_id.in_(app_ids)))
     session.execute(delete(ApiKeyApplication).where(ApiKeyApplication.user_id.in_(seed_user_ids)))
     session.execute(delete(ApiKeyWhitelist).where(ApiKeyWhitelist.email.like("user%@example.com")))
-    session.execute(delete(Admin).where(Admin.id.in_(["admin-seed-001", "admin-seed-002"])))
+    session.execute(delete(Admin).where(Admin.id.in_([900001, 900002])))
 
 
 def seed_small(reset: bool) -> dict[str, int]:

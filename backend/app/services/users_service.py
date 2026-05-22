@@ -37,14 +37,14 @@ class UsersService:
             "total": len(users),
         }
 
-    def enable_admin(self, current_user: CurrentUser, user_id: str) -> dict:
+    def enable_admin(self, current_user: CurrentUser, user_id: int) -> dict:
         user = self.repo.set_status(user_id, status="active", updated_by=current_user.account)
         if user is None:
             raise ApiError("USER_NOT_FOUND", "admin not found", 404)
         self.session.commit()
         return {"id": user.id, "role": "admin", "status": user.status}
 
-    def disable_admin(self, current_user: CurrentUser, user_id: str) -> dict:
+    def disable_admin(self, current_user: CurrentUser, user_id: int) -> dict:
         user = self.repo.set_status(user_id, status="inactive", updated_by=current_user.account)
         if user is None:
             raise ApiError("USER_NOT_FOUND", "admin not found", 404)
