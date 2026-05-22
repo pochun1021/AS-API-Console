@@ -243,6 +243,19 @@ cd backend
 ./scripts/run_expire_sync.sh --dry-run
 ```
 
+### 2-1) 檢查排程日誌
+- 日誌目錄：專案根目錄 `log/sync_expired_api_keys/`
+- 切日規則：`Asia/Taipei` 時區
+- 檔名規則：每日一檔 `YYYY-MM-DD.log`
+- 觀察最新輸出：
+```bash
+tail -n 50 ../log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+```
+- 部署環境路徑範例（專案位於 `/opt/as-api-console`）：
+```bash
+sudo -u asapi tail -n 50 /opt/as-api-console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+```
+
 ### 3) 檢查回填結果
 ```bash
 mariadb -h <host> -u <user> -p as_api_console -e "

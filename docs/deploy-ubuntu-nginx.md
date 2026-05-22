@@ -388,6 +388,7 @@ sudo systemctl status as-api-expire-sync.timer --no-pager
 ```bash
 sudo systemctl start as-api-expire-sync.service
 sudo journalctl -u as-api-expire-sync.service -n 200 --no-pager
+sudo -u asapi tail -n 100 /opt/as-api-console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ### 16.2 方案 B：cron
@@ -399,16 +400,35 @@ sudo -u asapi crontab -e
 
 加入：
 ```cron
-10 0 * * * /opt/as-api-console/backend/scripts/run_expire_sync.sh >> /var/log/as-api-expire-sync.log 2>&1
+10 0 * * * /opt/as-api-console/backend/scripts/run_expire_sync.sh
 ```
 
 檢查：
 ```bash
 sudo -u asapi crontab -l
-sudo tail -n 200 /var/log/as-api-expire-sync.log
+sudo -u asapi tail -n 100 /opt/as-api-console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
+
+說明：
+- 回填腳本會自行寫入專案根目錄 `log/sync_expired_api_keys/`，以 `Asia/Taipei` 切日並採 `YYYY-MM-DD.log` 每日一檔。
+- 建議保留 cron 預設 stdout/stderr 行為（系統郵件或平台收集）；業務執行紀錄以上述檔案為主。
 
 ### 16.3 排錯重點
 - `.env` 未設定或 DB 參數錯誤：確認 `/opt/as-api-console/backend/.env` 內容。
 - 執行環境找不到 `uv`：腳本會自動 fallback 到 `.venv/bin/python` 或 `python`，但仍需先安裝依賴。
 - 權限問題：確認 `asapi` 對專案目錄可讀執行，且可連線 DB。
+
+### 16.4 驗證清單（建議）
+1. 檢查排程已啟用：
+```bash
+sudo systemctl list-timers as-api-expire-sync.timer --all
+sudo -u asapi crontab -l
+```
+2. 手動 dry-run：
+```bash
+sudo -u asapi -H bash -lc 'cd /opt/as-api-console/backend && ./scripts/run_expire_sync.sh --dry-run'
+```
+3. 檢查當日日誌：
+```bash
+sudo -u asapi tail -n 100 /opt/as-api-console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+```

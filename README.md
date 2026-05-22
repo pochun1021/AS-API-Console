@@ -189,8 +189,13 @@ cd backend
 ./scripts/run_expire_sync.sh --batch-size 2000
 ./scripts/run_expire_sync.sh --dry-run
 ```
+- 執行日誌：
+  - 會寫入專案根目錄 `log/sync_expired_api_keys/`。
+  - 依 `Asia/Taipei` 日期切日，每日一檔：`YYYY-MM-DD.log`。
+  - 會保留既有終端輸出，並同步寫入檔案。
 - 預設建議頻率：每日 `00:10`。
 - 正式部署排程設定請見 `docs/deploy-ubuntu-nginx.md`（systemd timer 與 cron 兩種方案）。
+- 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 第 16 節為準。
 
 ## 測試
 Backend：
