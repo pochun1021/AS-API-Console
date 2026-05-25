@@ -17,7 +17,7 @@
 - Python MariaDB driver：`mariadb`（需先安裝 MariaDB Connector/C，確保 `mariadb_config` 可用）
 - Alembic path：`backend/alembic.ini`
 - Migration 目錄：`backend/db/migrations/versions`
-- 目前 head revision：`0021_sysid_bigint`
+- 目前 head revision：`0027_backfill_admins_current`
 
 ## Schema 實作對照
 
@@ -83,6 +83,13 @@ alembic upgrade head
 alembic current
 ```
 5. 確認 schema 與 `docs/SPEC.md` 契約一致後再提交。
+
+### 部署 admin 名單套用（migration）
+- 部署時可使用 migration 一次性套用「目前 admin 狀態」到 `admins` 表。
+- 目前由 `0027_backfill_admins_current` 執行：
+  - 固定針對 `admins.id=5019561` 做資料套用（有就 update、沒有就 insert）。
+  - 套用欄位為 `account`、`email`、`name`、`department`、`status`，並更新稽核時間欄位。
+  - migration 可重跑（idempotent）。
 
 ## 升級後驗證
 

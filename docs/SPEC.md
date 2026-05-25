@@ -170,6 +170,7 @@
 - `updated_by` (string)
 - `created_at` (datetime)
 - `updated_at` (datetime)
+- 部署遷移規則：可透過 migration 將既有環境中的管理者資料一次性回填/校正到 `admins`，且該 migration 必須可重跑（idempotent）。
 
 ### Entity: `api_key_whitelist`
 - `id` (string/uuid)
