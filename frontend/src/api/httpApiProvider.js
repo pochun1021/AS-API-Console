@@ -111,6 +111,9 @@ export const httpApiProvider = {
   renewApiKey(id, auth) {
     return request(apiPath(`/api-keys/${id}/renew`), { method: "POST", auth });
   },
+  extendApiKey(id, payload, auth) {
+    return request(apiPath(`/api-keys/${id}/extend`), { method: "POST", auth, body: payload });
+  },
 
   listApiKeyUserStatistics(params, auth) {
     const query = new URLSearchParams();

@@ -85,6 +85,8 @@ export default function MyApiKeysPage({ auth }) {
   const [detailError, setDetailError] = useState("");
   const [pendingRevokeId, setPendingRevokeId] = useState("");
   const [pendingRenewId, setPendingRenewId] = useState("");
+  const [pendingExtendId, setPendingExtendId] = useState("");
+  const [extendDurationMonths, setExtendDurationMonths] = useState(6);
   const [pendingAliasEditItem, setPendingAliasEditItem] = useState(null);
   const [aliasInputValue, setAliasInputValue] = useState("");
   const [aliasSaving, setAliasSaving] = useState(false);
@@ -145,6 +147,27 @@ export default function MyApiKeysPage({ auth }) {
       }
     } catch (e) {
       setBanner(e?.payload?.error?.message || t("mykeys_renew_failed"));
+    }
+  }
+
+  async function extend(id, durationMonths) {
+    setBanner("");
+    try {
+      const response = await apiClient.extendApiKey(id, { duration_months: durationMonths }, auth);
+      if (response?.issuance_status === "issued" && response?.api_key_plaintext) {
+        setRenewIssued(response);
+        setRenewCopySucceeded(false);
+        setRenewCopyError("");
+      } else {
+        setBanner(t("mykeys_renew_pending"));
+      }
+      setBanner((prev) => prev || t("mykeys_extend_done"));
+      await load();
+      if (detailOpen && detailId === id) {
+        closeDetail();
+      }
+    } catch (e) {
+      setBanner(e?.payload?.error?.message || t("mykeys_extend_failed"));
     }
   }
 
@@ -334,7 +357,7 @@ export default function MyApiKeysPage({ auth }) {
                 {locale === "zh-TW" ? "停用" : "Revoke"}
               </Button>
             ) : null}
-            {["revoked", "expired"].includes(params.row.status) ? (
+            {params.row.status === "revoked" ? (
               <Button
                 aria-label={t("mykeys_renew_key")}
                 size="small"
@@ -344,6 +367,21 @@ export default function MyApiKeysPage({ auth }) {
                 onClick={() => setPendingRenewId(params.row.id)}
               >
                 {locale === "zh-TW" ? "更新" : "Renew"}
+              </Button>
+            ) : null}
+            {["active", "expired"].includes(params.row.status) ? (
+              <Button
+                aria-label={t("mykeys_extend_key")}
+                size="small"
+                color="primary"
+                variant="outlined"
+                startIcon={<AutorenewIcon fontSize="small" />}
+                onClick={() => {
+                  setPendingExtendId(params.row.id);
+                  setExtendDurationMonths(6);
+                }}
+              >
+                {locale === "zh-TW" ? "展延" : "Extend"}
               </Button>
             ) : null}
           </Box>
@@ -416,6 +454,39 @@ export default function MyApiKeysPage({ auth }) {
               const targetId = pendingRenewId;
               setPendingRenewId("");
               await renew(targetId);
+            }}
+          >
+            {locale === "zh-TW" ? "確認" : "Confirm"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(pendingExtendId)} onClose={() => setPendingExtendId("")}>
+        <DialogTitle>{t("mykeys_dialog_extend_title")}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 0.5, minWidth: 260 }}>
+            <Typography>{t("mykeys_dialog_extend_body")}</Typography>
+            <TextField
+              select
+              label={t("mykeys_dialog_extend_duration_label")}
+              value={String(extendDurationMonths)}
+              onChange={(e) => setExtendDurationMonths(Number(e.target.value))}
+              SelectProps={{ native: true }}
+            >
+              <option value="1">{`1 ${t("mykeys_duration_suffix")}`}</option>
+              <option value="6">{`6 ${t("mykeys_duration_suffix")}`}</option>
+              <option value="12">{`12 ${t("mykeys_duration_suffix")}`}</option>
+            </TextField>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingExtendId("")}>{locale === "zh-TW" ? "取消" : "Cancel"}</Button>
+          <Button
+            onClick={async () => {
+              const targetId = pendingExtendId;
+              const months = extendDurationMonths;
+              setPendingExtendId("");
+              await extend(targetId, months);
             }}
           >
             {locale === "zh-TW" ? "確認" : "Confirm"}

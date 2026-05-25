@@ -632,8 +632,8 @@ export const mockApiProvider = {
     if (auth.role !== "admin" && target.owner_account !== auth.account) {
       throw createError("KEY_NOT_OWNED_BY_USER", "key is not owned by user", 403);
     }
-    if (!["revoked", "expired"].includes(target.status)) {
-      throw createError("KEY_NOT_RENEWABLE", "only revoked or expired key can be renewed", 409);
+    if (target.status !== "revoked") {
+      throw createError("KEY_NOT_RENEWABLE", "only revoked key can be renewed", 409);
     }
     if (target.renewed_to_key_id) {
       throw createError("KEY_ALREADY_RENEWED", "key already renewed", 409);
@@ -652,6 +652,63 @@ export const mockApiProvider = {
         masked_key: `AS-...${plain.slice(-4)}`,
         application_date: now.toISOString().slice(0, 10),
         duration_months: target.duration_months,
+        purpose: target.purpose || "",
+        key_alias: `for_${target.owner_account}`,
+        department: target.department,
+        created_at: now.toISOString(),
+        expires_at: expires.toISOString(),
+        owner_account: target.owner_account,
+        owner_name: target.owner_name,
+        renewed_to_key_id: null
+      },
+      ...apiKeys
+    ];
+
+    target.renewed_to_key_id = idNew;
+    return {
+      id: idNew,
+      status: "active",
+      expires_at: expires.toISOString(),
+      issuance_status: "issued",
+      renewed_from_key_id: target.id,
+      api_key_plaintext: plain,
+      pending_reason: null
+    };
+  },
+
+  async extendApiKey(id, payload, auth) {
+    await delay();
+    const target = findApiKeyById(id);
+    if (!target) {
+      throw createError("VALIDATION_ERROR", "id not found", 404);
+    }
+    if (auth.role !== "admin" && target.owner_account !== auth.account) {
+      throw createError("KEY_NOT_OWNED_BY_USER", "key is not owned by user", 403);
+    }
+    if (!["active", "expired"].includes(target.status)) {
+      throw createError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409);
+    }
+    const durationMonths = Number(payload?.duration_months);
+    if (![1, 6, 12].includes(durationMonths)) {
+      throw createError("VALIDATION_ERROR", "duration_months must be one of 1, 6, 12", 422);
+    }
+    if (target.renewed_to_key_id) {
+      throw createError("KEY_ALREADY_RENEWED", "key already renewed", 409);
+    }
+
+    const idNew = `key_${String(apiKeys.length + 1).padStart(3, "0")}`;
+    const now = new Date();
+    const expires = new Date(now);
+    expires.setMonth(expires.getMonth() + durationMonths);
+    const plain = generatePlainKey();
+
+    apiKeys = [
+      {
+        id: idNew,
+        status: "active",
+        masked_key: `AS-...${plain.slice(-4)}`,
+        application_date: now.toISOString().slice(0, 10),
+        duration_months: durationMonths,
         purpose: target.purpose || "",
         key_alias: `for_${target.owner_account}`,
         department: target.department,

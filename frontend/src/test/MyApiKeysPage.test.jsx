@@ -38,6 +38,8 @@ test("shows revoke button only for active rows", async () => {
   expect(revokeButtons).toHaveLength(1);
   const renewButtons = await screen.findAllByRole("button", { name: "更新金鑰" });
   expect(renewButtons).toHaveLength(1);
+  const extendButtons = await screen.findAllByRole("button", { name: "展延金鑰" });
+  expect(extendButtons).toHaveLength(1);
   expect(await screen.findAllByRole("button", { name: "查看詳情" })).toHaveLength(2);
   expect(screen.queryByRole("columnheader", { name: "建立時間" })).not.toBeInTheDocument();
 });
@@ -124,6 +126,22 @@ test("user renew hides old key from list", async () => {
   await waitFor(() => {
     expect(screen.queryByText("AS-...mn56")).not.toBeInTheDocument();
   });
+});
+
+test("user can extend active key with selected duration", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={auth} />
+    </MemoryRouter>
+  );
+
+  await user.click((await screen.findAllByRole("button", { name: "展延金鑰" }))[0]);
+  expect(await screen.findByText("確認展延")).toBeInTheDocument();
+  await user.selectOptions(screen.getByLabelText("展延時長"), "12");
+  await user.click(screen.getByRole("button", { name: "確認" }));
+  expect(await screen.findByText("金鑰已展延。")).toBeInTheDocument();
+  expect(await screen.findByText("金鑰已更新")).toBeInTheDocument();
 });
 
 test("list uses server pagination params", async () => {

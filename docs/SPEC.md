@@ -61,9 +61,11 @@
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
 - 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示 `for_{owner_account}`。
 - 操作：
-  - 對 `active` key 顯示「停用」按鈕。
-  - 對 `revoked|expired` key 顯示「續發（renew）」按鈕（icon + 文字）。
-  - renew 會建立新 key，沿用原 `duration_months` 與原 `purpose`。
+  - 對 `active` key 顯示「停用」與「展延（extend）」按鈕。
+  - 對 `expired` key 顯示「展延（extend）」按鈕（icon + 文字）。
+  - 對 `revoked` key 顯示「續發（renew）」按鈕（icon + 文字）。
+  - extend 需以 Dialog 讓使用者選擇 `duration_months=1|6|12` 後送出。
+  - renew/extend 皆會建立新 key，來源 key 對 `user` 列表需隱藏。
 
 ### 3) API Key Detail Dialog（詳情視窗）
 - 顯示完整申請資訊與狀態。
@@ -258,7 +260,7 @@
 - 不得記錄 API key 明文、token、password、client secret 等敏感憑證。
 
 ## 權限規則（MVP）
-- `user`：可使用 `GET /main/api/v1/api-keys`、`GET /main/api/v1/api-keys/{id}`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`，僅可操作本人 key。
+- `user`：可使用 `GET /main/api/v1/api-keys`、`GET /main/api/v1/api-keys/{id}`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`，僅可操作本人 key。
 - `user`：不可更新 `key_alias`。
 - `admin`：可查詢全部 API Key 與申請紀錄，可管理特殊人員名單（沿用受保護路徑 `/main/api/v1/whitelists*`），可啟用/停用其他使用者管理者身分（沿用受保護路徑 `/main/api/v1/admins/{id}/enable|disable`）。
 - `admin`：可使用 `PATCH /main/api/v1/api-keys/{id}` 更新 `key_alias`。
@@ -456,13 +458,28 @@ Base path：`/main/api/v1`
 ### 4-2) 續發（Renew）API Key
 - `POST /main/api/v1/api-keys/{id}/renew`
 - 規則：
-  - `user` 僅可續發本人 `revoked|expired` key；`admin` 可續發任意 `revoked|expired` key。
-  - 續發判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可續發。
+  - `user` 僅可續發本人 `revoked` key；`admin` 可續發任意 `revoked` key。
   - renew 會建立新 key（`status=active`），不是把舊 key 改回 `active`。
   - 新 key 的 `duration_months` 與 `purpose` 需沿用來源 key 的原資料。
 - renew 即時成功（`issuance_status=issued`）時，回傳一次性 `api_key_plaintext`。
   - renew 成功後需寄送 Email 通知申請者「已更新金鑰」；通知信不得包含明文 key。
   - 續發成功後，來源 key 對 `user` 列表需隱藏；`admin` 列表仍需可見完整歷史。
+
+### 4-3) 展延（Extend）API Key
+- `POST /main/api/v1/api-keys/{id}/extend`
+- Request：
+```json
+{
+  "duration_months": 1
+}
+```
+- 規則：
+  - `user` 僅可展延本人 `active|expired` key；`admin` 可展延任意 `active|expired` key。
+  - `duration_months` 僅允許 `1|6|12`。
+  - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
+  - extend 會建立新 key（`status=active`），不是把舊 key 改回 `active`。
+  - 續發成功後，來源 key 對 `user` 列表需隱藏；`admin` 列表仍需可見完整歷史。
+- extend 即時成功（`issuance_status=issued`）時，回傳一次性 `api_key_plaintext`。
 
 ### 4-0) 更新 API Key Alias
 - `PATCH /main/api/v1/api-keys/{id}`
@@ -642,8 +659,10 @@ Base path：`/main/api/v1`
 11. 一般使用者可停用本人 `active` key，停用後狀態轉為 `revoked`。
 12. 一般使用者停用非本人 key 時，API 回傳 `KEY_NOT_OWNED_BY_USER`。
 13. 一般使用者停用非 `active` key 時，API 回傳 `KEY_NOT_ACTIVE`。
-13-1. 一般使用者可續發本人 `revoked|expired` key；續發 `active` key 時，API 回傳 `KEY_NOT_RENEWABLE`。
+13-1. 一般使用者可續發本人 `revoked` key；續發 `active|expired` key 時，API 回傳 `KEY_NOT_RENEWABLE`。
 13-2. 同一把舊 key 不可重複續發；重複續發時 API 回傳 `KEY_ALREADY_RENEWED`。
+13-3. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時，API 回傳 `KEY_NOT_EXTENDABLE`。
+13-4. 展延 `duration_months` 僅允許 `1|6|12`；非法值回傳 `422 VALIDATION_ERROR`。
 14. 未通過資格檢查或驗證失敗請求不得建立 `api_key_applications` 或 `api_keys` 紀錄。
 15. `user` 呼叫 `GET /main/api/v1/api-keys` 時僅可看到本人資料；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料。
 16. `user` 查詢或停用非本人 key 時，API 回傳 `403`（或既有錯誤碼）。
@@ -690,9 +709,9 @@ Base path：`/main/api/v1`
 53. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
 54. 第 52 項若寄信失敗，`POST /main/api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
 54-1. `POST /main/api/v1/api-keys/applications` 若 provider timeout/5xx，需回 `503 PROVIDER_UNAVAILABLE`。
-54-2. `POST /main/api/v1/api-keys/applications` 或 `POST /main/api/v1/api-keys/{id}/renew` 若 provider timeout/5xx（`PROVIDER_UNAVAILABLE`）時，需寄送通知信給所有 `active` 管理者。
+54-2. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew` 或 `POST /main/api/v1/api-keys/{id}/extend` 若 provider timeout/5xx（`PROVIDER_UNAVAILABLE`）時，需寄送通知信給所有 `active` 管理者。
 54-3. 第 54-2 項若管理者通知信寄送失敗，不得改變原 API 錯誤回應（仍維持原錯誤碼/狀態）。
-57. 當配發模式為 `local` 時，申請與 renew 需可在不連線外部 provider 的情況下成功 `issued`。
+57. 當配發模式為 `local` 時，申請、renew 與 extend 需可在不連線外部 provider 的情況下成功 `issued`。
 64. `GET /main/login` 需可導向 OAuth provider，並附帶 state/request_id。
 65. `GET /main/auth/callback` 成功時需建立 session auth context 並 redirect `/main/`。
 66. `GET /main/auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失、state mismatch）需回錯，且寫入 failure audit。
@@ -703,7 +722,7 @@ Base path：`/main/api/v1`
 70. `tCode` 以 `B` 開頭者可登入；非 `B*` 者需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.id`），否則回 `403 LOGIN_NOT_ELIGIBLE`。
 71. `admin` 可於 `POST /main/api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
-73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config` 成功時皆需寫入 `operation_audit_logs`。
+73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config` 成功時皆需寫入 `operation_audit_logs`。
 74. 第 73 項 8 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。
 75. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證（token/password/client secret）。
 76. `operation_audit_logs.metadata_json` 僅允許白名單欄位（例如 `application_id`、`key_id`、`whitelist_id`、`target_admin_id`、`status`、`duration_months`），不得落地原始敏感 payload。
