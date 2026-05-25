@@ -109,7 +109,7 @@ def oauth_callback(
         sysid=identity.sysid,
         role="user",
     )
-    return RedirectResponse("/", status_code=302)
+    return RedirectResponse("/main/", status_code=302)
 
 
 @router.post("/logout", dependencies=[Depends(csrf_protected), enforce_rate_limit("logout", settings.login_rate_limit)])

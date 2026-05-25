@@ -19,6 +19,7 @@ from app.services.persnl_soap_service import PersnlSoapService
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 FRONTEND_ASSETS = FRONTEND_DIST / "assets"
+PATH_BASE = "/main"
 
 
 def create_app() -> FastAPI:
@@ -27,7 +28,14 @@ def create_app() -> FastAPI:
         app.state.persnl_soap_service.initialize()
         yield
 
-    app = FastAPI(title="AS API Console", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(
+        title="AS API Console",
+        version="0.1.0",
+        lifespan=lifespan,
+        docs_url=f"{PATH_BASE}/docs",
+        redoc_url=f"{PATH_BASE}/redoc",
+        openapi_url=f"{PATH_BASE}/openapi.json",
+    )
     settings = get_settings()
     allowed_hosts = [host.strip() for host in settings.allowed_hosts.split(",") if host.strip()]
     if allowed_hosts:
@@ -43,10 +51,10 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.state.persnl_soap_service = PersnlSoapService()
 
-    app.include_router(auth_router)
+    app.include_router(auth_router, prefix=PATH_BASE)
     if settings.app_env.lower() == "test":
-        app.include_router(test_auth_router)
-    app.include_router(api_router, prefix="/api/v1")
+        app.include_router(test_auth_router, prefix=PATH_BASE)
+    app.include_router(api_router, prefix=f"{PATH_BASE}/api/v1")
 
     @app.middleware("http")
     async def security_headers_middleware(request, call_next):
@@ -54,22 +62,23 @@ def create_app() -> FastAPI:
         apply_security_headers(request, response.headers)
         return response
 
-    @app.get("/health")
+    @app.get(f"{PATH_BASE}/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
     if FRONTEND_ASSETS.exists():
-        app.mount("/assets", StaticFiles(directory=str(FRONTEND_ASSETS)), name="assets")
+        app.mount(f"{PATH_BASE}/assets", StaticFiles(directory=str(FRONTEND_ASSETS)), name="assets")
 
     if FRONTEND_DIST.exists():
 
-        @app.get("/")
+        @app.get(PATH_BASE)
+        @app.get(f"{PATH_BASE}/")
         async def serve_frontend_index() -> FileResponse:
             return FileResponse(str(FRONTEND_DIST / "index.html"))
 
-        @app.get("/{full_path:path}")
+        @app.get(f"{PATH_BASE}" + "/{full_path:path}")
         async def serve_frontend_spa(full_path: str) -> FileResponse:
-            if full_path.startswith("api/") or full_path in {"health", "docs", "openapi.json", "redoc"}:
+            if full_path.startswith("api/") or full_path in {"health", "docs", "openapi.json", "redoc", "login", "auth/callback", "logout"}:
                 raise HTTPException(status_code=404)
             target = FRONTEND_DIST / full_path
             if target.is_file():

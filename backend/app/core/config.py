@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     app_domain: str = "http://localhost:8000"
     database_url: str | None = None
-    db_user: str = "as_console"
+    db_user: str = "as_api_console"
     db_password: str | None = None
     db_host: str = "localhost"
     db_port: int = 3306

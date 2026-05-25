@@ -251,9 +251,9 @@ cd backend
 ```bash
 tail -n 50 ../log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
-- 部署環境路徑範例（專案位於 `/opt/as-api-console`）：
+- 部署環境路徑範例（專案位於 `/home/app`）：
 ```bash
-sudo -u asapi tail -n 50 /opt/as-api-console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u aspaic tail -n 50 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ### 3) 檢查回填結果

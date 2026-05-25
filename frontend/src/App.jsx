@@ -37,7 +37,7 @@ export default function App() {
       setAuth(null);
       setLogoutInProgress(false);
       if (typeof window !== "undefined") {
-        window.location.assign("/login");
+        window.location.assign("/main/login");
       }
     }
   }
@@ -53,7 +53,7 @@ export default function App() {
         }
       } catch {
         if (!canceled && typeof window !== "undefined") {
-          window.location.assign("/login");
+          window.location.assign("/main/login");
         }
       } finally {
         if (!canceled) {

@@ -29,6 +29,13 @@ function mapErrorPayload(status, body) {
   };
 }
 
+const APP_BASE = "/main";
+const API_BASE = `${APP_BASE}/api/v1`;
+
+function apiPath(path = "") {
+  return `${API_BASE}${path}`;
+}
+
 async function request(path, { method = "GET", auth, body } = {}) {
   const headers = buildHeaders(auth, method);
   const response = await fetch(path, {
@@ -67,11 +74,11 @@ function mapWhitelistItem(item) {
 
 export const httpApiProvider = {
   getCurrentUser(auth) {
-    return request("/api/v1/users/me", { auth });
+    return request(apiPath("/users/me"), { auth });
   },
 
   createApplication(payload, auth) {
-    return request("/api/v1/api-keys/applications", { method: "POST", auth, body: payload });
+    return request(apiPath("/api-keys/applications"), { method: "POST", auth, body: payload });
   },
 
   listApiKeys(paramsOrAuth, maybeAuth) {
@@ -86,23 +93,23 @@ export const httpApiProvider = {
     if (params.from) query.set("from", params.from);
     if (params.to) query.set("to", params.to);
     const suffix = query.toString() ? `?${query.toString()}` : "";
-    return request(`/api/v1/api-keys${suffix}`, { auth });
+    return request(`${apiPath("/api-keys")}${suffix}`, { auth });
   },
 
   getApiKeyById(id, auth) {
-    return request(`/api/v1/api-keys/${id}`, { auth }).then((item) => ({ item }));
+    return request(apiPath(`/api-keys/${id}`), { auth }).then((item) => ({ item }));
   },
 
   updateApiKey(id, payload, auth) {
-    return request(`/api/v1/api-keys/${id}`, { method: "PATCH", auth, body: payload }).then((item) => ({ item }));
+    return request(apiPath(`/api-keys/${id}`), { method: "PATCH", auth, body: payload }).then((item) => ({ item }));
   },
 
   revokeApiKey(id, auth) {
-    return request(`/api/v1/api-keys/${id}/revoke`, { method: "POST", auth });
+    return request(apiPath(`/api-keys/${id}/revoke`), { method: "POST", auth });
   },
 
   renewApiKey(id, auth) {
-    return request(`/api/v1/api-keys/${id}/renew`, { method: "POST", auth });
+    return request(apiPath(`/api-keys/${id}/renew`), { method: "POST", auth });
   },
 
   listApiKeyUserStatistics(params, auth) {
@@ -115,7 +122,7 @@ export const httpApiProvider = {
     if (params.to) query.set("to", params.to);
     if (params.sort_by) query.set("sort_by", params.sort_by);
     if (params.sort_dir) query.set("sort_dir", params.sort_dir);
-    return request(`/api/v1/api-keys/statistics/users?${query.toString()}`, { auth });
+    return request(`${apiPath("/api-keys/statistics/users")}?${query.toString()}`, { auth });
   },
 
   listOperationAuditLogs(params, auth) {
@@ -126,7 +133,7 @@ export const httpApiProvider = {
     if (params?.to) query.set("to", params.to);
     if (params?.event_type) query.set("event_type", params.event_type);
     if (params?.result) query.set("result", params.result);
-    return request(`/api/v1/operation-audit-logs?${query.toString()}`, { auth });
+    return request(`${apiPath("/operation-audit-logs")}?${query.toString()}`, { auth });
   },
 
   listAuthAuditLogs(params, auth) {
@@ -137,36 +144,36 @@ export const httpApiProvider = {
     if (params?.to) query.set("to", params.to);
     if (params?.provider) query.set("provider", params.provider);
     if (params?.result) query.set("result", params.result);
-    return request(`/api/v1/auth-audit-logs?${query.toString()}`, { auth });
+    return request(`${apiPath("/auth-audit-logs")}?${query.toString()}`, { auth });
   },
 
   listUsers(auth) {
-    return request("/api/v1/users", { auth });
+    return request(apiPath("/users"), { auth });
   },
 
   listInstitutes(auth) {
-    return request("/api/v1/institutes", { auth });
+    return request(apiPath("/institutes"), { auth });
   },
 
   searchUsers(keyword, auth) {
     const q = encodeURIComponent(keyword || "");
-    return request(`/api/v1/users?q=${q}`, { auth });
+    return request(`${apiPath("/users")}?q=${q}`, { auth });
   },
 
   enableAdmin(id, auth) {
-    return request(`/api/v1/admins/${id}/enable`, { method: "POST", auth });
+    return request(apiPath(`/admins/${id}/enable`), { method: "POST", auth });
   },
 
   disableAdmin(id, auth) {
-    return request(`/api/v1/admins/${id}/disable`, { method: "POST", auth });
+    return request(apiPath(`/admins/${id}/disable`), { method: "POST", auth });
   },
 
   getLocalePreference(auth) {
-    return request("/api/v1/users/preferences/locale", { auth });
+    return request(apiPath("/users/preferences/locale"), { auth });
   },
 
   updateLocalePreference(preferred_locale, auth) {
-    return request("/api/v1/users/preferences/locale", {
+    return request(apiPath("/users/preferences/locale"), {
       method: "PATCH",
       auth,
       body: { preferred_locale }
@@ -174,12 +181,12 @@ export const httpApiProvider = {
   },
 
   async listWhitelists(auth) {
-    const result = await request("/api/v1/whitelists", { auth });
+    const result = await request(apiPath("/whitelists"), { auth });
     return { ...result, items: result.items.map(mapWhitelistItem) };
   },
 
   createWhitelist(payload, auth) {
-    return request("/api/v1/whitelists", {
+    return request(apiPath("/whitelists"), {
       method: "POST",
       auth,
       body: { sysid: payload.sysid, note: payload.remark || null }
@@ -187,7 +194,7 @@ export const httpApiProvider = {
   },
 
   updateWhitelist(id, payload, auth) {
-    return request(`/api/v1/whitelists/${id}`, {
+    return request(apiPath(`/whitelists/${id}`), {
       method: "PATCH",
       auth,
       body: {
@@ -198,11 +205,11 @@ export const httpApiProvider = {
   },
 
   getLimitStrategyConfig(auth) {
-    return request("/api/v1/limit-strategy-config", { auth });
+    return request(apiPath("/limit-strategy-config"), { auth });
   },
 
   updateLimitStrategyConfig(payload, auth) {
-    return request("/api/v1/limit-strategy-config", {
+    return request(apiPath("/limit-strategy-config"), {
       method: "PATCH",
       auth,
       body: payload
@@ -210,7 +217,7 @@ export const httpApiProvider = {
   },
 
   logout(auth) {
-    return request("/logout", { method: "POST", auth });
+    return request(`${APP_BASE}/logout`, { method: "POST", auth });
   },
 
 };

@@ -12,13 +12,13 @@
 ## 1. 先決條件
 
 - Ubuntu 22.04/24.04（有 sudo 權限）
-- 已準備網域，例如 `api-console.example.org`
+- 已準備網域，例如 `api.ascs.sinica.edu.tw`
 - DNS A record 已指向此 Ubuntu 主機公網 IP
 - 防火牆已開放 `80`、`443`
 
 建議先確認 DNS：
 ```bash
-dig +short api-console.example.org
+dig +short api.ascs.sinica.edu.tw
 ```
 
 ## 2. 安裝系統套件
@@ -39,18 +39,18 @@ sudo systemctl status mariadb --no-pager
 ## 3. 建立部署目錄與系統帳號
 
 ```bash
-sudo useradd --system --create-home --shell /bin/bash asapi
-sudo mkdir -p /opt/as-api-console
-sudo chown -R asapi:asapi /opt/as-api-console
+sudo useradd --system --create-home --shell /bin/bash aspaic
+sudo mkdir -p /home/app
+sudo chown -R aspaic:aspaic /home/app
 ```
 
-> 下列步驟以 `/opt/as-api-console` 為專案路徑。
+> 下列步驟以 `/home/app` 為專案路徑。
 
 ## 4. 下載專案與安裝依賴
 
 ```bash
-sudo -u asapi -H bash -lc '
-cd /opt/as-api-console
+sudo -u aspaic -H bash -lc '
+cd /home/app
 if [ ! -d .git ]; then
   git clone <YOUR_REPO_URL> .
 else
@@ -62,8 +62,8 @@ fi
 ### 4.1 Backend 依賴（venv + requirements.txt）
 
 ```bash
-sudo -u asapi -H bash -lc '
-cd /opt/as-api-console/backend
+sudo -u aspaic -H bash -lc '
+cd /home/app/backend
 python3 -m venv .venv
 . .venv/bin/activate
 pip install --upgrade pip
@@ -74,8 +74,8 @@ pip install -r requirements.txt
 ### 4.2 Frontend build
 
 ```bash
-sudo -u asapi -H bash -lc '
-cd /opt/as-api-console/frontend
+sudo -u aspaic -H bash -lc '
+cd /home/app/frontend
 npm install
 npm run build
 '
@@ -91,32 +91,32 @@ sudo mariadb
 執行 SQL（請替換安全密碼）：
 ```sql
 CREATE DATABASE as_api_console CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'as_api'@'127.0.0.1' IDENTIFIED BY 'CHANGE_ME_STRONG_PASSWORD';
-GRANT ALL PRIVILEGES ON as_api_console.* TO 'as_api'@'127.0.0.1';
+CREATE USER 'as_api_console'@'localhost' IDENTIFIED BY 'CHANGE_ME_STRONG_PASSWORD';
+GRANT ALL PRIVILEGES ON as_api_console.* TO 'as_api_console'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
 連線測試：
 ```bash
-mariadb -h 127.0.0.1 -u as_api -p as_api_console -e "SELECT 1;"
+mariadb -h localhost -u as_api_console -p as_api_console -e "SELECT 1;"
 ```
 
 ## 6. 設定 backend 環境變數
 
 建立環境檔：
 ```bash
-sudo -u asapi -H bash -lc '
-cd /opt/as-api-console/backend
+sudo -u aspaic -H bash -lc '
+cd /home/app/backend
 cp -n .env.example .env
 '
 ```
 
-編輯 `/opt/as-api-console/backend/.env`，至少確認以下欄位：
+編輯 `/home/app/backend/.env`，至少確認以下欄位：
 
-- `APP_DOMAIN=https://api-console.example.org`
-- `DB_USER=as_api`
+- `APP_DOMAIN=https://api.ascs.sinica.edu.tw/main`
+- `DB_USER=as_api_console`
 - `DB_PASSWORD=CHANGE_ME_STRONG_PASSWORD`
-- `DB_HOST=127.0.0.1`
+- `DB_HOST=localhost`
 - `DB_PORT=3306`
 - `DB_NAME=as_api_console`
 - `API_KEY_ENCRYPTION_SECRET=<strong-random-secret>`
@@ -134,7 +134,7 @@ cp -n .env.example .env
   - `OAUTH_BASIC_URI`
   - `OAUTH_CLIENT_ID`
   - `OAUTH_CLIENT_SECRET`
-  - `OAUTH_REDIRECT_URI=https://api-console.example.org/auth/callback`
+  - `OAUTH_REDIRECT_URI=https://api.ascs.sinica.edu.tw/main/auth/callback`
 
 如果你改用 `DATABASE_URL`，它會覆蓋 `DB_*` 組合結果。
 本部署文件為正式環境流程，`TEST_DB_*` / `TEST_DATABASE_URL` 僅供測試使用，正式部署不需要設定。
@@ -147,8 +147,8 @@ systemd `EnvironmentFile` 注意事項：
 ## 7. 資料庫 migration
 
 ```bash
-sudo -u asapi -H bash -lc '
-cd /opt/as-api-console/backend
+sudo -u aspaic -H bash -lc '
+cd /home/app/backend
 . .venv/bin/activate
 alembic upgrade head
 '
@@ -156,8 +156,8 @@ alembic upgrade head
 
 確認 revision：
 ```bash
-sudo -u asapi -H bash -lc '
-cd /opt/as-api-console/backend
+sudo -u aspaic -H bash -lc '
+cd /home/app/backend
 . .venv/bin/activate
 alembic current
 '
@@ -166,8 +166,8 @@ alembic current
 ## 8. 先手動啟動一次 backend 驗證
 
 ```bash
-sudo -u asapi -H bash -lc '
-cd /opt/as-api-console/backend
+sudo -u aspaic -H bash -lc '
+cd /home/app/backend
 . .venv/bin/activate
 set -a
 source .env
@@ -178,8 +178,8 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 另一個 terminal 測試：
 ```bash
-curl -I http://127.0.0.1:8000/
-curl -I http://127.0.0.1:8000/docs
+curl -I http://127.0.0.1:8000/main/
+curl -I http://127.0.0.1:8000/main/docs
 ```
 
 確認正常後，用 `Ctrl+C` 停掉手動服務。
@@ -190,16 +190,16 @@ curl -I http://127.0.0.1:8000/docs
 
 ```ini
 [Unit]
-Description=AS API Console FastAPI Service
+Description=AS-API-Console FastAPI Service
 After=network.target mariadb.service
 
 [Service]
 Type=simple
-User=asapi
-Group=asapi
-WorkingDirectory=/opt/as-api-console/backend
-EnvironmentFile=/opt/as-api-console/backend/.env
-ExecStart=/opt/as-api-console/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+User=aspaic
+Group=aspaic
+WorkingDirectory=/home/app/backend
+EnvironmentFile=/home/app/backend/.env
+ExecStart=/home/app/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
 
@@ -227,11 +227,11 @@ sudo journalctl -u as-api-console -n 200 --no-pager
 server {
     listen 80;
     listen [::]:80;
-    server_name api-console.example.org;
+    server_name api.ascs.sinica.edu.tw;
 
     client_max_body_size 20m;
 
-    location / {
+    location /main/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
 
@@ -253,20 +253,20 @@ sudo systemctl reload nginx
 
 先驗證 HTTP：
 ```bash
-curl -I http://api-console.example.org/
-curl -I http://api-console.example.org/docs
+curl -I http://api.ascs.sinica.edu.tw/main/
+curl -I http://api.ascs.sinica.edu.tw/main/docs
 ```
 
 ## 11. 申請 Let's Encrypt 憑證（HTTPS）
 
 ```bash
-sudo certbot --nginx -d api-console.example.org
+sudo certbot --nginx -d api.ascs.sinica.edu.tw
 ```
 
 完成後驗證：
 ```bash
-curl -I https://api-console.example.org/
-curl -I https://api-console.example.org/docs
+curl -I https://api.ascs.sinica.edu.tw/main/
+curl -I https://api.ascs.sinica.edu.tw/main/docs
 ```
 
 測試續約：
@@ -276,9 +276,9 @@ sudo certbot renew --dry-run
 
 ## 12. 驗收清單
 
-- `https://api-console.example.org/` 可開啟前端
-- `https://api-console.example.org/docs` 可開啟 OpenAPI
-- `https://api-console.example.org/login` 可進入 OAuth 流程
+- `https://api.ascs.sinica.edu.tw/main/` 可開啟前端
+- `https://api.ascs.sinica.edu.tw/main/docs` 可開啟 OpenAPI
+- `https://api.ascs.sinica.edu.tw/main/login` 可進入 OAuth 流程
 - `sudo systemctl status as-api-console` 為 `active (running)`
 - `sudo systemctl status nginx` 為 `active (running)`
 - `sudo certbot renew --dry-run` 成功
@@ -293,8 +293,8 @@ sudo systemctl reload nginx
 
 更新程式（手動）：
 ```bash
-sudo -u asapi -H bash -lc '
-cd /opt/as-api-console
+sudo -u aspaic -H bash -lc '
+cd /home/app
 git pull --ff-only
 cd backend
 . .venv/bin/activate
@@ -319,11 +319,11 @@ sudo journalctl -u as-api-console -n 200 --no-pager
 
 若 backend 未啟動，優先修正 `.env` 或 DB 連線問題。
 
-### 14.2 `/docs` 可開但首頁空白
+### 14.2 `/main/docs` 可開但首頁空白
 
 通常是前端 build 未產生或路徑錯誤：
 ```bash
-sudo -u asapi -H bash -lc 'cd /opt/as-api-console/frontend && npm run build'
+sudo -u aspaic -H bash -lc 'cd /home/app/frontend && npm run build'
 sudo systemctl restart as-api-console
 ```
 
@@ -362,10 +362,10 @@ After=network.target mariadb.service
 
 [Service]
 Type=oneshot
-User=asapi
-Group=asapi
-WorkingDirectory=/opt/as-api-console/backend
-ExecStart=/opt/as-api-console/backend/scripts/run_expire_sync.sh
+User=aspaic
+Group=aspaic
+WorkingDirectory=/home/app/backend
+ExecStart=/home/app/backend/scripts/run_expire_sync.sh
 ```
 
 建立 `/etc/systemd/system/as-api-expire-sync.timer`：
@@ -394,25 +394,25 @@ sudo systemctl status as-api-expire-sync.timer --no-pager
 ```bash
 sudo systemctl start as-api-expire-sync.service
 sudo journalctl -u as-api-expire-sync.service -n 200 --no-pager
-sudo -u asapi tail -n 100 /opt/as-api-console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u aspaic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ### 16.2 方案 B：cron
 
-以 `asapi` 使用者設定 crontab：
+以 `aspaic` 使用者設定 crontab：
 ```bash
-sudo -u asapi crontab -e
+sudo -u aspaic crontab -e
 ```
 
 加入：
 ```cron
-10 0 * * * /opt/as-api-console/backend/scripts/run_expire_sync.sh
+10 0 * * * /home/app/backend/scripts/run_expire_sync.sh
 ```
 
 檢查：
 ```bash
-sudo -u asapi crontab -l
-sudo -u asapi tail -n 100 /opt/as-api-console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u aspaic crontab -l
+sudo -u aspaic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 說明：
@@ -420,23 +420,23 @@ sudo -u asapi tail -n 100 /opt/as-api-console/log/sync_expired_api_keys/$(TZ=Asi
 - 建議保留 cron 預設 stdout/stderr 行為（系統郵件或平台收集）；業務執行紀錄以上述檔案為主。
 
 ### 16.3 排錯重點
-- `.env` 未設定或 DB 參數錯誤：確認 `/opt/as-api-console/backend/.env` 內容。
+- `.env` 未設定或 DB 參數錯誤：確認 `/home/app/backend/.env` 內容。
 - 執行環境找不到 `uv`：腳本會自動 fallback 到 `.venv/bin/python` 或 `python`，但仍需先安裝依賴。
-- 權限問題：確認 `asapi` 對專案目錄可讀執行，且可連線 DB。
+- 權限問題：確認 `aspaic` 對專案目錄可讀執行，且可連線 DB。
 
 ### 16.4 驗證清單（建議）
 1. 檢查排程已啟用：
 ```bash
 sudo systemctl list-timers as-api-expire-sync.timer --all
-sudo -u asapi crontab -l
+sudo -u aspaic crontab -l
 ```
 2. 手動 dry-run：
 ```bash
-sudo -u asapi -H bash -lc 'cd /opt/as-api-console/backend && ./scripts/run_expire_sync.sh --dry-run'
+sudo -u aspaic -H bash -lc 'cd /home/app/backend && ./scripts/run_expire_sync.sh --dry-run'
 ```
 3. 檢查當日日誌：
 ```bash
-sudo -u asapi tail -n 100 /opt/as-api-console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u aspaic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ## 17. 單位主檔同步排程部署
@@ -456,10 +456,10 @@ After=network.target mariadb.service
 
 [Service]
 Type=oneshot
-User=asapi
-Group=asapi
-WorkingDirectory=/opt/as-api-console/backend
-ExecStart=/opt/as-api-console/backend/.venv/bin/python /opt/as-api-console/backend/scripts/sync_institutes.py
+User=aspaic
+Group=aspaic
+WorkingDirectory=/home/app/backend
+ExecStart=/home/app/backend/.venv/bin/python /home/app/backend/scripts/sync_institutes.py
 ```
 
 建立 `/etc/systemd/system/as-api-institute-sync.timer`：
@@ -492,19 +492,19 @@ sudo journalctl -u as-api-institute-sync.service -n 200 --no-pager
 
 ### 17.2 方案 B：cron
 
-以 `asapi` 使用者設定 crontab：
+以 `aspaic` 使用者設定 crontab：
 ```bash
-sudo -u asapi crontab -e
+sudo -u aspaic crontab -e
 ```
 
 加入：
 ```cron
-20 0 * * * cd /opt/as-api-console/backend && /opt/as-api-console/backend/.venv/bin/python scripts/sync_institutes.py
+20 0 * * * cd /home/app/backend && /home/app/backend/.venv/bin/python scripts/sync_institutes.py
 ```
 
 檢查：
 ```bash
-sudo -u asapi crontab -l
+sudo -u aspaic crontab -l
 ```
 
 ### 17.3 排錯重點
@@ -517,14 +517,14 @@ sudo -u asapi crontab -l
 1. 檢查排程已啟用：
 ```bash
 sudo systemctl list-timers as-api-institute-sync.timer --all
-sudo -u asapi crontab -l
+sudo -u aspaic crontab -l
 ```
 2. 手動 dry-run：
 ```bash
-sudo -u asapi -H bash -lc 'cd /opt/as-api-console/backend && . .venv/bin/activate && python scripts/sync_institutes.py --dry-run'
+sudo -u aspaic -H bash -lc 'cd /home/app/backend && . .venv/bin/activate && python scripts/sync_institutes.py --dry-run'
 ```
 3. 若出現 `persnl soap is not configured`，先補齊 `.env` 的 `PERSNL_SOAP_URL` 或 `PERSNL_SOAP_WSDL_URL`，以及 `PERSNL_SOAP_USER`、`PERSNL_SOAP_PASSWORD`。
 4. 實際同步一次：
 ```bash
-sudo -u asapi -H bash -lc 'cd /opt/as-api-console/backend && . .venv/bin/activate && python scripts/sync_institutes.py'
+sudo -u aspaic -H bash -lc 'cd /home/app/backend && . .venv/bin/activate && python scripts/sync_institutes.py'
 ```

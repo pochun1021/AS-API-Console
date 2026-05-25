@@ -31,7 +31,7 @@ createRoot(document.getElementById("root")).render(
       <CssBaseline />
       <LocaleProvider>
         <DateLocalizationBridge>
-          <BrowserRouter>
+          <BrowserRouter basename="/main">
             <App />
           </BrowserRouter>
         </DateLocalizationBridge>
