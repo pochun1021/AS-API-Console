@@ -356,6 +356,8 @@ jobs:
     env:
       APP_ENV: test
       ALLOW_HEADER_AUTH: "false"
+      DAST_BASE_URL: http://127.0.0.1:8000/main
+      DAST_OPENAPI_URL: http://127.0.0.1:8000/main/openapi.json
       DB_USER: root
       DB_PASSWORD: root
       DB_HOST: 127.0.0.1
@@ -405,7 +407,9 @@ jobs:
           import time
           import httpx
 
-          url = "http://127.0.0.1:8000/health"
+          import os
+
+          url = f"{os.environ['DAST_BASE_URL']}/health"
           deadline = time.time() + 60
           while time.time() < deadline:
             try:
@@ -421,7 +425,7 @@ jobs:
         working-directory: backend
         run: |
           python scripts/bootstrap_dast_session.py \
-            --base-url http://127.0.0.1:8000 \
+            --base-url "${DAST_BASE_URL}" \
             --account dast.admin \
             --name "DAST Admin" \
             --email dast.admin@example.com \
@@ -444,10 +448,10 @@ jobs:
         id: schemathesis
         continue-on-error: true
         run: |
-          st run http://127.0.0.1:8000/openapi.json \
-            --url http://127.0.0.1:8000 \
+          st run "${DAST_OPENAPI_URL}" \
+            --url "${DAST_BASE_URL}" \
             --include-method GET \
-            --include-path-regex "^/api/v1/(users/me|api-keys|api-keys/statistics/users|whitelists|operation-audit-logs|auth-audit-logs|limit-strategy-config)$" \
+            --include-path-regex "^/main/api/v1/(users/me|api-keys|api-keys/statistics/users|whitelists|operation-audit-logs|auth-audit-logs|limit-strategy-config)$" \
             --header "Cookie: ${ADMIN_COOKIE}" \
             --checks not_a_server_error,status_code_conformance,content_type_conformance,response_headers_conformance,response_schema_conformance \
             --mode positive \
@@ -459,7 +463,7 @@ jobs:
       - name: Run custom API DAST smoke
         working-directory: backend
         continue-on-error: true
-        run: python scripts/run_api_dast.py > ../security-reports/api-dast-smoke.log
+        run: DAST_BASE_URL="${DAST_BASE_URL}" python scripts/run_api_dast.py > ../security-reports/api-dast-smoke.log
 
       - name: Stop backend server
         if: always()
