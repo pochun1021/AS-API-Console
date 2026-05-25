@@ -548,6 +548,51 @@ class ApiKeysService:
             "email_warning": email_warning,
         }
 
+    def extend_key(self, current_user: CurrentUser, key_id: str, duration_months: int) -> dict:
+        if duration_months not in {1, 6, 12}:
+            raise ApiError("VALIDATION_ERROR", "duration_months must be one of 1, 6, 12", 422)
+
+        exists = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
+        if exists is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+
+        allowed = self.key_repo.get_key_detail(key_id, current_user.role, current_user.account)
+        if allowed is None:
+            raise ApiError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403)
+
+        row = (
+            self.session.query(ApiKey, ApiKeyApplication)
+            .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
+            .filter(ApiKey.id == key_id)
+            .first()
+        )
+        if row is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+
+        source_key, source_app = row
+        source_effective_status = _effective_status(status=source_key.status, expires_at=source_app.expires_at)
+        if source_effective_status not in {"active", "expired"}:
+            raise ApiError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409)
+        base_time = source_app.expires_at
+        if base_time.tzinfo is None:
+            base_time = base_time.replace(tzinfo=UTC)
+        now = datetime.now(UTC)
+        if base_time < now:
+            base_time = now
+        source_app.expires_at = _calc_expiration(base_time, duration_months)
+        source_app.duration_months = duration_months
+        source_app.status = "active"
+        source_key.status = "active"
+        source_app.updated_at = now
+        self.session.add(source_key)
+        self.session.add(source_app)
+        self.session.commit()
+        return {
+            "id": source_key.id,
+            "status": source_key.status,
+            "expires_at": source_app.expires_at,
+        }
+
     def _notify_admins_issuance_failure(
         self,
         *,

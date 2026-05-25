@@ -19,6 +19,8 @@ from app.schemas.api_keys import (
     LimitStrategyConfigUpdateRequest,
     ApplicationCreateRequest,
     ApplicationCreateResponse,
+    ExtendRequest,
+    ExtendResponse,
     RenewResponse,
     RevokeResponse,
 )
@@ -291,6 +293,67 @@ def renew_api_key(
         target_id=result["id"],
         context=context,
         metadata={"key_id": result["id"], "status": result["status"]},
+    )
+    return result
+
+
+@router.post(
+    "/api-keys/{key_id}/extend",
+    response_model=ExtendResponse,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("api-key-extend", settings.application_rate_limit)],
+)
+def extend_api_key(
+    key_id: str,
+    payload: ExtendRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "api_key"
+    action = "extend"
+    target_type = "api_key"
+    service = ApiKeysService(db)
+    try:
+        result = service.extend_key(current_user=current_user, key_id=key_id, duration_months=payload.duration_months)
+    except ApiError as exc:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=key_id,
+            context=context,
+            metadata={"key_id": key_id, "duration_months": payload.duration_months},
+        )
+        raise
+    except Exception:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=key_id,
+            context=context,
+            metadata={"key_id": key_id, "duration_months": payload.duration_months},
+        )
+        raise
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["id"],
+        context=context,
+        metadata={"key_id": result["id"], "status": result["status"], "duration_months": payload.duration_months},
     )
     return result
 

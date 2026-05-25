@@ -65,7 +65,8 @@
   - 對 `expired` key 顯示「展延（extend）」按鈕（icon + 文字）。
   - 對 `revoked` key 顯示「續發（renew）」按鈕（icon + 文字）。
   - extend 需以 Dialog 讓使用者選擇 `duration_months=1|6|12` 後送出。
-  - renew/extend 皆會建立新 key，來源 key 對 `user` 列表需隱藏。
+  - renew 會建立新 key，來源 key 對 `user` 列表需隱藏。
+  - extend 會沿用原 key，只延長有效期限。
 
 ### 3) API Key Detail Dialog（詳情視窗）
 - 顯示完整申請資訊與狀態。
@@ -477,9 +478,8 @@ Base path：`/main/api/v1`
   - `user` 僅可展延本人 `active|expired` key；`admin` 可展延任意 `active|expired` key。
   - `duration_months` 僅允許 `1|6|12`。
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
-  - extend 會建立新 key（`status=active`），不是把舊 key 改回 `active`。
-  - 續發成功後，來源 key 對 `user` 列表需隱藏；`admin` 列表仍需可見完整歷史。
-- extend 即時成功（`issuance_status=issued`）時，回傳一次性 `api_key_plaintext`。
+  - extend 會沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`）。
+  - extend 不會回傳 `api_key_plaintext`。
 
 ### 4-0) 更新 API Key Alias
 - `PATCH /main/api/v1/api-keys/{id}`

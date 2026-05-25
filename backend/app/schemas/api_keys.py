@@ -78,6 +78,16 @@ class RenewResponse(BaseModel):
     email_warning: str | None = None
 
 
+class ExtendRequest(BaseModel):
+    duration_months: int = Field(..., description="allowed: 1, 6, 12")
+
+
+class ExtendResponse(BaseModel):
+    id: str
+    status: str
+    expires_at: datetime
+
+
 class ApiKeyRevealResponse(BaseModel):
     id: str
     api_key_plaintext: str

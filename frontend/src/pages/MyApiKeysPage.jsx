@@ -153,15 +153,8 @@ export default function MyApiKeysPage({ auth }) {
   async function extend(id, durationMonths) {
     setBanner("");
     try {
-      const response = await apiClient.extendApiKey(id, { duration_months: durationMonths }, auth);
-      if (response?.issuance_status === "issued" && response?.api_key_plaintext) {
-        setRenewIssued(response);
-        setRenewCopySucceeded(false);
-        setRenewCopyError("");
-      } else {
-        setBanner(t("mykeys_renew_pending"));
-      }
-      setBanner((prev) => prev || t("mykeys_extend_done"));
+      await apiClient.extendApiKey(id, { duration_months: durationMonths }, auth);
+      setBanner(t("mykeys_extend_done"));
       await load();
       if (detailOpen && detailId === id) {
         closeDetail();
