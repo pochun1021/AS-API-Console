@@ -23,7 +23,7 @@ from app.services.research_eligibility_service import ResearchEligibilityService
 from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
 from db.models.limit_strategy_config import LimitStrategyConfig
-from db.repositories import SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
+from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
 from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
 
 
@@ -67,6 +67,7 @@ class ApiKeysService:
         self.settings = get_settings()
         self.whitelist_repo = SQLAlchemyWhitelistRepository(session)
         self.key_repo = SQLAlchemyApiKeyRepository(session)
+        self.admin_repo = SQLAlchemyAdminRepository(session)
         self.research_eligibility = ResearchEligibilityService()
         self.directory_identity = DirectoryIdentityService()
         self.provider_client = ProviderClient()
@@ -161,7 +162,18 @@ class ApiKeysService:
                 expires_at=expires_at,
             )
         )
-        plaintext = self._issue_application(application)
+        try:
+            plaintext = self._issue_application(application)
+        except ApiError as exc:
+            if exc.code == "PROVIDER_UNAVAILABLE":
+                self._notify_admins_issuance_failure(
+                    operation="application",
+                    actor_account=current_user.account,
+                    actor_role=current_user.role,
+                    target_account=identity.account,
+                    error_code=exc.code,
+                )
+            raise
 
         self.session.add(application)
         self.session.commit()
@@ -489,7 +501,18 @@ class ApiKeysService:
                 expires_at=_calc_expiration(now, source_app.duration_months),
             )
         )
-        plaintext = self._issue_application(application)
+        try:
+            plaintext = self._issue_application(application)
+        except ApiError as exc:
+            if exc.code == "PROVIDER_UNAVAILABLE":
+                self._notify_admins_issuance_failure(
+                    operation="renew",
+                    actor_account=current_user.account,
+                    actor_role=current_user.role,
+                    target_account=source_app.account,
+                    error_code=exc.code,
+                )
+            raise
 
         issued_key = self.session.query(ApiKey).filter(ApiKey.application_id == application.id).one_or_none()
         email_warning: str | None = None
@@ -524,6 +547,32 @@ class ApiKeysService:
             "api_key_plaintext": plaintext,
             "email_warning": email_warning,
         }
+
+    def _notify_admins_issuance_failure(
+        self,
+        *,
+        operation: str,
+        actor_account: str,
+        actor_role: str,
+        target_account: str,
+        error_code: str,
+    ) -> None:
+        recipients = sorted({email.strip().lower() for email in self.admin_repo.list_active_emails() if email and email.strip()})
+        if not recipients:
+            return
+        try:
+            run_async(
+                self.mail_service.send_provider_issuance_failed_to_admins(
+                    to_emails=recipients,
+                    operation=operation,
+                    actor_account=actor_account,
+                    actor_role=actor_role,
+                    target_account=target_account,
+                    error_code=error_code,
+                )
+            )
+        except Exception:  # noqa: BLE001
+            logging.exception("failed to send provider issuance failure email to admins")
 
     def reveal_key_plaintext(self, current_user: CurrentUser, key_id: str) -> dict:
         if current_user.role != "admin":

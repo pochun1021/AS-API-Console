@@ -690,6 +690,8 @@ Base path：`/main/api/v1`
 53. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
 54. 第 52 項若寄信失敗，`POST /main/api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
 54-1. `POST /main/api/v1/api-keys/applications` 若 provider timeout/5xx，需回 `503 PROVIDER_UNAVAILABLE`。
+54-2. `POST /main/api/v1/api-keys/applications` 或 `POST /main/api/v1/api-keys/{id}/renew` 若 provider timeout/5xx（`PROVIDER_UNAVAILABLE`）時，需寄送通知信給所有 `active` 管理者。
+54-3. 第 54-2 項若管理者通知信寄送失敗，不得改變原 API 錯誤回應（仍維持原錯誤碼/狀態）。
 57. 當配發模式為 `local` 時，申請與 renew 需可在不連線外部 provider 的情況下成功 `issued`。
 64. `GET /main/login` 需可導向 OAuth provider，並附帶 state/request_id。
 65. `GET /main/auth/callback` 成功時需建立 session auth context 並 redirect `/main/`。

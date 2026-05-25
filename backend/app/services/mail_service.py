@@ -119,3 +119,37 @@ class MailService:
                 "<p>Sincerely,<br/>Academia Sinica IT Service Desk</p>"
             ),
         )
+
+    async def send_provider_issuance_failed_to_admins(
+        self,
+        *,
+        to_emails: list[str],
+        operation: str,
+        actor_account: str,
+        actor_role: str,
+        target_account: str,
+        error_code: str,
+    ) -> None:
+        if not to_emails:
+            return
+        await self._send_html(
+            subject="[AS API Console] API Key 配發失敗通知 / API key issuance failure",
+            recipients=to_emails,
+            body=(
+                "<p>管理者您好：</p>"
+                "<p>系統偵測到 API Key 配發失敗，請協助確認 provider 連線與服務狀態。</p>"
+                f"<p>操作類型：{operation}<br/>"
+                f"操作者：{actor_account}（{actor_role}）<br/>"
+                f"目標帳號：{target_account}<br/>"
+                f"錯誤代碼：{error_code}</p>"
+                "<p>此通知不包含任何明文金鑰或敏感憑證。</p>"
+                "<hr/>"
+                "<p>Dear admin,</p>"
+                "<p>The system detected an API key issuance failure. Please verify provider connectivity and service status.</p>"
+                f"<p>Operation: {operation}<br/>"
+                f"Actor: {actor_account} ({actor_role})<br/>"
+                f"Target account: {target_account}<br/>"
+                f"Error code: {error_code}</p>"
+                "<p>This notice does not include plaintext keys or sensitive credentials.</p>"
+            ),
+        )

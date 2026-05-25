@@ -249,10 +249,20 @@ def test_application_mail_failure_does_not_block_success(client, admin_headers, 
 def test_application_provider_timeout_returns_503(client, admin_headers, user_headers, monkeypatch):
     from app.core.config import get_settings
 
+    admin_notify_calls: list[dict] = []
+
+    async def _fake_admin_notify(self, **kwargs):
+        admin_notify_calls.append(kwargs)
+
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
     get_settings.cache_clear()
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "app.services.api_keys_service.SQLAlchemyAdminRepository.list_active_emails",
+        lambda self: ["admin1@example.com", "admin2@example.com", "admin1@example.com"],
+    )
+    monkeypatch.setattr("app.services.mail_service.MailService.send_provider_issuance_failed_to_admins", _fake_admin_notify)
 
     def _raise_unavailable(self, payload):
         from app.services.provider_client import ProviderUnavailableError
@@ -269,6 +279,11 @@ def test_application_provider_timeout_returns_503(client, admin_headers, user_he
         )
         assert resp.status_code == 503
         assert resp.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+        assert len(admin_notify_calls) == 1
+        assert admin_notify_calls[0]["to_emails"] == ["admin1@example.com", "admin2@example.com"]
+        assert admin_notify_calls[0]["operation"] == "application"
+        assert admin_notify_calls[0]["error_code"] == "PROVIDER_UNAVAILABLE"
+        assert admin_notify_calls[0]["target_account"] == user_headers["x-account"]
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         get_settings.cache_clear()
@@ -571,6 +586,11 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
     from app.core.config import get_settings
     from app.services.provider_client import ProviderUnavailableError
 
+    admin_notify_calls: list[dict] = []
+
+    async def _fake_admin_notify(self, **kwargs):
+        admin_notify_calls.append(kwargs)
+
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user["x-sysid"])
     create_resp = client.post(
@@ -586,6 +606,11 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
     monkeypatch.setattr(
+        "app.services.api_keys_service.SQLAlchemyAdminRepository.list_active_emails",
+        lambda self: ["admin1@example.com", "admin2@example.com"],
+    )
+    monkeypatch.setattr("app.services.mail_service.MailService.send_provider_issuance_failed_to_admins", _fake_admin_notify)
+    monkeypatch.setattr(
         "app.services.provider_client.ProviderClient.generate_key",
         lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
     )
@@ -593,6 +618,41 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
         renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user)
         assert renew.status_code == 503
         assert renew.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+        assert len(admin_notify_calls) == 1
+        assert admin_notify_calls[0]["to_emails"] == ["admin1@example.com", "admin2@example.com"]
+        assert admin_notify_calls[0]["operation"] == "renew"
+        assert admin_notify_calls[0]["error_code"] == "PROVIDER_UNAVAILABLE"
+        assert admin_notify_calls[0]["target_account"] == user["x-account"]
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
+def test_application_provider_timeout_admin_notify_failure_does_not_change_503(client, admin_headers, user_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderUnavailableError
+
+    async def _raise_notify_error(self, **kwargs):
+        raise RuntimeError("smtp down")
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.api_keys_service.SQLAlchemyAdminRepository.list_active_emails", lambda self: ["admin@example.com"])
+    monkeypatch.setattr("app.services.mail_service.MailService.send_provider_issuance_failed_to_admins", _raise_notify_error)
+    monkeypatch.setattr(
+        "app.services.provider_client.ProviderClient.generate_key",
+        lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
+    )
+    try:
+        resp = client.post(
+            "/api/v1/api-keys/applications",
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "notify fail should not alter"},
+        )
+        assert resp.status_code == 503
+        assert resp.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         get_settings.cache_clear()
