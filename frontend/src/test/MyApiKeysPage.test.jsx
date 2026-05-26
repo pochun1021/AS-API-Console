@@ -34,12 +34,11 @@ test("shows revoke button only for active rows", async () => {
   );
 
   expect(await screen.findByText("API Keys")).toBeInTheDocument();
-  const revokeButtons = await screen.findAllByRole("button", { name: "停用金鑰" });
-  expect(revokeButtons).toHaveLength(1);
-  const renewButtons = await screen.findAllByRole("button", { name: "更新金鑰" });
-  expect(renewButtons).toHaveLength(1);
-  const extendButtons = await screen.findAllByRole("button", { name: "展延金鑰" });
-  expect(extendButtons).toHaveLength(1);
+  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
+  expect(moreActionButtons.length).toBeGreaterThan(0);
+  expect(screen.queryByRole("button", { name: "停用金鑰" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "更新金鑰" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "展延金鑰" })).not.toBeInTheDocument();
   expect(await screen.findAllByRole("button", { name: "查看詳情" })).toHaveLength(2);
   expect(screen.queryByRole("columnheader", { name: "建立時間" })).not.toBeInTheDocument();
 });
@@ -118,7 +117,9 @@ test("user renew hides old key from list", async () => {
   );
 
   expect(await screen.findByText("AS-...mn56")).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "更新金鑰" }));
+  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
+  await user.click(moreActionButtons[1]);
+  await user.click(await screen.findByRole("menuitem", { name: "更新金鑰" }));
   expect(await screen.findByText("確認更新")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "確認" }));
   expect(await screen.findByText("金鑰已更新。")).toBeInTheDocument();
@@ -136,12 +137,14 @@ test("user can extend active key with selected duration", async () => {
     </MemoryRouter>
   );
 
-  await user.click((await screen.findAllByRole("button", { name: "展延金鑰" }))[0]);
+  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
+  await user.click(moreActionButtons[0]);
+  await user.click(await screen.findByRole("menuitem", { name: "展延金鑰" }));
   expect(await screen.findByText("確認展延")).toBeInTheDocument();
   await user.selectOptions(screen.getByLabelText("展延時長"), "12");
   await user.click(screen.getByRole("button", { name: "確認" }));
   expect(await screen.findByText("金鑰已展延。")).toBeInTheDocument();
-  expect(await screen.findByText("金鑰已更新")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "確認展延" })).not.toBeInTheDocument();
 });
 
 test("list uses server pagination params", async () => {

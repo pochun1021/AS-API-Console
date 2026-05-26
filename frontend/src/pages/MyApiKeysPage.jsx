@@ -3,6 +3,7 @@ import VisibilityIcon from "@mui/icons-material/Visibility";
 import BlockIcon from "@mui/icons-material/Block";
 import EditIcon from "@mui/icons-material/Edit";
 import AutorenewIcon from "@mui/icons-material/Autorenew";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
 import CheckIcon from "@mui/icons-material/Check";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import {
@@ -20,7 +21,9 @@ import {
   Stack,
   Tooltip,
   Typography,
-  Button
+  Button,
+  Menu,
+  MenuItem
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { apiClient } from "../api/client";
@@ -94,7 +97,19 @@ export default function MyApiKeysPage({ auth }) {
   const [renewIssued, setRenewIssued] = useState(null);
   const [renewCopySucceeded, setRenewCopySucceeded] = useState(false);
   const [renewCopyError, setRenewCopyError] = useState("");
+  const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
+  const [actionMenuRow, setActionMenuRow] = useState(null);
   const renewCopyResetTimerRef = useRef(null);
+
+  function openActionMenu(event, row) {
+    setActionMenuAnchorEl(event.currentTarget);
+    setActionMenuRow(row);
+  }
+
+  function closeActionMenu() {
+    setActionMenuAnchorEl(null);
+    setActionMenuRow(null);
+  }
 
   async function load() {
     setLoading(true);
@@ -316,7 +331,7 @@ export default function MyApiKeysPage({ auth }) {
         align: "left",
         headerAlign: "left",
         flex: 1,
-        minWidth: 130,
+        minWidth: 160,
         renderCell: (params) => (
           <Box sx={actionCellSx}>
             <Tooltip title={t("mykeys_view_detail")}>
@@ -338,44 +353,16 @@ export default function MyApiKeysPage({ auth }) {
                 </IconButton>
               </Tooltip>
             ) : null}
-            {params.row.status === "active" ? (
-              <Button
-                aria-label={t("mykeys_revoke_key")}
-                size="small"
-                color="warning"
-                variant="outlined"
-                startIcon={<BlockIcon fontSize="small" />}
-                onClick={() => setPendingRevokeId(params.row.id)}
-              >
-                {locale === "zh-TW" ? "停用" : "Revoke"}
-              </Button>
-            ) : null}
-            {params.row.status === "revoked" ? (
-              <Button
-                aria-label={t("mykeys_renew_key")}
-                size="small"
-                color="primary"
-                variant="outlined"
-                startIcon={<AutorenewIcon fontSize="small" />}
-                onClick={() => setPendingRenewId(params.row.id)}
-              >
-                {locale === "zh-TW" ? "更新" : "Renew"}
-              </Button>
-            ) : null}
-            {["active", "expired"].includes(params.row.status) ? (
-              <Button
-                aria-label={t("mykeys_extend_key")}
-                size="small"
-                color="primary"
-                variant="outlined"
-                startIcon={<AutorenewIcon fontSize="small" />}
-                onClick={() => {
-                  setPendingExtendId(params.row.id);
-                  setExtendDurationMonths(6);
-                }}
-              >
-                {locale === "zh-TW" ? "展延" : "Extend"}
-              </Button>
+            {(params.row.status === "active" || params.row.status === "revoked" || params.row.status === "expired") ? (
+              <Tooltip title={locale === "zh-TW" ? "更多操作" : "More actions"}>
+                <IconButton
+                  aria-label={locale === "zh-TW" ? "更多操作" : "More actions"}
+                  size="small"
+                  onClick={(event) => openActionMenu(event, params.row)}
+                >
+                  <MoreVertIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
             ) : null}
           </Box>
         )
@@ -418,6 +405,55 @@ export default function MyApiKeysPage({ auth }) {
           ) : null}
         </CardContent>
       </Card>
+      <Menu
+        anchorEl={actionMenuAnchorEl}
+        open={Boolean(actionMenuAnchorEl && actionMenuRow)}
+        onClose={closeActionMenu}
+      >
+        {actionMenuRow?.status === "active" ? (
+          <MenuItem
+            onClick={() => {
+              const targetId = actionMenuRow?.id;
+              closeActionMenu();
+              if (targetId) {
+                setPendingRevokeId(targetId);
+              }
+            }}
+          >
+            <BlockIcon fontSize="small" sx={{ mr: 1 }} />
+            {t("mykeys_revoke_key")}
+          </MenuItem>
+        ) : null}
+        {actionMenuRow?.status === "revoked" ? (
+          <MenuItem
+            onClick={() => {
+              const targetId = actionMenuRow?.id;
+              closeActionMenu();
+              if (targetId) {
+                setPendingRenewId(targetId);
+              }
+            }}
+          >
+            <AutorenewIcon fontSize="small" sx={{ mr: 1 }} />
+            {t("mykeys_renew_key")}
+          </MenuItem>
+        ) : null}
+        {actionMenuRow && ["active", "expired"].includes(actionMenuRow.status) ? (
+          <MenuItem
+            onClick={() => {
+              const targetId = actionMenuRow?.id;
+              closeActionMenu();
+              if (targetId) {
+                setPendingExtendId(targetId);
+                setExtendDurationMonths(6);
+              }
+            }}
+          >
+            <AutorenewIcon fontSize="small" sx={{ mr: 1 }} />
+            {t("mykeys_extend_key")}
+          </MenuItem>
+        ) : null}
+      </Menu>
 
       <Dialog open={Boolean(pendingRevokeId)} onClose={() => setPendingRevokeId("")}>
         <DialogTitle>{t("mykeys_dialog_revoke_title")}</DialogTitle>
