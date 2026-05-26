@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 try:
     from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 except ModuleNotFoundError:  # pragma: no cover - dependency guard for environments not yet synced
@@ -151,5 +153,45 @@ class MailService:
                 f"Target account: {target_account}<br/>"
                 f"Error code: {error_code}</p>"
                 "<p>This notice does not include plaintext keys or sensitive credentials.</p>"
+            ),
+        )
+
+    async def send_key_expiration_notice(
+        self,
+        *,
+        to_email: str,
+        owner_name: str,
+        expires_at: datetime,
+        app_domain: str,
+    ) -> None:
+        expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
+        expires_text = expires_at_utc.strftime("%Y-%m-%d %H:%M UTC")
+        await self._send_html(
+            subject="[AS API Console] API Key 即將到期提醒 / API key expiration reminder",
+            recipients=[to_email],
+            body=(
+                "<p>親愛的使用者，您好：</p>"
+                "<p>提醒您，您的 API Key 將於下列時間到期：</p>"
+                f"<p>到期時間：{expires_text}</p>"
+                "<p>您可於到期前或到期後進行展延（extend）。</p>"
+                "<p>若此操作非您本人執行，請立即連繫資訊服務處。</p>"
+                "<p>若您有任何疑問，歡迎向資訊服務處服務台反映。</p>"
+                "<p>聯絡窗口：中央研究院資訊服務處<br/>"
+                "線上服務台（上班時間）：https://its.sinica.edu.tw/online（密碼27898855）<br/>"
+                "電話（上班時間）：02-27898855<br/>"
+                "信箱：its@sinica.edu.tw</p>"
+                "<p>中央研究院資訊服務處 敬啟</p>"
+                "<hr/>"
+                "<p>Dear user,</p>"
+                "<p>This is a reminder that your API key will expire at:</p>"
+                f"<p>Expiration time: {expires_text}</p>"
+                "<p>You can extend this key before or after expiration.</p>"
+                "<p>If this action was not performed by you, please contact the IT Service Desk immediately.</p>"
+                "<p>If you have any questions, please contact the IT Service Desk.</p>"
+                "<p>Contact: Institute of Information Science, Academia Sinica IT Service Desk<br/>"
+                "Online Service Desk (business hours): https://its.sinica.edu.tw/online (password: 27898855)<br/>"
+                "Phone (business hours): 02-27898855<br/>"
+                "Email: its@sinica.edu.tw</p>"
+                "<p>Sincerely,<br/>Academia Sinica IT Service Desk</p>"
             ),
         )

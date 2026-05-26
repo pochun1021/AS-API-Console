@@ -28,6 +28,7 @@ class ApiKey(Base):
     length: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     security_level: Mapped[str] = mapped_column(String(20), default="high", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    expiration_notice_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

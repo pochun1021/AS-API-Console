@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd "${BACKEND_DIR}"
+
+if [[ -f ".env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source ".env"
+  set +a
+fi
+
+if command -v uv >/dev/null 2>&1; then
+  exec uv run python scripts/send_expiration_reminders.py "$@"
+fi
+
+if [[ -x ".venv/bin/python" ]]; then
+  exec .venv/bin/python scripts/send_expiration_reminders.py "$@"
+fi
+
+exec python scripts/send_expiration_reminders.py "$@"

@@ -141,6 +141,7 @@
 - 本系統不同步維護本地研究人員名單；申請時以外部服務即時查詢為準
 - 外部研究人員服務失敗（timeout/5xx）時：允許進入系統，但阻擋申請
 - 申請成功時立即核發 API Key；provider timeout/5xx 時直接回傳 `503 PROVIDER_UNAVAILABLE`
+- 需提供 API Key 到期前一個月（固定 30 天）提醒信機制，通知申請者本人可進行展延
 - API 生效時長固定月數選單（`1|6|12`）
 - API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
 - API Key 明文只顯示一次
@@ -745,6 +746,10 @@ Base path：`/main/api/v1`
 93. `GET /main/api/v1/api-keys/statistics/users`、`GET /main/api/v1/operation-audit-logs`、`GET /main/api/v1/auth-audit-logs` 的 `from/to` 查詢區間不得超過 `31` 天。
 94. `GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
 95. `POST /main/api/v1/api-keys/{id}/reveal` 回應需包含 `Cache-Control: no-store`。
+96. 系統需提供背景排程寄送 API Key 到期提醒信；判定條件為 `api_keys.status='active'` 且 `expires_at` 落在 `now(UTC)+30 days` 當日。
+97. 到期提醒信僅寄送申請者本人（`api_key_applications.email`），內容需中英並列，且需包含到期時間與可展延提示。
+98. 每把 key 到期提醒信僅可寄送一次；重跑排程不得重複寄送同一把 key 的提醒信。
+99. 到期提醒信寄送失敗不得影響其他符合條件資料處理；需保留失敗記錄供追查。
 
 ## Roadmap
 ### Phase 1：Foundation

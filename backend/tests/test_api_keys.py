@@ -1,3 +1,5 @@
+import logging
+from uuid import uuid4
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import create_engine, text
@@ -321,6 +323,111 @@ def test_applicant_mail_body_does_not_include_application_id():
     assert "若此操作非您本人執行" in body
     assert "中央研究院資訊服務處 敬啟" in body
     assert isinstance(service, MailService)
+
+
+def test_expiration_notice_mail_contains_expiration_and_extend_hint(monkeypatch):
+    from asyncio import run as run_async
+
+    from app.services.mail_service import MailService
+
+    captured: dict = {}
+
+    async def _fake_send_html(self, *, subject: str, recipients: list[str], body: str):
+        captured["subject"] = subject
+        captured["recipients"] = recipients
+        captured["body"] = body
+
+    monkeypatch.setattr("app.services.mail_service.MailService._send_html", _fake_send_html)
+
+    service = MailService()
+    expires_at = datetime(2026, 6, 30, 1, 2, 3, tzinfo=UTC)
+    run_async(
+        service.send_key_expiration_notice(
+            to_email="user@example.com",
+            owner_name="User One",
+            expires_at=expires_at,
+            app_domain="",
+        )
+    )
+
+    assert "即將到期提醒" in captured["subject"]
+    assert captured["recipients"] == ["user@example.com"]
+    assert "到期時間：2026-06-30 01:02 UTC" in captured["body"]
+    assert "可於到期前或到期後進行展延" in captured["body"]
+    assert "Expiration time: 2026-06-30 01:02 UTC" in captured["body"]
+    assert "You can extend this key before or after expiration." in captured["body"]
+
+
+def test_expiration_reminder_script_sends_once(client, admin_headers, user_headers, monkeypatch):
+    from scripts import send_expiration_reminders
+
+    calls: list[dict] = []
+    commits = {"count": 0}
+
+    class _FakeRow:
+        def __init__(self):
+            self.ApiKey = type("Key", (), {"id": str(uuid4()), "expiration_notice_sent_at": None})()
+            self.ApiKeyApplication = type(
+                "App",
+                (),
+                {
+                    "id": str(uuid4()),
+                    "name": "Tester",
+                    "email": "user1@example.com",
+                    "expires_at": datetime.now(UTC) + timedelta(days=30, hours=1),
+                },
+            )()
+
+    class _FakeResult:
+        def __init__(self, items):
+            self._items = items
+
+        def all(self):
+            return self._items
+
+    row = _FakeRow()
+    queued_results = [_FakeResult([row]), _FakeResult([])]
+
+    class _FakeSession:
+        def execute(self, stmt):
+            return queued_results.pop(0)
+
+        def add(self, obj):
+            return None
+
+        def commit(self):
+            commits["count"] += 1
+
+        def rollback(self):
+            return None
+
+    class _FakeSessionCtx:
+        def __init__(self):
+            self.session = _FakeSession()
+
+        def __enter__(self):
+            return self.session
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("scripts.send_expiration_reminders.SessionLocal", _FakeSessionCtx)
+
+    async def _fake_notice(self, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("app.services.mail_service.MailService.send_key_expiration_notice", _fake_notice)
+
+    processed_1, sent_1 = send_expiration_reminders.run_once(batch_size=100, dry_run=False, logger=logging.getLogger())
+    processed_2, sent_2 = send_expiration_reminders.run_once(batch_size=100, dry_run=False, logger=logging.getLogger())
+
+    assert processed_1 == 1
+    assert sent_1 == 1
+    assert processed_2 == 0
+    assert sent_2 == 0
+    assert len(calls) == 1
+    assert calls[0]["to_email"] == user_headers["x-email"]
+    assert commits["count"] == 1
 
 
 def test_application_success_for_research_eligible_without_whitelist(client, user_headers, monkeypatch):

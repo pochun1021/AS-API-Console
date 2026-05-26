@@ -1,6 +1,7 @@
 # Mail 測試速查表
 
 本文件提供 AS API Console 的 SMTP 測試最短流程，使用 `backend/scripts/send_test_email.py` 驗證寄信設定。
+同時也可用於 API Key 到期提醒排程（`backend/scripts/send_expiration_reminders.py`）之寄信前置檢查。
 
 ## 1) 最小必要設定（`.env`）
 
@@ -68,3 +69,14 @@ python scripts/send_test_email.py --to your.name@example.com --env-file .env.loc
   - `MAIL_USERNAME`、`MAIL_PASSWORD` 兩者都有值才使用 SMTP 認證。
   - 任一為空即走無認證模式。
 - 本測試信僅驗證 SMTP 連線與發信能力，不會寫入業務資料。
+
+## 5) 到期提醒排程快速驗證
+
+```bash
+cd backend
+./scripts/run_expiration_reminder.sh --dry-run
+```
+
+說明：
+- `--dry-run` 僅檢查目前命中提醒條件的資料筆數，不會實際寄信。
+- 正式寄送時移除 `--dry-run`；寄送結果與錯誤會寫入 `log/send_expiration_reminders/`。

@@ -197,6 +197,24 @@ cd backend
 - 正式部署排程設定請見 `docs/deploy-ubuntu-nginx.md`（systemd timer 與 cron 兩種方案）。
 - 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 第 16 節為準。
 
+## API Key 到期前 30 天提醒排程
+- 目的：針對即將於 30 天後到期的 `active` API Key 寄送提醒信給申請者本人，提醒到期時間與可展延。
+- 內建腳本：
+```bash
+cd backend
+./scripts/run_expiration_reminder.sh
+```
+- 參數範例：
+```bash
+cd backend
+./scripts/run_expiration_reminder.sh --batch-size 2000
+./scripts/run_expiration_reminder.sh --dry-run
+```
+- 執行日誌：
+  - 會寫入專案根目錄 `log/send_expiration_reminders/`。
+  - 依 `Asia/Taipei` 日期切日，每日一檔：`YYYY-MM-DD.log`。
+- 預設建議頻率：每日 `00:30`（與其他排程錯峰）。
+
 ## 單位主檔同步排程
 - 單位主檔同步來源為 `Persnl.getInstitutes`，使用背景排程執行差異同步（新增/更新/停用）。
 - 內建腳本：
