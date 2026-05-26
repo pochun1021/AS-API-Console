@@ -22,6 +22,8 @@ def test_login_redirects_to_provider(client, monkeypatch):
 
 def test_callback_success_sets_session_and_audits(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
+    monkeypatch.setenv("LOGIN_ALLOWED_TITLE_CODES", "RS01,RS02")
+    get_settings.cache_clear()
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
         lambda self, state: f"https://oauth.example/auth?state={state}",
@@ -38,7 +40,7 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
             email="oauth.user@example.com",
             department="IT",
             sysid=3001,
-            tcode="B123",
+            tcode="RS01",
             role="user",
         ),
     )
@@ -134,6 +136,8 @@ def test_callback_allows_non_b_tcode_when_whitelisted(client, monkeypatch):
 
 def test_session_mutation_requires_csrf_token(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
+    monkeypatch.setenv("LOGIN_ALLOWED_TITLE_CODES", "A100")
+    get_settings.cache_clear()
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
         lambda self, state: f"https://oauth.example/auth?state={state}",
@@ -150,7 +154,7 @@ def test_session_mutation_requires_csrf_token(client, monkeypatch):
             email="oauth.user4@example.com",
             department="IT",
             sysid=3004,
-            tcode="B123",
+            tcode="A100",
             role="user",
         ),
     )
@@ -162,6 +166,38 @@ def test_session_mutation_requires_csrf_token(client, monkeypatch):
     no_csrf = client.patch("/main/api/v1/users/preferences/locale", json={"preferred_locale": "en"})
     assert no_csrf.status_code == 403
     assert no_csrf.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_callback_allows_tcode_from_env_case_insensitive(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
+    monkeypatch.setenv("LOGIN_ALLOWED_TITLE_CODES", " rs01 ,xy9 ")
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.build_login_url",
+        lambda self, state: f"https://oauth.example/auth?state={state}",
+    )
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.exchange_code_for_token",
+        lambda self, code: "token-1",
+    )
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.fetch_identity",
+        lambda self, token: OAuthIdentity(
+            account="oauth.user5",
+            name="OAuth User5",
+            email="oauth.user5@example.com",
+            department="IT",
+            sysid=3005,
+            tcode="RS01",
+            role="user",
+        ),
+    )
+
+    login = client.get("/main/login", follow_redirects=False)
+    state = login.headers["location"].split("state=")[-1]
+    callback = client.get(f"/main/auth/callback?code=ok-code&state={state}", follow_redirects=False)
+    assert callback.status_code == 302
+    assert callback.headers["location"] == "/main/"
 
 
 def test_production_rejects_header_only_auth(client, monkeypatch):

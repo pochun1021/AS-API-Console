@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     test_db_host: str | None = None
     test_db_port: int | None = None
     test_db_name: str = "as_api_console_test"
-    research_list_allowed_title_codes: str = ""
     persnl_soap_url: str | None = None
     persnl_soap_wsdl_url: str | None = None
     persnl_soap_user: str | None = None
@@ -53,6 +52,7 @@ class Settings(BaseSettings):
     oauth_client_secret: str | None = None
     oauth_redirect_uri: str | None = None
     oauth_scope: str = "basic"
+    login_allowed_title_codes: str = ""
     dev_login_account: str | None = None
     dev_login_name: str | None = None
     dev_login_email: str | None = None

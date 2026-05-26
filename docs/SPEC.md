@@ -307,7 +307,7 @@ Base path：`/main/api/v1`
     - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
     - state 僅可使用一次；callback 完成後需自 session 清除
     - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
-    - 登入放行規則：`tCode` 以 `B` 開頭可直接放行；否則需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.id`）
+    - 登入放行規則：`tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES`（逗號分隔、大小寫不敏感）可直接放行；未命中需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.id`）
     - 成功與失敗皆須寫入 `auth_audit_logs`
     - 嚴禁落地 token/secret 類敏感資訊
   - Response：
@@ -629,7 +629,7 @@ Base path：`/main/api/v1`
 ### 7) 研究資格與目錄查詢服務（Persnl SOAP）
 - 用途：供「進入系統」與「送出申請」時檢查是否命中研究人員資格。
 - 資格判斷：以 Persnl SOAP 回傳之 `tCode` 判斷研究資格。
-- 放行規則：`tCode` 以 `B*` 開頭者直接通過；非 `B*` 可由可配置職稱代碼清單補充放行。
+- 放行規則：登入流程與申請資格流程皆使用 `LOGIN_ALLOWED_TITLE_CODES`；其中申請資格流程仍保留 `tCode` 以 `B*` 開頭可通過之基線規則。
 - 本系統僅維護可通過之補充職稱代碼規則，不同步儲存研究人員名單明細資料。
 - 回應結果：
   - 命中：可直接通過資格檢查（不需再檢查特殊人員名單）。
@@ -746,7 +746,7 @@ Base path：`/main/api/v1`
 67. OAuth 成功登入寫入的角色需固定為 `user`，不得由 OAuth payload 直接升權為 `admin`。
 68. `auth_audit_logs` 不得包含 access token/refresh token/password/client secret。
 69. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。
-70. `tCode` 以 `B` 開頭者可登入；非 `B*` 者需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.id`），否則回 `403 LOGIN_NOT_ELIGIBLE`。
+70. `tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES` 者可登入；未命中者需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.id`），否則回 `403 LOGIN_NOT_ELIGIBLE`。
 71. `admin` 可於 `POST /main/api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config` 成功時皆需寫入 `operation_audit_logs`。

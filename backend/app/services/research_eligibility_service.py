@@ -23,7 +23,7 @@ class ResearchEligibilityService:
         settings = get_settings()
         self.allowed_title_codes = {
             _normalize_title_code(code)
-            for code in settings.research_list_allowed_title_codes.split(",")
+            for code in settings.login_allowed_title_codes.split(",")
             if code.strip()
         }
         self.persnl = PersnlSoapService()

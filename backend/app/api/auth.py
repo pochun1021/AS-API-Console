@@ -18,6 +18,10 @@ router = APIRouter()
 settings = get_settings()
 
 
+def _parse_allowed_tcodes(raw: str) -> set[str]:
+    return {code.strip().upper() for code in raw.split(",") if code.strip()}
+
+
 @router.get(
     "/login",
     status_code=302,
@@ -125,7 +129,8 @@ def oauth_callback(
 
     whitelist_repo = SQLAlchemyWhitelistRepository(db)
     admin_repo = SQLAlchemyAdminRepository(db)
-    allow_by_tcode = identity.tcode.upper().startswith("B")
+    allowed_tcodes = _parse_allowed_tcodes(settings.login_allowed_title_codes)
+    allow_by_tcode = identity.tcode.strip().upper() in allowed_tcodes
     allow_by_whitelist = whitelist_repo.find_active_by_sysid(identity.sysid) is not None
     admin = admin_repo.get_by_id(identity.sysid)
     allow_by_admin = admin is not None and admin.status == "active"
