@@ -97,6 +97,8 @@ cp .env.example .env
 - `OAUTH_AUTH_URI` / `OAUTH_TOKEN_URI` / `OAUTH_BASIC_URI`：OAuth auth/token/basic 端點
 - `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` / `OAUTH_REDIRECT_URI`：OAuth client 設定
 - `OAUTH_SCOPE`：可選，OAuth scope（預設 `basic`）
+- `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：`APP_ENV=dev/test` 使用 `/main/login` bypass 時建立 session 身分所需欄位
+- `DEV_LOGIN_ROLE`：可選，`APP_ENV=dev/test` bypass 身分角色（僅允許 `user` 或 `admin`，預設 `user`）
 - `MAIL_ENABLED`：可選，是否啟用 Email 發送（預設 `false`）
 - `MAIL_SERVER` / `MAIL_PORT`：可選，SMTP 主機與連接埠
 - `MAIL_USERNAME` / `MAIL_PASSWORD`：可選，SMTP 認證資訊
@@ -129,7 +131,9 @@ npm run build
 - 回到瀏覽器重新整理 `http://127.0.0.1:8000/main/` 即可看到更新。
 
 ## 開發備註
-- 後端提供 OAuth 登入入口：`GET /main/login` 與 callback `GET /main/auth/callback`，成功後以 session 注入 auth context（`account/name/email/department/sysid`，role 固定 `user`）。
+- 後端登入入口：
+  - `APP_ENV=prod`：`GET /main/login` 走 OAuth，callback `GET /main/auth/callback` 成功後以 session 注入 auth context。
+  - `APP_ENV=dev/test`：`GET /main/login` 直接 bypass OAuth，使用 `DEV_LOGIN_*` 建立 session auth context（`role` 由 `DEV_LOGIN_ROLE` 控制，僅 `user|admin`）。
 - 前端啟動時會呼叫 `GET /main/api/v1/users/me` 取得目前 session 使用者資訊與 `csrf_token`。
 - `POST/PATCH` API 會以 `X-CSRF-Token` 搭配 session 驗證；正式環境不得以前端自送 header 當作正式認證來源。
 - 若在 `dev/test` 啟用 `ALLOW_HEADER_AUTH=true`，前端可用開發身分 bootstrap session（需包含 `account`、`name`、`email`、`department`、`sysid`、`role`）：

@@ -286,11 +286,18 @@ Base path：`/main/api/v1`
 
 ### Auth Login Entry
 - `GET /main/login`
-  - 用途：導向 OAuth provider auth endpoint。
-  - 規則：建立 request_id（state）並寫入 session，用於 callback 對帳。
+  - 用途：
+    - `prod`：導向 OAuth provider auth endpoint
+    - `dev/test`：直接建立 session auth context（OAuth bypass）
+  - 規則：
+    - `prod`：建立 request_id（state）並寫入 session，用於 callback 對帳
+    - `dev/test`：以 `DEV_LOGIN_ACCOUNT`、`DEV_LOGIN_NAME`、`DEV_LOGIN_EMAIL`、`DEV_LOGIN_DEPARTMENT`、`DEV_LOGIN_SYSID`、`DEV_LOGIN_ROLE` 建立 `auth_context`；`DEV_LOGIN_ROLE` 僅允許 `user|admin`
   - Response：
-    - 成功回 `302` redirect 至 OAuth provider
-    - 若 OAuth 設定缺失或不合法，回 `500 INTERNAL_ERROR`
+    - 成功回 `302`
+      - `prod`：redirect 至 OAuth provider
+      - `dev/test`：redirect `/main/`
+    - `prod` 若 OAuth 設定缺失或不合法，回 `500 INTERNAL_ERROR`
+    - `dev/test` 若 bypass 設定缺失或不合法，回 `500 INTERNAL_ERROR`
 - `GET /main/auth/callback`
   - 用途：接收 provider callback，交換 access token，取得 basic identity claims，建立本機 session auth context。
   - 規則：
@@ -713,7 +720,7 @@ Base path：`/main/api/v1`
 54-2. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew` 或 `POST /main/api/v1/api-keys/{id}/extend` 若 provider timeout/5xx（`PROVIDER_UNAVAILABLE`）時，需寄送通知信給所有 `active` 管理者。
 54-3. 第 54-2 項若管理者通知信寄送失敗，不得改變原 API 錯誤回應（仍維持原錯誤碼/狀態）。
 57. 當配發模式為 `local` 時，申請、renew 與 extend 需可在不連線外部 provider 的情況下成功 `issued`。
-64. `GET /main/login` 需可導向 OAuth provider，並附帶 state/request_id。
+64. `GET /main/login` 在 `prod` 需導向 OAuth provider 並附帶 state/request_id；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。
 65. `GET /main/auth/callback` 成功時需建立 session auth context 並 redirect `/main/`。
 66. `GET /main/auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失、state mismatch）需回錯，且寫入 failure audit。
 66-1. 正式環境不得接受 header auth 作為正式認證來源；僅 `dev/test` 可啟用。

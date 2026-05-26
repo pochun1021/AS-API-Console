@@ -3,17 +3,25 @@ from app.core.config import get_settings
 from tests.conftest import build_headers
 
 
+def _set_prod_oauth_env(monkeypatch) -> None:
+    get_settings.cache_clear()
+    monkeypatch.setenv("APP_ENV", "prod")
+    get_settings.cache_clear()
+
+
 def test_login_redirects_to_provider(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
         lambda self, state: f"https://oauth.example/auth?state={state}",
     )
-    resp = client.get("/login", follow_redirects=False)
+    resp = client.get("/main/login", follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["location"].startswith("https://oauth.example/auth?state=")
 
 
 def test_callback_success_sets_session_and_audits(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
         lambda self, state: f"https://oauth.example/auth?state={state}",
@@ -35,20 +43,20 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
         ),
     )
 
-    login = client.get("/login", follow_redirects=False)
+    login = client.get("/main/login", follow_redirects=False)
     assert login.status_code == 302
     state = login.headers["location"].split("state=")[-1]
 
-    callback = client.get(f"/auth/callback?code=ok-code&state={state}", follow_redirects=False)
+    callback = client.get(f"/main/auth/callback?code=ok-code&state={state}", follow_redirects=False)
     assert callback.status_code == 302
-    assert callback.headers["location"] == "/"
+    assert callback.headers["location"] == "/main/"
 
     # verify session auth context can be used without headers
-    locale_resp = client.get("/api/v1/users/preferences/locale")
+    locale_resp = client.get("/main/api/v1/users/preferences/locale")
     assert locale_resp.status_code == 200
     assert locale_resp.json() == {"preferred_locale": None}
 
-    me_resp = client.get("/api/v1/users/me")
+    me_resp = client.get("/main/api/v1/users/me")
     assert me_resp.status_code == 200
     assert me_resp.json()["account"] == "oauth.user"
     assert me_resp.json()["role"] == "user"
@@ -56,12 +64,13 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
 
 
 def test_callback_missing_code_returns_error_and_audits(client):
-    resp = client.get("/auth/callback", follow_redirects=False)
+    resp = client.get("/main/auth/callback", follow_redirects=False)
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "OAUTH_CODE_MISSING"
 
 
 def test_callback_rejects_not_eligible_login(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
         lambda self, state: f"https://oauth.example/auth?state={state}",
@@ -79,18 +88,21 @@ def test_callback_rejects_not_eligible_login(client, monkeypatch):
             role="user",
         ),
     )
-    login = client.get("/login", follow_redirects=False)
+    login = client.get("/main/login", follow_redirects=False)
     state = login.headers["location"].split("state=")[-1]
-    callback = client.get(f"/auth/callback?code=ok-code&state={state}", follow_redirects=False)
+    callback = client.get(f"/main/auth/callback?code=ok-code&state={state}", follow_redirects=False)
     assert callback.status_code == 403
     assert callback.json()["error"]["code"] == "LOGIN_NOT_ELIGIBLE"
 
 
 def test_callback_allows_non_b_tcode_when_whitelisted(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
+    monkeypatch.setenv("ALLOW_HEADER_AUTH", "true")
+    get_settings.cache_clear()
     admin_headers = build_headers(role="admin", account="admin", email="admin@example.com", sysid="1001")
     white_sysid = 3003
     create_whitelist = client.post(
-        "/api/v1/whitelists",
+        "/main/api/v1/whitelists",
         headers=admin_headers,
         json={"sysid": white_sysid, "note": "seed"},
     )
@@ -113,14 +125,15 @@ def test_callback_allows_non_b_tcode_when_whitelisted(client, monkeypatch):
             role="user",
         ),
     )
-    login = client.get("/login", follow_redirects=False)
+    login = client.get("/main/login", follow_redirects=False)
     state = login.headers["location"].split("state=")[-1]
-    callback = client.get(f"/auth/callback?code=ok-code&state={state}", follow_redirects=False)
+    callback = client.get(f"/main/auth/callback?code=ok-code&state={state}", follow_redirects=False)
     assert callback.status_code == 302
-    assert callback.headers["location"] == "/"
+    assert callback.headers["location"] == "/main/"
 
 
 def test_session_mutation_requires_csrf_token(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
         lambda self, state: f"https://oauth.example/auth?state={state}",
@@ -141,12 +154,12 @@ def test_session_mutation_requires_csrf_token(client, monkeypatch):
             role="user",
         ),
     )
-    login = client.get("/login", follow_redirects=False)
+    login = client.get("/main/login", follow_redirects=False)
     state = login.headers["location"].split("state=")[-1]
-    callback = client.get(f"/auth/callback?code=ok-code&state={state}", follow_redirects=False)
+    callback = client.get(f"/main/auth/callback?code=ok-code&state={state}", follow_redirects=False)
     assert callback.status_code == 302
 
-    no_csrf = client.patch("/api/v1/users/preferences/locale", json={"preferred_locale": "en"})
+    no_csrf = client.patch("/main/api/v1/users/preferences/locale", json={"preferred_locale": "en"})
     assert no_csrf.status_code == 403
     assert no_csrf.json()["error"]["code"] == "FORBIDDEN"
 
@@ -156,7 +169,7 @@ def test_production_rejects_header_only_auth(client, monkeypatch):
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("ALLOW_HEADER_AUTH", "false")
     headers = build_headers(role="user", account="prod.user", email="prod.user@example.com", sysid=9001)
-    resp = client.get("/api/v1/users/me", headers=headers)
+    resp = client.get("/main/api/v1/users/me", headers=headers)
     assert resp.status_code == 401
     assert resp.json()["error"]["code"] == "UNAUTHORIZED"
     get_settings.cache_clear()
@@ -164,7 +177,7 @@ def test_production_rejects_header_only_auth(client, monkeypatch):
 
 def test_test_session_login_bootstraps_session_and_csrf(client):
     resp = client.post(
-        "/test/session-login",
+        "/main/test/session-login",
         json={
             "account": "test.admin",
             "name": "Test Admin",
@@ -179,7 +192,85 @@ def test_test_session_login_bootstraps_session_and_csrf(client):
     assert body["role"] == "admin"
     assert body["csrf_token"]
 
-    me = client.get("/api/v1/users/me")
+    me = client.get("/main/api/v1/users/me")
     assert me.status_code == 200
     assert me.json()["account"] == "test.admin"
     assert me.json()["role"] == "admin"
+
+
+def test_login_bypasses_oauth_in_dev(client, monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("DEV_LOGIN_ACCOUNT", "dev.user")
+    monkeypatch.setenv("DEV_LOGIN_NAME", "Dev User")
+    monkeypatch.setenv("DEV_LOGIN_EMAIL", "dev.user@example.com")
+    monkeypatch.setenv("DEV_LOGIN_DEPARTMENT", "IT")
+    monkeypatch.setenv("DEV_LOGIN_SYSID", "990001")
+    monkeypatch.setenv("DEV_LOGIN_ROLE", "admin")
+    get_settings.cache_clear()
+
+    resp = client.get("/main/login", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/main/"
+
+    me_resp = client.get("/main/api/v1/users/me")
+    assert me_resp.status_code == 200
+    body = me_resp.json()
+    assert body["account"] == "dev.user"
+    assert body["sysid"] == 990001
+    assert body["role"] == "admin"
+    assert body["csrf_token"]
+
+
+def test_login_bypasses_oauth_in_test(client, monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("DEV_LOGIN_ACCOUNT", "test.user")
+    monkeypatch.setenv("DEV_LOGIN_NAME", "Test User")
+    monkeypatch.setenv("DEV_LOGIN_EMAIL", "test.user@example.com")
+    monkeypatch.setenv("DEV_LOGIN_DEPARTMENT", "QA")
+    monkeypatch.setenv("DEV_LOGIN_SYSID", "990002")
+    monkeypatch.setenv("DEV_LOGIN_ROLE", "user")
+    get_settings.cache_clear()
+
+    resp = client.get("/main/login", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/main/"
+
+    me_resp = client.get("/main/api/v1/users/me")
+    assert me_resp.status_code == 200
+    body = me_resp.json()
+    assert body["account"] == "test.user"
+    assert body["sysid"] == 990002
+    assert body["role"] == "user"
+
+
+def test_login_returns_500_when_dev_login_config_missing(client, monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.delenv("DEV_LOGIN_ACCOUNT", raising=False)
+    monkeypatch.delenv("DEV_LOGIN_NAME", raising=False)
+    monkeypatch.delenv("DEV_LOGIN_EMAIL", raising=False)
+    monkeypatch.delenv("DEV_LOGIN_DEPARTMENT", raising=False)
+    monkeypatch.delenv("DEV_LOGIN_SYSID", raising=False)
+    get_settings.cache_clear()
+
+    resp = client.get("/main/login", follow_redirects=False)
+    assert resp.status_code == 500
+    assert resp.json()["error"]["code"] == "INTERNAL_ERROR"
+
+
+def test_login_returns_500_when_dev_login_role_invalid(client, monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("DEV_LOGIN_ACCOUNT", "dev.user")
+    monkeypatch.setenv("DEV_LOGIN_NAME", "Dev User")
+    monkeypatch.setenv("DEV_LOGIN_EMAIL", "dev.user@example.com")
+    monkeypatch.setenv("DEV_LOGIN_DEPARTMENT", "IT")
+    monkeypatch.setenv("DEV_LOGIN_SYSID", "990003")
+    monkeypatch.setenv("DEV_LOGIN_ROLE", "superuser")
+    get_settings.cache_clear()
+
+    resp = client.get("/main/login", follow_redirects=False)
+    assert resp.status_code == 500
+    assert resp.json()["error"]["code"] == "INTERNAL_ERROR"

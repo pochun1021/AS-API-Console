@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     oauth_client_secret: str | None = None
     oauth_redirect_uri: str | None = None
     oauth_scope: str = "basic"
+    dev_login_account: str | None = None
+    dev_login_name: str | None = None
+    dev_login_email: str | None = None
+    dev_login_department: str | None = None
+    dev_login_sysid: int | None = None
+    dev_login_role: str = "user"
     allow_header_auth: bool | None = None
     session_cookie_name: str = "as_api_console_session"
     session_max_age_seconds: int = 8 * 60 * 60
