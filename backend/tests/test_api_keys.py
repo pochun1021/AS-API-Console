@@ -34,6 +34,23 @@ def _set_key_expires_at_past(key_id: str) -> None:
         )
 
 
+def _set_expiration_notice_sent_at(key_id: str, sent_at: datetime | None) -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE api_keys
+                SET expiration_notice_sent_at = :sent_at
+                WHERE id = :key_id
+                """
+            ),
+            {"sent_at": sent_at, "key_id": key_id},
+        )
+
+
 def test_application_success_and_no_plaintext_in_queries(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
@@ -55,6 +72,8 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert item["masked_key"].startswith("AS-...")
     assert item["key_alias"] == f"for_{user_headers['x-account']}"
     assert len(item["masked_key"]) == 10
+    assert "expiration_notice_sent_at" in item
+    assert "extend_eligible" in item
 
 
 def test_application_rejects_non_whitelisted(client, user_headers):
@@ -662,6 +681,38 @@ def test_expired_is_visible_and_renewable_by_expires_at(client, admin_headers, u
     renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user_headers)
     assert renew.status_code == 200
     assert renew.json()["status"] == "active"
+
+
+def test_extend_requires_notice_for_user_but_not_admin(client, admin_headers):
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "extend notice gate"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
+
+    blocked = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=user, json={"duration_months": 6})
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "KEY_EXTENSION_NOTICE_REQUIRED"
+
+    _set_expiration_notice_sent_at(key_id, datetime.now(UTC))
+    allowed = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=user, json={"duration_months": 6})
+    assert allowed.status_code == 200
+    assert allowed.json()["status"] == "active"
+
+    _set_key_expires_at_past(key_id)
+    _set_expiration_notice_sent_at(key_id, None)
+    user_expired_allowed = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=user, json={"duration_months": 1})
+    assert user_expired_allowed.status_code == 200
+    assert user_expired_allowed.json()["status"] == "active"
+
+    _set_key_expires_at_past(key_id)
+    admin_allowed = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=admin_headers, json={"duration_months": 1})
+    assert admin_allowed.status_code == 200
+    assert admin_allowed.json()["status"] == "active"
 
 
 def test_renew_sends_renewed_email_on_success(client, admin_headers, monkeypatch):

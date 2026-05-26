@@ -22,6 +22,15 @@ const adminAuth = {
   role: "admin"
 };
 
+const devUserAuth = {
+  account: "dev.user",
+  name: "Dev User",
+  email: "dev.user@example.com",
+  department: "02",
+  sysid: 200001,
+  role: "user"
+};
+
 beforeEach(() => {
   mockApiProvider.resetForTests();
 });
@@ -145,6 +154,32 @@ test("user can extend active key with selected duration", async () => {
   await user.click(screen.getByRole("button", { name: "確認" }));
   expect(await screen.findByText("金鑰已展延。")).toBeInTheDocument();
   expect(screen.queryByRole("dialog", { name: "確認展延" })).not.toBeInTheDocument();
+});
+
+test("user cannot see extend action before expiration notice", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={devUserAuth} />
+    </MemoryRouter>
+  );
+
+  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
+  await user.click(moreActionButtons[0]);
+  expect(screen.queryByRole("menuitem", { name: "展延金鑰" })).not.toBeInTheDocument();
+});
+
+test("user can see extend action for expired key even without notice", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={devUserAuth} />
+    </MemoryRouter>
+  );
+
+  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
+  await user.click(moreActionButtons[2]);
+  expect(await screen.findByRole("menuitem", { name: "展延金鑰" })).toBeInTheDocument();
 });
 
 test("list uses server pagination params", async () => {

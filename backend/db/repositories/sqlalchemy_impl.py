@@ -259,6 +259,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
                     owner_account=row.ApiKeyApplication.account,
                     owner_name=row.ApiKeyApplication.name,
                     expires_at=row.ApiKeyApplication.expires_at,
+                    expiration_notice_sent_at=row.ApiKey.expiration_notice_sent_at,
                 )
                 for row in rows
             ],
@@ -297,6 +298,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             duration_months=row.ApiKeyApplication.duration_months,
             created_at=row.ApiKey.created_at,
             expires_at=row.ApiKeyApplication.expires_at,
+            expiration_notice_sent_at=row.ApiKey.expiration_notice_sent_at,
         )
 
     def get_key_secret_material(

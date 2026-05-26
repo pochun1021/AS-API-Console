@@ -52,6 +52,7 @@ class ApiKeyListItem:
     owner_account: str
     owner_name: str
     expires_at: datetime
+    expiration_notice_sent_at: datetime | None
 
 
 @dataclass(slots=True)
@@ -76,6 +77,7 @@ class ApiKeyDetail:
     duration_months: int
     created_at: datetime
     expires_at: datetime
+    expiration_notice_sent_at: datetime | None
 
 
 @dataclass(slots=True)

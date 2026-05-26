@@ -64,6 +64,7 @@
   - 對 `active` key 顯示「停用」與「展延（extend）」按鈕。
   - 對 `expired` key 顯示「展延（extend）」按鈕（icon + 文字）。
   - 對 `revoked` key 顯示「續發（renew）」按鈕（icon + 文字）。
+  - `user` 的 `active` key 僅在已寄送到期提醒（`expiration_notice_sent_at` 非空）時顯示展延按鈕；`expired` key 一律顯示展延按鈕；`admin` 不受此限制。
   - extend 需以 Dialog 讓使用者選擇 `duration_months=1|6|12` 後送出。
   - renew 會建立新 key，來源 key 對 `user` 列表需隱藏。
   - extend 會沿用原 key，只延長有效期限。
@@ -484,6 +485,7 @@ Base path：`/main/api/v1`
 ```
 - 規則：
   - `user` 僅可展延本人 `active|expired` key；`admin` 可展延任意 `active|expired` key。
+  - `user` 展延 `active` key 時，若尚未寄送到期提醒（`expiration_notice_sent_at` 為空）不得展延，回傳 `409 KEY_EXTENSION_NOTICE_REQUIRED`；`expired` key 不受此限制。
   - `duration_months` 僅允許 `1|6|12`。
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
   - extend 會沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`）。
@@ -665,6 +667,7 @@ Base path：`/main/api/v1`
 - `APPLICATION_ALREADY_ISSUED`
 - `KEY_NOT_RENEWABLE`
 - `KEY_ALREADY_RENEWED`
+- `KEY_EXTENSION_NOTICE_REQUIRED`
 
 ## 驗收標準
 1. 研究人員名單職稱代碼命中者可成功核發 API Key，格式為 `AS-` + 30 碼隨機字元（總長 33）。
@@ -684,6 +687,7 @@ Base path：`/main/api/v1`
 13-1. 一般使用者可續發本人 `revoked` key；續發 `active|expired` key 時，API 回傳 `KEY_NOT_RENEWABLE`。
 13-2. 同一把舊 key 不可重複續發；重複續發時 API 回傳 `KEY_ALREADY_RENEWED`。
 13-3. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時，API 回傳 `KEY_NOT_EXTENDABLE`。
+13-3-1. 一般使用者展延本人 `active` key 前需已寄送到期提醒（`expiration_notice_sent_at` 非空）；未達條件時 API 回傳 `KEY_EXTENSION_NOTICE_REQUIRED`。`expired` key 不受此限制。
 13-4. 展延 `duration_months` 僅允許 `1|6|12`；非法值回傳 `422 VALIDATION_ERROR`。
 14. 未通過資格檢查或驗證失敗請求不得建立 `api_key_applications` 或 `api_keys` 紀錄。
 15. `user` 呼叫 `GET /main/api/v1/api-keys` 時僅可看到本人資料；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料。

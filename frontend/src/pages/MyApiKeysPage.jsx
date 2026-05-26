@@ -438,7 +438,9 @@ export default function MyApiKeysPage({ auth }) {
             {t("mykeys_renew_key")}
           </MenuItem>
         ) : null}
-        {actionMenuRow && ["active", "expired"].includes(actionMenuRow.status) ? (
+        {actionMenuRow && ["active", "expired"].includes(actionMenuRow.status) && (
+          auth.role === "admin" || actionMenuRow.extend_eligible
+        ) ? (
           <MenuItem
             onClick={() => {
               const targetId = actionMenuRow?.id;

@@ -39,6 +39,8 @@ class ApiKeyListItemResponse(BaseModel):
     owner_account: str
     owner_name: str
     expires_at: datetime
+    expiration_notice_sent_at: datetime | None = None
+    extend_eligible: bool = False
 
 
 class ApiKeyListResponse(BaseModel):
@@ -61,6 +63,8 @@ class ApiKeyDetailResponse(BaseModel):
     duration_months: int
     created_at: datetime
     expires_at: datetime
+    expiration_notice_sent_at: datetime | None = None
+    extend_eligible: bool = False
 
 
 class RevokeResponse(BaseModel):

@@ -61,6 +61,21 @@ def _effective_status(*, status: str, expires_at: datetime) -> str:
     return status
 
 
+def _is_extend_eligible(
+    *,
+    role: str,
+    status: str,
+    expiration_notice_sent_at: datetime | None,
+) -> bool:
+    if status not in {"active", "expired"}:
+        return False
+    if status == "expired":
+        return True
+    if role == "admin":
+        return True
+    return expiration_notice_sent_at is not None
+
+
 class ApiKeysService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -356,6 +371,12 @@ class ApiKeysService:
                     "owner_account": item.owner_account,
                     "owner_name": item.owner_name,
                     "expires_at": item.expires_at,
+                    "expiration_notice_sent_at": item.expiration_notice_sent_at,
+                    "extend_eligible": _is_extend_eligible(
+                        role=current_user.role,
+                        status=_effective_status(status=item.status, expires_at=item.expires_at),
+                        expiration_notice_sent_at=item.expiration_notice_sent_at,
+                    ),
                 }
                 for item in items
             ],
@@ -373,9 +394,10 @@ class ApiKeysService:
         if scoped is None:
             raise ApiError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403)
 
+        effective_status = _effective_status(status=scoped.status, expires_at=scoped.expires_at)
         return {
             "id": scoped.id,
-            "status": _effective_status(status=scoped.status, expires_at=scoped.expires_at),
+            "status": effective_status,
             "masked_key": scoped.masked_key,
             "key_alias": scoped.key_alias or _default_alias(scoped.owner_account),
             "owner_account": scoped.owner_account,
@@ -386,6 +408,12 @@ class ApiKeysService:
             "duration_months": scoped.duration_months,
             "created_at": scoped.created_at,
             "expires_at": scoped.expires_at,
+            "expiration_notice_sent_at": scoped.expiration_notice_sent_at,
+            "extend_eligible": _is_extend_eligible(
+                role=current_user.role,
+                status=effective_status,
+                expiration_notice_sent_at=scoped.expiration_notice_sent_at,
+            ),
         }
 
     def update_key_alias(self, current_user: CurrentUser, key_id: str, key_alias: str) -> dict:
@@ -573,6 +601,12 @@ class ApiKeysService:
         source_effective_status = _effective_status(status=source_key.status, expires_at=source_app.expires_at)
         if source_effective_status not in {"active", "expired"}:
             raise ApiError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409)
+        if (
+            current_user.role != "admin"
+            and source_effective_status == "active"
+            and source_key.expiration_notice_sent_at is None
+        ):
+            raise ApiError("KEY_EXTENSION_NOTICE_REQUIRED", "extension requires expiration notice", 409)
         base_time = source_app.expires_at
         if base_time.tzinfo is None:
             base_time = base_time.replace(tzinfo=UTC)

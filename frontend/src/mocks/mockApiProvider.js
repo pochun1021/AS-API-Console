@@ -18,6 +18,7 @@ const initialApiKeys = [
     department: "02",
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString(),
+    expiration_notice_sent_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     owner_account: "jane.doe",
     owner_name: "Jane Doe",
     renewed_to_key_id: null
@@ -32,6 +33,7 @@ const initialApiKeys = [
     department: "02",
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
+    expiration_notice_sent_at: null,
     owner_account: "jane.doe",
     owner_name: "Jane Doe",
     renewed_to_key_id: null
@@ -46,6 +48,7 @@ const initialApiKeys = [
     department: "03",
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
+    expiration_notice_sent_at: null,
     owner_account: "john.admin",
     owner_name: "John Admin",
     renewed_to_key_id: null
@@ -58,6 +61,7 @@ const initialApiKeys = [
     duration_months: 1,
     created_at: "2025-04-01T08:00:00.000Z",
     expires_at: "2025-05-01T08:00:00.000Z",
+    expiration_notice_sent_at: "2025-04-01T08:00:00.000Z",
     owner_account: "john.admin",
     owner_name: "John Admin",
     renewed_to_key_id: null
@@ -72,6 +76,7 @@ const initialApiKeys = [
     department: "04",
     created_at: "2026-04-15T09:30:00.000Z",
     expires_at: "2026-10-15T09:30:00.000Z",
+    expiration_notice_sent_at: null,
     owner_account: "alice.wang",
     owner_name: "Alice Wang",
     renewed_to_key_id: null
@@ -86,6 +91,7 @@ const initialApiKeys = [
     department: "03",
     created_at: "2026-03-10T02:20:00.000Z",
     expires_at: "2027-03-10T02:20:00.000Z",
+    expiration_notice_sent_at: null,
     owner_account: "sam.chen",
     owner_name: "Sam Chen",
     renewed_to_key_id: null
@@ -100,6 +106,7 @@ const initialApiKeys = [
     department: "05",
     created_at: "2025-12-01T05:00:00.000Z",
     expires_at: "2026-01-01T05:00:00.000Z",
+    expiration_notice_sent_at: "2025-12-01T05:00:00.000Z",
     owner_account: "mike.li",
     owner_name: "Mike Li",
     renewed_to_key_id: null
@@ -114,6 +121,7 @@ const initialApiKeys = [
     department: "02",
     created_at: "2026-05-01T02:15:00.000Z",
     expires_at: "2026-11-01T02:15:00.000Z",
+    expiration_notice_sent_at: null,
     owner_account: "dev.user",
     owner_name: "Dev User",
     renewed_to_key_id: null
@@ -128,6 +136,7 @@ const initialApiKeys = [
     department: "02",
     created_at: "2026-04-18T07:20:00.000Z",
     expires_at: "2026-05-18T07:20:00.000Z",
+    expiration_notice_sent_at: null,
     owner_account: "dev.user",
     owner_name: "Dev User",
     renewed_to_key_id: null
@@ -142,6 +151,7 @@ const initialApiKeys = [
     department: "02",
     created_at: "2026-02-10T11:00:00.000Z",
     expires_at: "2026-03-10T11:00:00.000Z",
+    expiration_notice_sent_at: null,
     owner_account: "dev.user",
     owner_name: "Dev User",
     renewed_to_key_id: null
@@ -377,6 +387,13 @@ function normalizeAlias(item) {
   return item.key_alias || `for_${item.owner_account}`;
 }
 
+function isExtendEligible(item, auth) {
+  if (!["active", "expired"].includes(item.status)) return false;
+  if (item.status === "expired") return true;
+  if (auth?.role === "admin") return true;
+  return Boolean(item.expiration_notice_sent_at);
+}
+
 function findOrCreateUserByAuth(auth) {
   let user = users.find((item) => item.account === auth.account);
   if (user) return user;
@@ -501,6 +518,7 @@ export const mockApiProvider = {
         department: auth.department,
         created_at: now.toISOString(),
         expires_at: expires.toISOString(),
+        expiration_notice_sent_at: null,
         owner_account: auth.account,
         owner_name: auth.name,
         renewed_to_key_id: null
@@ -549,7 +567,7 @@ export const mockApiProvider = {
     const start = (page - 1) * pageSize;
     const paged = items.slice(start, start + pageSize);
     return {
-      items: paged.map((item) => ({ ...item, key_alias: normalizeAlias(item) })),
+      items: paged.map((item) => ({ ...item, key_alias: normalizeAlias(item), extend_eligible: isExtendEligible(item, auth) })),
       page,
       page_size: pageSize,
       total: items.length
@@ -631,7 +649,7 @@ export const mockApiProvider = {
       throw createError("KEY_NOT_OWNED_BY_USER", "key is not owned by user", 403);
     }
 
-    return { item: { ...target, key_alias: normalizeAlias(target) } };
+    return { item: { ...target, key_alias: normalizeAlias(target), extend_eligible: isExtendEligible(target, auth) } };
   },
 
   async updateApiKey(id, payload, auth) {
@@ -699,6 +717,7 @@ export const mockApiProvider = {
         department: target.department,
         created_at: now.toISOString(),
         expires_at: expires.toISOString(),
+        expiration_notice_sent_at: null,
         owner_account: target.owner_account,
         owner_name: target.owner_name,
         renewed_to_key_id: null
@@ -730,6 +749,9 @@ export const mockApiProvider = {
     if (!["active", "expired"].includes(target.status)) {
       throw createError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409);
     }
+    if (auth.role !== "admin" && target.status === "active" && !target.expiration_notice_sent_at) {
+      throw createError("KEY_EXTENSION_NOTICE_REQUIRED", "extension requires expiration notice", 409);
+    }
     const durationMonths = Number(payload?.duration_months);
     if (![1, 6, 12].includes(durationMonths)) {
       throw createError("VALIDATION_ERROR", "duration_months must be one of 1, 6, 12", 422);
@@ -756,6 +778,7 @@ export const mockApiProvider = {
         department: target.department,
         created_at: now.toISOString(),
         expires_at: expires.toISOString(),
+        expiration_notice_sent_at: null,
         owner_account: target.owner_account,
         owner_name: target.owner_name,
         renewed_to_key_id: null
