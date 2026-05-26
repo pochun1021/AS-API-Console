@@ -9,6 +9,7 @@ import MyApiKeysPage from "./pages/MyApiKeysPage";
 import AdminPage from "./pages/AdminPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import LimitStrategiesPage from "./pages/LimitStrategiesPage";
+import OperationAuditLogsPage from "./pages/OperationAuditLogsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 
 export default function App() {
@@ -142,6 +143,16 @@ export default function App() {
           element={
             auth.role === "admin" ? (
               <AdminDashboardPage auth={auth} />
+            ) : (
+              <Navigate to="/apply" replace />
+            )
+          }
+        />
+        <Route
+          path="/operation-audit-logs"
+          element={
+            auth.role === "admin" ? (
+              <OperationAuditLogsPage auth={auth} />
             ) : (
               <Navigate to="/apply" replace />
             )
