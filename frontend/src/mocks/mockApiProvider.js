@@ -103,6 +103,48 @@ const initialApiKeys = [
     owner_account: "mike.li",
     owner_name: "Mike Li",
     renewed_to_key_id: null
+  },
+  {
+    id: "key_008",
+    status: "active",
+    masked_key: "AS-...du01",
+    application_date: "2026-05-01",
+    duration_months: 6,
+    purpose: "dev.user local integration test",
+    department: "02",
+    created_at: "2026-05-01T02:15:00.000Z",
+    expires_at: "2026-11-01T02:15:00.000Z",
+    owner_account: "dev.user",
+    owner_name: "Dev User",
+    renewed_to_key_id: null
+  },
+  {
+    id: "key_009",
+    status: "revoked",
+    masked_key: "AS-...du02",
+    application_date: "2026-04-18",
+    duration_months: 1,
+    purpose: "dev.user revoke flow test",
+    department: "02",
+    created_at: "2026-04-18T07:20:00.000Z",
+    expires_at: "2026-05-18T07:20:00.000Z",
+    owner_account: "dev.user",
+    owner_name: "Dev User",
+    renewed_to_key_id: null
+  },
+  {
+    id: "key_010",
+    status: "expired",
+    masked_key: "AS-...du03",
+    application_date: "2026-02-10",
+    duration_months: 1,
+    purpose: "dev.user expiry scenario",
+    department: "02",
+    created_at: "2026-02-10T11:00:00.000Z",
+    expires_at: "2026-03-10T11:00:00.000Z",
+    owner_account: "dev.user",
+    owner_name: "Dev User",
+    renewed_to_key_id: null
   }
 ];
 
