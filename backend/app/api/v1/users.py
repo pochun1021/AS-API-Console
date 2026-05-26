@@ -61,6 +61,22 @@ def get_current_user_profile(
 
 
 @router.get(
+    "/admins",
+    response_model=UserListResponse,
+    responses={
+        403: {"model": ErrorResponse, "description": "Admin role is required"},
+    },
+)
+def list_admins(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _require_admin(current_user)
+    service = UsersService(db)
+    return service.list_admins()
+
+
+@router.get(
     "/users",
     response_model=UserListResponse,
     responses={
@@ -71,7 +87,7 @@ def get_current_user_profile(
 )
 def list_users(
     request: Request,
-    q: str = Query(default=""),
+    q: str = Query(...),
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:

@@ -40,10 +40,10 @@ test("admin can search users and enable admin role", async () => {
 
   expect(await screen.findByText("管理者名單")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
-  const searchDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
+  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
   expect(within(searchDialog).getByText("可用帳號 / 姓名查詢")).toBeInTheDocument();
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "alice");
-  await user.click(within(searchDialog).getByRole("button", { name: "查詢使用者" }));
+  await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
   const aliceCell = await within(searchDialog).findByText("Alice Wang");
   const aliceRow = aliceCell.closest('[role="row"]');
   await user.click(within(aliceRow).getByRole("button", { name: "加入管理者" }));
@@ -65,9 +65,9 @@ test("admin list only shows admins and can disable other admin", async () => {
   expect(await screen.findByText("John Admin")).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
-  const searchDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
+  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "jane");
-  await user.click(within(searchDialog).getByRole("button", { name: "查詢使用者" }));
+  await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
   const janeCell = await within(searchDialog).findByText("Jane Doe");
   const janeRow = janeCell.closest('[role="row"]');
   await user.click(within(janeRow).getByRole("button", { name: "加入管理者" }));
@@ -94,9 +94,9 @@ test("admin can search users by account", async () => {
   render(<AdminPage auth={adminAuth} />);
 
   await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
-  const searchDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
+  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "john.admin");
-  await user.click(within(searchDialog).getByRole("button", { name: "查詢使用者" }));
+  await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
   expect(await within(searchDialog).findByText("john.admin")).toBeInTheDocument();
 });
 
@@ -105,15 +105,15 @@ test("search dialog resets keyword and results after close", async () => {
   render(<AdminPage auth={adminAuth} />);
 
   await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
-  const firstDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
+  const firstDialog = await screen.findByRole("dialog", { name: "查詢人員" });
   await user.type(within(firstDialog).getByLabelText("查詢關鍵字"), "alice");
-  await user.click(within(firstDialog).getByRole("button", { name: "查詢使用者" }));
+  await user.click(within(firstDialog).getByRole("button", { name: "查詢人員" }));
   expect(await within(firstDialog).findByText("Alice Wang")).toBeInTheDocument();
   await user.click(within(firstDialog).getByRole("button", { name: "關閉" }));
   await screen.findByRole("button", { name: "開啟新增管理者查詢" });
 
   await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
-  const secondDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
+  const secondDialog = await screen.findByRole("dialog", { name: "查詢人員" });
   expect(within(secondDialog).getByLabelText("查詢關鍵字")).toHaveValue("");
   expect(within(secondDialog).queryByText("Alice Wang")).not.toBeInTheDocument();
 });
@@ -123,7 +123,7 @@ test("admin can search users by pressing enter in dialog input", async () => {
   render(<AdminPage auth={adminAuth} />);
 
   await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
-  const searchDialog = await screen.findByRole("dialog", { name: "查詢使用者" });
+  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "alice{enter}");
   expect(await within(searchDialog).findByText("Alice Wang")).toBeInTheDocument();
 });

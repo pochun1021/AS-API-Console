@@ -16,8 +16,9 @@ class UsersService:
         self.persnl = persnl_service or PersnlSoapService()
 
     def search(self, q: str, limit: int = 20) -> dict:
+        keyword = q.strip()
         try:
-            users = self.persnl.search_by_keyword(q, limit=limit)
+            users = self.persnl.search_by_keyword(keyword, limit=limit)
         except PersnlSoapUnavailableError as exc:
             raise ApiError("SOAP_SERVICE_UNAVAILABLE", "soap service unavailable", 503) from exc
         return {
@@ -35,6 +36,25 @@ class UsersService:
                 for user in users
             ],
             "total": len(users),
+        }
+
+    def list_admins(self, limit: int = 100) -> dict:
+        admins = self.repo.list_all(limit=limit)
+        return {
+            "items": [
+                {
+                    "id": str(admin.id),
+                    "sysid": int(admin.id),
+                    "account": admin.account,
+                    "name": admin.name,
+                    "email": admin.email,
+                    "department": admin.department or "",
+                    "role": "admin",
+                    "status": admin.status,
+                }
+                for admin in admins
+            ],
+            "total": len(admins),
         }
 
     def enable_admin(self, current_user: CurrentUser, user_id: int) -> dict:

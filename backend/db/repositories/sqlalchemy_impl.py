@@ -43,6 +43,15 @@ class SQLAlchemyAdminRepository:
         stmt = select(Admin).where(where_clause).limit(limit)
         return list(self.session.scalars(stmt).all())
 
+    def list_all(self, limit: int = 100, offset: int = 0) -> list[Admin]:
+        stmt = (
+            select(Admin)
+            .order_by(Admin.status.asc(), Admin.updated_at.desc(), Admin.created_at.desc(), Admin.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(self.session.scalars(stmt).all())
+
     def list_active_emails(self) -> list[str]:
         stmt = select(Admin.email).where(Admin.status == "active")
         rows = self.session.execute(stmt).all()

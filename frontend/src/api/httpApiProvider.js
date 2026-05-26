@@ -150,8 +150,8 @@ export const httpApiProvider = {
     return request(`${apiPath("/auth-audit-logs")}?${query.toString()}`, { auth });
   },
 
-  listUsers(auth) {
-    return request(apiPath("/users"), { auth });
+  listAdmins(auth) {
+    return request(apiPath("/admins"), { auth });
   },
 
   listInstitutes(auth) {

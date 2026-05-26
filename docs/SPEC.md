@@ -523,12 +523,26 @@ Base path：`/main/api/v1`
 ### 5-1) 特殊人員名單新增前使用者查詢 API
 - `GET /main/api/v1/users?q={keyword}`
 - 用途：供管理者透過 Persnl SOAP 查詢候選人資料（供新增管理者/特殊人員前使用）。
-- 規則：僅 `admin` 可使用；`q` 僅用於 `account`、`name` 查詢；回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`（對應單位代碼 `instCode`）、`status`。
+- 規則：
+  - 僅 `admin` 可使用。
+  - `q` 為必填，且僅用於 `account`、`name` 查詢。
+  - `q` 未提供、空字串或空白字串時，回傳 `422 VALIDATION_ERROR`。
+  - 不論 `q` 值內容為何，資料來源皆為 Persnl SOAP（`PERSNL_SOAP_URL`）。
+  - 回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`（對應單位代碼 `instCode`）、`status`。
 - 單位主檔同步：`Persnl.getInstitutes` 僅供背景同步作業使用（首次入庫 + 後續排程差異同步），不得放在此 API 請求路徑中每次即時呼叫。
 - 錯誤回應：
   - `403 FORBIDDEN`：非 `admin`
   - `422 VALIDATION_ERROR`：`q` 不合法
   - `503 SOAP_SERVICE_UNAVAILABLE`：Persnl SOAP timeout/5xx
+
+### 5-4) 管理者名單查詢 API
+- `GET /main/api/v1/admins`
+- 用途：供管理者查看管理者名單（來源 `admins`）。
+- 規則：
+  - 僅 `admin` 可使用。
+  - 資料來源為本地 DB `admins`（含 `active`、`inactive`）。
+  - 不得在此 API 路徑呼叫 Persnl SOAP。
+- 回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`、`status`。
 
 ### 5-2) 目前使用者語言偏好 API
 - `GET /main/api/v1/users/preferences/locale`
@@ -683,7 +697,8 @@ Base path：`/main/api/v1`
 21. 管理者不可在前端停用自己的管理者權限（不可將自己的角色由 `admin` 降為 `user`）。
 22. `admin` 呼叫 `GET /main/api/v1/api-keys` 時，每筆資料需可辨識申請人（至少包含 `owner_account`、`owner_name`）。
 23. 調整申請人識別欄位後，既有受保護 API 路徑與角色模型（`user|admin`）不得改動。
-23-1. 管理者名單與特殊人員名單新增人員查詢（`GET /main/api/v1/users`）僅可用 `account`、`name` 查詢，不得以 `sysid` 或 `email` 作為查詢條件。
+23-1. 特殊人員名單新增人員查詢（`GET /main/api/v1/users`）僅可用 `account`、`name` 查詢，不得以 `sysid` 或 `email` 作為查詢條件。
+23-2. 管理者名單查詢（`GET /main/api/v1/admins`）需直接讀取 `admins`，不得依賴 Persnl SOAP。
 24. API Keys 清單頁不得顯示建立時間；建立時間僅顯示於單筆詳情視窗。
 25. API Key 詳情視窗需顯示用途（`purpose`）；若無資料則顯示 `-`。
 26. API Key 詳情視窗需顯示單位（`department`）；若無資料則顯示 `-`。

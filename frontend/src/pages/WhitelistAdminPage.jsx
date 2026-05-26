@@ -90,6 +90,11 @@ export default function WhitelistAdminPage({ auth }) {
     setSearchMessage("");
     setSearching(true);
     try {
+      if (!keyword.trim()) {
+        setCandidates([]);
+        setSearchMessage(t("whitelist_search_required"));
+        return;
+      }
       const response = await apiClient.searchUsers(keyword, auth);
       setCandidates(response.items);
       if (response.items.length === 0) {

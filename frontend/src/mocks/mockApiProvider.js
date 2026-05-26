@@ -755,7 +755,7 @@ export const mockApiProvider = {
     return { items: items.map(mapUserForAdminPage) };
   },
 
-  async listUsers(auth) {
+  async listAdmins(auth) {
     await delay();
     ensureAdmin(auth);
     return { items: users.filter((item) => item.role === "admin").map(mapUserForAdminPage) };

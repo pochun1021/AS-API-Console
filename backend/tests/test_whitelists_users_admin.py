@@ -85,6 +85,36 @@ def test_users_returns_503_when_persnl_unavailable(client, admin_headers, monkey
     assert users.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
 
 
+def test_users_requires_query(client, admin_headers):
+    users = client.get("/api/v1/users", headers=admin_headers)
+    assert users.status_code == 422
+
+
+def test_admins_list_reads_db_when_persnl_unavailable(client, admin_headers, monkeypatch):
+    target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
+    bootstrap = client.get("/api/v1/api-keys", headers=target_admin_headers)
+    assert bootstrap.status_code == 200
+
+    disabled = client.post("/api/v1/admins/7003/disable", headers=admin_headers)
+    assert disabled.status_code == 200
+
+    def fake_search_by_keyword(self, keyword, limit=20):
+        raise PersnlSoapUnavailableError("down")
+
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.search_by_keyword",
+        fake_search_by_keyword,
+    )
+
+    admins = client.get("/api/v1/admins", headers=admin_headers)
+    assert admins.status_code == 200
+    payload = admins.json()
+    assert payload["total"] >= 2
+    by_id = {item["id"]: item for item in payload["items"]}
+    assert by_id["1001"]["status"] == "active"
+    assert by_id["7003"]["status"] == "inactive"
+
+
 def test_list_institutes_returns_active_only(client, admin_headers):
     override_get_db = client.app.dependency_overrides[get_db]
     db = next(override_get_db())

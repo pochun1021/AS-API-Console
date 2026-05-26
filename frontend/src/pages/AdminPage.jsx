@@ -62,7 +62,7 @@ export default function AdminPage({ auth }) {
     setLoading(true);
     setError("");
     try {
-      const response = await apiClient.listUsers(auth);
+      const response = await apiClient.listAdmins(auth);
       setItems(response.items);
     } catch (e) {
       setError(e?.payload?.error?.message || t("admin_load_failed"));
@@ -324,7 +324,7 @@ export default function AdminPage({ auth }) {
                 fullWidth
               />
               <Button variant="contained" onClick={search} disabled={searching} sx={{ whiteSpace: "nowrap" }}>
-                {searching ? t("common_searching") : (locale === "zh-TW" ? "查詢使用者" : t("common_search_users"))}
+                {searching ? t("common_searching") : t("common_search_users")}
               </Button>
             </Stack>
             <Typography component="p" variant="body2" color="text.secondary">

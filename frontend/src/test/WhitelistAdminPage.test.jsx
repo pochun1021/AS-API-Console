@@ -114,6 +114,16 @@ test("admin can search by pressing enter in dialog input", async () => {
   expect(await within(searchDialog).findByText("Alice Wang")).toBeInTheDocument();
 });
 
+test("search requires keyword in whitelist dialog", async () => {
+  const user = userEvent.setup();
+  render(<WhitelistAdminPage auth={adminAuth} />);
+
+  await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
+  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
+  await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
+  expect(await within(searchDialog).findByText("請輸入查詢關鍵字。")).toBeInTheDocument();
+});
+
 test("non-admin user is blocked", async () => {
   render(<WhitelistAdminPage auth={userAuth} />);
   expect(await screen.findByText("僅管理者可使用特殊人員名單管理功能。")).toBeInTheDocument();
