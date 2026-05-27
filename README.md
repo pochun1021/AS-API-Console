@@ -91,7 +91,7 @@ cp .env.example .env
 - `PROVIDER_TIMEOUT_SECONDS`：可選，provider timeout 秒數（預設 `3.0`）
 - `SESSION_SECRET_KEY`：必填（正式環境），FastAPI session 簽章密鑰
 - `ALLOW_HEADER_AUTH`：可選；僅供 `dev/test` 使用的 header auth bootstrap，正式環境應為 `false`
-- `ALLOWED_HOSTS`：可選；允許的 Host 清單（逗號分隔）
+- `ALLOWED_HOSTS`：可選；允許的 Host 清單（逗號分隔）。部署 `api.ascs.sinica.edu.tw` 時建議設為 `api.ascs.sinica.edu.tw,localhost,127.0.0.1`
 - `SESSION_MAX_AGE_SECONDS`：可選；session 有效秒數
 - `OAUTH_PROVIDER`：可選，OAuth provider 名稱（寫入 auth audit）
 - `OAUTH_AUTH_URI` / `OAUTH_TOKEN_URI` / `OAUTH_BASIC_URI`：OAuth auth/token/basic 端點

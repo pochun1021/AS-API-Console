@@ -40,17 +40,17 @@ sudo systemctl status mariadb --no-pager
 
 ```bash
 sudo useradd --system --create-home --shell /bin/bash aspaic
-sudo mkdir -p /home/app
-sudo chown -R aspaic:aspaic /home/app
+sudo mkdir -p /home/app/AI-API-Console
+sudo chown -R aspaic:aspaic /home/app/AI-API-Console
 ```
 
-> 下列步驟以 `/home/app` 為專案路徑。
+> 下列步驟以 `/home/app/AI-API-Console` 為專案路徑。
 
 ## 4. 下載專案與安裝依賴
 
 ```bash
 sudo -u aspaic -H bash -lc '
-cd /home/app
+cd /home/app/AI-API-Console
 if [ ! -d .git ]; then
   git clone <YOUR_REPO_URL> .
 else
@@ -63,7 +63,7 @@ fi
 
 ```bash
 sudo -u aspaic -H bash -lc '
-cd /home/app/backend
+cd /home/app/AI-API-Console/backend
 python3 -m venv .venv
 . .venv/bin/activate
 pip install --upgrade pip
@@ -75,7 +75,7 @@ pip install -r requirements.txt
 
 ```bash
 sudo -u aspaic -H bash -lc '
-cd /home/app/frontend
+cd /home/app/AI-API-Console/frontend
 npm install
 npm run build
 '
@@ -106,12 +106,12 @@ mariadb -h localhost -u as_api_console -p as_api_console -e "SELECT 1;"
 建立環境檔：
 ```bash
 sudo -u aspaic -H bash -lc '
-cd /home/app/backend
+cd /home/app/AI-API-Console/backend
 cp -n .env.example .env
 '
 ```
 
-編輯 `/home/app/backend/.env`，至少確認以下欄位：
+編輯 `/home/app/AI-API-Console/backend/.env`，至少確認以下欄位：
 
 - `APP_DOMAIN=https://api.ascs.sinica.edu.tw/main`
 - `DB_USER=as_api_console`
@@ -122,6 +122,7 @@ cp -n .env.example .env
 - `API_KEY_ENCRYPTION_SECRET=<strong-random-secret>`
 - `ISSUANCE_PROVIDER_MODE=external`（若暫不串 provider 可改 `local`）
 - `SESSION_SECRET_KEY=<strong-random-secret>`
+- `ALLOWED_HOSTS=api.ascs.sinica.edu.tw,localhost,127.0.0.1`
 - Persnl SOAP（單位主檔同步使用）：
   - `PERSNL_SOAP_URL`（可選，runtime endpoint）
   - `PERSNL_SOAP_WSDL_URL`（可選，WSDL endpoint）
@@ -148,7 +149,7 @@ systemd `EnvironmentFile` 注意事項：
 
 ```bash
 sudo -u aspaic -H bash -lc '
-cd /home/app/backend
+cd /home/app/AI-API-Console/backend
 . .venv/bin/activate
 alembic upgrade head
 '
@@ -157,7 +158,7 @@ alembic upgrade head
 確認 revision：
 ```bash
 sudo -u aspaic -H bash -lc '
-cd /home/app/backend
+cd /home/app/AI-API-Console/backend
 . .venv/bin/activate
 alembic current
 '
@@ -167,7 +168,7 @@ alembic current
 
 ```bash
 sudo -u aspaic -H bash -lc '
-cd /home/app/backend
+cd /home/app/AI-API-Console/backend
 . .venv/bin/activate
 set -a
 source .env
@@ -197,9 +198,9 @@ After=network.target mariadb.service
 Type=simple
 User=aspaic
 Group=aspaic
-WorkingDirectory=/home/app/backend
-EnvironmentFile=/home/app/backend/.env
-ExecStart=/home/app/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+WorkingDirectory=/home/app/AI-API-Console/backend
+EnvironmentFile=/home/app/AI-API-Console/backend/.env
+ExecStart=/home/app/AI-API-Console/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
 
@@ -263,6 +264,11 @@ curl -I http://api.ascs.sinica.edu.tw/main/docs
 sudo certbot --nginx -d api.ascs.sinica.edu.tw
 ```
 
+憑證安裝後，請再次確認 `443` 的 `/main/` 反向代理仍指向 backend `127.0.0.1:8000`（避免誤導到前端 dev server）：
+```bash
+sudo nginx -T | sed -n '/server_name api.ascs.sinica.edu.tw/,/}/p'
+```
+
 完成後驗證：
 ```bash
 curl -I https://api.ascs.sinica.edu.tw/main/
@@ -294,7 +300,7 @@ sudo systemctl reload nginx
 更新程式（手動）：
 ```bash
 sudo -u aspaic -H bash -lc '
-cd /home/app
+cd /home/app/AI-API-Console
 git pull --ff-only
 cd backend
 . .venv/bin/activate
@@ -323,7 +329,7 @@ sudo journalctl -u as-api-console -n 200 --no-pager
 
 通常是前端 build 未產生或路徑錯誤：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/frontend && npm run build'
+sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/frontend && npm run build'
 sudo systemctl restart as-api-console
 ```
 
@@ -336,6 +342,43 @@ sudo systemctl restart as-api-console
 - 確認網域 DNS 已正確指向主機
 - 確認 `80/443` 對外可連
 - 確認 Nginx `server_name` 與申請網域一致
+
+### 14.5 `Invalid host header`
+
+症狀：
+- 開啟 `https://api.ascs.sinica.edu.tw/main/` 出現 `Invalid host header`
+
+常見原因：
+- HTTPS (`443`) 的 `location /main/` 被導到前端開發伺服器（例如 `127.0.0.1:5173`）而非 backend `127.0.0.1:8000`。
+
+定位步驟：
+```bash
+sudo nginx -T | sed -n '/server_name api.ascs.sinica.edu.tw/,/}/p'
+sudo ss -ltnp | rg ':80|:443|:8000|:5173'
+curl -kI https://api.ascs.sinica.edu.tw/main/
+curl -I http://127.0.0.1:8000/main/
+```
+
+修復方式（確保 `80` 與 `443` 的 `/main/` 都一致）：
+```nginx
+location /main/ {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_http_version 1.1;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+套用後驗證：
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+curl -kI https://api.ascs.sinica.edu.tw/main/
+curl -kI https://api.ascs.sinica.edu.tw/main/docs
+```
 
 ## 15. 安全建議（正式環境）
 
@@ -364,8 +407,8 @@ After=network.target mariadb.service
 Type=oneshot
 User=aspaic
 Group=aspaic
-WorkingDirectory=/home/app/backend
-ExecStart=/home/app/backend/scripts/run_expire_sync.sh
+WorkingDirectory=/home/app/AI-API-Console/backend
+ExecStart=/home/app/AI-API-Console/backend/scripts/run_expire_sync.sh
 ```
 
 建立 `/etc/systemd/system/as-api-expire-sync.timer`：
@@ -394,7 +437,7 @@ sudo systemctl status as-api-expire-sync.timer --no-pager
 ```bash
 sudo systemctl start as-api-expire-sync.service
 sudo journalctl -u as-api-expire-sync.service -n 200 --no-pager
-sudo -u aspaic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ### 16.2 方案 B：cron
@@ -406,13 +449,13 @@ sudo -u aspaic crontab -e
 
 加入：
 ```cron
-10 0 * * * /home/app/backend/scripts/run_expire_sync.sh
+10 0 * * * /home/app/AI-API-Console/backend/scripts/run_expire_sync.sh
 ```
 
 檢查：
 ```bash
 sudo -u aspaic crontab -l
-sudo -u aspaic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 說明：
@@ -420,7 +463,7 @@ sudo -u aspaic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei 
 - 建議保留 cron 預設 stdout/stderr 行為（系統郵件或平台收集）；業務執行紀錄以上述檔案為主。
 
 ### 16.3 排錯重點
-- `.env` 未設定或 DB 參數錯誤：確認 `/home/app/backend/.env` 內容。
+- `.env` 未設定或 DB 參數錯誤：確認 `/home/app/AI-API-Console/backend/.env` 內容。
 - 執行環境找不到 `uv`：腳本會自動 fallback 到 `.venv/bin/python` 或 `python`，但仍需先安裝依賴。
 - 權限問題：確認 `aspaic` 對專案目錄可讀執行，且可連線 DB。
 
@@ -432,11 +475,11 @@ sudo -u aspaic crontab -l
 ```
 2. 手動 dry-run：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/backend && ./scripts/run_expire_sync.sh --dry-run'
+sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ./scripts/run_expire_sync.sh --dry-run'
 ```
 3. 檢查當日日誌：
 ```bash
-sudo -u aspaic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ## 17. 單位主檔同步排程部署
@@ -458,8 +501,8 @@ After=network.target mariadb.service
 Type=oneshot
 User=aspaic
 Group=aspaic
-WorkingDirectory=/home/app/backend
-ExecStart=/home/app/backend/.venv/bin/python /home/app/backend/scripts/sync_institutes.py
+WorkingDirectory=/home/app/AI-API-Console/backend
+ExecStart=/home/app/AI-API-Console/backend/.venv/bin/python /home/app/AI-API-Console/backend/scripts/sync_institutes.py
 ```
 
 建立 `/etc/systemd/system/as-api-institute-sync.timer`：
@@ -499,7 +542,7 @@ sudo -u aspaic crontab -e
 
 加入：
 ```cron
-20 0 * * * cd /home/app/backend && /home/app/backend/.venv/bin/python scripts/sync_institutes.py
+20 0 * * * cd /home/app/AI-API-Console/backend && /home/app/AI-API-Console/backend/.venv/bin/python scripts/sync_institutes.py
 ```
 
 檢查：
@@ -521,10 +564,10 @@ sudo -u aspaic crontab -l
 ```
 2. 手動 dry-run：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/backend && . .venv/bin/activate && python scripts/sync_institutes.py --dry-run'
+sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && . .venv/bin/activate && python scripts/sync_institutes.py --dry-run'
 ```
 3. 若出現 `persnl soap is not configured`，先補齊 `.env` 的 `PERSNL_SOAP_URL` 或 `PERSNL_SOAP_WSDL_URL`，以及 `PERSNL_SOAP_USER`、`PERSNL_SOAP_PASSWORD`。
 4. 實際同步一次：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/backend && . .venv/bin/activate && python scripts/sync_institutes.py'
+sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && . .venv/bin/activate && python scripts/sync_institutes.py'
 ```
