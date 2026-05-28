@@ -6,9 +6,23 @@ from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _resolve_env_file() -> str:
+    """Resolve env file path for both deploy and local dev."""
+    env_file_override = os.environ.get("ENV_FILE")
+    if env_file_override:
+        return env_file_override
+
+    deploy_env_file = "/home/app/config/.env"
+    if os.path.exists(deploy_env_file):
+        return deploy_env_file
+
+    local_env_file = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+    return os.path.abspath(local_env_file)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=os.environ.get("ENV_FILE", ".env"),
+        env_file=_resolve_env_file(),
         extra="ignore",
     )
 

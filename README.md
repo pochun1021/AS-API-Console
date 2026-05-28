@@ -73,7 +73,7 @@ mkdir -p /home/app/config
 cp -n backend/.env.example /home/app/config/.env
 export ENV_FILE=/home/app/config/.env
 ```
-- 預設以 `ENV_FILE` 指向外部環境檔（建議 `/home/app/config/.env`）；未設定 `ENV_FILE` 時才回退讀取 `backend/.env`
+- 環境檔載入順序：`ENV_FILE`（若有設定）→ `/home/app/config/.env`（若存在）→ `backend/.env`（開發預設）
 - `APP_DOMAIN`：後端對外基底網址（預設 `http://localhost:8000`，方便後續部署調整）
 - `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME`：MariaDB 連線組件（程式會自動組成 `DATABASE_URL`）
 - 建議命名規則：`DB_USER` 與 `DB_NAME` 使用相同名稱（例如都用 `as_api_console`），方便權限管理與維運
@@ -270,6 +270,7 @@ Security validation：
 ## 規格文件
 - 產品與功能規格：`docs/SPEC.md`
 - DB 操作與 migration runbook：`docs/runbook-db.md`
+  - `alembic current` 的 head 判讀請以 runbook 內「最新 head revision」為準，不使用固定舊 revision 範例
 - Mail 設定與測試速查：`docs/mail.md`
 - Ubuntu + Nginx 部署指南：`docs/deploy-ubuntu-nginx.md`
-- 一鍵部署腳本（不處理 apt/git；安裝 backend/frontend 套件 + migration + crontab 補齊）：`scripts/deploy_full.sh`
+- 一鍵部署腳本（預設來源 `/root/AS-API-Console`，可用 `--source-dir` 覆蓋；此路徑為 root 下 `git clone` 來源目錄；搬遷到 `/home/app/AS-API-Console`；若目標已存在會先備份 `/home/app/AS-API-Console_YYYYMMDD.tar.gz`，同日覆蓋保留最後一份；完成安裝與設定後才清理 clone 來源目錄；安裝 backend 套件 + frontend `npm install`/`npm run build` + migration + crontab 補齊；`ENV_FILE` 預設 `/home/app/config/.env`，缺檔時 fallback 到 `backend/.env`）：`scripts/deploy_full.sh`

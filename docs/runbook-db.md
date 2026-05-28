@@ -17,7 +17,8 @@
 - Python MariaDB driver：`mariadb`（需先安裝 MariaDB Connector/C，確保 `mariadb_config` 可用）
 - Alembic path：`backend/alembic.ini`
 - Migration 目錄：`backend/db/migrations/versions`
-- 目前 head revision：`0027_backfill_admins_current`
+- 目前 head revision：`0028_add_api_key_expiration_notice_sent_at`
+- 環境檔載入順序：`ENV_FILE`（若有設定）→ `/home/app/config/.env`（若存在）→ `backend/.env`（開發預設）
 
 ## Schema 實作對照
 
@@ -67,6 +68,12 @@ alembic upgrade head
 alembic downgrade -1
 ```
 
+若你使用環境檔（而非直接 `export DATABASE_URL`），建議明確指定：
+```bash
+ENV_FILE=/home/app/config/.env alembic current
+ENV_FILE=/home/app/config/.env alembic upgrade head
+```
+
 ### 新增 migration 標準流程
 1. 修改 SQLAlchemy models（`backend/db/models`）。
 2. 產生 revision：
@@ -86,7 +93,7 @@ alembic current
 
 ### 部署 admin 名單套用（migration）
 - 部署時可使用 migration 一次性套用「目前 admin 狀態」到 `admins` 表。
-- 目前由 `0027_backfill_admins_current` 執行：
+- 目前由 `0027_backfill_admins_from_current_state` 執行：
   - 固定針對 `admins.id=5019561` 做資料套用（有就 update、沒有就 insert）。
   - 套用欄位為 `account`、`email`、`name`、`department`、`status`，並更新稽核時間欄位。
   - migration 可重跑（idempotent）。
@@ -100,7 +107,7 @@ cd backend
 export DATABASE_URL='mariadb+mariadbconnector://<user>:<password>@<host>:3306/as_api_console'
 alembic current
 ```
-預期：顯示 `0002_create_core_tables (head)` 或更新後最新 head。
+預期：顯示目前最新 head revision（例如 `0028_add_api_key_expiration_notice_sent_at (head)`）。
 
 ### 2) 表存在檢查（MariaDB）
 ```bash

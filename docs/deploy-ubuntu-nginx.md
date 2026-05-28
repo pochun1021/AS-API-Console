@@ -40,11 +40,11 @@ sudo systemctl status mariadb --no-pager
 
 ```bash
 sudo useradd --system --create-home --shell /bin/bash asapic
-sudo mkdir -p /home/app/AS-API-Console
-sudo chown -R asapic:asapic /home/app/AS-API-Console
+sudo mkdir -p /home/app
+sudo chown -R asapic:asapic /home/app
 ```
 
-> 下列步驟以 `/home/app/AS-API-Console` 為專案路徑。
+> 下列步驟會將 root 下的專案搬遷到 `/home/app/AS-API-Console`。
 
 ## 4. 下載專案與安裝依賴
 
@@ -293,21 +293,46 @@ sudo certbot renew --dry-run
 
 ## 13. 常用維運指令
 
-一鍵部署（不處理 apt / git；只安裝 backend/frontend 套件、migration 到 head，並自動補齊缺少 crontab）：
+一鍵部署（來源在 root 目錄，不處理 apt / git；搬遷到 `/home/app` 後安裝 backend 套件、frontend install+build、migration 到 head，並自動補齊缺少 crontab）：
+```bash
+git clone <YOUR_REPO_URL> /root/AS-API-Console
+```
+
+再執行：
 ```bash
 bash scripts/deploy_full.sh
 ```
 
-目前腳本固定使用：
-- `ENV_FILE=/home/app/config/.env`
+目錄處理流程：
+- 若 `/home/app/AS-API-Console` 已存在，會先備份為 `/home/app/AS-API-Console_YYYYMMDD.tar.gz`
+- 若同日已有同名備份檔，會直接覆蓋（僅保留最後一次）
+- 備份成功後才刪除舊的 `/home/app/AS-API-Console`
+- 將 `--source-dir` 指定的 root clone 來源目錄複製到 `/home/app/AS-API-Console`
+- 切換目錄權限為 `asapic:asapic`
+- 安裝與設定步驟都成功後，最後才清理 `--source-dir` 指定的 clone 來源目錄
+
+目前腳本的 `ENV_FILE` 決策：
+- 優先使用 `ENV_FILE=/home/app/config/.env`
+- 若該檔不存在，自動 fallback 使用 `/home/app/AS-API-Console/backend/.env`
+- 若兩者都不存在，腳本會直接失敗並提示先建立環境檔
 - 每次執行都會重建 `backend/.venv`（`python3 -m venv .venv`）後再安裝 `requirements.txt`
+- 每次執行都會執行 frontend `npm install` 後接 `npm run build`
 - crontab 除了補齊缺少項目，也會自動將舊版（未帶 `ENV_FILE`）排程行替換為新版
+  - 新版 crontab 會寫入本次「實際解析後」的 `ENV_FILE` 路徑
 
 可選參數：
 ```bash
-bash scripts/deploy_full.sh --deploy-user asapic
-bash scripts/deploy_full.sh --app-dir /home/app/AS-API-Console
+bash scripts/deploy_full.sh --source-dir /root/AS-API-Console
+bash scripts/deploy_full.sh --source-dir /root/AS-API-Console --deploy-user asapic
+bash scripts/deploy_full.sh --source-dir /root/AS-API-Console --app-dir /home/app/AS-API-Console
 ```
+
+可用以下指令確認本次部署使用的環境檔：
+```bash
+sudo -u asapic crontab -l | rg 'ENV_FILE='
+```
+
+DB migration 指令與 revision 判讀規則請以 `docs/runbook-db.md` 為準。
 
 完成後請手動重啟服務：
 ```bash
@@ -346,7 +371,7 @@ sudo systemctl status as-api-console --no-pager
 sudo journalctl -u as-api-console -n 200 --no-pager
 ```
 
-若 backend 未啟動，優先修正 `/home/app/config/.env` 或 DB 連線問題。
+若 backend 未啟動，優先修正實際生效的 `ENV_FILE`（可能是 `/home/app/config/.env` 或 fallback 的 `backend/.env`）與 DB 連線問題。
 
 ### 14.2 `/main/docs` 可開但首頁空白
 
@@ -358,7 +383,7 @@ sudo systemctl restart as-api-console
 
 ### 14.3 Alembic migration 失敗
 
-確認 `/home/app/config/.env` 中 DB 參數或 `DATABASE_URL` 正確，並檢查 MariaDB 使用者權限。
+確認實際生效的 `ENV_FILE` 中 DB 參數或 `DATABASE_URL` 正確，並檢查 MariaDB 使用者權限（可先用 `sudo -u asapic crontab -l | rg 'ENV_FILE='` 檢查）。
 
 ### 14.4 HTTPS 申請失敗
 
