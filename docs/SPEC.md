@@ -292,7 +292,6 @@ Base path：`/main/api/v1`
     - `prod`：導向 OAuth provider auth endpoint
     - `dev/test`：直接建立 session auth context（OAuth bypass）
   - 規則：
-    - `prod`：建立 request_id（state）並寫入 session，用於 callback 對帳
     - `dev/test`：以 `DEV_LOGIN_ACCOUNT`、`DEV_LOGIN_NAME`、`DEV_LOGIN_EMAIL`、`DEV_LOGIN_DEPARTMENT`、`DEV_LOGIN_SYSID`、`DEV_LOGIN_ROLE` 建立 `auth_context`；`DEV_LOGIN_ROLE` 僅允許 `user|admin`
   - Response：
     - 成功回 `302`
@@ -306,15 +305,11 @@ Base path：`/main/api/v1`
     - OAuth claims 來源：`sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
     - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
     - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
-    - callback 完成後需自 session 清除 state/request_id
     - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
-    - 登入放行規則：`tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES`（逗號分隔、大小寫不敏感）可直接放行；未命中需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.id`）
-    - 成功與失敗皆須寫入 `auth_audit_logs`
-    - 嚴禁落地 token/secret 類敏感資訊
+    - 成功與失敗皆需寫入 `auth_audit_logs`
   - Response：
     - 成功回 `302` redirect `/`
     - `401`：`OAUTH_TOKEN_EXCHANGE_FAILED`、`OAUTH_BASIC_FETCH_FAILED`
-    - `403`：`LOGIN_NOT_ELIGIBLE`
     - `422`：`OAUTH_CODE_MISSING`、`OAUTH_IDENTITY_INVALID`
 - `GET /main/api/v1/users/me`
   - 用途：回傳目前 session 使用者資訊與 CSRF token。
@@ -740,14 +735,14 @@ Base path：`/main/api/v1`
 54-2. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew` 或 `POST /main/api/v1/api-keys/{id}/extend` 若 provider timeout/5xx（`PROVIDER_UNAVAILABLE`）時，需寄送通知信給所有 `active` 管理者。
 54-3. 第 54-2 項若管理者通知信寄送失敗，不得改變原 API 錯誤回應（仍維持原錯誤碼/狀態）。
 57. 當配發模式為 `local` 時，申請、renew 與 extend 需可在不連線外部 provider 的情況下成功 `issued`。
-64. `GET /main/login` 在 `prod` 需導向 OAuth provider 並附帶 state/request_id；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。
+64. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。
 65. `GET /main/auth/callback` 成功時需建立 session auth context 並 redirect `/main/`。
 66. `GET /main/auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失）需回錯，且寫入 failure audit。
 66-1. 正式環境不得接受 header auth 作為正式認證來源；僅 `dev/test` 可啟用。
 67. OAuth 成功登入寫入的角色需固定為 `user`，不得由 OAuth payload 直接升權為 `admin`。
-68. `auth_audit_logs` 不得包含 access token/refresh token/password/client secret。
+68. OAuth 流程不得落地 access token/refresh token/password/client secret。
 69. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。
-70. `tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES` 者可登入；未命中者需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.id`），否則回 `403 LOGIN_NOT_ELIGIBLE`。
+70. OAuth callback 不做額外登入資格審核；完成 token/basic 與必要 claims 驗證後即建立 session。
 71. `admin` 可於 `POST /main/api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config` 成功時皆需寫入 `operation_audit_logs`。

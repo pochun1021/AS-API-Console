@@ -11,15 +11,11 @@ from app.schemas.common import ErrorResponse
 from app.services.auth_audit_service import AuthAuditService
 from app.services.oauth_service import OAuthService
 from db.repositories.types import AuthIdentity
-from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyWhitelistRepository
+from db.repositories import SQLAlchemyAdminRepository
 from db.session import get_db
 
 router = APIRouter()
 settings = get_settings()
-
-
-def _parse_allowed_tcodes(raw: str) -> set[str]:
-    return {code.strip().upper() for code in raw.split(",") if code.strip()}
 
 
 @router.get(
@@ -78,7 +74,6 @@ def login(
         return RedirectResponse("/main/", status_code=302)
 
     request_id = str(uuid4())
-    request.session["oauth_request_id"] = request_id
     ensure_csrf_token(request)
     service = OAuthService()
     return RedirectResponse(service.build_login_url(request_id), status_code=302)
@@ -92,7 +87,6 @@ def login(
     responses={
         302: {"description": "OAuth callback success and redirect to frontend"},
         401: {"model": ErrorResponse, "description": "OAuth provider authentication failed"},
-        403: {"model": ErrorResponse, "description": "User is not eligible to login"},
         422: {"model": ErrorResponse, "description": "OAuth callback payload is invalid"},
     },
 )
@@ -102,10 +96,8 @@ def oauth_callback(
     state: str | None = None,
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    settings = get_settings()
-    provider = settings.oauth_provider
-    expected_state = request.session.get("oauth_request_id")
-    request_id = state or expected_state or str(uuid4())
+    provider = get_settings().oauth_provider
+    request_id = state or str(uuid4())
     audit = AuthAuditService(db)
 
     if not code:
@@ -120,17 +112,6 @@ def oauth_callback(
         audit.log(provider=provider, request_id=request_id, result="failure", error_code=exc.code)
         raise
 
-    whitelist_repo = SQLAlchemyWhitelistRepository(db)
-    admin_repo = SQLAlchemyAdminRepository(db)
-    allowed_tcodes = _parse_allowed_tcodes(settings.login_allowed_title_codes)
-    allow_by_tcode = identity.tcode.strip().upper() in allowed_tcodes
-    allow_by_whitelist = whitelist_repo.find_active_by_sysid(identity.sysid) is not None
-    admin = admin_repo.get_by_id(identity.sysid)
-    allow_by_admin = admin is not None and admin.status == "active"
-    if not (allow_by_tcode or allow_by_whitelist or allow_by_admin):
-        audit.log(provider=provider, request_id=request_id, result="failure", error_code="LOGIN_NOT_ELIGIBLE")
-        raise ApiError("LOGIN_NOT_ELIGIBLE", "user is not eligible to login", 403)
-
     request.session["auth_context"] = {
         "account": identity.account,
         "name": identity.name,
@@ -139,7 +120,6 @@ def oauth_callback(
         "sysid": identity.sysid,
         "role": "user",
     }
-    request.session.pop("oauth_request_id", None)
     ensure_csrf_token(request)
     audit.log(
         provider=provider,
@@ -158,6 +138,5 @@ def oauth_callback(
 @router.post("/logout", dependencies=[Depends(csrf_protected), enforce_rate_limit("logout", settings.login_rate_limit)])
 def logout(request: Request) -> dict[str, str]:
     request.session.pop("auth_context", None)
-    request.session.pop("oauth_request_id", None)
     request.session.pop("csrf_token", None)
     return {"status": "ok"}
