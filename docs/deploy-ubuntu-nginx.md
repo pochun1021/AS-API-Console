@@ -39,18 +39,18 @@ sudo systemctl status mariadb --no-pager
 ## 3. 建立部署目錄與系統帳號
 
 ```bash
-sudo useradd --system --create-home --shell /bin/bash aspaic
-sudo mkdir -p /home/app/AI-API-Console
-sudo chown -R aspaic:aspaic /home/app/AI-API-Console
+sudo useradd --system --create-home --shell /bin/bash asapic
+sudo mkdir -p /home/app/AS-API-Console
+sudo chown -R asapic:asapic /home/app/AS-API-Console
 ```
 
-> 下列步驟以 `/home/app/AI-API-Console` 為專案路徑。
+> 下列步驟以 `/home/app/AS-API-Console` 為專案路徑。
 
 ## 4. 下載專案與安裝依賴
 
 ```bash
-sudo -u aspaic -H bash -lc '
-cd /home/app/AI-API-Console
+sudo -u asapic -H bash -lc '
+cd /home/app/AS-API-Console
 if [ ! -d .git ]; then
   git clone <YOUR_REPO_URL> .
 else
@@ -62,8 +62,8 @@ fi
 ### 4.1 Backend 依賴（venv + requirements.txt）
 
 ```bash
-sudo -u aspaic -H bash -lc '
-cd /home/app/AI-API-Console/backend
+sudo -u asapic -H bash -lc '
+cd /home/app/AS-API-Console/backend
 python3 -m venv .venv
 . .venv/bin/activate
 pip install --upgrade pip
@@ -74,8 +74,8 @@ pip install -r requirements.txt
 ### 4.2 Frontend build
 
 ```bash
-sudo -u aspaic -H bash -lc '
-cd /home/app/AI-API-Console/frontend
+sudo -u asapic -H bash -lc '
+cd /home/app/AS-API-Console/frontend
 npm install
 npm run build
 '
@@ -105,9 +105,9 @@ mariadb -h localhost -u as_api_console -p as_api_console -e "SELECT 1;"
 
 建立環境檔：
 ```bash
-sudo -u aspaic -H bash -lc '
+sudo -u asapic -H bash -lc '
 mkdir -p /home/app/config
-cp -n /home/app/AI-API-Console/backend/.env.example /home/app/config/.env
+cp -n /home/app/AS-API-Console/backend/.env.example /home/app/config/.env
 chmod 600 /home/app/config/.env
 '
 ```
@@ -149,8 +149,8 @@ chmod 600 /home/app/config/.env
 ## 7. 資料庫 migration
 
 ```bash
-sudo -u aspaic -H bash -lc '
-cd /home/app/AI-API-Console/backend
+sudo -u asapic -H bash -lc '
+cd /home/app/AS-API-Console/backend
 . .venv/bin/activate
 alembic upgrade head
 '
@@ -158,8 +158,8 @@ alembic upgrade head
 
 確認 revision：
 ```bash
-sudo -u aspaic -H bash -lc '
-cd /home/app/AI-API-Console/backend
+sudo -u asapic -H bash -lc '
+cd /home/app/AS-API-Console/backend
 . .venv/bin/activate
 alembic current
 '
@@ -168,8 +168,8 @@ alembic current
 ## 8. 先手動啟動一次 backend 驗證
 
 ```bash
-sudo -u aspaic -H bash -lc '
-cd /home/app/AI-API-Console/backend
+sudo -u asapic -H bash -lc '
+cd /home/app/AS-API-Console/backend
 . .venv/bin/activate
 export ENV_FILE=/home/app/config/.env
 set -a
@@ -198,11 +198,11 @@ After=network.target mariadb.service
 
 [Service]
 Type=simple
-User=aspaic
-Group=aspaic
-WorkingDirectory=/home/app/AI-API-Console/backend
+User=asapic
+Group=asapic
+WorkingDirectory=/home/app/AS-API-Console/backend
 Environment=ENV_FILE=/home/app/config/.env
-ExecStart=/home/app/AI-API-Console/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+ExecStart=/home/app/AS-API-Console/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
 
@@ -305,8 +305,8 @@ bash scripts/deploy_full.sh
 
 可選參數：
 ```bash
-bash scripts/deploy_full.sh --deploy-user aspaic
-bash scripts/deploy_full.sh --app-dir /home/app/AI-API-Console
+bash scripts/deploy_full.sh --deploy-user asapic
+bash scripts/deploy_full.sh --app-dir /home/app/AS-API-Console
 ```
 
 完成後請手動重啟服務：
@@ -322,8 +322,8 @@ sudo systemctl reload nginx
 
 更新程式（手動）：
 ```bash
-sudo -u aspaic -H bash -lc '
-cd /home/app/AI-API-Console
+sudo -u asapic -H bash -lc '
+cd /home/app/AS-API-Console
 git pull --ff-only
 cd backend
 . .venv/bin/activate
@@ -352,7 +352,7 @@ sudo journalctl -u as-api-console -n 200 --no-pager
 
 通常是前端 build 未產生或路徑錯誤：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/frontend && npm run build'
+sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/frontend && npm run build'
 sudo systemctl restart as-api-console
 ```
 
@@ -428,11 +428,11 @@ After=network.target mariadb.service
 
 [Service]
 Type=oneshot
-User=aspaic
-Group=aspaic
-WorkingDirectory=/home/app/AI-API-Console/backend
+User=asapic
+Group=asapic
+WorkingDirectory=/home/app/AS-API-Console/backend
 Environment=ENV_FILE=/home/app/config/.env
-ExecStart=/home/app/AI-API-Console/backend/scripts/run_expire_sync.sh
+ExecStart=/home/app/AS-API-Console/backend/scripts/run_expire_sync.sh
 ```
 
 建立 `/etc/systemd/system/as-api-expire-sync.timer`：
@@ -461,25 +461,25 @@ sudo systemctl status as-api-expire-sync.timer --no-pager
 ```bash
 sudo systemctl start as-api-expire-sync.service
 sudo journalctl -u as-api-expire-sync.service -n 200 --no-pager
-sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u asapic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ### 16.2 方案 B：cron
 
-以 `aspaic` 使用者設定 crontab：
+以 `asapic` 使用者設定 crontab：
 ```bash
-sudo -u aspaic crontab -e
+sudo -u asapic crontab -e
 ```
 
 加入：
 ```cron
-10 0 * * * ENV_FILE=/home/app/config/.env /home/app/AI-API-Console/backend/scripts/run_expire_sync.sh
+10 0 * * * ENV_FILE=/home/app/config/.env /home/app/AS-API-Console/backend/scripts/run_expire_sync.sh
 ```
 
 檢查：
 ```bash
-sudo -u aspaic crontab -l
-sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u asapic crontab -l
+sudo -u asapic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 說明：
@@ -489,21 +489,21 @@ sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/sync_expired_api_keys/$(
 ### 16.3 排錯重點
 - `.env` 未設定或 DB 參數錯誤：確認 `/home/app/config/.env` 內容。
 - 執行環境找不到 `uv`：腳本會自動 fallback 到 `.venv/bin/python` 或 `python`，但仍需先安裝依賴。
-- 權限問題：確認 `aspaic` 對專案目錄可讀執行，且可連線 DB。
+- 權限問題：確認 `asapic` 對專案目錄可讀執行，且可連線 DB。
 
 ### 16.4 驗證清單（建議）
 1. 檢查排程已啟用：
 ```bash
 sudo systemctl list-timers as-api-expire-sync.timer --all
-sudo -u aspaic crontab -l
+sudo -u asapic crontab -l
 ```
 2. 手動 dry-run：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run'
+sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/backend && ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run'
 ```
 3. 檢查當日日誌：
 ```bash
-sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u asapic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ## 17. 單位主檔同步排程部署
@@ -523,11 +523,11 @@ After=network.target mariadb.service
 
 [Service]
 Type=oneshot
-User=aspaic
-Group=aspaic
-WorkingDirectory=/home/app/AI-API-Console/backend
+User=asapic
+Group=asapic
+WorkingDirectory=/home/app/AS-API-Console/backend
 Environment=ENV_FILE=/home/app/config/.env
-ExecStart=/home/app/AI-API-Console/backend/.venv/bin/python /home/app/AI-API-Console/backend/scripts/sync_institutes.py
+ExecStart=/home/app/AS-API-Console/backend/.venv/bin/python /home/app/AS-API-Console/backend/scripts/sync_institutes.py
 ```
 
 建立 `/etc/systemd/system/as-api-institute-sync.timer`：
@@ -560,19 +560,19 @@ sudo journalctl -u as-api-institute-sync.service -n 200 --no-pager
 
 ### 17.2 方案 B：cron
 
-以 `aspaic` 使用者設定 crontab：
+以 `asapic` 使用者設定 crontab：
 ```bash
-sudo -u aspaic crontab -e
+sudo -u asapic crontab -e
 ```
 
 加入：
 ```cron
-20 0 * * * cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env /home/app/AI-API-Console/backend/.venv/bin/python scripts/sync_institutes.py
+20 0 * * * cd /home/app/AS-API-Console/backend && ENV_FILE=/home/app/config/.env /home/app/AS-API-Console/backend/.venv/bin/python scripts/sync_institutes.py
 ```
 
 檢查：
 ```bash
-sudo -u aspaic crontab -l
+sudo -u asapic crontab -l
 ```
 
 ### 17.3 排錯重點
@@ -585,16 +585,16 @@ sudo -u aspaic crontab -l
 1. 檢查排程已啟用：
 ```bash
 sudo systemctl list-timers as-api-institute-sync.timer --all
-sudo -u aspaic crontab -l
+sudo -u asapic crontab -l
 ```
 2. 手動 dry-run：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env . .venv/bin/activate && ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py --dry-run'
+sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/backend && ENV_FILE=/home/app/config/.env . .venv/bin/activate && ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py --dry-run'
 ```
 3. 若出現 `persnl soap is not configured`，先補齊 `/home/app/config/.env` 的 `PERSNL_SOAP_URL` 或 `PERSNL_SOAP_WSDL_URL`，以及 `PERSNL_SOAP_USER`、`PERSNL_SOAP_PASSWORD`。
 4. 實際同步一次：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env . .venv/bin/activate && ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py'
+sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/backend && ENV_FILE=/home/app/config/.env . .venv/bin/activate && ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py'
 ```
 
 ## 18. API Key 到期提醒寄信排程部署
@@ -613,11 +613,11 @@ After=network.target mariadb.service
 
 [Service]
 Type=oneshot
-User=aspaic
-Group=aspaic
-WorkingDirectory=/home/app/AI-API-Console/backend
+User=asapic
+Group=asapic
+WorkingDirectory=/home/app/AS-API-Console/backend
 Environment=ENV_FILE=/home/app/config/.env
-ExecStart=/home/app/AI-API-Console/backend/scripts/run_expiration_reminder.sh
+ExecStart=/home/app/AS-API-Console/backend/scripts/run_expiration_reminder.sh
 ```
 
 建立 `/etc/systemd/system/as-api-expiration-reminder.timer`：
@@ -646,25 +646,25 @@ sudo systemctl status as-api-expiration-reminder.timer --no-pager
 ```bash
 sudo systemctl start as-api-expiration-reminder.service
 sudo journalctl -u as-api-expiration-reminder.service -n 200 --no-pager
-sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/send_expiration_reminders/$(TZ=Asia/Taipei date +%F).log
+sudo -u asapic tail -n 100 /home/app/log/send_expiration_reminders/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ### 18.2 方案 B：cron
 
-以 `aspaic` 使用者設定 crontab：
+以 `asapic` 使用者設定 crontab：
 ```bash
-sudo -u aspaic crontab -e
+sudo -u asapic crontab -e
 ```
 
 加入：
 ```cron
-30 0 * * * ENV_FILE=/home/app/config/.env /home/app/AI-API-Console/backend/scripts/run_expiration_reminder.sh
+30 0 * * * ENV_FILE=/home/app/config/.env /home/app/AS-API-Console/backend/scripts/run_expiration_reminder.sh
 ```
 
 檢查：
 ```bash
-sudo -u aspaic crontab -l
-sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/send_expiration_reminders/$(TZ=Asia/Taipei date +%F).log
+sudo -u asapic crontab -l
+sudo -u asapic tail -n 100 /home/app/log/send_expiration_reminders/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ### 18.3 排錯重點
@@ -677,13 +677,13 @@ sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/send_expiration_reminder
 1. 檢查排程已啟用：
 ```bash
 sudo systemctl list-timers as-api-expiration-reminder.timer --all
-sudo -u aspaic crontab -l
+sudo -u asapic crontab -l
 ```
 2. 手動 dry-run：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env ./scripts/run_expiration_reminder.sh --dry-run'
+sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/backend && ENV_FILE=/home/app/config/.env ./scripts/run_expiration_reminder.sh --dry-run'
 ```
 3. 檢查當日日誌：
 ```bash
-sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/send_expiration_reminders/$(TZ=Asia/Taipei date +%F).log
+sudo -u asapic tail -n 100 /home/app/log/send_expiration_reminders/$(TZ=Asia/Taipei date +%F).log
 ```

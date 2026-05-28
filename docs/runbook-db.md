@@ -258,9 +258,9 @@ ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run
 ```bash
 tail -n 50 ../log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
-- 部署環境路徑範例（專案位於 `/home/app`）：
+- 部署環境路徑範例（專案位於 `/home/app/AS-API-Console`）：
 ```bash
-sudo -u aspaic tail -n 50 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
+sudo -u asapic tail -n 50 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
 ### 3) 檢查回填結果

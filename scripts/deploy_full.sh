@@ -10,14 +10,14 @@ usage() {
 Usage: bash scripts/deploy_full.sh [options]
 
 Options:
-  --deploy-user <user>  User for crontab check/update (default: aspaic)
-  --app-dir <path>      Application directory (default: /home/app/AI-API-Console)
+  --deploy-user <user>  User for crontab check/update (default: asapic)
+  --app-dir <path>      Application directory (default: /home/app/AS-API-Console)
   -h, --help            Show this help message
 USAGE
 }
 
-DEPLOY_USER="aspaic"
-APP_DIR="/home/app/AI-API-Console"
+DEPLOY_USER="asapic"
+APP_DIR="/home/app/AS-API-Console"
 ENV_FILE_PATH="/home/app/config/.env"
 
 while [[ $# -gt 0 ]]; do

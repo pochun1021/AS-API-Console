@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from asyncio import run as run_async
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -11,9 +12,9 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOG_TZ = ZoneInfo("Asia/Taipei")
-LOG_DIR = PROJECT_ROOT / "log" / "send_expiration_reminders"
+LOG_ROOT = Path(os.getenv("SCHEDULER_LOG_ROOT", "/home/app/log"))
+LOG_DIR = LOG_ROOT / "send_expiration_reminders"
 LOGGER_NAME = "send_expiration_reminders"
 sys.path.insert(0, str(BACKEND_ROOT))
 

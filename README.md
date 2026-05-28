@@ -101,6 +101,7 @@ export ENV_FILE=/home/app/config/.env
 - `OAUTH_SCOPE`：可選，OAuth scope（預設 `basic`）
 - `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：`APP_ENV=dev/test` 使用 `/main/login` bypass 時建立 session 身分所需欄位
 - `DEV_LOGIN_ROLE`：可選，`APP_ENV=dev/test` bypass 身分角色（僅允許 `user` 或 `admin`，預設 `user`）
+- `SCHEDULER_LOG_ROOT`：可選，排程腳本日誌根目錄（預設 `/home/app/log`，實際會寫入子目錄如 `sync_expired_api_keys/`、`send_expiration_reminders/`）
 - `MAIL_ENABLED`：可選，是否啟用 Email 發送（預設 `false`）
 - `MAIL_SERVER` / `MAIL_PORT`：可選，SMTP 主機與連接埠
 - `MAIL_USERNAME` / `MAIL_PASSWORD`：可選，SMTP 認證資訊

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 import sys
@@ -10,9 +11,9 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select, update
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOG_TZ = ZoneInfo("Asia/Taipei")
-LOG_DIR = PROJECT_ROOT / "log" / "sync_expired_api_keys"
+LOG_ROOT = Path(os.getenv("SCHEDULER_LOG_ROOT", "/home/app/log"))
+LOG_DIR = LOG_ROOT / "sync_expired_api_keys"
 LOGGER_NAME = "sync_expired_api_keys"
 sys.path.insert(0, str(BACKEND_ROOT))
 
