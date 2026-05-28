@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from urllib.parse import parse_qs, urlparse
 
 from app.core.errors import ApiError
 from app.services.oauth_service import OAuthIdentity
@@ -24,20 +25,19 @@ def _latest_auth_audit() -> AuthAuditLog | None:
 
 def test_login_redirects_to_provider(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
-    monkeypatch.setattr(
-        "app.services.oauth_service.OAuthService.build_login_url",
-        lambda self, state: "https://oauth.example/auth?client_id=abc&scope=basic",
-    )
     resp = client.get("/main/login", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "https://oauth.example/auth?client_id=abc&scope=basic"
+    location = resp.headers["location"]
+    parsed = urlparse(location)
+    query = parse_qs(parsed.query)
+    assert "state" not in query
 
 
 def test_callback_success_sets_session_and_audits(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
-        lambda self, state: "https://oauth.example/auth",
+        lambda self: "https://oauth.example/auth",
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
@@ -123,7 +123,7 @@ def test_callback_allows_missing_state(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
-        lambda self, state: "https://oauth.example/auth",
+        lambda self: "https://oauth.example/auth",
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
@@ -150,7 +150,7 @@ def test_callback_allows_any_valid_oauth_identity(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
-        lambda self, state: "https://oauth.example/auth",
+        lambda self: "https://oauth.example/auth",
     )
     monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
     monkeypatch.setattr(
@@ -174,7 +174,7 @@ def test_session_mutation_requires_csrf_token(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
-        lambda self, state: "https://oauth.example/auth",
+        lambda self: "https://oauth.example/auth",
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.exchange_code_for_token",

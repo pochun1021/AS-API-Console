@@ -73,10 +73,9 @@ def login(
         ensure_csrf_token(request)
         return RedirectResponse("/main/", status_code=302)
 
-    request_id = str(uuid4())
     ensure_csrf_token(request)
     service = OAuthService()
-    return RedirectResponse(service.build_login_url(request_id), status_code=302)
+    return RedirectResponse(service.build_login_url(), status_code=302)
 
 
 @router.get(

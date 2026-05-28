@@ -26,7 +26,7 @@ class OAuthService:
             raise ApiError("INTERNAL_ERROR", f"missing oauth config: {key}", 500)
         return value
 
-    def build_login_url(self, state: str) -> str:
+    def build_login_url(self) -> str:
         auth_uri = self._required(self.settings.oauth_auth_uri, "OAUTH_AUTH_URI")
         query = urlencode(
             {

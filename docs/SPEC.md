@@ -293,6 +293,7 @@ Base path：`/main/api/v1`
     - `dev/test`：直接建立 session auth context（OAuth bypass）
   - 規則：
     - `dev/test`：以 `DEV_LOGIN_ACCOUNT`、`DEV_LOGIN_NAME`、`DEV_LOGIN_EMAIL`、`DEV_LOGIN_DEPARTMENT`、`DEV_LOGIN_SYSID`、`DEV_LOGIN_ROLE` 建立 `auth_context`；`DEV_LOGIN_ROLE` 僅允許 `user|admin`
+    - `prod`：導向 OAuth provider 時不傳送 `state` 參數
   - Response：
     - 成功回 `302`
       - `prod`：redirect 至 OAuth provider
@@ -302,6 +303,7 @@ Base path：`/main/api/v1`
 - `GET /main/auth/callback`
   - 用途：接收 provider callback，交換 access token，取得 basic identity claims，建立本機 session auth context。
   - 規則：
+    - callback 僅以 `code` 驅動 token/identity 流程；不做 `state` 比對
     - OAuth claims 來源：`sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
     - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
     - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
