@@ -189,13 +189,13 @@ Seed completed: admins=2, whitelists=8, applications=20, api_keys=20, reset=True
 - 內建腳本：
 ```bash
 cd backend
-./scripts/run_expire_sync.sh
+ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh
 ```
 - 參數範例：
 ```bash
 cd backend
-./scripts/run_expire_sync.sh --batch-size 2000
-./scripts/run_expire_sync.sh --dry-run
+ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --batch-size 2000
+ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run
 ```
 - 執行日誌：
   - 會寫入專案根目錄 `log/sync_expired_api_keys/`。
@@ -210,13 +210,13 @@ cd backend
 - 內建腳本：
 ```bash
 cd backend
-./scripts/run_expiration_reminder.sh
+ENV_FILE=/home/app/config/.env ./scripts/run_expiration_reminder.sh
 ```
 - 參數範例：
 ```bash
 cd backend
-./scripts/run_expiration_reminder.sh --batch-size 2000
-./scripts/run_expiration_reminder.sh --dry-run
+ENV_FILE=/home/app/config/.env ./scripts/run_expiration_reminder.sh --batch-size 2000
+ENV_FILE=/home/app/config/.env ./scripts/run_expiration_reminder.sh --dry-run
 ```
 - 執行日誌：
   - 會寫入專案根目錄 `log/send_expiration_reminders/`。
@@ -228,12 +228,12 @@ cd backend
 - 內建腳本：
 ```bash
 cd backend
-python scripts/sync_institutes.py
+ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py
 ```
 - dry-run 驗證：
 ```bash
 cd backend
-python scripts/sync_institutes.py --dry-run
+ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py --dry-run
 ```
 - 預設建議頻率：每日 `00:20`（與 expired 回填 `00:10` 錯峰）。
 - 前置條件：需先設定 `PERSNL_SOAP_*`；未設定時 `sync_institutes.py` 會以 `persnl soap is not configured` 失敗退出。

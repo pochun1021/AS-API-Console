@@ -5,6 +5,8 @@
 
 ## 1) 最小必要設定（`.env`）
 
+部署環境建議使用外部設定檔 `/home/app/config/.env`（搭配 `ENV_FILE=/home/app/config/.env`）；本文件中的 `.env` 指該環境變數檔內容。
+
 ```env
 MAIL_ENABLED=true
 MAIL_SERVER=smtp.example.internal
@@ -74,7 +76,7 @@ python scripts/send_test_email.py --to your.name@example.com --env-file .env.loc
 
 ```bash
 cd backend
-./scripts/run_expiration_reminder.sh --dry-run
+ENV_FILE=/home/app/config/.env ./scripts/run_expiration_reminder.sh --dry-run
 ```
 
 說明：

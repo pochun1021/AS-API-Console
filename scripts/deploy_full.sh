@@ -18,6 +18,7 @@ USAGE
 
 DEPLOY_USER="aspaic"
 APP_DIR="/home/app/AI-API-Console"
+ENV_FILE_PATH="/home/app/config/.env"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -79,13 +80,25 @@ alembic current
 "
 
 log "Checking and updating crontab entries"
-EXPIRE_JOB="10 0 * * * ${APP_DIR}/backend/scripts/run_expire_sync.sh"
-INSTITUTE_JOB="20 0 * * * cd ${APP_DIR}/backend && . .venv/bin/activate && python scripts/sync_institutes.py"
-REMINDER_JOB="30 0 * * * ${APP_DIR}/backend/scripts/run_expiration_reminder.sh"
+EXPIRE_JOB="10 0 * * * ENV_FILE=${ENV_FILE_PATH} ${APP_DIR}/backend/scripts/run_expire_sync.sh"
+INSTITUTE_JOB="20 0 * * * cd ${APP_DIR}/backend && ENV_FILE=${ENV_FILE_PATH} . .venv/bin/activate && ENV_FILE=${ENV_FILE_PATH} python scripts/sync_institutes.py"
+REMINDER_JOB="30 0 * * * ENV_FILE=${ENV_FILE_PATH} ${APP_DIR}/backend/scripts/run_expiration_reminder.sh"
+
+LEGACY_EXPIRE_JOB="10 0 * * * ${APP_DIR}/backend/scripts/run_expire_sync.sh"
+LEGACY_INSTITUTE_JOB="20 0 * * * cd ${APP_DIR}/backend && . .venv/bin/activate && python scripts/sync_institutes.py"
+LEGACY_REMINDER_JOB="30 0 * * * ${APP_DIR}/backend/scripts/run_expiration_reminder.sh"
 
 CURRENT_CRON="$(sudo -u "$DEPLOY_USER" crontab -l 2>/dev/null || true)"
 UPDATED_CRON="$CURRENT_CRON"
 ADDED=()
+REPLACED=()
+
+remove_job() {
+  local job="$1"
+  local new_cron
+  new_cron="$(printf '%s\n' "$UPDATED_CRON" | grep -F -x -v "$job" || true)"
+  UPDATED_CRON="$(printf '%s' "$new_cron" | sed '/^$/d')"
+}
 
 ensure_job() {
   local job="$1"
@@ -98,13 +111,27 @@ ensure_job() {
   fi
 }
 
+replace_legacy_job() {
+  local legacy_job="$1"
+  local new_job="$2"
+  if printf '%s\n' "$UPDATED_CRON" | grep -F -x "$legacy_job" >/dev/null 2>&1; then
+    remove_job "$legacy_job"
+    ensure_job "$new_job"
+    REPLACED+=("$legacy_job")
+  fi
+}
+
+replace_legacy_job "$LEGACY_EXPIRE_JOB" "$EXPIRE_JOB"
+replace_legacy_job "$LEGACY_INSTITUTE_JOB" "$INSTITUTE_JOB"
+replace_legacy_job "$LEGACY_REMINDER_JOB" "$REMINDER_JOB"
+
 ensure_job "$EXPIRE_JOB"
 ensure_job "$INSTITUTE_JOB"
 ensure_job "$REMINDER_JOB"
 
-if [[ "${#ADDED[@]}" -gt 0 ]]; then
+if [[ "${#ADDED[@]}" -gt 0 || "${#REPLACED[@]}" -gt 0 ]]; then
   printf '%s\n' "$UPDATED_CRON" | sudo -u "$DEPLOY_USER" crontab -
-  log "Added missing crontab entries (${#ADDED[@]})"
+  log "Crontab updated (added=${#ADDED[@]}, replaced=${#REPLACED[@]})"
 else
   log "All required crontab entries already exist"
 fi
@@ -120,7 +147,11 @@ Completed steps:
 
 Crontab target user: $DEPLOY_USER
 App directory: $APP_DIR
+ENV_FILE path: $ENV_FILE_PATH
 
 Entries added this run:
 $(if [[ "${#ADDED[@]}" -eq 0 ]]; then echo '- none'; else printf -- '- %s\n' "${ADDED[@]}"; fi)
+
+Legacy entries replaced this run:
+$(if [[ "${#REPLACED[@]}" -eq 0 ]]; then echo '- none'; else printf -- '- %s\n' "${REPLACED[@]}"; fi)
 DONE

@@ -241,13 +241,13 @@ WHERE k.status='active'
 使用 `uv`：
 ```bash
 cd backend
-./scripts/run_expire_sync.sh
+ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh
 ```
 
 先看 dry-run：
 ```bash
 cd backend
-./scripts/run_expire_sync.sh --dry-run
+ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run
 ```
 
 ### 2-1) 檢查排程日誌

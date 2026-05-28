@@ -298,6 +298,11 @@ sudo certbot renew --dry-run
 bash scripts/deploy_full.sh
 ```
 
+目前腳本固定使用：
+- `ENV_FILE=/home/app/config/.env`
+- 每次執行都會重建 `backend/.venv`（`python3 -m venv .venv`）後再安裝 `requirements.txt`
+- crontab 除了補齊缺少項目，也會自動將舊版（未帶 `ENV_FILE`）排程行替換為新版
+
 可選參數：
 ```bash
 bash scripts/deploy_full.sh --deploy-user aspaic
@@ -341,7 +346,7 @@ sudo systemctl status as-api-console --no-pager
 sudo journalctl -u as-api-console -n 200 --no-pager
 ```
 
-若 backend 未啟動，優先修正 `.env` 或 DB 連線問題。
+若 backend 未啟動，優先修正 `/home/app/config/.env` 或 DB 連線問題。
 
 ### 14.2 `/main/docs` 可開但首頁空白
 
@@ -353,7 +358,7 @@ sudo systemctl restart as-api-console
 
 ### 14.3 Alembic migration 失敗
 
-確認 `.env` 中 DB 參數或 `DATABASE_URL` 正確，並檢查 MariaDB 使用者權限。
+確認 `/home/app/config/.env` 中 DB 參數或 `DATABASE_URL` 正確，並檢查 MariaDB 使用者權限。
 
 ### 14.4 HTTPS 申請失敗
 
@@ -590,4 +595,95 @@ sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ENV_FILE=/hom
 4. 實際同步一次：
 ```bash
 sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env . .venv/bin/activate && ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py'
+```
+
+## 18. API Key 到期提醒寄信排程部署
+
+到期提醒寄信採背景排程模式：
+- 執行腳本：`backend/scripts/run_expiration_reminder.sh`
+- 建議頻率：每日 `00:30`（與 expired 回填 `00:10`、單位同步 `00:20` 錯峰）
+
+### 18.1 方案 A（建議）：systemd timer
+
+建立 `/etc/systemd/system/as-api-expiration-reminder.service`：
+```ini
+[Unit]
+Description=AS API Console Expiration Reminder Mailer
+After=network.target mariadb.service
+
+[Service]
+Type=oneshot
+User=aspaic
+Group=aspaic
+WorkingDirectory=/home/app/AI-API-Console/backend
+Environment=ENV_FILE=/home/app/config/.env
+ExecStart=/home/app/AI-API-Console/backend/scripts/run_expiration_reminder.sh
+```
+
+建立 `/etc/systemd/system/as-api-expiration-reminder.timer`：
+```ini
+[Unit]
+Description=Run API key expiration reminder mailer daily at 00:30
+
+[Timer]
+OnCalendar=*-*-* 00:30:00
+Persistent=true
+Unit=as-api-expiration-reminder.service
+
+[Install]
+WantedBy=timers.target
+```
+
+啟用與驗證：
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now as-api-expiration-reminder.timer
+sudo systemctl list-timers as-api-expiration-reminder.timer --all
+sudo systemctl status as-api-expiration-reminder.timer --no-pager
+```
+
+手動觸發與看 log：
+```bash
+sudo systemctl start as-api-expiration-reminder.service
+sudo journalctl -u as-api-expiration-reminder.service -n 200 --no-pager
+sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/send_expiration_reminders/$(TZ=Asia/Taipei date +%F).log
+```
+
+### 18.2 方案 B：cron
+
+以 `aspaic` 使用者設定 crontab：
+```bash
+sudo -u aspaic crontab -e
+```
+
+加入：
+```cron
+30 0 * * * ENV_FILE=/home/app/config/.env /home/app/AI-API-Console/backend/scripts/run_expiration_reminder.sh
+```
+
+檢查：
+```bash
+sudo -u aspaic crontab -l
+sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/send_expiration_reminders/$(TZ=Asia/Taipei date +%F).log
+```
+
+### 18.3 排錯重點
+- `MAIL_ENABLED` 不是 `true`：會略過寄信；請檢查 `/home/app/config/.env`。
+- SMTP 參數缺失：檢查 `MAIL_SERVER`、`MAIL_PORT`、`MAIL_FROM` 與帳密設定。
+- 執行環境找不到 `uv`：腳本會自動 fallback 到 `.venv/bin/python` 或 `python`，但仍需先安裝依賴。
+- 若查無資料寄送：先以 `--dry-run` 檢查是否有命中「30 天後到期且 active」資料。
+
+### 18.4 驗證清單（建議）
+1. 檢查排程已啟用：
+```bash
+sudo systemctl list-timers as-api-expiration-reminder.timer --all
+sudo -u aspaic crontab -l
+```
+2. 手動 dry-run：
+```bash
+sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env ./scripts/run_expiration_reminder.sh --dry-run'
+```
+3. 檢查當日日誌：
+```bash
+sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/send_expiration_reminders/$(TZ=Asia/Taipei date +%F).log
 ```
