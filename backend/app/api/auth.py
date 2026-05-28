@@ -91,7 +91,7 @@ def login(
     dependencies=[enforce_rate_limit("oauth_callback", settings.login_rate_limit)],
     responses={
         302: {"description": "OAuth callback success and redirect to frontend"},
-        401: {"model": ErrorResponse, "description": "OAuth state is missing or mismatched"},
+        401: {"model": ErrorResponse, "description": "OAuth provider authentication failed"},
         403: {"model": ErrorResponse, "description": "User is not eligible to login"},
         422: {"model": ErrorResponse, "description": "OAuth callback payload is invalid"},
     },
@@ -111,13 +111,6 @@ def oauth_callback(
     if not code:
         audit.log(provider=provider, request_id=request_id, result="failure", error_code="OAUTH_CODE_MISSING")
         raise ApiError("OAUTH_CODE_MISSING", "oauth callback code missing", 422)
-    if not expected_state:
-        audit.log(provider=provider, request_id=request_id, result="failure", error_code="OAUTH_STATE_MISSING")
-        raise ApiError("OAUTH_STATE_MISSING", "oauth state missing", 401)
-    if not state or state != expected_state:
-        request.session.pop("oauth_request_id", None)
-        audit.log(provider=provider, request_id=request_id, result="failure", error_code="OAUTH_STATE_MISMATCH")
-        raise ApiError("OAUTH_STATE_MISMATCH", "oauth state mismatch", 401)
 
     try:
         oauth = OAuthService()

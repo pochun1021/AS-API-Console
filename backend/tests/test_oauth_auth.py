@@ -71,6 +71,36 @@ def test_callback_missing_code_returns_error_and_audits(client):
     assert resp.json()["error"]["code"] == "OAUTH_CODE_MISSING"
 
 
+def test_callback_allows_missing_state(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
+    monkeypatch.setenv("LOGIN_ALLOWED_TITLE_CODES", "RS01")
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.build_login_url",
+        lambda self, state: f"https://oauth.example/auth?state={state}",
+    )
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.exchange_code_for_token",
+        lambda self, code: "token-1",
+    )
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.fetch_identity",
+        lambda self, token: OAuthIdentity(
+            account="oauth.user.statefree",
+            name="OAuth User Statefree",
+            email="oauth.user.statefree@example.com",
+            department="IT",
+            sysid=3301,
+            tcode="RS01",
+            role="user",
+        ),
+    )
+    client.get("/main/login", follow_redirects=False)
+    callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
+    assert callback.status_code == 302
+    assert callback.headers["location"] == "/main/"
+
+
 def test_callback_rejects_not_eligible_login(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(

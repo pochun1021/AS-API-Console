@@ -305,14 +305,14 @@ Base path：`/main/api/v1`
     - OAuth claims 來源：`sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
     - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
     - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
-    - state 僅可使用一次；callback 完成後需自 session 清除
+    - callback 完成後需自 session 清除 state/request_id
     - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
     - 登入放行規則：`tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES`（逗號分隔、大小寫不敏感）可直接放行；未命中需命中 `active` 白名單（`sysid`）或 `active` 管理者名單（`admins.id`）
     - 成功與失敗皆須寫入 `auth_audit_logs`
     - 嚴禁落地 token/secret 類敏感資訊
   - Response：
     - 成功回 `302` redirect `/`
-    - `401`：`OAUTH_STATE_MISSING`、`OAUTH_STATE_MISMATCH`
+    - `401`：`OAUTH_TOKEN_EXCHANGE_FAILED`、`OAUTH_BASIC_FETCH_FAILED`
     - `403`：`LOGIN_NOT_ELIGIBLE`
     - `422`：`OAUTH_CODE_MISSING`、`OAUTH_IDENTITY_INVALID`
 - `GET /main/api/v1/users/me`
@@ -741,7 +741,7 @@ Base path：`/main/api/v1`
 57. 當配發模式為 `local` 時，申請、renew 與 extend 需可在不連線外部 provider 的情況下成功 `issued`。
 64. `GET /main/login` 在 `prod` 需導向 OAuth provider 並附帶 state/request_id；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。
 65. `GET /main/auth/callback` 成功時需建立 session auth context 並 redirect `/main/`。
-66. `GET /main/auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失、state mismatch）需回錯，且寫入 failure audit。
+66. `GET /main/auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失）需回錯，且寫入 failure audit。
 66-1. 正式環境不得接受 header auth 作為正式認證來源；僅 `dev/test` 可啟用。
 67. OAuth 成功登入寫入的角色需固定為 `user`，不得由 OAuth payload 直接升權為 `admin`。
 68. `auth_audit_logs` 不得包含 access token/refresh token/password/client secret。
