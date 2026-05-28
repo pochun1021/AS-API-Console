@@ -69,9 +69,11 @@ npm run build
 
 3. 設定後端環境變數
 ```bash
-cd backend
-cp .env.example .env
+mkdir -p /home/app/config
+cp -n backend/.env.example /home/app/config/.env
+export ENV_FILE=/home/app/config/.env
 ```
+- 預設以 `ENV_FILE` 指向外部環境檔（建議 `/home/app/config/.env`）；未設定 `ENV_FILE` 時才回退讀取 `backend/.env`
 - `APP_DOMAIN`：後端對外基底網址（預設 `http://localhost:8000`，方便後續部署調整）
 - `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME`：MariaDB 連線組件（程式會自動組成 `DATABASE_URL`）
 - 建議命名規則：`DB_USER` 與 `DB_NAME` 使用相同名稱（例如都用 `as_api_console`），方便權限管理與維運
@@ -108,11 +110,13 @@ cp .env.example .env
 4. 啟動後端（同時提供 API + 前端頁面）
 ```bash
 cd backend
+export ENV_FILE=/home/app/config/.env
 uv run uvicorn app.main:app --reload
 ```
 若環境沒有 `uv`：
 ```bash
 cd backend
+export ENV_FILE=/home/app/config/.env
 . .venv/bin/activate
 python -m uvicorn app.main:app --reload
 ```

@@ -6,10 +6,11 @@ BACKEND_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${BACKEND_DIR}"
 
-if [[ -f ".env" ]]; then
+ENV_PATH="${ENV_FILE:-.env}"
+if [[ -f "${ENV_PATH}" ]]; then
   set -a
   # shellcheck disable=SC1091
-  source ".env"
+  source "${ENV_PATH}"
   set +a
 fi
 

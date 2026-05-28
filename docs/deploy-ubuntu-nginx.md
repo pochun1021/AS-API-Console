@@ -106,12 +106,13 @@ mariadb -h localhost -u as_api_console -p as_api_console -e "SELECT 1;"
 建立環境檔：
 ```bash
 sudo -u aspaic -H bash -lc '
-cd /home/app/AI-API-Console/backend
-cp -n .env.example .env
+mkdir -p /home/app/config
+cp -n /home/app/AI-API-Console/backend/.env.example /home/app/config/.env
+chmod 600 /home/app/config/.env
 '
 ```
 
-編輯 `/home/app/AI-API-Console/backend/.env`，至少確認以下欄位：
+編輯 `/home/app/config/.env`，至少確認以下欄位：
 
 - `APP_DOMAIN=https://api.ascs.sinica.edu.tw/main`
 - `DB_USER=as_api_console`
@@ -140,7 +141,7 @@ cp -n .env.example .env
 如果你改用 `DATABASE_URL`，它會覆蓋 `DB_*` 組合結果。
 本部署文件為正式環境流程，`TEST_DB_*` / `TEST_DATABASE_URL` 僅供測試使用，正式部署不需要設定。
 
-systemd `EnvironmentFile` 注意事項：
+`ENV_FILE` 目標檔注意事項：
 - `.env` 每行使用 `KEY=VALUE`，不要加 `export`
 - 布林值請用 `true/false`
 - 若缺少 `APP_DOMAIN` 或（未提供 `DATABASE_URL` 且缺 `DB_PASSWORD` / `DB_HOST`），服務會啟動失敗
@@ -170,8 +171,9 @@ alembic current
 sudo -u aspaic -H bash -lc '
 cd /home/app/AI-API-Console/backend
 . .venv/bin/activate
+export ENV_FILE=/home/app/config/.env
 set -a
-source .env
+source "$ENV_FILE"
 set +a
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 '
@@ -199,7 +201,7 @@ Type=simple
 User=aspaic
 Group=aspaic
 WorkingDirectory=/home/app/AI-API-Console/backend
-EnvironmentFile=/home/app/AI-API-Console/backend/.env
+Environment=ENV_FILE=/home/app/config/.env
 ExecStart=/home/app/AI-API-Console/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
@@ -424,6 +426,7 @@ Type=oneshot
 User=aspaic
 Group=aspaic
 WorkingDirectory=/home/app/AI-API-Console/backend
+Environment=ENV_FILE=/home/app/config/.env
 ExecStart=/home/app/AI-API-Console/backend/scripts/run_expire_sync.sh
 ```
 
@@ -465,7 +468,7 @@ sudo -u aspaic crontab -e
 
 加入：
 ```cron
-10 0 * * * /home/app/AI-API-Console/backend/scripts/run_expire_sync.sh
+10 0 * * * ENV_FILE=/home/app/config/.env /home/app/AI-API-Console/backend/scripts/run_expire_sync.sh
 ```
 
 檢查：
@@ -479,7 +482,7 @@ sudo -u aspaic tail -n 100 /home/app/AI-API-Console/log/sync_expired_api_keys/$(
 - 建議保留 cron 預設 stdout/stderr 行為（系統郵件或平台收集）；業務執行紀錄以上述檔案為主。
 
 ### 16.3 排錯重點
-- `.env` 未設定或 DB 參數錯誤：確認 `/home/app/AI-API-Console/backend/.env` 內容。
+- `.env` 未設定或 DB 參數錯誤：確認 `/home/app/config/.env` 內容。
 - 執行環境找不到 `uv`：腳本會自動 fallback 到 `.venv/bin/python` 或 `python`，但仍需先安裝依賴。
 - 權限問題：確認 `aspaic` 對專案目錄可讀執行，且可連線 DB。
 
@@ -491,7 +494,7 @@ sudo -u aspaic crontab -l
 ```
 2. 手動 dry-run：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ./scripts/run_expire_sync.sh --dry-run'
+sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run'
 ```
 3. 檢查當日日誌：
 ```bash
@@ -518,6 +521,7 @@ Type=oneshot
 User=aspaic
 Group=aspaic
 WorkingDirectory=/home/app/AI-API-Console/backend
+Environment=ENV_FILE=/home/app/config/.env
 ExecStart=/home/app/AI-API-Console/backend/.venv/bin/python /home/app/AI-API-Console/backend/scripts/sync_institutes.py
 ```
 
@@ -558,7 +562,7 @@ sudo -u aspaic crontab -e
 
 加入：
 ```cron
-20 0 * * * cd /home/app/AI-API-Console/backend && /home/app/AI-API-Console/backend/.venv/bin/python scripts/sync_institutes.py
+20 0 * * * cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env /home/app/AI-API-Console/backend/.venv/bin/python scripts/sync_institutes.py
 ```
 
 檢查：
@@ -567,7 +571,7 @@ sudo -u aspaic crontab -l
 ```
 
 ### 17.3 排錯重點
-- OAuth/SOAP 登入失敗：檢查 `backend/.env` 內 SOAP/OAuth 相關設定與可連線性。
+- OAuth/SOAP 登入失敗：檢查 `/home/app/config/.env` 內 SOAP/OAuth 相關設定與可連線性。
 - 外部服務不可用：若 `Persnl.getInstitutes` timeout/5xx，腳本會失敗退出，請先確認外部服務狀態。
 - DB 連線錯誤：確認 `DB_*` 或 `DATABASE_URL` 設定與 MariaDB 權限。
 - Python/venv 路徑錯誤：確認 `.venv` 已建立且依賴已安裝。
@@ -580,10 +584,10 @@ sudo -u aspaic crontab -l
 ```
 2. 手動 dry-run：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && . .venv/bin/activate && python scripts/sync_institutes.py --dry-run'
+sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env . .venv/bin/activate && ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py --dry-run'
 ```
-3. 若出現 `persnl soap is not configured`，先補齊 `.env` 的 `PERSNL_SOAP_URL` 或 `PERSNL_SOAP_WSDL_URL`，以及 `PERSNL_SOAP_USER`、`PERSNL_SOAP_PASSWORD`。
+3. 若出現 `persnl soap is not configured`，先補齊 `/home/app/config/.env` 的 `PERSNL_SOAP_URL` 或 `PERSNL_SOAP_WSDL_URL`，以及 `PERSNL_SOAP_USER`、`PERSNL_SOAP_PASSWORD`。
 4. 實際同步一次：
 ```bash
-sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && . .venv/bin/activate && python scripts/sync_institutes.py'
+sudo -u aspaic -H bash -lc 'cd /home/app/AI-API-Console/backend && ENV_FILE=/home/app/config/.env . .venv/bin/activate && ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py'
 ```

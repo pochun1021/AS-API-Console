@@ -1,4 +1,5 @@
 from functools import lru_cache
+import os
 from urllib.parse import quote_plus, urlsplit
 
 from pydantic import field_validator, model_validator
@@ -6,7 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=os.environ.get("ENV_FILE", ".env"),
+        extra="ignore",
+    )
 
     app_env: str = "dev"
     app_domain: str = "http://localhost:8000"
@@ -120,7 +124,7 @@ class Settings(BaseSettings):
     def build_database_url(self) -> "Settings":
         if not self.database_url:
             if not self.db_password:
-                raise ValueError("Set DATABASE_URL or DB_PASSWORD in .env")
+                raise ValueError("Set DATABASE_URL or DB_PASSWORD in environment config")
             encoded_password = quote_plus(self.db_password)
             self.database_url = (
                 f"mariadb+mariadbconnector://{self.db_user}:{encoded_password}"

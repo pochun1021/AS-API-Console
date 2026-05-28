@@ -135,6 +135,7 @@
 - 權限模型僅區分 `user` 與 `admin`
 - 提供 OAuth/SSO 登入入口（`GET /main/login`、`GET /main/auth/callback`）並建立 session auth context
 - 正式環境僅允許以 session auth context 驗證；header auth 僅限 `dev/test`
+- 環境設定檔載入需支援 `ENV_FILE`（正式部署建議 `/home/app/config/.env`）；未設定時可回退 `backend/.env`
 - 所有會變更資料的 API 皆需通過 CSRF 驗證
 - 僅符合資格的人員可進入系統與申請 API Key（研究人員名單職稱代碼命中，或特殊人員名單 `active` 命中）
 - 特殊人員名單管理能力（新增、查詢、停用/啟用）
