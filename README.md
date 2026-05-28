@@ -267,3 +267,4 @@ Security validation：
 - DB 操作與 migration runbook：`docs/runbook-db.md`
 - Mail 設定與測試速查：`docs/mail.md`
 - Ubuntu + Nginx 部署指南：`docs/deploy-ubuntu-nginx.md`
+- 一鍵部署腳本（不處理 apt/git；安裝 backend/frontend 套件 + migration + crontab 補齊）：`scripts/deploy_full.sh`

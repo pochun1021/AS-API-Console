@@ -291,6 +291,22 @@ sudo certbot renew --dry-run
 
 ## 13. 常用維運指令
 
+一鍵部署（不處理 apt / git；只安裝 backend/frontend 套件、migration 到 head，並自動補齊缺少 crontab）：
+```bash
+bash scripts/deploy_full.sh
+```
+
+可選參數：
+```bash
+bash scripts/deploy_full.sh --deploy-user aspaic
+bash scripts/deploy_full.sh --app-dir /home/app/AI-API-Console
+```
+
+完成後請手動重啟服務：
+```bash
+sudo systemctl restart as-api-console
+```
+
 重啟服務：
 ```bash
 sudo systemctl restart as-api-console
