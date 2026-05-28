@@ -304,8 +304,8 @@ bash scripts/deploy_full.sh
 ```
 
 目錄處理流程：
-- 若 `/home/app/AS-API-Console` 已存在，會先備份為 `/home/app/AS-API-Console_YYYYMMDD.tar.gz`
-- 若同日已有同名備份檔，會直接覆蓋（僅保留最後一次）
+- 若 `/home/app/AS-API-Console` 已存在，會先備份為 `/home/app/AS-API-Console_YYYYMMDD_HHMMSS.tar.gz`
+- 每次部署會帶時間戳產生新備份（同秒重跑才可能同名）
 - 備份成功後才刪除舊的 `/home/app/AS-API-Console`
 - 將 `--source-dir` 指定的 root clone 來源目錄複製到 `/home/app/AS-API-Console`
 - 切換目錄權限為 `asapic:asapic`

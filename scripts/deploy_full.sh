@@ -74,7 +74,7 @@ fi
 
 log "Preparing destination directory"
 if [[ -d "$APP_DIR" ]]; then
-  BACKUP_ARCHIVE_PATH="${APP_PARENT_DIR}/AS-API-Console_$(date '+%Y%m%d').tar.gz"
+  BACKUP_ARCHIVE_PATH="${APP_PARENT_DIR}/AS-API-Console_$(date '+%Y%m%d_%H%M%S').tar.gz"
   if [[ -f "$BACKUP_ARCHIVE_PATH" ]]; then
     BACKUP_OVERWRITTEN="yes"
   fi
