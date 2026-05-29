@@ -13,15 +13,21 @@ Options:
   --source-dir <path>   Root clone source directory (default: /root/AS-API-Console)
   --deploy-user <user>  User for crontab check/update (default: asapic)
   --app-dir <path>      Application directory (default: /home/app/AS-API-Console)
+  --env-file <path>     ENV file path for migration/cron (default: /home/app/config/.env)
   -h, --help            Show this help message
 USAGE
 }
 
-SOURCE_DIR="/root/AS-API-Console"
-DEPLOY_USER="asapic"
-APP_DIR="/home/app/AS-API-Console"
-APP_PARENT_DIR="/home/app"
-ENV_FILE_PATH="/home/app/config/.env"
+DEFAULT_SOURCE_DIR="/root/AS-API-Console"
+DEFAULT_DEPLOY_USER="asapic"
+DEFAULT_APP_DIR="/home/app/AS-API-Console"
+DEFAULT_ENV_FILE_PATH="/home/app/config/.env"
+
+SOURCE_DIR=""
+DEPLOY_USER=""
+APP_DIR=""
+ENV_FILE_PATH=""
+APP_PARENT_DIR=""
 LOCAL_ENV_FILE_PATH=""
 RESOLVED_ENV_FILE_PATH=""
 USED_ENV_FALLBACK="no"
@@ -33,15 +39,39 @@ DEST_REPLACED="no"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source-dir)
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+        echo "Missing value for --source-dir" >&2
+        usage
+        exit 1
+      fi
       SOURCE_DIR="$2"
       shift 2
       ;;
     --deploy-user)
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+        echo "Missing value for --deploy-user" >&2
+        usage
+        exit 1
+      fi
       DEPLOY_USER="$2"
       shift 2
       ;;
     --app-dir)
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+        echo "Missing value for --app-dir" >&2
+        usage
+        exit 1
+      fi
       APP_DIR="$2"
+      shift 2
+      ;;
+    --env-file)
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+        echo "Missing value for --env-file" >&2
+        usage
+        exit 1
+      fi
+      ENV_FILE_PATH="$2"
       shift 2
       ;;
     -h|--help)
@@ -56,10 +86,30 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+SOURCE_DIR="${SOURCE_DIR:-$DEFAULT_SOURCE_DIR}"
+DEPLOY_USER="${DEPLOY_USER:-$DEFAULT_DEPLOY_USER}"
+APP_DIR="${APP_DIR:-$DEFAULT_APP_DIR}"
+ENV_FILE_PATH="${ENV_FILE_PATH:-$DEFAULT_ENV_FILE_PATH}"
+
 if ! command -v sudo >/dev/null 2>&1; then
   echo "sudo is required." >&2
   exit 1
 fi
+
+if [[ -z "$SOURCE_DIR" || -z "$APP_DIR" || -z "$DEPLOY_USER" || -z "$ENV_FILE_PATH" ]]; then
+  echo "Required options resolved to empty values." >&2
+  usage
+  exit 1
+fi
+
+if ! id -u "$DEPLOY_USER" >/dev/null 2>&1; then
+  echo "Deploy user does not exist: $DEPLOY_USER" >&2
+  exit 1
+fi
+
+SOURCE_DIR_REAL="$(realpath -m "$SOURCE_DIR")"
+APP_DIR_REAL="$(realpath -m "$APP_DIR")"
+APP_PARENT_DIR="$(dirname "$APP_DIR_REAL")"
 
 if [[ ! -d "$SOURCE_DIR/backend" || ! -d "$SOURCE_DIR/frontend" ]]; then
   echo "Invalid clone source directory: $SOURCE_DIR" >&2
@@ -67,10 +117,13 @@ if [[ ! -d "$SOURCE_DIR/backend" || ! -d "$SOURCE_DIR/frontend" ]]; then
   exit 1
 fi
 
-if [[ "$SOURCE_DIR" == "$APP_DIR" ]]; then
+if [[ "$SOURCE_DIR_REAL" == "$APP_DIR_REAL" ]]; then
   echo "--source-dir and --app-dir must be different paths." >&2
   exit 1
 fi
+
+SOURCE_DIR="$SOURCE_DIR_REAL"
+APP_DIR="$APP_DIR_REAL"
 
 log "Preparing destination directory"
 if [[ -d "$APP_DIR" ]]; then
@@ -85,7 +138,7 @@ if [[ -d "$APP_DIR" ]]; then
   DEST_REPLACED="yes"
 fi
 
-sudo mkdir -p "$(dirname "$APP_DIR")"
+sudo mkdir -p "$APP_PARENT_DIR"
 log "Copying clone source project from $SOURCE_DIR to $APP_DIR"
 sudo cp -a "$SOURCE_DIR" "$APP_DIR"
 log "Adjusting ownership to ${DEPLOY_USER}:${DEPLOY_USER}"
