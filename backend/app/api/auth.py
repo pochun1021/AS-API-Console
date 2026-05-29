@@ -111,8 +111,8 @@ def oauth_callback(
         audit.log(provider=provider, request_id=request_id, result="failure", error_code=exc.code)
         raise ApiError(exc.code, f"{exc.message}; request_id={request_id}", exc.status_code) from exc
     except Exception as exc:
-        audit.log(provider=provider, request_id=request_id, result="failure", error_code="INTERNAL_ERROR")
-        raise ApiError("INTERNAL_ERROR", f"oauth callback unexpected error; request_id={request_id}", 500) from exc
+        audit.log(provider=provider, request_id=request_id, result="failure", error_code="OAUTH_CALLBACK_FAILED")
+        raise ApiError("OAUTH_CALLBACK_FAILED", f"oauth callback failed; request_id={request_id}", 401) from exc
 
     request.session["auth_context"] = {
         "account": identity.account,

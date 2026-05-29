@@ -116,7 +116,7 @@ class OAuthService:
             name=self._pick_claim(claims, "chName"),
             email=self._pick_claim(claims, "email"),
             department=self._pick_claim(claims, "instCode"),
-            sysid=self._pick_numeric_claim(claims, "sysId"),
+            sysid=self._pick_numeric_claim(claims, "sysid"),
             tcode=self._pick_claim(claims, "tCode"),
             role="user",
         )
