@@ -244,6 +244,8 @@ ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py --dry-run
 ## Persnl 連線測試（正式環境）
 - 目的：快速驗證正式環境是否可連線並查詢 Persnl SOAP（登入、存在/不存在人員、單位清單）。
 - 必要環境變數：`PERSNL_SOAP_URL`、`PERSNL_SOAP_USER`、`PERSNL_SOAP_PASSWORD`（可選：`PERSNL_SOAP_TIMEOUT_SECONDS`）。
+- 腳本會自動依序嘗試載入：`ENV_FILE`（若已設定且存在）→ `/home/app/config/.env` → `backend/.env`。
+- Python 執行器優先順序：`backend/.venv/bin/python` → `uv run python` → `python3`。
 - 根目錄直接執行：
 ```bash
 ./scripts/test_persnl_connectivity.sh
