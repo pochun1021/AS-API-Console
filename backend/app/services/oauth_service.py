@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import logging
 from urllib.parse import urlencode
 
 import httpx
@@ -6,6 +7,8 @@ import httpx
 from app.core.config import get_settings
 from app.core.outbound import build_safe_httpx_client
 from app.core.errors import ApiError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -20,6 +23,8 @@ class OAuthIdentity:
 
 
 class OAuthService:
+    _UPSTREAM_BODY_LOG_LIMIT = 300
+
     def __init__(self) -> None:
         self.settings = get_settings()
 
@@ -56,7 +61,14 @@ class OAuthService:
             raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed: timeout", 401) from exc
         except httpx.HTTPError as exc:
             raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed: network_error", 401) from exc
+        except Exception as exc:
+            raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed: unexpected_error", 401) from exc
         if response.status_code != 200:
+            logger.warning(
+                "oauth token exchange upstream failure status=%s body_preview=%s",
+                response.status_code,
+                self._safe_body_preview(response),
+            )
             raise ApiError(
                 "OAUTH_TOKEN_EXCHANGE_FAILED",
                 f"oauth token exchange failed: upstream_status={response.status_code}",
@@ -71,6 +83,13 @@ class OAuthService:
             raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth access token missing", 401)
         return token
 
+    def _safe_body_preview(self, response: httpx.Response) -> str:
+        body = response.text or ""
+        compact = " ".join(body.split())
+        if len(compact) <= self._UPSTREAM_BODY_LOG_LIMIT:
+            return compact
+        return f"{compact[:self._UPSTREAM_BODY_LOG_LIMIT]}..."
+
     def fetch_identity(self, access_token: str) -> OAuthIdentity:
         basic_uri = self._required(self.settings.oauth_basic_uri, "OAUTH_BASIC_URI")
         try:
@@ -80,6 +99,8 @@ class OAuthService:
             raise ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed: timeout", 401) from exc
         except httpx.HTTPError as exc:
             raise ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed: network_error", 401) from exc
+        except Exception as exc:
+            raise ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed: unexpected_error", 401) from exc
         if response.status_code != 200:
             raise ApiError(
                 "OAUTH_BASIC_FETCH_FAILED",
