@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
+import httpx
+
 from app.core.config import get_settings
 from app.core.outbound import build_safe_httpx_client
 from app.core.errors import ApiError
@@ -47,22 +49,47 @@ class OAuthService:
             "redirect_uri": self._required(self.settings.oauth_redirect_uri, "OAUTH_REDIRECT_URI"),
             "code": code,
         }
-        with build_safe_httpx_client(timeout_seconds=10.0) as client:
-            response = client.post(token_uri, data=payload)
+        try:
+            with build_safe_httpx_client(timeout_seconds=10.0) as client:
+                response = client.post(token_uri, data=payload)
+        except httpx.TimeoutException as exc:
+            raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed: timeout", 401) from exc
+        except httpx.HTTPError as exc:
+            raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed: network_error", 401) from exc
         if response.status_code != 200:
-            raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed", 401)
-        token = response.json().get("access_token")
+            raise ApiError(
+                "OAUTH_TOKEN_EXCHANGE_FAILED",
+                f"oauth token exchange failed: upstream_status={response.status_code}",
+                401,
+            )
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed: invalid_json", 401) from exc
+        token = body.get("access_token")
         if not token or not isinstance(token, str):
             raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth access token missing", 401)
         return token
 
     def fetch_identity(self, access_token: str) -> OAuthIdentity:
         basic_uri = self._required(self.settings.oauth_basic_uri, "OAUTH_BASIC_URI")
-        with build_safe_httpx_client(timeout_seconds=10.0) as client:
-            response = client.post(basic_uri, data={"access_token": access_token})
+        try:
+            with build_safe_httpx_client(timeout_seconds=10.0) as client:
+                response = client.post(basic_uri, data={"access_token": access_token})
+        except httpx.TimeoutException as exc:
+            raise ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed: timeout", 401) from exc
+        except httpx.HTTPError as exc:
+            raise ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed: network_error", 401) from exc
         if response.status_code != 200:
-            raise ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed", 401)
-        claims = response.json()
+            raise ApiError(
+                "OAUTH_BASIC_FETCH_FAILED",
+                f"oauth basic profile fetch failed: upstream_status={response.status_code}",
+                401,
+            )
+        try:
+            claims = response.json()
+        except ValueError as exc:
+            raise ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed: invalid_json", 401) from exc
         identity = OAuthIdentity(
             account=self._pick_claim(claims, "cn"),
             name=self._pick_claim(claims, "chName"),

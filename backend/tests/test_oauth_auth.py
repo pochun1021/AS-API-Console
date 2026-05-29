@@ -97,6 +97,7 @@ def test_callback_logs_failure_when_token_exchange_fails(client, monkeypatch):
     resp = client.get("/main/auth/callback?code=bad-code", follow_redirects=False)
     assert resp.status_code == 401
     assert resp.json()["error"]["code"] == "OAUTH_TOKEN_EXCHANGE_FAILED"
+    assert "request_id=" in resp.json()["error"]["message"]
     latest = _latest_auth_audit()
     assert latest is not None
     assert latest.result == "failure"
@@ -113,10 +114,29 @@ def test_callback_logs_failure_when_basic_fetch_fails(client, monkeypatch):
     resp = client.get("/main/auth/callback?code=bad-code", follow_redirects=False)
     assert resp.status_code == 401
     assert resp.json()["error"]["code"] == "OAUTH_BASIC_FETCH_FAILED"
+    assert "request_id=" in resp.json()["error"]["message"]
     latest = _latest_auth_audit()
     assert latest is not None
     assert latest.result == "failure"
     assert latest.error_code == "OAUTH_BASIC_FETCH_FAILED"
+
+
+def test_callback_unexpected_error_returns_controlled_500_and_audits(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.fetch_identity",
+        lambda self, token: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    resp = client.get("/main/auth/callback?code=bad-code", follow_redirects=False)
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body["error"]["code"] == "INTERNAL_ERROR"
+    assert "request_id=" in body["error"]["message"]
+    latest = _latest_auth_audit()
+    assert latest is not None
+    assert latest.result == "failure"
+    assert latest.error_code == "INTERNAL_ERROR"
 
 
 def test_callback_allows_missing_state(client, monkeypatch):
