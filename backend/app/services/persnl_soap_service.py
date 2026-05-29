@@ -41,6 +41,8 @@ class PersnlSoapService:
         self.unavailable_reason = None
         self.last_login_at = None
         self._client = httpx.Client(timeout=self.timeout_seconds)
+        self._zeep_client = None
+        self._zeep_service = None
 
     def is_configured(self) -> bool:
         return bool((self.url or self.wsdl_url) and self.user and self.password)
@@ -162,21 +164,38 @@ class PersnlSoapService:
         return items
 
     def _ensure_available(self) -> None:
+        if not self.is_configured():
+            self.unavailable_reason = "persnl soap is not configured"
+            self.logged_in = False
+            raise PersnlSoapUnavailableError(self.unavailable_reason)
+        if not self.logged_in:
+            self.initialize()
         if not self.logged_in:
             raise PersnlSoapUnavailableError(self.unavailable_reason or "persnl soap unavailable")
 
     def _soap_call(self, method: str, params: list[object]) -> str:
-        if self._zeep_client is None and self._zeep_service is None:
-            self._init_zeep_client()
-        if self._zeep_service is not None:
-            value = getattr(self._zeep_service, method)(*params)
-            return "" if value is None else str(value)
-        if not self.url:
-            raise PersnlSoapUnavailableError("persnl soap url is not configured")
-        xml = self._build_soap_envelope(method, params)
-        response = self._client.post(self.url, content=xml.encode("utf-8"), headers={"Content-Type": "text/xml; charset=utf-8"})
-        response.raise_for_status()
-        return self._parse_return_value(response.text)
+        try:
+            if self._zeep_client is None and self._zeep_service is None:
+                self._init_zeep_client()
+            if self._zeep_service is not None:
+                value = getattr(self._zeep_service, method)(*params)
+                return "" if value is None else str(value)
+            if not self.url:
+                raise PersnlSoapUnavailableError("persnl soap url is not configured")
+            xml = self._build_soap_envelope(method, params)
+            response = self._client.post(
+                self.url,
+                content=xml.encode("utf-8"),
+                headers={"Content-Type": "text/xml; charset=utf-8"},
+            )
+            response.raise_for_status()
+            return self._parse_return_value(response.text)
+        except PersnlSoapUnavailableError:
+            self.logged_in = False
+            raise
+        except Exception as exc:
+            self.logged_in = False
+            raise PersnlSoapUnavailableError(f"soap request failed: {exc}") from exc
 
     def _init_zeep_client(self) -> None:
         if not self.wsdl_url:
