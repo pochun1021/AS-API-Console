@@ -241,6 +241,15 @@ ENV_FILE=/home/app/config/.env python scripts/sync_institutes.py --dry-run
 - 正式部署排程設定請見 `docs/deploy-ubuntu-nginx.md`（systemd timer 與 cron 兩種方案）。
 - 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 第 17 節為準。
 
+## Persnl 連線測試（正式環境）
+- 目的：快速驗證正式環境是否可連線並查詢 Persnl SOAP（登入、存在/不存在人員、單位清單）。
+- 必要環境變數：`PERSNL_SOAP_URL`、`PERSNL_SOAP_USER`、`PERSNL_SOAP_PASSWORD`（可選：`PERSNL_SOAP_TIMEOUT_SECONDS`）。
+- 根目錄直接執行：
+```bash
+./scripts/test_persnl_connectivity.sh
+```
+- 回傳碼：`0` 代表全部檢查通過；非 `0` 代表至少一項失敗。
+
 ## 測試
 Backend：
 ```bash
