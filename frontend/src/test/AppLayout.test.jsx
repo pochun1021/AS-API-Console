@@ -74,6 +74,7 @@ test("admin sees whitelist nav", () => {
   );
 
   expect(screen.getByRole("link", { name: "特殊人員名單管理" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "單位代碼" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "管理者名單" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "管理者統計" })).toBeInTheDocument();
 });

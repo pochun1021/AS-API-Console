@@ -158,6 +158,10 @@ export const httpApiProvider = {
     return request(apiPath("/institutes"), { auth });
   },
 
+  syncInstitutes(auth) {
+    return request(apiPath("/institutes/sync"), { method: "POST", auth });
+  },
+
   searchUsers(keyword, auth) {
     const q = encodeURIComponent(keyword || "");
     return request(`${apiPath("/users")}?q=${q}`, { auth });

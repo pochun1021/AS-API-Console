@@ -9,6 +9,7 @@ import MyApiKeysPage from "./pages/MyApiKeysPage";
 import AdminPage from "./pages/AdminPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import LimitStrategiesPage from "./pages/LimitStrategiesPage";
+import InstituteViewPage from "./pages/InstituteViewPage";
 import OperationAuditLogsPage from "./pages/OperationAuditLogsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 
@@ -113,6 +114,16 @@ export default function App() {
           element={
             auth.role === "admin" ? (
               <WhitelistAdminPage auth={auth} />
+            ) : (
+              <Navigate to="/apply" replace />
+            )
+          }
+        />
+        <Route
+          path="/institute-view"
+          element={
+            auth.role === "admin" ? (
+              <InstituteViewPage auth={auth} />
             ) : (
               <Navigate to="/apply" replace />
             )

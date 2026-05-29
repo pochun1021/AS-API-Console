@@ -12,3 +12,11 @@ class InstituteItemResponse(BaseModel):
 class InstituteListResponse(BaseModel):
     items: list[InstituteItemResponse]
     total: int
+
+
+class InstituteSyncResponse(BaseModel):
+    fetched_count: int
+    inserted_count: int
+    updated_count: int
+    unchanged_count: int
+    deactivated_count: int

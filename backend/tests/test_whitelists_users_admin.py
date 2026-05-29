@@ -146,3 +146,48 @@ def test_list_institutes_returns_active_only(client, admin_headers):
     payload = resp.json()
     assert payload["total"] == 1
     assert payload["items"][0]["inst_code"] == "01"
+
+
+def test_sync_institutes_admin_success(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.get_institutes",
+        lambda self: [
+            {
+                "instCode": "01",
+                "instName": "院本部",
+                "abb_instName": "院本部",
+                "einstName": "HQ",
+                "division": "1",
+            }
+        ],
+    )
+
+    resp = client.post("/api/v1/institutes/sync", headers=admin_headers)
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["fetched_count"] == 1
+    assert payload["inserted_count"] == 1
+
+    listed = client.get("/api/v1/institutes", headers=admin_headers)
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+
+
+def test_sync_institutes_forbidden_for_non_admin(client, user_headers):
+    resp = client.post("/api/v1/institutes/sync", headers=user_headers)
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_sync_institutes_returns_503_when_soap_unavailable(client, admin_headers, monkeypatch):
+    def raise_unavailable(self):
+        raise PersnlSoapUnavailableError("down")
+
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.get_institutes",
+        raise_unavailable,
+    )
+
+    resp = client.post("/api/v1/institutes/sync", headers=admin_headers)
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"

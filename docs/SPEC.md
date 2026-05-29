@@ -106,6 +106,13 @@
 - 表格中的 `total_applications` 與 `active_count` 需可點擊，並以 Dialog 顯示該申請人的 API Key 明細（僅遮罩 key，不得回傳明文）。
 - Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨目前統計頁日期篩選（`from`、`to`）。
 
+### 6-1) Institute View Page（單位代碼資料檢視頁）
+- 僅 `admin` 可使用。
+- 目的：供管理者確認 DB `institutes` 資料是否已寫入。
+- 資料來源僅 `GET /main/api/v1/institutes`（僅顯示 `active` institutes）。
+- 頁面需顯示 `total` 與列表資料，欄位至少包含：`inst_code`、`inst_name`、`abb_inst_name`、`einst_name`、`division`。
+- 需提供 Loading、Empty、Error（含重試）狀態。
+
 ### 8) Key Condition Page（金鑰條件管理頁）
 - 僅 `admin` 可使用。
 - 以獨立頁面管理金鑰條件模板（查詢、新增、編輯）。
@@ -586,6 +593,15 @@ Base path：`/main/api/v1`
 }
 ```
 
+### 5-3-1) 單位主檔手動同步 API
+- `POST /main/api/v1/institutes/sync`
+- 用途：供管理者在「單位代碼資料檢視」頁手動觸發單位主檔同步（後端呼叫 `Persnl.getInstitutes` 並同步本地 DB）。
+- 規則：
+  - 僅 `admin` 可使用。
+  - 需通過 CSRF 驗證與 admin mutation rate limit。
+  - 成功時需回傳同步統計：`fetched_count`、`inserted_count`、`updated_count`、`unchanged_count`、`deactivated_count`。
+  - Persnl SOAP timeout/5xx 時回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
+
 ### 6) 管理者啟用/停用 API
 - `POST /main/api/v1/admins/{id}/enable`：啟用指定使用者管理者身分
 - `POST /main/api/v1/admins/{id}/disable`：停用指定使用者管理者身分
@@ -601,6 +617,7 @@ Base path：`/main/api/v1`
   - `POST /main/api/v1/admins/{id}/enable`
   - `POST /main/api/v1/admins/{id}/disable`
   - `PATCH /main/api/v1/limit-strategy-config`
+  - `POST /main/api/v1/institutes/sync`
 - 稽核欄位至少需可辨識：事件類型、動作、成功/失敗、操作者（`sysid/account/role`）、目標資源類型與 ID、`request_id`、時間、來源 IP、user-agent。
 - 成功與失敗都需記錄（含權限不足、驗證失敗、資源不存在等）。
 - metadata 採白名單策略，僅記錄必要且非敏感欄位。
@@ -747,7 +764,7 @@ Base path：`/main/api/v1`
 70. OAuth callback 不做額外登入資格審核；完成 token/basic 與必要 claims 驗證後即建立 session。
 71. `admin` 可於 `POST /main/api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
-73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config` 成功時皆需寫入 `operation_audit_logs`。
+73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config`、`POST /main/api/v1/institutes/sync` 成功時皆需寫入 `operation_audit_logs`。
 74. 第 73 項 8 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。
 75. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證（token/password/client secret）。
 76. `operation_audit_logs.metadata_json` 僅允許白名單欄位（例如 `application_id`、`key_id`、`whitelist_id`、`target_admin_id`、`status`、`duration_months`），不得落地原始敏感 payload。
@@ -774,6 +791,9 @@ Base path：`/main/api/v1`
 97. 到期提醒信僅寄送申請者本人（`api_key_applications.email`），內容需中英並列，且需包含到期時間與可展延提示。
 98. 每把 key 到期提醒信僅可寄送一次；重跑排程不得重複寄送同一把 key 的提醒信。
 99. 到期提醒信寄送失敗不得影響其他符合條件資料處理；需保留失敗記錄供追查。
+100. `admin` 可於 `/institute-view` 頁面查看 `GET /main/api/v1/institutes` 回傳的 `active` institutes 清單與 `total`，以確認 DB 資料已寫入。
+101. `admin` 可於 `/institute-view` 呼叫 `POST /main/api/v1/institutes/sync` 手動同步；成功後需回傳同步統計並可重新讀取最新 `active` institutes。
+102. `POST /main/api/v1/institutes/sync` 在 Persnl SOAP 不可用時需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 
 ## Roadmap
 ### Phase 1：Foundation

@@ -834,6 +834,18 @@ export const mockApiProvider = {
     return { items: mockInstitutes, total: mockInstitutes.length };
   },
 
+  async syncInstitutes(auth) {
+    await delay();
+    ensureAdmin(auth);
+    return {
+      fetched_count: mockInstitutes.length,
+      inserted_count: 0,
+      updated_count: 0,
+      unchanged_count: mockInstitutes.length,
+      deactivated_count: 0
+    };
+  },
+
   async enableAdmin(id, auth) {
     await delay();
     ensureAdmin(auth);
