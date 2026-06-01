@@ -339,12 +339,13 @@ def test_application_provider_payload_uses_new_fields_only(client, admin_headers
         resp = client.post(
             "/api/v1/api-keys/applications",
             headers=user_headers,
-            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "payload-shape-check"},
+            json={"application_date": str(date.today()), "duration_months": 6, "purpose": "payload-shape-check"},
         )
         assert resp.status_code == 201
         assert captured_payload == {
             "max_budget": 1000.0,
             "budget_duration": "30d",
+            "duration": "180d",
             "tpm_limit": 10000,
             "rpm_limit": 500,
             "models": ["gemma-4-31B-it"],

@@ -74,6 +74,15 @@ def _to_provider_budget_duration(duration: str) -> str:
     return normalized
 
 
+def _to_provider_duration(duration_months: int) -> str:
+    mapping = {
+        1: "30d",
+        6: "180d",
+        12: "360d",
+    }
+    return mapping[duration_months]
+
+
 def _effective_status(*, status: str, expires_at: datetime) -> str:
     expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
     if status == "active" and expires_at_utc < datetime.now(UTC):
@@ -263,6 +272,7 @@ class ApiKeysService:
                     {
                         "max_budget": float(max_budget),
                         "budget_duration": provider_budget_duration,
+                        "duration": _to_provider_duration(application.duration_months),
                         "tpm_limit": tpm_limit,
                         "rpm_limit": rpm_limit,
                         "models": ["gemma-4-31B-it"],

@@ -390,11 +390,13 @@ Base path：`/main/api/v1`
   "models": ["gemma-4-31B-it"],
   "max_budget": 1000.0,
   "budget_duration": "30d",
+  "duration": "180d",
   "key_alias": "for_jane.doe",
   "key_type": "AI API"
 }
 ```
   - `budget_duration` 由系統設定映射：`daily->1d`、`weekly->7d`、`monthly->30d`
+  - `duration` 由 `duration_months` 映射：`1->30d`、`6->180d`、`12->360d`
   - 目前不送 `budget_limits`
   - 僅送上述新欄位；不再送舊欄位（例如 `account`、`application_id`、`duration_months`、`purpose`、`limit_strategy`）
 
@@ -841,7 +843,7 @@ Base path：`/main/api/v1`
 100. `admin` 可於 `/institute-view` 頁面查看 `GET /main/api/v1/institutes` 回傳的 `active` institutes 清單與 `total`，以確認 DB 資料已寫入。
 101. `admin` 可於 `/institute-view` 呼叫 `POST /main/api/v1/institutes/sync` 手動同步；成功後需回傳同步統計並可重新讀取最新 `active` institutes。
 102. `POST /main/api/v1/institutes/sync` 在 Persnl SOAP 不可用時需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
-103. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`models`、`max_budget`、`budget_duration`、`key_alias`、`key_type`；其中 `models` 預設 `["gemma-4-31B-it"]`、`key_type` 固定 `"AI API"`、且不得送 `budget_limits`。
+103. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`models`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；其中 `models` 預設 `["gemma-4-31B-it"]`、`key_type` 固定 `"AI API"`、`duration` 需由 `duration_months(1|6|12)` 映射為 `30d|180d|360d`、且不得送 `budget_limits`。
 
 ## Roadmap
 ### Phase 1：Foundation
