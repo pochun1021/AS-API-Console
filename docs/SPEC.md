@@ -413,7 +413,8 @@ Base path：`/main/api/v1`
   - `rpm_limit`：每分鐘請求數限制。
 - 每把 API Key 需同時套用 `budget` 與 `rate_limit` 兩種限制；不提供二選一模式。
 - 一般使用者不可查看或修改金鑰條件設定。
-- 若尚未有已儲存設定，`GET /main/api/v1/limit-strategy-config` 需回傳預設值（`1000/monthly/10000/500`），且不得因此建立資料列。
+- 系統需透過 migration 預先補齊 `global-limit-strategy-config` 預設資料列（`1000/monthly/10000/500`）。
+- `GET /main/api/v1/limit-strategy-config` 在資料缺漏時仍需回傳相同預設值，作為相容性保險。
 - `PATCH /main/api/v1/limit-strategy-config` 需採 upsert：若設定不存在則建立，存在則更新。
 - `PATCH /main/api/v1/limit-strategy-config` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
 

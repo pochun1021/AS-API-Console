@@ -327,7 +327,7 @@ def test_limit_strategy_config_update_logs_success_and_failure(client, admin_hea
     assert failure_row.error_code == "MISSING_BUDGET_FIELDS"
 
 
-def test_limit_strategy_get_returns_defaults_without_creating_row(client, admin_headers):
+def test_limit_strategy_get_returns_defaults_when_row_is_missing(client, admin_headers):
     _delete_limit_strategy_config()
     assert _count_limit_strategy_config() == 0
 
