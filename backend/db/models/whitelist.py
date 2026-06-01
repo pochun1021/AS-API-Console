@@ -14,6 +14,8 @@ class ApiKeyWhitelist(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     sysid: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
+    account: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -196,7 +196,13 @@ export const httpApiProvider = {
     return request(apiPath("/whitelists"), {
       method: "POST",
       auth,
-      body: { sysid: payload.sysid, note: payload.remark || null }
+      body: {
+        sysid: payload.sysid,
+        account: payload.account,
+        name: payload.name,
+        email: payload.email,
+        note: payload.remark || null
+      }
     }).then(mapWhitelistItem);
   },
 
@@ -209,6 +215,13 @@ export const httpApiProvider = {
         note: payload.remark || null
       }
     }).then(mapWhitelistItem);
+  },
+
+  deleteWhitelist(id, auth) {
+    return request(apiPath(`/whitelists/${id}`), {
+      method: "DELETE",
+      auth
+    });
   },
 
   getLimitStrategyConfig(auth) {

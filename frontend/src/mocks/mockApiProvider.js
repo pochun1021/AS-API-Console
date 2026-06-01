@@ -942,6 +942,17 @@ export const mockApiProvider = {
     return { item };
   },
 
+  async deleteWhitelist(id, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const index = whitelists.findIndex((entry) => entry.id === id);
+    if (index < 0) {
+      throw createError("VALIDATION_ERROR", "id not found", 404);
+    }
+    whitelists.splice(index, 1);
+    return {};
+  },
+
   async getLimitStrategyConfig(auth) {
     await delay();
     ensureAdmin(auth);

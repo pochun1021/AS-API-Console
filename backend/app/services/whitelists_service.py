@@ -14,9 +14,11 @@ class WhitelistsService:
         self.session = session
         self.repo = SQLAlchemyWhitelistRepository(session)
 
-    def create(self, current_user: CurrentUser, sysid: int, note: str | None) -> dict:
+    def create(self, current_user: CurrentUser, sysid: int, account: str, name: str, email: str, note: str | None) -> dict:
         if sysid <= 0:
             raise ApiError("VALIDATION_ERROR", "sysid must be positive integer", 422)
+        if not account.strip() or not name.strip() or not email.strip():
+            raise ApiError("VALIDATION_ERROR", "account, name, email are required", 422)
         if self.repo.get_by_sysid(sysid) is not None:
             raise ApiError("WHITELIST_SYSID_DUPLICATED", "whitelist sysid already exists", 409)
 
@@ -25,7 +27,9 @@ class WhitelistsService:
                 WhitelistCreateInput(
                     id=str(uuid4()),
                     sysid=sysid,
-                    email=None,
+                    account=account.strip(),
+                    name=name.strip(),
+                    email=email.strip().lower(),
                     created_by=current_user.account,
                     note=note,
                 )
@@ -38,6 +42,8 @@ class WhitelistsService:
         return {
             "id": item.id,
             "sysid": item.sysid,
+            "account": item.account,
+            "name": item.name,
             "email": item.email,
             "status": item.status,
             "note": item.note,
@@ -58,6 +64,8 @@ class WhitelistsService:
                 {
                     "id": item.id,
                     "sysid": item.sysid,
+                    "account": item.account,
+                    "name": item.name,
                     "email": item.email,
                     "status": item.status,
                     "note": item.note,
@@ -88,6 +96,8 @@ class WhitelistsService:
         return {
             "id": item.id,
             "sysid": item.sysid,
+            "account": item.account,
+            "name": item.name,
             "email": item.email,
             "status": item.status,
             "note": item.note,
@@ -95,4 +105,14 @@ class WhitelistsService:
             "updated_by": item.updated_by,
             "created_at": item.created_at,
             "updated_at": item.updated_at,
+        }
+
+    def delete(self, whitelist_id: str) -> dict:
+        item = self.repo.delete(whitelist_id)
+        if item is None:
+            raise ApiError("VALIDATION_ERROR", "whitelist item not found", 404)
+        self.session.commit()
+        return {
+            "id": item.id,
+            "sysid": item.sysid,
         }

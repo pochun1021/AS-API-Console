@@ -10,7 +10,18 @@ from tests.conftest import build_headers
 
 
 def _create_whitelist(client, admin_headers, sysid: str) -> None:
-    resp = client.post("/api/v1/whitelists", headers=admin_headers, json={"sysid": int(sysid), "note": "seed"})
+    parsed_sysid = int(sysid)
+    resp = client.post(
+        "/api/v1/whitelists",
+        headers=admin_headers,
+        json={
+            "sysid": parsed_sysid,
+            "account": f"user{parsed_sysid}",
+            "name": f"User {parsed_sysid}",
+            "email": f"user{parsed_sysid}@example.com",
+            "note": "seed",
+        },
+    )
     assert resp.status_code == 201
 
 

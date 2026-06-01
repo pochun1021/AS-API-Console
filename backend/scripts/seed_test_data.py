@@ -45,7 +45,6 @@ def _build_admins(now: datetime) -> list[Admin]:
             email="admin.seed@example.com",
             name="Admin Seed",
             department="Security",
-            sysid=900001,
             status="active",
             created_by="seed_script",
             updated_by="seed_script",
@@ -58,7 +57,6 @@ def _build_admins(now: datetime) -> list[Admin]:
             email="admin.inactive.seed@example.com",
             name="Admin Inactive Seed",
             department="Security",
-            sysid=900002,
             status="inactive",
             created_by="seed_script",
             updated_by="seed_script",
@@ -69,29 +67,29 @@ def _build_admins(now: datetime) -> list[Admin]:
 
 
 def _build_whitelists(now: datetime) -> list[ApiKeyWhitelist]:
+    whitelist_seeds = [
+        ("alice.seed", "Alice Seed", 910001, "alice.seed@example.com", "active", "seed active - platform"),
+        ("bob.seed", "Bob Seed", 910002, "bob.seed@example.com", "active", "seed active - qa"),
+        ("carol.seed", "Carol Seed", 910003, "carol.seed@example.com", "active", "seed active - data"),
+        ("david.seed", "David Seed", 910004, "david.seed@example.com", "active", "seed active - backend"),
+        ("eva.seed", "Eva Seed", 910005, "eva.seed@example.com", "active", "seed active - frontend"),
+        ("frank.seed", "Frank Seed", 910006, "frank.seed@example.com", "active", "seed active - secops"),
+        ("grace.seed", "Grace Seed", 910007, "grace.seed@example.com", "inactive", "seed inactive - offboarded"),
+        ("henry.seed", "Henry Seed", 910008, "henry.seed@example.com", "inactive", "seed inactive - archived"),
+        ("irene.seed", "Irene Seed", 910009, "irene.seed@example.com", "active", "seed active - temporary"),
+        ("jack.seed", "Jack Seed", 910010, "jack.seed@example.com", "inactive", "seed inactive - project ended"),
+    ]
     whitelists: list[ApiKeyWhitelist] = []
-    for idx in range(1, 7):
+    for account, name, sysid, email, status, note in whitelist_seeds:
         whitelists.append(
             ApiKeyWhitelist(
                 id=str(uuid.uuid4()),
-                sysid=910000 + idx,
-                email=f"user{idx}@example.com",
-                status="active",
-                note="seed active",
-                created_by="admin.seed",
-                updated_by="admin.seed",
-                created_at=now,
-                updated_at=now,
-            )
-        )
-    for idx in range(7, 9):
-        whitelists.append(
-            ApiKeyWhitelist(
-                id=str(uuid.uuid4()),
-                sysid=910000 + idx,
-                email=f"user{idx}@example.com",
-                status="inactive",
-                note="seed inactive",
+                sysid=sysid,
+                account=account,
+                name=name,
+                email=email,
+                status=status,
+                note=note,
                 created_by="admin.seed",
                 updated_by="admin.seed",
                 created_at=now,
@@ -196,6 +194,8 @@ def _reset_seed_scope(session: Session) -> None:
     if app_ids:
         session.execute(delete(ApiKey).where(ApiKey.application_id.in_(app_ids)))
     session.execute(delete(ApiKeyApplication).where(ApiKeyApplication.user_id.in_(seed_user_ids)))
+    session.execute(delete(ApiKeyWhitelist).where(ApiKeyWhitelist.sysid.between(910001, 910199)))
+    session.execute(delete(ApiKeyWhitelist).where(ApiKeyWhitelist.email.like("%seed@example.com")))
     session.execute(delete(ApiKeyWhitelist).where(ApiKeyWhitelist.email.like("user%@example.com")))
     session.execute(delete(Admin).where(Admin.id.in_([900001, 900002])))
 

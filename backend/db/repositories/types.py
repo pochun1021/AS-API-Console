@@ -111,6 +111,8 @@ class ApiKeyAliasUpdateInput:
 class WhitelistCreateInput:
     id: str
     sysid: int
+    account: str | None
+    name: str | None
     email: str | None
     created_by: str
     note: str | None = None

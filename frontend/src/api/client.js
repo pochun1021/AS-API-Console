@@ -49,6 +49,7 @@ export const apiClient = {
   listWhitelists: (auth) => provider.listWhitelists(auth),
   createWhitelist: (payload, auth) => provider.createWhitelist(payload, auth),
   updateWhitelist: (id, payload, auth) => provider.updateWhitelist(id, payload, auth),
+  deleteWhitelist: (id, auth) => provider.deleteWhitelist(id, auth),
   getLimitStrategyConfig: (auth) => provider.getLimitStrategyConfig(auth),
   updateLimitStrategyConfig: (payload, auth) => provider.updateLimitStrategyConfig(payload, auth),
   listPendingApplications: (auth) => provider.listPendingApplications(auth),

@@ -12,18 +12,38 @@ def test_whitelist_admin_only(client, admin_headers, user_headers):
     admin_resp = client.post(
         "/api/v1/whitelists",
         headers=admin_headers,
-        json={"sysid": 7001, "note": "seed"},
+        json={"sysid": 7001, "account": "u7001", "name": "User 7001", "email": "u7001@example.com", "note": "seed"},
     )
     assert admin_resp.status_code == 201
 
 
 def test_whitelist_duplicate_sysid(client, admin_headers):
-    payload = {"sysid": 7002, "note": "seed"}
+    payload = {"sysid": 7002, "account": "u7002", "name": "User 7002", "email": "u7002@example.com", "note": "seed"}
     first = client.post("/api/v1/whitelists", headers=admin_headers, json=payload)
     second = client.post("/api/v1/whitelists", headers=admin_headers, json=payload)
     assert first.status_code == 201
     assert second.status_code == 409
     assert second.json()["error"]["code"] == "WHITELIST_SYSID_DUPLICATED"
+
+
+def test_whitelist_delete_admin_only(client, admin_headers, user_headers):
+    created = client.post(
+        "/api/v1/whitelists",
+        headers=admin_headers,
+        json={"sysid": 7010, "account": "u7010", "name": "User 7010", "email": "u7010@example.com", "note": "seed"},
+    )
+    assert created.status_code == 201
+    whitelist_id = created.json()["id"]
+
+    forbidden = client.delete(f"/api/v1/whitelists/{whitelist_id}", headers=user_headers)
+    assert forbidden.status_code == 403
+
+    deleted = client.delete(f"/api/v1/whitelists/{whitelist_id}", headers=admin_headers)
+    assert deleted.status_code == 204
+
+    listed = client.get("/api/v1/whitelists", headers=admin_headers)
+    assert listed.status_code == 200
+    assert all(item["id"] != whitelist_id for item in listed.json()["items"])
 
 
 def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):

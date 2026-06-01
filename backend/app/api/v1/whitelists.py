@@ -64,7 +64,7 @@ def create_whitelist(
 
     service = WhitelistsService(db)
     try:
-        result = service.create(current_user, payload.sysid, payload.note)
+        result = service.create(current_user, payload.sysid, payload.account, payload.name, payload.email, payload.note)
     except ApiError as exc:
         audit.log(
             event_type=event_type,
@@ -201,3 +201,81 @@ def update_whitelist(
         metadata={"whitelist_id": result["id"], "status": result["status"]},
     )
     return result
+
+
+@router.delete(
+    "/whitelists/{whitelist_id}",
+    status_code=204,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("whitelist-delete", settings.admin_mutation_rate_limit)],
+    responses={
+        403: {"model": ErrorResponse, "description": "CSRF token is invalid or admin role is required"},
+        404: {"model": ErrorResponse, "description": "Whitelist item was not found"},
+    },
+)
+def delete_whitelist(
+    whitelist_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "whitelist"
+    action = "delete"
+    target_type = "whitelist"
+    try:
+        _require_admin(current_user)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=whitelist_id,
+            context=context,
+            metadata={"whitelist_id": whitelist_id},
+        )
+        raise
+
+    service = WhitelistsService(db)
+    try:
+        deleted = service.delete(whitelist_id)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=whitelist_id,
+            context=context,
+            metadata={"whitelist_id": whitelist_id},
+        )
+        raise
+    except Exception:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=whitelist_id,
+            context=context,
+            metadata={"whitelist_id": whitelist_id},
+        )
+        raise
+
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=deleted["id"],
+        context=context,
+        metadata={"whitelist_id": deleted["id"], "sysid": deleted["sysid"]},
+    )

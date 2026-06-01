@@ -79,8 +79,9 @@
 
 ### 4) Whitelist Admin Page（特殊人員名單管理頁）
 - 可用 `account`、`name` 查詢使用者後加入特殊人員名單。
-- 可查詢特殊人員名單與狀態。
+- 可查詢特殊人員名單與狀態，列表需顯示 `account`、`name`、`email`。
 - 可停用/啟用特殊人員名單條目。
+- 可刪除特殊人員名單條目（實體刪除）。
 
 ### 5) Admin List Page（管理者名單頁）
 - 僅 `admin` 可使用。
@@ -542,12 +543,14 @@ Base path：`/main/api/v1`
 ```
 
 ### 5) 特殊人員名單管理 API（沿用受保護路徑）
-- `POST /main/api/v1/whitelists`：新增特殊人員名單 sysid
+- `POST /main/api/v1/whitelists`：新增特殊人員名單（需帶 `sysid`、`account`、`name`、`email`）
 - `GET /main/api/v1/whitelists`：查詢特殊人員名單列表
 - `PATCH /main/api/v1/whitelists/{id}`：更新狀態（`active/inactive`）與備註
+- `DELETE /main/api/v1/whitelists/{id}`：刪除特殊人員名單條目（實體刪除）
 - 規則：僅 `admin` 可使用。
-- `POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
+- `POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`DELETE /main/api/v1/whitelists/{id}` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
 - `POST /main/api/v1/whitelists` 若 `sysid` 重複需回 `409 WHITELIST_SYSID_DUPLICATED`。
+- 回傳欄位至少包含：`id`、`sysid`、`account`、`name`、`email`、`status`、`note`、`created_at`、`updated_at`。
 
 ### 5-1) 特殊人員名單新增前使用者查詢 API
 - `GET /main/api/v1/users?q={keyword}`
@@ -636,6 +639,7 @@ Base path：`/main/api/v1`
   - `POST /main/api/v1/api-keys/{id}/revoke`
   - `POST /main/api/v1/whitelists`
   - `PATCH /main/api/v1/whitelists/{id}`
+  - `DELETE /main/api/v1/whitelists/{id}`
   - `POST /main/api/v1/admins/{id}/enable`
   - `POST /main/api/v1/admins/{id}/disable`
   - `PATCH /main/api/v1/limit-strategy-config`
@@ -731,6 +735,7 @@ Base path：`/main/api/v1`
 16. `user` 查詢或停用非本人 key 時，API 回傳 `403`（或既有錯誤碼）。
 17. 非 `admin` 使用特殊人員名單管理 API（`/main/api/v1/whitelists*`）時，回傳 `403`。
 17-1. 特殊人員名單比對主鍵為 `sysid`，新增重複 `sysid` 時需回傳 `409` 與 `WHITELIST_SYSID_DUPLICATED`。
+17-2. 管理者可刪除特殊人員名單條目（`DELETE /main/api/v1/whitelists/{id}`）；成功刪除後該條目不得再出現在列表。
 18. 管理者可成功啟用/停用其他使用者的管理者身分（`/main/api/v1/admins/{id}/enable|disable`）。
 18-1. 管理者名單需顯示狀態欄位；停用後該管理者仍保留於名單，狀態改為 `inactive`。
 19. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
@@ -788,7 +793,7 @@ Base path：`/main/api/v1`
 70-1. `/main/login-denied` 必須是公開頁；使用者進入後可見拒絕說明與返回 `/main/login` 的操作，且不依賴 `GET /main/api/v1/users/me` 成功。
 71. `admin` 可於 `POST /main/api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
-73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config`、`POST /main/api/v1/institutes/sync` 成功時皆需寫入 `operation_audit_logs`。
+73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`DELETE /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config`、`POST /main/api/v1/institutes/sync` 成功時皆需寫入 `operation_audit_logs`。
 74. 第 73 項 8 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。
 75. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證（token/password/client secret）。
 76. `operation_audit_logs.metadata_json` 僅允許白名單欄位（例如 `application_id`、`key_id`、`whitelist_id`、`target_admin_id`、`status`、`duration_months`），不得落地原始敏感 payload。
@@ -828,6 +833,7 @@ Base path：`/main/api/v1`
 
 ### Phase 2：MVP API
 - 完成特殊人員名單管理 API（沿用 `/main/api/v1/whitelists*` 路徑；新增、查詢、停用/啟用）
+- 完成特殊人員名單管理 API（沿用 `/main/api/v1/whitelists*` 路徑；新增、查詢、停用/啟用、刪除）
 - 完成申請核發、本人清單查詢、本人單筆查詢、本人停用 API
 - 完成管理端查詢/撤銷 API
 - 完成研究人員名單職稱代碼檢查、特殊人員名單檢查、申請欄位驗證、生效時長（月）驗證與一次性明文回傳邏輯

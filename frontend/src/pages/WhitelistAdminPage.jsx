@@ -4,6 +4,7 @@ import AddIcon from "@mui/icons-material/Add";
 import SaveIcon from "@mui/icons-material/Save";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
+import DeleteIcon from "@mui/icons-material/Delete";
 import {
   Alert,
   Box,
@@ -60,6 +61,7 @@ export default function WhitelistAdminPage({ auth }) {
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
   const [pendingStatusChange, setPendingStatusChange] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
@@ -130,6 +132,17 @@ export default function WhitelistAdminPage({ auth }) {
       await load();
     } catch (e) {
       setBanner(e?.payload?.error?.message || t("whitelist_updated_failed"));
+    }
+  }
+
+  async function deleteItem(id) {
+    setBanner("");
+    try {
+      await apiClient.deleteWhitelist(id, auth);
+      setBanner(t("whitelist_deleted_done"));
+      await load();
+    } catch (e) {
+      setBanner(e?.payload?.error?.message || t("whitelist_deleted_failed"));
     }
   }
 
@@ -249,6 +262,16 @@ export default function WhitelistAdminPage({ auth }) {
                 {params.row.status === "active" ? <StopIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
               </IconButton>
             </Tooltip>
+            <Tooltip title={locale === "zh-TW" ? "刪除特殊人員名單" : t("common_delete")}>
+              <IconButton
+                aria-label={locale === "zh-TW" ? "刪除特殊人員名單" : t("common_delete")}
+                size="small"
+                color="error"
+                onClick={() => setPendingDelete({ id: params.row.id, account: params.row.account, name: params.row.name })}
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
         )
       }
@@ -325,6 +348,28 @@ export default function WhitelistAdminPage({ auth }) {
             }}
           >
             {locale === "zh-TW" ? "確認" : "Confirm"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(pendingDelete)} onClose={() => setPendingDelete(null)}>
+        <DialogTitle>{t("whitelist_dialog_delete_title")}</DialogTitle>
+        <DialogContent>
+          {t("whitelist_dialog_delete_body").replace("{name}", pendingDelete?.name || "-").replace("{account}", pendingDelete?.account || "-")}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingDelete(null)}>{locale === "zh-TW" ? "取消" : "Cancel"}</Button>
+          <Button
+            color="error"
+            onClick={async () => {
+              const target = pendingDelete;
+              setPendingDelete(null);
+              if (target) {
+                await deleteItem(target.id);
+              }
+            }}
+          >
+            {locale === "zh-TW" ? "確認刪除" : "Delete"}
           </Button>
         </DialogActions>
       </Dialog>

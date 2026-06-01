@@ -42,7 +42,17 @@ def _count_limit_strategy_config() -> int:
 
 
 def _create_whitelist(client, admin_headers, sysid: int) -> None:
-    resp = client.post("/api/v1/whitelists", headers=admin_headers, json={"sysid": sysid, "note": "seed"})
+    resp = client.post(
+        "/api/v1/whitelists",
+        headers=admin_headers,
+        json={
+            "sysid": sysid,
+            "account": f"user{sysid}",
+            "name": f"User {sysid}",
+            "email": f"user{sysid}@example.com",
+            "note": "seed",
+        },
+    )
     assert resp.status_code == 201
 
 
@@ -139,14 +149,18 @@ def test_renew_logs_success_and_failure(client, admin_headers):
     assert success_row.result == "success"
 
 
-def test_whitelist_create_and_update_logs_success_and_failure(client, admin_headers, user_headers):
+def test_whitelist_create_update_delete_logs_success_and_failure(client, admin_headers, user_headers):
     create_forbidden = client.post(
         "/api/v1/whitelists",
         headers=user_headers,
-        json={"sysid": 7008, "note": "forbidden"},
+        json={"sysid": 7008, "account": "user7008", "name": "User 7008", "email": "user7008@example.com", "note": "forbidden"},
     )
     assert create_forbidden.status_code == 403
-    create_ok = client.post("/api/v1/whitelists", headers=admin_headers, json={"sysid": 7008, "note": "ok"})
+    create_ok = client.post(
+        "/api/v1/whitelists",
+        headers=admin_headers,
+        json={"sysid": 7008, "account": "user7008", "name": "User 7008", "email": "user7008@example.com", "note": "ok"},
+    )
     assert create_ok.status_code == 201
 
     whitelist_id = create_ok.json()["id"]
@@ -162,6 +176,10 @@ def test_whitelist_create_and_update_logs_success_and_failure(client, admin_head
         json={"status": "inactive", "note": "ok"},
     )
     assert update_ok.status_code == 200
+    delete_fail = client.delete(f"/api/v1/whitelists/{whitelist_id}", headers=user_headers)
+    assert delete_fail.status_code == 403
+    delete_ok = client.delete(f"/api/v1/whitelists/{whitelist_id}", headers=admin_headers)
+    assert delete_ok.status_code == 204
 
     create_logs = _query_logs("whitelist", "create")
     assert len(create_logs) == 2
@@ -176,6 +194,13 @@ def test_whitelist_create_and_update_logs_success_and_failure(client, admin_head
     failure_rows = [row for row in update_logs if row.result == "failure"]
     assert len(failure_rows) == 1
     assert failure_rows[0].error_code == "VALIDATION_ERROR"
+
+    delete_logs = _query_logs("whitelist", "delete")
+    assert len(delete_logs) == 2
+    assert {row.result for row in delete_logs} == {"success", "failure"}
+    delete_failure_rows = [row for row in delete_logs if row.result == "failure"]
+    assert len(delete_failure_rows) == 1
+    assert delete_failure_rows[0].error_code == "VALIDATION_ERROR"
 
 
 def test_admin_enable_disable_logs_success_and_failure(client, admin_headers, user_headers):

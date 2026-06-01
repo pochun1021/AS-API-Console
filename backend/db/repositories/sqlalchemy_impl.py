@@ -110,6 +110,8 @@ class SQLAlchemyWhitelistRepository(WhitelistRepository):
         whitelist = ApiKeyWhitelist(
             id=data.id,
             sysid=data.sysid,
+            account=data.account,
+            name=data.name,
             email=data.email.lower() if data.email else None,
             status="active",
             note=data.note,
@@ -151,6 +153,14 @@ class SQLAlchemyWhitelistRepository(WhitelistRepository):
         whitelist.updated_by = data.updated_by
         whitelist.updated_at = datetime.now(timezone.utc)
         self.session.add(whitelist)
+        self.session.flush()
+        return whitelist
+
+    def delete(self, whitelist_id: str) -> ApiKeyWhitelist | None:
+        whitelist = self.get_by_id(whitelist_id)
+        if whitelist is None:
+            return None
+        self.session.delete(whitelist)
         self.session.flush()
         return whitelist
 
