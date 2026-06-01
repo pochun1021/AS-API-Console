@@ -50,6 +50,9 @@
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
   - `duration_months` 僅允許 `1|6|12`
   - `admin` 代申請時，`target_identity.account` 必填；`name`、`email`、`department`、`sysid` 由後端目錄查詢補齊
+  - `admin` 代申請時，前端於 `target_identity.account` 欄位 `blur` 後需呼叫 `GET /main/api/v1/users?q=...` 查詢目標身份資料並帶入唯讀欄位
+  - 若查詢結果多筆，前端需顯示候選清單供 `admin` 明確選擇；未完成選擇前不得送出申請
+  - `admin` 代申請時，若帳號查無需顯示「查無帳號」；若查詢服務異常需顯示 `soap service unavailable`，兩者皆以獨立 `error` alert 顯示於上述 info 提示之後
   - 限制策略由管理者透過模板資源維護；一般使用者申請時不可提交策略細節
 - 成功送出後顯示一次性 key，並提供複製操作；複製成功需有明確視覺回饋（check icon 後恢復）。
 - 複製流程以 Clipboard API 為唯一可驗證複製路徑；若不可用或複製失敗，需提示使用者手動複製。
@@ -806,6 +809,7 @@ Base path：`/main/api/v1`
 70. OAuth callback 需做登入資格審核：`active whitelist(sysid)` 或 `active admins(id=sysid)` 命中可登入；否則需命中 `LOGIN_ALLOWED_TITLE_CODES`，未命中則 redirect `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 且不得建立 session。
 70-1. `/main/login-denied` 必須是公開頁；使用者進入後可見拒絕說明與返回 `/main/login` 的操作，且不依賴 `GET /main/api/v1/users/me` 成功。
 71. `admin` 可於 `POST /main/api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
+71-1. `admin` 代申請時，前端輸入 `target_identity.account` 並離開欄位後，需查詢並顯示目標 `name/email/department/sysid`；若查詢結果多筆需由管理者先選定目標再送出。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`DELETE /main/api/v1/whitelists/{id}`、`PUT /main/api/v1/admins/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`DELETE /main/api/v1/admins/{id}`、`PATCH /main/api/v1/limit-strategy-config`、`POST /main/api/v1/institutes/sync` 成功時皆需寫入 `operation_audit_logs`。
 74. 第 73 項 8 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。

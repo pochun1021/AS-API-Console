@@ -140,17 +140,25 @@ test("shows Chinese error message when API returns English message", async () =>
 
 test("admin proxy mode sends target_identity", async () => {
   const user = userEvent.setup();
+  const searchUsers = vi.fn().mockResolvedValue({
+    items: [{ id: "u1", account: "target.user", name: "Target User", email: "target.user@company.com", department: "02", sysid: 9999 }]
+  });
   const createApplication = vi.fn().mockResolvedValue({
     application: { id: "app-1", account: "target.user", status: "active", issued_at: new Date().toISOString(), expires_at: new Date().toISOString() },
     issuance_status: "pending",
     api_key_plaintext: null,
     pending_reason: "awaiting_admin_mode_selection"
   });
-  setApiProvider({ createApplication });
+  setApiProvider({ createApplication, searchUsers });
   renderPage(<ApplyPage auth={adminAuth} />);
 
   await user.click(screen.getByRole("radio", { name: "協助他人申請" }));
-  await user.type(screen.getByLabelText("帳號"), "target.user");
+  const accountInput = screen.getByLabelText("帳號");
+  await user.type(accountInput, "target.user");
+  await user.tab();
+  await waitFor(() => {
+    expect(searchUsers).toHaveBeenCalledWith("target.user", adminAuth);
+  });
   await user.type(screen.getByLabelText("用途"), "proxy apply");
   await user.click(screen.getByRole("button", { name: "送出申請" }));
 
@@ -160,6 +168,89 @@ test("admin proxy mode sends target_identity", async () => {
   expect(createApplication.mock.calls[0][0].target_identity).toEqual({
     account: "target.user"
   });
+});
+
+test("proxy account blur auto-fills identity fields", async () => {
+  const user = userEvent.setup();
+  const searchUsers = vi.fn().mockResolvedValue({
+    items: [{ id: "u1", account: "target.user", name: "Target User", email: "target.user@company.com", department: "02", sysid: 9999 }]
+  });
+  setApiProvider({ searchUsers, createApplication: vi.fn() });
+  renderPage(<ApplyPage auth={adminAuth} />);
+
+  await user.click(screen.getByRole("radio", { name: "協助他人申請" }));
+  const accountInput = screen.getByLabelText("帳號");
+  await user.type(accountInput, "target.user");
+  await user.tab();
+
+  expect(await screen.findByDisplayValue("Target User")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("target.user@company.com")).toBeInTheDocument();
+});
+
+test("proxy account lookup opens picker when multiple candidates", async () => {
+  const user = userEvent.setup();
+  const searchUsers = vi.fn().mockResolvedValue({
+    items: [
+      { id: "u1", account: "target.user", name: "Target User A", email: "a@company.com", department: "01", sysid: 1001 },
+      { id: "u2", account: "target.user", name: "Target User B", email: "b@company.com", department: "02", sysid: 1002 }
+    ]
+  });
+  setApiProvider({ searchUsers, createApplication: vi.fn() });
+  renderPage(<ApplyPage auth={adminAuth} />);
+
+  await user.click(screen.getByRole("radio", { name: "協助他人申請" }));
+  const accountInput = screen.getByLabelText("帳號");
+  await user.type(accountInput, "target.user");
+  await user.tab();
+
+  expect(await screen.findByText("請選擇目標人員")).toBeInTheDocument();
+  await user.click(screen.getAllByRole("button", { name: "選擇此人" })[1]);
+  expect(await screen.findByDisplayValue("Target User B")).toBeInTheDocument();
+});
+
+test("proxy submit is blocked when target identity lookup is not confirmed", async () => {
+  const user = userEvent.setup();
+  const createApplication = vi.fn();
+  setApiProvider({ createApplication, searchUsers: vi.fn().mockResolvedValue({ items: [] }) });
+  renderPage(<ApplyPage auth={adminAuth} />);
+
+  await user.click(screen.getByRole("radio", { name: "協助他人申請" }));
+  await user.type(screen.getByLabelText("帳號"), "missing.user");
+  await user.type(screen.getByLabelText("用途"), "proxy apply");
+  await user.click(screen.getByRole("button", { name: "送出申請" }));
+
+  expect(await screen.findByText("請先完成帳號查詢並確認目標人員。")).toBeInTheDocument();
+  expect(createApplication).not.toHaveBeenCalled();
+});
+
+test("proxy lookup not found shows error alert after info alert", async () => {
+  const user = userEvent.setup();
+  setApiProvider({ createApplication: vi.fn(), searchUsers: vi.fn().mockResolvedValue({ items: [] }) });
+  renderPage(<ApplyPage auth={adminAuth} />);
+
+  await user.click(screen.getByRole("radio", { name: "協助他人申請" }));
+  const accountInput = screen.getByLabelText("帳號");
+  await user.type(accountInput, "missing.user");
+  await user.tab();
+
+  expect(await screen.findByText("系統會依帳號自動查詢姓名、Email、單位與 SysID。")).toBeInTheDocument();
+  expect(await screen.findByText("查無帳號")).toBeInTheDocument();
+});
+
+test("proxy lookup service unavailable shows soap service unavailable", async () => {
+  const user = userEvent.setup();
+  const searchUsers = vi.fn().mockRejectedValue({
+    payload: { error: { code: "SOAP_SERVICE_UNAVAILABLE", message: "service down" } }
+  });
+  setApiProvider({ createApplication: vi.fn(), searchUsers });
+  renderPage(<ApplyPage auth={adminAuth} />);
+
+  await user.click(screen.getByRole("radio", { name: "協助他人申請" }));
+  const accountInput = screen.getByLabelText("帳號");
+  await user.type(accountInput, "target.user");
+  await user.tab();
+
+  expect(await screen.findByText("soap service unavailable")).toBeInTheDocument();
 });
 
 test("proxy account lookup hint is visible only in proxy mode", async () => {

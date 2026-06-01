@@ -3,6 +3,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import {
   Alert,
+  CircularProgress,
   Box,
   Button,
   Card,
@@ -34,6 +35,7 @@ function toErrorMessage(error, t) {
   const map = {
     APPLICANT_NOT_ELIGIBLE: t("apply_error_not_eligible"),
     RESEARCH_LIST_SERVICE_UNAVAILABLE: t("apply_error_research_unavailable"),
+    SOAP_SERVICE_UNAVAILABLE: t("apply_error_directory_unavailable"),
     DIRECTORY_SERVICE_UNAVAILABLE: t("apply_error_directory_unavailable"),
     INVALID_APPLICATION_DATE: t("apply_error_invalid_date"),
     INVALID_DURATION_MONTHS: t("apply_error_invalid_duration"),
@@ -74,6 +76,11 @@ export default function ApplyPage({ auth }) {
   const [targetIdentity, setTargetIdentity] = useState({
     account: ""
   });
+  const [targetProfile, setTargetProfile] = useState(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+  const [candidateDialogOpen, setCandidateDialogOpen] = useState(false);
+  const [candidateItems, setCandidateItems] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [issued, setIssued] = useState(null);
@@ -92,8 +99,48 @@ export default function ApplyPage({ auth }) {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
   const onTargetChange = (key) => (event) => {
-    setTargetIdentity((prev) => ({ ...prev, [key]: event.target.value }));
+    const value = event.target.value;
+    setTargetIdentity((prev) => ({ ...prev, [key]: value }));
+    setLookupError("");
+    setTargetProfile(null);
   };
+
+  async function lookupTargetIdentity() {
+    if (!(auth.role === "admin" && proxyEnabled)) return;
+
+    const keyword = targetIdentity.account.trim();
+    setLookupError("");
+    setTargetProfile(null);
+    setCandidateItems([]);
+    setCandidateDialogOpen(false);
+    if (!keyword) return;
+
+    setLookupLoading(true);
+    try {
+      const response = await apiClient.searchUsers(keyword, auth);
+      const items = Array.isArray(response?.items) ? response.items : [];
+      const exactMatches = items.filter((item) => String(item?.account || "").trim() === keyword);
+      if (exactMatches.length === 1) {
+        setTargetProfile(exactMatches[0]);
+      } else if (items.length === 1) {
+        setTargetProfile(items[0]);
+      } else if (items.length > 1) {
+        setCandidateItems(items);
+        setCandidateDialogOpen(true);
+      } else {
+        setLookupError(t("apply_proxy_lookup_not_found"));
+      }
+    } catch (e) {
+      const code = e?.payload?.error?.code;
+      if (code === "SOAP_SERVICE_UNAVAILABLE" || code === "DIRECTORY_SERVICE_UNAVAILABLE") {
+        setLookupError(t("apply_proxy_lookup_service_unavailable"));
+      } else {
+        setLookupError(toErrorMessage(e, t));
+      }
+    } finally {
+      setLookupLoading(false);
+    }
+  }
 
   async function onSubmit(event) {
     event.preventDefault();
@@ -116,6 +163,10 @@ export default function ApplyPage({ auth }) {
     if (auth.role === "admin" && proxyEnabled) {
       if (!targetIdentity.account.trim()) {
         setError(t("apply_error_required_proxy_identity"));
+        return;
+      }
+      if (!targetProfile || String(targetProfile.account || "").trim() !== targetIdentity.account.trim()) {
+        setError(t("apply_error_proxy_lookup_required"));
         return;
       }
     }
@@ -213,20 +264,35 @@ export default function ApplyPage({ auth }) {
                     <Alert severity="info">{t("apply_proxy_account_lookup_hint")}</Alert>
                   </Grid>
                 ) : null}
+                {auth.role === "admin" && proxyEnabled && lookupError ? (
+                  <Grid size={12}>
+                    <Alert severity="error">{lookupError}</Alert>
+                  </Grid>
+                ) : null}
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField fullWidth label={isZh ? "帳號" : "Account"} value={auth.role === "admin" && proxyEnabled ? targetIdentity.account : auth.account} onChange={auth.role === "admin" && proxyEnabled ? onTargetChange("account") : undefined} InputProps={{ readOnly: !(auth.role === "admin" && proxyEnabled) }} />
+                  <TextField
+                    fullWidth
+                    label={isZh ? "帳號" : "Account"}
+                    value={auth.role === "admin" && proxyEnabled ? targetIdentity.account : auth.account}
+                    onChange={auth.role === "admin" && proxyEnabled ? onTargetChange("account") : undefined}
+                    onBlur={auth.role === "admin" && proxyEnabled ? lookupTargetIdentity : undefined}
+                    InputProps={{
+                      readOnly: !(auth.role === "admin" && proxyEnabled),
+                      endAdornment: auth.role === "admin" && proxyEnabled && lookupLoading ? <CircularProgress size={18} /> : null
+                    }}
+                  />
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField fullWidth label={isZh ? "姓名" : "Name"} value={auth.name} InputProps={{ readOnly: true }} />
+                  <TextField fullWidth label={isZh ? "姓名" : "Name"} value={auth.role === "admin" && proxyEnabled ? (targetProfile?.name || "") : auth.name} InputProps={{ readOnly: true }} />
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField fullWidth label="Email" value={auth.email} InputProps={{ readOnly: true }} />
+                  <TextField fullWidth label="Email" value={auth.role === "admin" && proxyEnabled ? (targetProfile?.email || "") : auth.email} InputProps={{ readOnly: true }} />
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <TextField
                     fullWidth
                     label={isZh ? "單位" : "Department"}
-                    value={formatDepartment(auth.department, locale)}
+                    value={auth.role === "admin" && proxyEnabled ? formatDepartment(targetProfile?.department || "", locale) : formatDepartment(auth.department, locale)}
                     InputProps={{ readOnly: true }}
                   />
                 </Grid>
@@ -297,6 +363,40 @@ export default function ApplyPage({ auth }) {
         </DialogContent>
         <DialogActions>
           <Button onClick={closeIssuedDialog}>{isZh ? "我知道了" : "Saved"}</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={candidateDialogOpen} onClose={() => setCandidateDialogOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle>{t("apply_proxy_pick_title")}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ mt: 1 }}>
+            <Typography variant="body2">{t("apply_proxy_pick_hint")}</Typography>
+            {candidateItems.map((item) => (
+              <Box key={item.id || `${item.account}-${item.sysid}`} sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                <Typography variant="body2"><strong>{isZh ? "帳號" : "Account"}:</strong> {item.account || "-"}</Typography>
+                <Typography variant="body2"><strong>{isZh ? "姓名" : "Name"}:</strong> {item.name || "-"}</Typography>
+                <Typography variant="body2"><strong>Email:</strong> {item.email || "-"}</Typography>
+                <Typography variant="body2"><strong>{isZh ? "單位" : "Department"}:</strong> {formatDepartment(item.department || "", locale) || "-"}</Typography>
+                <Typography variant="body2"><strong>SysID:</strong> {item.sysid || "-"}</Typography>
+                <Box sx={{ mt: 1 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => {
+                      setTargetIdentity({ account: item.account || "" });
+                      setTargetProfile(item);
+                      setLookupError("");
+                      setCandidateDialogOpen(false);
+                    }}
+                  >
+                    {t("apply_proxy_pick_action")}
+                  </Button>
+                </Box>
+              </Box>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCandidateDialogOpen(false)}>{t("common_close")}</Button>
         </DialogActions>
       </Dialog>
     </Stack>
