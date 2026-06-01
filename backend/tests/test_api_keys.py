@@ -309,6 +309,42 @@ def test_application_provider_timeout_returns_503(client, admin_headers, user_he
         get_settings.cache_clear()
 
 
+def test_application_provider_payload_uses_new_fields_only(client, admin_headers, user_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderGenerateResult
+
+    captured_payload: dict = {}
+
+    def _capture_payload(self, payload):
+        captured_payload.update(payload)
+        return ProviderGenerateResult(key_plaintext="AS-abcdefghijklmnopqrstuvwxyz1234")
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.api_keys_service.LoginEligibilityService.is_eligible_by_sysid", lambda self, sysid: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _capture_payload)
+    try:
+        resp = client.post(
+            "/api/v1/api-keys/applications",
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "payload-shape-check"},
+        )
+        assert resp.status_code == 201
+        assert captured_payload == {
+            "max_budget": 1000.0,
+            "budget_duration": "30d",
+            "tpm_limit": 10000,
+            "rpm_limit": 500,
+            "models": ["gemma-4-31B-it"],
+            "key_alias": f"for_{user_headers['x-account']}",
+            "key_type": "AI API",
+        }
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
 def test_applicant_mail_body_does_not_include_application_id():
     from app.services.mail_service import MailService
 

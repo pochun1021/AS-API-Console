@@ -55,6 +55,17 @@ def _default_alias(owner_account: str) -> str:
     return f"for_{owner_account}"
 
 
+def _to_provider_budget_duration(duration: str) -> str:
+    normalized = duration.strip().lower()
+    if normalized == "daily":
+        return "1d"
+    if normalized == "weekly":
+        return "7d"
+    if normalized == "monthly":
+        return "30d"
+    return normalized
+
+
 def _effective_status(*, status: str, expires_at: datetime) -> str:
     expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
     if status == "active" and expires_at_utc < datetime.now(UTC):
@@ -239,17 +250,16 @@ class ApiKeysService:
             provider_mode = (self.settings.issuance_provider_mode or "external").strip().lower()
             use_local_issuance = provider_mode == "local"
             if not use_local_issuance and self.provider_client.is_configured():
+                provider_budget_duration = _to_provider_budget_duration(budget_duration)
                 provider_result = self.provider_client.generate_key(
                     {
-                        "account": application.account,
-                        "application_id": application.id,
-                        "duration_months": application.duration_months,
-                        "purpose": application.purpose,
-                        "limit_strategy": "budget+rate_limit",
-                        "max_budget": max_budget,
-                        "budget_duration": budget_duration,
+                        "max_budget": float(max_budget),
+                        "budget_duration": provider_budget_duration,
                         "tpm_limit": tpm_limit,
                         "rpm_limit": rpm_limit,
+                        "models": ["gemma-4-31B-it"],
+                        "key_alias": _default_alias(application.account),
+                        "key_type": "AI API",
                     }
                 )
                 plaintext = provider_result.key_plaintext
