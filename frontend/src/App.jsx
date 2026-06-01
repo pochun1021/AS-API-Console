@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { apiClient } from "./api/client";
 import AppLayout from "./components/AppLayout";
 import { clearOAuthAuthContext, readOAuthAuthContext } from "./authContext";
 import { detectSystemLocale, useLocale } from "./i18n/locale";
 import ApplyPage from "./pages/ApplyPage";
+import LoginDeniedPage from "./pages/LoginDeniedPage";
 import MyApiKeysPage from "./pages/MyApiKeysPage";
 import AdminPage from "./pages/AdminPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
@@ -12,13 +13,16 @@ import LimitStrategiesPage from "./pages/LimitStrategiesPage";
 import InstituteViewPage from "./pages/InstituteViewPage";
 import OperationAuditLogsPage from "./pages/OperationAuditLogsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
+import { redirectToLogin } from "./utils/navigation";
 
 export default function App() {
+  const location = useLocation();
   const [auth, setAuth] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [logoutInProgress, setLogoutInProgress] = useState(false);
   const [localeReady, setLocaleReady] = useState(false);
   const { setLocale } = useLocale();
+  const isLoginDeniedRoute = location.pathname === "/login-denied";
 
   function changeLocale(nextLocale) {
     setLocale(nextLocale);
@@ -38,15 +42,21 @@ export default function App() {
       clearOAuthAuthContext();
       setAuth(null);
       setLogoutInProgress(false);
-      if (typeof window !== "undefined") {
-        window.location.assign("/main/login");
-      }
+      redirectToLogin();
     }
   }
 
   useEffect(() => {
     let canceled = false;
     async function bootstrapAuth() {
+      if (isLoginDeniedRoute) {
+        if (!canceled) {
+          setAuthReady(true);
+          setLocale(detectSystemLocale());
+          setLocaleReady(true);
+        }
+        return;
+      }
       try {
         const devAuth = readOAuthAuthContext();
         const currentUser = await apiClient.getCurrentUser(devAuth);
@@ -54,9 +64,7 @@ export default function App() {
           setAuth(currentUser);
         }
       } catch {
-        if (!canceled && typeof window !== "undefined") {
-          window.location.assign("/main/login");
-        }
+        if (!canceled) redirectToLogin();
       } finally {
         if (!canceled) {
           setAuthReady(true);
@@ -67,7 +75,7 @@ export default function App() {
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [isLoginDeniedRoute, setLocale]);
 
   useEffect(() => {
     if (!auth) return;
@@ -98,6 +106,15 @@ export default function App() {
       canceled = true;
     };
   }, [auth, setLocale]);
+
+  if (isLoginDeniedRoute) {
+    return (
+      <Routes>
+        <Route path="/login-denied" element={<LoginDeniedPage />} />
+        <Route path="*" element={<Navigate to="/login-denied" replace />} />
+      </Routes>
+    );
+  }
 
   if (!authReady || !auth || !localeReady) {
     return null;

@@ -136,6 +136,7 @@
 - Empty
 - Error（含重試）
 - 列表資料以 Data Table 呈現（支援排序與分頁）；僅「操作」欄位不可排序與不可 filter。
+- Login denied（公開頁）：當 OAuth callback 判定 `LOGIN_NOT_ELIGIBLE` 時，前端需停留於 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 顯示「沒有登入權限」訊息，且不得要求已有 session 才能顯示。
 
 ## 功能需求
 ### Must Have（MVP）
@@ -317,6 +318,7 @@ Base path：`/main/api/v1`
     - `LOGIN_ALLOWED_TITLE_CODES` 以逗號分隔字串表示（例如 `A01,A02,...`），解析需 `split(',')` 後做 `trim + upper`，空值略過且重複值去重；`tCode` 比對時同樣 `trim + upper`
     - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
     - 若未通過登入資格檢查，回 `302` redirect `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 且不得建立 session
+    - 前端在 `/main/login-denied` 需可直接顯示公開拒絕頁，不得發生自動導回 `/main/login` 的重導循環
     - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
     - 成功與失敗皆需寫入 `auth_audit_logs`
   - Response：
@@ -765,6 +767,7 @@ Base path：`/main/api/v1`
 68. OAuth 流程不得落地 access token/refresh token/password/client secret。
 69. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。
 70. OAuth callback 需做登入資格審核：`active whitelist(sysid)` 或 `active admins(id=sysid)` 命中可登入；否則需命中 `LOGIN_ALLOWED_TITLE_CODES`，未命中則 redirect `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 且不得建立 session。
+70-1. `/main/login-denied` 必須是公開頁；使用者進入後可見拒絕說明與返回 `/main/login` 的操作，且不依賴 `GET /main/api/v1/users/me` 成功。
 71. `admin` 可於 `POST /main/api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config`、`POST /main/api/v1/institutes/sync` 成功時皆需寫入 `operation_audit_logs`。
