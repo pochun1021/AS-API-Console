@@ -5,13 +5,19 @@ from urllib.parse import parse_qs, urlparse
 from app.core.errors import ApiError
 from app.services.oauth_service import OAuthIdentity
 from app.core.config import get_settings
+from db.models.admins import Admin
 from db.models.auth_audit_logs import AuthAuditLog
+from db.models.whitelist import ApiKeyWhitelist
 from tests.conftest import build_headers
 
 
 def _set_prod_oauth_env(monkeypatch) -> None:
     get_settings.cache_clear()
     monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv(
+        "LOGIN_ALLOWED_TITLE_CODES",
+        "A01,A02,A03,A06,A11,A15,A1A,A1I,B01,B02,B03,B03,B04,B11,B12,B13,B14,B21",
+    )
     get_settings.cache_clear()
 
 
@@ -21,6 +27,45 @@ def _latest_auth_audit() -> AuthAuditLog | None:
     engine = create_engine(db_url, future=True)
     with Session(engine) as session:
         return session.query(AuthAuditLog).order_by(AuthAuditLog.created_at.desc()).first()
+
+
+def _insert_whitelist(sysid: int) -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with Session(engine) as session:
+        session.add(
+            ApiKeyWhitelist(
+                id=f"wl-{sysid}",
+                sysid=sysid,
+                email=f"wl{sysid}@example.com",
+                status="active",
+                note=None,
+                created_by="test",
+                updated_by="test",
+            )
+        )
+        session.commit()
+
+
+def _insert_admin(admin_id: int) -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with Session(engine) as session:
+        session.add(
+            Admin(
+                id=admin_id,
+                account=f"admin{admin_id}",
+                email=f"admin{admin_id}@example.com",
+                name=f"Admin {admin_id}",
+                department="IT",
+                status="active",
+                created_by="test",
+                updated_by="test",
+            )
+        )
+        session.commit()
 
 
 def test_login_redirects_to_provider(client, monkeypatch):
@@ -51,7 +96,7 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
             email="oauth.user@example.com",
             department="IT",
             sysid=3001,
-            tcode="RS01",
+            tcode="A01",
             role="user",
         ),
     )
@@ -157,7 +202,7 @@ def test_callback_allows_missing_state(client, monkeypatch):
             email="oauth.user.statefree@example.com",
             department="IT",
             sysid=3301,
-            tcode="RS01",
+            tcode="A02",
             role="user",
         ),
     )
@@ -187,7 +232,7 @@ def test_callback_allows_any_valid_oauth_identity(client, monkeypatch):
     )
     callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
     assert callback.status_code == 302
-    assert callback.headers["location"] == "/main/"
+    assert callback.headers["location"] == "/main/login-denied?error=LOGIN_NOT_ELIGIBLE"
 
 
 def test_session_mutation_requires_csrf_token(client, monkeypatch):
@@ -208,7 +253,7 @@ def test_session_mutation_requires_csrf_token(client, monkeypatch):
             email="oauth.user4@example.com",
             department="IT",
             sysid=3004,
-            tcode="A100",
+            tcode="A03",
             role="user",
         ),
     )
@@ -252,6 +297,48 @@ def test_test_session_login_bootstraps_session_and_csrf(client):
     assert me.status_code == 200
     assert me.json()["account"] == "test.admin"
     assert me.json()["role"] == "admin"
+
+
+def test_callback_allows_when_sysid_in_active_whitelist(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
+    _insert_whitelist(3888)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.fetch_identity",
+        lambda self, token: OAuthIdentity(
+            account="oauth.wl",
+            name="OAuth WL",
+            email="oauth.wl@example.com",
+            department="IT",
+            sysid=3888,
+            tcode="ZZZ",
+            role="user",
+        ),
+    )
+    callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
+    assert callback.status_code == 302
+    assert callback.headers["location"] == "/main/"
+
+
+def test_callback_allows_when_sysid_matches_active_admin_id(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
+    _insert_admin(3999)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.fetch_identity",
+        lambda self, token: OAuthIdentity(
+            account="oauth.admin-id",
+            name="OAuth AdminId",
+            email="oauth.admin-id@example.com",
+            department="IT",
+            sysid=3999,
+            tcode="ZZZ",
+            role="user",
+        ),
+    )
+    callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
+    assert callback.status_code == 302
+    assert callback.headers["location"] == "/main/"
 
 
 def test_login_bypasses_oauth_in_dev(client, monkeypatch):

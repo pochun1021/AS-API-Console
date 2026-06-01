@@ -35,6 +35,10 @@ class SQLAlchemyAdminRepository:
         stmt = select(Admin).where(Admin.account == account)
         return self.session.scalar(stmt)
 
+    def get_active_by_id(self, admin_id: int) -> Admin | None:
+        stmt = select(Admin).where(Admin.id == admin_id, Admin.status == "active")
+        return self.session.scalar(stmt)
+
     def search(self, keyword: str, limit: int = 20) -> list[Admin]:
         like = f"%{keyword}%"
         where_clause = Admin.account.like(like) | Admin.email.like(like) | Admin.name.like(like)

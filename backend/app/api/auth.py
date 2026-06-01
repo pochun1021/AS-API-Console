@@ -9,9 +9,10 @@ from app.core.errors import ApiError
 from app.core.security import csrf_protected, enforce_rate_limit, ensure_csrf_token
 from app.schemas.common import ErrorResponse
 from app.services.auth_audit_service import AuthAuditService
+from app.services.login_eligibility_service import LoginEligibilityService
 from app.services.oauth_service import OAuthService
 from db.repositories.types import AuthIdentity
-from db.repositories import SQLAlchemyAdminRepository
+from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyWhitelistRepository
 from db.session import get_db
 
 router = APIRouter()
@@ -113,6 +114,25 @@ def oauth_callback(
     except Exception as exc:
         audit.log(provider=provider, request_id=request_id, result="failure", error_code="OAUTH_CALLBACK_FAILED")
         raise ApiError("OAUTH_CALLBACK_FAILED", f"oauth callback failed; request_id={request_id}", 401) from exc
+
+    eligibility = LoginEligibilityService(
+        whitelist_repo=SQLAlchemyWhitelistRepository(db),
+        admin_repo=SQLAlchemyAdminRepository(db),
+    )
+    if not eligibility.is_eligible(sysid=identity.sysid, tcode=identity.tcode):
+        audit.log(
+            provider=provider,
+            request_id=request_id,
+            result="failure",
+            account=identity.account,
+            name=identity.name,
+            email=identity.email,
+            department=identity.department,
+            sysid=identity.sysid,
+            role="user",
+            error_code="LOGIN_NOT_ELIGIBLE",
+        )
+        return RedirectResponse("/main/login-denied?error=LOGIN_NOT_ELIGIBLE", status_code=302)
 
     request.session["auth_context"] = {
         "account": identity.account,

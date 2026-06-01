@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
 
 from app.main import app
 from app.core.config import get_settings

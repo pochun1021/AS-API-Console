@@ -81,7 +81,7 @@ export ENV_FILE=/home/app/config/.env
 - `TEST_DB_USER` / `TEST_DB_PASSWORD` / `TEST_DB_HOST` / `TEST_DB_PORT` / `TEST_DB_NAME`：僅測試（pytest）使用的資料庫連線組件（程式會自動組成 `TEST_DATABASE_URL`）
 - 建議命名規則：`TEST_DB_USER` 與 `TEST_DB_NAME` 使用相同名稱（例如都用 `as_api_console_test`）
 - `TEST_DATABASE_URL`：僅測試（pytest）使用；若提供會覆蓋 `TEST_DB_*` 組合結果
-- `LOGIN_ALLOWED_TITLE_CODES`：可選，資格判斷放行職稱代碼清單（逗號分隔，例如 `RS01,RS02`；大小寫不敏感）
+- `LOGIN_ALLOWED_TITLE_CODES`：可選，登入資格補充放行職稱代碼清單（逗號分隔，例如 `A01,A02,A03,A06,A11,A15,A1A,A1I,B01,B02,B03,B03,B04,B11,B12,B13,B14,B21`；解析時會做 `trim + upper`，空值略過且重複值去重）
 - `PERSNL_SOAP_URL`：可選，Persnl SOAP runtime endpoint（設定時會優先作為實際呼叫位址）
 - `PERSNL_SOAP_WSDL_URL`：可選，Persnl SOAP WSDL URL（設定後可使用 WSDL client）
 - `PERSNL_SOAP_USER` / `PERSNL_SOAP_PASSWORD`：單位主檔同步（`sync_institutes.py`）使用的 SOAP 帳密
@@ -137,7 +137,7 @@ npm run build
 
 ## 開發備註
 - 後端登入入口：
-  - `APP_ENV=prod`：`GET /main/login` 走 OAuth，callback `GET /main/auth/callback` 成功後以 session 注入 auth context。
+  - `APP_ENV=prod`：`GET /main/login` 走 OAuth，callback `GET /main/auth/callback` 於必要 claims 驗證後，依序檢查 `active whitelist(sysid)`、`active admins(id=sysid)`、`LOGIN_ALLOWED_TITLE_CODES`；通過才建立 session，否則導向 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE`。
   - `APP_ENV=dev/test`：`GET /main/login` 直接 bypass OAuth，使用 `DEV_LOGIN_*` 建立 session auth context（`role` 由 `DEV_LOGIN_ROLE` 控制，僅 `user|admin`）。
 - 前端啟動時會呼叫 `GET /main/api/v1/users/me` 取得目前 session 使用者資訊與 `csrf_token`。
 - `POST/PATCH` API 會以 `X-CSRF-Token` 搭配 session 驗證；正式環境不得以前端自送 header 當作正式認證來源。

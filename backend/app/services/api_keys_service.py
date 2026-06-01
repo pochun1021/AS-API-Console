@@ -17,9 +17,10 @@ from app.services.directory_identity_service import (
     DirectoryLookupNotUniqueError,
     DirectoryLookupUnavailableError,
 )
+from app.services.login_eligibility_service import LoginEligibilityService
 from app.services.mail_service import MailService
+from app.services.persnl_soap_service import PersnlSoapService, PersnlSoapUnavailableError
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
-from app.services.research_eligibility_service import ResearchEligibilityService, ResearchEligibilityUnavailableError
 from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
 from db.models.limit_strategy_config import LimitStrategyConfig
@@ -83,8 +84,12 @@ class ApiKeysService:
         self.whitelist_repo = SQLAlchemyWhitelistRepository(session)
         self.key_repo = SQLAlchemyApiKeyRepository(session)
         self.admin_repo = SQLAlchemyAdminRepository(session)
-        self.research_eligibility = ResearchEligibilityService()
+        self.login_eligibility = LoginEligibilityService(
+            whitelist_repo=self.whitelist_repo,
+            admin_repo=self.admin_repo,
+        )
         self.directory_identity = DirectoryIdentityService()
+        self.persnl = PersnlSoapService()
         self.provider_client = ProviderClient()
         self.crypto = CryptoService(self.settings.api_key_encryption_secret)
         self.mail_service = MailService()
@@ -129,24 +134,20 @@ class ApiKeysService:
                 raise ApiError("SOAP_SERVICE_UNAVAILABLE", "soap service unavailable", 503) from exc
             is_proxy_submission = True
 
-        research_eligible = False
-        if self.research_eligibility.is_configured():
-            try:
-                result = self.research_eligibility.check_eligibility(
-                    email=identity.email,
-                    sysid=identity.sysid,
-                )
-                research_eligible = result.eligible
-            except (ResearchEligibilityUnavailableError, RuntimeError) as exc:
-                raise ApiError(
-                    "SOAP_SERVICE_UNAVAILABLE",
-                    "soap service unavailable",
-                    503,
-                ) from exc
-
-        whitelist_eligible = self.whitelist_repo.find_active_by_sysid(identity.sysid) is not None
-        if not research_eligible and not whitelist_eligible:
-            raise ApiError("APPLICANT_NOT_ELIGIBLE", "applicant is not eligible", 403)
+        if not self.login_eligibility.is_eligible_by_sysid(identity.sysid):
+            if self.persnl.is_configured():
+                lookup_account = identity.account.strip()
+                if not lookup_account:
+                    raise ApiError("APPLICANT_NOT_ELIGIBLE", "applicant is not eligible", 403)
+                try:
+                    matches = self.persnl.search_person_by_account(lookup_account, on_job="1")
+                except PersnlSoapUnavailableError as exc:
+                    raise ApiError("SOAP_SERVICE_UNAVAILABLE", "soap service timeout", 503) from exc
+                tcode = str(matches[0].get("tCode", "")).strip() if matches else ""
+            else:
+                tcode = ""
+            if not self.login_eligibility.is_allowed_by_tcode(tcode):
+                raise ApiError("APPLICANT_NOT_ELIGIBLE", "applicant is not eligible", 403)
 
         operator_identity = AuthIdentity(
             account=current_user.account,

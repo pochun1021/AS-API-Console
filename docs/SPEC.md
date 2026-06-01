@@ -20,7 +20,7 @@
 - 測試資料流程不得新增一般查詢端點回傳明文 API Key 的能力；明文 key 預設僅允許在建立當下回傳一次。
 
 ## 使用者流程
-1. 使用者透過 SSO/OAuth 登入時，系統先檢查進入資格：優先查外部研究人員名單（以職稱代碼判斷），未命中再檢查本系統特殊人員名單（原白名單，僅 `active` 可通過）。
+1. 使用者透過 SSO/OAuth 登入時，系統先檢查進入資格：優先查本系統特殊人員名單（`sysid` 且 `active`），再查管理者名單（`admins.id=sysid` 且 `active`），兩者都未命中才檢查 `tCode` 是否命中 `LOGIN_ALLOWED_TITLE_CODES`。
 2. 通過進入資格後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`（對應 OAuth claims：`cn`、`chName`、`email`、`instCode`、`sysId`）。
 3. 一般使用者填寫申請日期、用途與 API 生效時長；管理者可選擇代他人送出申請，僅需填寫目標 `account`，其餘身份欄位由系統查詢補齊。
 4. 送出申請前再次檢查資格：優先查外部研究人員名單（職稱代碼），未命中再檢查特殊人員名單（`active`）。
@@ -46,7 +46,7 @@
 - 驗證：
   - `email` 格式檢查
   - `sysid` 必須為純數字（整數語意）
-  - 申請資格需通過：研究人員名單職稱代碼命中，或特殊人員名單為 `active`
+  - 申請資格需通過：依序命中 `active whitelist(sysid)`、`active admins(id=sysid)`，或 `tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES`
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
   - `duration_months` 僅允許 `1|6|12`
   - `admin` 代申請時，`target_identity.account` 必填；`name`、`email`、`department`、`sysid` 由後端目錄查詢補齊
@@ -313,7 +313,10 @@ Base path：`/main/api/v1`
     - callback 僅以 `code` 驅動 token/identity 流程；不做 `state` 比對
     - OAuth claims 來源：`sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
     - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
+    - 登入資格檢查順序：`active whitelist(sysid)` -> `active admins(id=sysid)` -> `tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES`
+    - `LOGIN_ALLOWED_TITLE_CODES` 以逗號分隔字串表示（例如 `A01,A02,...`），解析需 `split(',')` 後做 `trim + upper`，空值略過且重複值去重；`tCode` 比對時同樣 `trim + upper`
     - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
+    - 若未通過登入資格檢查，回 `302` redirect `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 且不得建立 session
     - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
     - 成功與失敗皆需寫入 `auth_audit_logs`
   - Response：
@@ -333,9 +336,9 @@ Base path：`/main/api/v1`
   - 請求必須為已登入使用者（`account`、`name`、`email`、`department`、`sysid` 由 auth context 提供，並以 auth context 為準）
   - `sysid` 必須為純數字；若為非數字，回傳 `VALIDATION_ERROR`。
   - `user` 僅能以 auth context 申請本人；`admin` 可選擇代他人申請（透過 `target_identity`）
-  - 申請資格必須通過：研究人員名單職稱代碼命中，或特殊人員名單 `active` 命中
-  - `admin` 代申請時，後端需先依 `target_identity.account` 查人員目錄取得唯一身份，再以該身份的 `email/sysid` 檢查申請資格
-  - 若研究人員名單服務失敗（timeout/5xx），本 API 回傳拒絕，不得建立申請資料
+  - 申請資格必須通過：依序命中 `active whitelist(sysid)`、`active admins(id=sysid)`，或 `tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES`
+  - `admin` 代申請時，後端需先依 `target_identity.account` 查人員目錄取得唯一身份，再以該身份的 `account(cn)` 查詢 `tCode` 檢查申請資格
+  - 若需查詢 `tCode` 且 Persnl SOAP 服務連線逾時或 5xx，本 API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`，不得建立申請資料
 - Request：
 ```json
 {
@@ -644,7 +647,7 @@ Base path：`/main/api/v1`
 ### 7) 研究資格與目錄查詢服務（Persnl SOAP）
 - 用途：供「進入系統」與「送出申請」時檢查是否命中研究人員資格。
 - 資格判斷：以 Persnl SOAP 回傳之 `tCode` 判斷研究資格。
-- 放行規則：登入流程與申請資格流程皆使用 `LOGIN_ALLOWED_TITLE_CODES`；其中申請資格流程仍保留 `tCode` 以 `B*` 開頭可通過之基線規則。
+- 放行規則：登入流程與申請資格流程一致，皆先看 `active whitelist(sysid)` 與 `active admins(id=sysid)`，兩者都未命中才看 `LOGIN_ALLOWED_TITLE_CODES`。
 - 本系統僅維護可通過之補充職稱代碼規則，不同步儲存研究人員名單明細資料。
 - 回應結果：
   - 命中：可直接通過資格檢查（不需再檢查特殊人員名單）。
@@ -688,7 +691,7 @@ Base path：`/main/api/v1`
 1. 研究人員名單職稱代碼命中者可成功核發 API Key，格式為 `AS-` + 30 碼隨機字元（總長 33）。
 2. 研究名單未命中但特殊人員名單 `active` 命中者可成功核發 API Key。
 3. 研究名單未命中且特殊人員名單未命中者，系統不得允許進入，且申請 API 回傳 `403` 與 `APPLICANT_NOT_ELIGIBLE`。
-4. Persnl SOAP 服務失敗（timeout/5xx）時，允許進入系統，但申請 API 回傳 `503` 與 `SOAP_SERVICE_UNAVAILABLE`。
+4. 當資格判斷需查詢 `tCode` 且 Persnl SOAP 服務失敗（timeout/5xx）時，申請 API 回傳 `503` 與 `SOAP_SERVICE_UNAVAILABLE`。
 5. `duration_months` 非 `1|6|12` 時，API 回傳 `INVALID_DURATION_MONTHS`。
 6. `application_date` 非法或晚於申請當日，API 回傳 `INVALID_APPLICATION_DATE`。
 7. 明文 key 預設僅於建立成功當下回傳一次；一般查詢端點不得回傳明文。
@@ -761,7 +764,7 @@ Base path：`/main/api/v1`
 67. OAuth 成功登入寫入的角色需固定為 `user`，不得由 OAuth payload 直接升權為 `admin`。
 68. OAuth 流程不得落地 access token/refresh token/password/client secret。
 69. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。
-70. OAuth callback 不做額外登入資格審核；完成 token/basic 與必要 claims 驗證後即建立 session。
+70. OAuth callback 需做登入資格審核：`active whitelist(sysid)` 或 `active admins(id=sysid)` 命中可登入；否則需命中 `LOGIN_ALLOWED_TITLE_CODES`，未命中則 redirect `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 且不得建立 session。
 71. `admin` 可於 `POST /main/api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config`、`POST /main/api/v1/institutes/sync` 成功時皆需寫入 `operation_audit_logs`。

@@ -6,7 +6,6 @@ from sqlalchemy import create_engine, text
 
 from app.core.config import get_settings
 from db.repositories.types import AuthIdentity
-from app.services.research_eligibility_service import ResearchEligibilityResult
 from tests.conftest import build_headers
 
 
@@ -451,12 +450,20 @@ def test_expiration_reminder_script_sends_once(client, admin_headers, user_heade
 
 def test_application_success_for_research_eligible_without_whitelist(client, user_headers, monkeypatch):
     monkeypatch.setattr(
-        "app.services.api_keys_service.ResearchEligibilityService.is_configured",
+        "app.services.api_keys_service.LoginEligibilityService.is_eligible_by_sysid",
+        lambda self, sysid: False,
+    )
+    monkeypatch.setattr(
+        "app.services.api_keys_service.PersnlSoapService.is_configured",
         lambda self: True,
     )
     monkeypatch.setattr(
-        "app.services.api_keys_service.ResearchEligibilityService.check_eligibility",
-        lambda self, email, sysid: ResearchEligibilityResult(eligible=True, title_code="RS01"),
+        "app.services.api_keys_service.PersnlSoapService.search_person_by_account",
+        lambda self, account, on_job: [{"tCode": "A01"}],
+    )
+    monkeypatch.setattr(
+        "app.services.api_keys_service.LoginEligibilityService.is_allowed_by_tcode",
+        lambda self, tcode: True,
     )
 
     create_resp = client.post(
@@ -469,17 +476,22 @@ def test_application_success_for_research_eligible_without_whitelist(client, use
 
 
 def test_application_research_service_unavailable_returns_503_and_no_records(client, admin_headers, user_headers, monkeypatch):
-    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     monkeypatch.setattr(
-        "app.services.api_keys_service.ResearchEligibilityService.is_configured",
+        "app.services.api_keys_service.LoginEligibilityService.is_eligible_by_sysid",
+        lambda self, sysid: False,
+    )
+    monkeypatch.setattr(
+        "app.services.api_keys_service.PersnlSoapService.is_configured",
         lambda self: True,
     )
 
-    def _raise_unavailable(self, email, sysid):
-        raise RuntimeError("timeout")
+    def _raise_unavailable(self, account, on_job):
+        from app.services.persnl_soap_service import PersnlSoapUnavailableError
+
+        raise PersnlSoapUnavailableError("timeout")
 
     monkeypatch.setattr(
-        "app.services.api_keys_service.ResearchEligibilityService.check_eligibility",
+        "app.services.api_keys_service.PersnlSoapService.search_person_by_account",
         _raise_unavailable,
     )
 
