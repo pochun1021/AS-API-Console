@@ -171,8 +171,16 @@ export const httpApiProvider = {
     return request(apiPath(`/admins/${id}/enable`), { method: "POST", auth });
   },
 
+  createAdmin(id, payload, auth) {
+    return request(apiPath(`/admins/${id}`), { method: "PUT", auth, body: payload });
+  },
+
   disableAdmin(id, auth) {
     return request(apiPath(`/admins/${id}/disable`), { method: "POST", auth });
+  },
+
+  deleteAdmin(id, auth) {
+    return request(apiPath(`/admins/${id}`), { method: "DELETE", auth });
   },
 
   getLocalePreference(auth) {

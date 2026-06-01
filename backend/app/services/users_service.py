@@ -64,12 +64,44 @@ class UsersService:
         self.session.commit()
         return {"id": user.id, "role": "admin", "status": user.status}
 
+    def create_admin(
+        self,
+        current_user: CurrentUser,
+        user_id: int,
+        *,
+        account: str,
+        name: str,
+        email: str,
+        department: str,
+    ) -> dict:
+        if self.repo.get_by_id(user_id) is not None:
+            raise ApiError("ADMIN_ALREADY_EXISTS", "admin already exists", 409)
+        user = self.repo.create(
+            admin_id=user_id,
+            account=account,
+            name=name,
+            email=email,
+            department=department,
+            created_by=current_user.account,
+        )
+        self.session.commit()
+        return {"id": user.id, "role": "admin", "status": user.status}
+
     def disable_admin(self, current_user: CurrentUser, user_id: int) -> dict:
         user = self.repo.set_status(user_id, status="inactive", updated_by=current_user.account)
         if user is None:
             raise ApiError("USER_NOT_FOUND", "admin not found", 404)
         self.session.commit()
         return {"id": user.id, "role": "admin", "status": user.status}
+
+    def delete_inactive_admin(self, current_user: CurrentUser, user_id: int) -> None:
+        user = self.repo.get_by_id(user_id)
+        if user is None:
+            raise ApiError("USER_NOT_FOUND", "admin not found", 404)
+        if user.status != "inactive":
+            raise ApiError("VALIDATION_ERROR", "active admin cannot be deleted", 422)
+        self.repo.delete(user_id)
+        self.session.commit()
 
     def get_locale_preference(self, current_user: CurrentUser) -> dict:
         preference = self.session.get(UserPreference, current_user.sysid)

@@ -227,6 +227,52 @@ def test_admin_enable_disable_logs_success_and_failure(client, admin_headers, us
     assert disable_logs[0].request_id == "req-disable-ok"
 
 
+def test_admin_create_delete_logs_success_and_failure(client, admin_headers):
+    create_fail = client.put(
+        "/api/v1/admins/1001",
+        headers={**admin_headers, "x-request-id": "req-admin-create-fail"},
+        json={
+            "account": "admin",
+            "name": "Admin User",
+            "email": "admin@example.com",
+            "department": "01",
+        },
+    )
+    assert create_fail.status_code == 409
+
+    create_ok = client.put(
+        "/api/v1/admins/5016408",
+        headers={**admin_headers, "x-request-id": "req-admin-create-ok"},
+        json={
+            "account": "u5016408",
+            "name": "User 5016408",
+            "email": "u5016408@example.com",
+            "department": "01",
+        },
+    )
+    assert create_ok.status_code == 200
+
+    delete_fail = client.delete("/api/v1/admins/5016408", headers={**admin_headers, "x-request-id": "req-admin-delete-fail"})
+    assert delete_fail.status_code == 422
+
+    disabled = client.post("/api/v1/admins/5016408/disable", headers=admin_headers)
+    assert disabled.status_code == 200
+    delete_ok = client.delete("/api/v1/admins/5016408", headers={**admin_headers, "x-request-id": "req-admin-delete-ok"})
+    assert delete_ok.status_code == 204
+
+    create_logs = _query_logs("admin_management", "create")
+    assert len(create_logs) == 2
+    assert {row.result for row in create_logs} == {"success", "failure"}
+    assert {row.error_code for row in create_logs if row.result == "failure"} == {"ADMIN_ALREADY_EXISTS"}
+
+    delete_logs = _query_logs("admin_management", "delete")
+    assert len(delete_logs) == 2
+    by_request = {row.request_id: row for row in delete_logs}
+    assert by_request["req-admin-delete-fail"].result == "failure"
+    assert by_request["req-admin-delete-fail"].error_code == "VALIDATION_ERROR"
+    assert by_request["req-admin-delete-ok"].result == "success"
+
+
 def test_limit_strategy_config_update_logs_success_and_failure(client, admin_headers, user_headers):
     payload = {
         "budget_max_budget": "2000",

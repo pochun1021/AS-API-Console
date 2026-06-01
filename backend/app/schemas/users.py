@@ -23,6 +23,13 @@ class UserRoleMutationResponse(BaseModel):
     status: str
 
 
+class AdminCreateRequest(BaseModel):
+    account: str
+    name: str
+    email: str
+    department: str
+
+
 class UserLocalePreferenceResponse(BaseModel):
     preferred_locale: str | None
 

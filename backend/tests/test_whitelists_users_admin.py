@@ -70,10 +70,19 @@ def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
     assert str(user_item["sysid"]) == user_item["id"]
     assert user_item["department"] == "01"
 
-    enable = client.post(f"/api/v1/admins/{user_id}/enable", headers=admin_headers)
-    assert enable.status_code == 200
-    assert enable.json()["role"] == "admin"
-    assert enable.json()["status"] == "active"
+    create = client.put(
+        f"/api/v1/admins/{user_id}",
+        headers=admin_headers,
+        json={
+            "account": user_item["account"],
+            "name": user_item["name"],
+            "email": user_item["email"],
+            "department": user_item["department"],
+        },
+    )
+    assert create.status_code == 200
+    assert create.json()["role"] == "admin"
+    assert create.json()["status"] == "active"
 
     disable = client.post(f"/api/v1/admins/{user_id}/disable", headers=admin_headers)
     assert disable.status_code == 200
@@ -89,6 +98,34 @@ def test_user_not_found_for_role_mutation(client, admin_headers):
     resp = client.post("/api/v1/admins/999999/enable", headers=admin_headers)
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "USER_NOT_FOUND"
+
+
+def test_admin_create_conflict_and_delete_inactive_only(client, admin_headers):
+    create_existing = client.put(
+        "/api/v1/admins/1001",
+        headers=admin_headers,
+        json={
+            "account": "admin",
+            "name": "Admin User",
+            "email": "admin@example.com",
+            "department": "01",
+        },
+    )
+    assert create_existing.status_code == 409
+    assert create_existing.json()["error"]["code"] == "ADMIN_ALREADY_EXISTS"
+
+    target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
+    bootstrap = client.get("/api/v1/api-keys", headers=target_admin_headers)
+    assert bootstrap.status_code == 200
+
+    delete_active = client.delete("/api/v1/admins/7003", headers=admin_headers)
+    assert delete_active.status_code == 422
+
+    disabled = client.post("/api/v1/admins/7003/disable", headers=admin_headers)
+    assert disabled.status_code == 200
+
+    delete_inactive = client.delete("/api/v1/admins/7003", headers=admin_headers)
+    assert delete_inactive.status_code == 204
 
 
 def test_users_returns_503_when_persnl_unavailable(client, admin_headers, monkeypatch):

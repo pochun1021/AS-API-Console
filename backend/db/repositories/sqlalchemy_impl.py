@@ -89,6 +89,24 @@ class SQLAlchemyAdminRepository:
         self.session.flush()
         return admin
 
+    def create(self, *, admin_id: int, account: str, name: str, email: str, department: str, created_by: str) -> Admin:
+        now = datetime.now(timezone.utc)
+        admin = Admin(
+            id=admin_id,
+            account=account,
+            email=email.lower(),
+            name=name,
+            department=department,
+            status="active",
+            created_by=created_by,
+            updated_by=created_by,
+            created_at=now,
+            updated_at=now,
+        )
+        self.session.add(admin)
+        self.session.flush()
+        return admin
+
     def set_status(self, admin_id: int, *, status: str, updated_by: str) -> Admin | None:
         admin = self.get_by_id(admin_id)
         if admin is None:
@@ -97,6 +115,14 @@ class SQLAlchemyAdminRepository:
         admin.updated_by = updated_by
         admin.updated_at = datetime.now(timezone.utc)
         self.session.add(admin)
+        self.session.flush()
+        return admin
+
+    def delete(self, admin_id: int) -> Admin | None:
+        admin = self.get_by_id(admin_id)
+        if admin is None:
+            return None
+        self.session.delete(admin)
         self.session.flush()
         return admin
 

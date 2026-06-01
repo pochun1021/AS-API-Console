@@ -8,6 +8,7 @@ from app.core.security import csrf_protected, enforce_rate_limit, ensure_csrf_to
 from app.schemas.common import ErrorResponse
 from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
 from app.schemas.users import (
+    AdminCreateRequest,
     CurrentUserResponse,
     UserListResponse,
     UserLocalePreferenceResponse,
@@ -174,6 +175,97 @@ def enable_admin(
     return result
 
 
+@router.put(
+    "/admins/{user_id}",
+    response_model=UserRoleMutationResponse,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("admin-create", settings.admin_mutation_rate_limit)],
+    responses={
+        403: {"model": ErrorResponse, "description": "Admin role is required"},
+        404: {"model": ErrorResponse, "description": "Admin user was not found"},
+        409: {"model": ErrorResponse, "description": "Admin already exists"},
+        422: {"model": ErrorResponse, "description": "Request body or path parameter is invalid"},
+    },
+)
+def create_admin(
+    user_id: str,
+    payload: AdminCreateRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "admin_management"
+    action = "create"
+    target_type = "admin"
+    target_id = user_id
+    parsed_admin_id = _parse_admin_id(user_id)
+    try:
+        _require_admin(current_user)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+
+    service = UsersService(db)
+    try:
+        result = service.create_admin(
+            current_user=current_user,
+            user_id=parsed_admin_id,
+            account=payload.account,
+            name=payload.name,
+            email=payload.email,
+            department=payload.department,
+        )
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+    except Exception:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["id"],
+        context=context,
+        metadata={"target_admin_id": result["id"], "status": result["status"]},
+    )
+    return result
+
+
 @router.post(
     "/admins/{user_id}/disable",
     response_model=UserRoleMutationResponse,
@@ -249,6 +341,87 @@ def disable_admin(
         metadata={"target_admin_id": result["id"], "status": result["status"]},
     )
     return result
+
+
+@router.delete(
+    "/admins/{user_id}",
+    status_code=204,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("admin-delete", settings.admin_mutation_rate_limit)],
+    responses={
+        403: {"model": ErrorResponse, "description": "Admin role is required"},
+        404: {"model": ErrorResponse, "description": "Admin user was not found"},
+        422: {"model": ErrorResponse, "description": "Active admin cannot be deleted"},
+    },
+)
+def delete_admin(
+    user_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "admin_management"
+    action = "delete"
+    target_type = "admin"
+    target_id = user_id
+    parsed_admin_id = _parse_admin_id(user_id)
+    try:
+        _require_admin(current_user)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+
+    service = UsersService(db)
+    try:
+        service.delete_inactive_admin(current_user=current_user, user_id=parsed_admin_id)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+    except Exception:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"target_admin_id": user_id},
+        )
+        raise
+
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=user_id,
+        context=context,
+        metadata={"target_admin_id": user_id},
+    )
 
 
 @router.get("/users/preferences/locale", response_model=UserLocalePreferenceResponse)

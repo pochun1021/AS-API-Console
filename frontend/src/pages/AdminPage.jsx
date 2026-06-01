@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
 import DoNotDisturbIcon from "@mui/icons-material/DoNotDisturb";
 import {
   Alert,
@@ -42,6 +43,7 @@ export default function AdminPage({ auth }) {
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
   const [pendingRevokeUser, setPendingRevokeUser] = useState(null);
+  const [pendingDeleteUser, setPendingDeleteUser] = useState(null);
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searching, setSearching] = useState(false);
@@ -93,10 +95,10 @@ export default function AdminPage({ auth }) {
     }
   }
 
-  async function grant(userId, userName = "") {
+  async function grant(payload, userName = "") {
     setBanner("");
     try {
-      await apiClient.enableAdmin(userId, auth);
+      await apiClient.createAdmin(payload.id, payload, auth);
       setBanner(t("admin_grant_done").replace("{name}", userName || t("common_owner")));
       await load();
     } catch (e) {
@@ -112,6 +114,28 @@ export default function AdminPage({ auth }) {
       await load();
     } catch (e) {
       setBanner(e?.payload?.error?.message || t("admin_revoke_failed"));
+    }
+  }
+
+  async function reactivate(userId, userName = "") {
+    setBanner("");
+    try {
+      await apiClient.enableAdmin(userId, auth);
+      setBanner(t("admin_grant_done").replace("{name}", userName || t("common_owner")));
+      await load();
+    } catch (e) {
+      setBanner(e?.payload?.error?.message || t("admin_grant_failed"));
+    }
+  }
+
+  async function remove(userId) {
+    setBanner("");
+    try {
+      await apiClient.deleteAdmin(userId, auth);
+      setBanner(t("admin_delete_done"));
+      await load();
+    } catch (e) {
+      setBanner(e?.payload?.error?.message || t("admin_delete_failed"));
     }
   }
 
@@ -160,17 +184,29 @@ export default function AdminPage({ auth }) {
           return (
             <Box sx={actionCellSx}>
               {isInactive ? (
-                <Tooltip title={locale === "zh-TW" ? "啟用管理者" : t("common_enable")}>
-                  <IconButton
-                    aria-label={locale === "zh-TW" ? "啟用管理者" : t("common_enable")}
+                <>
+                  <Tooltip title={locale === "zh-TW" ? "啟用管理者" : t("common_enable")}>
+                    <IconButton
+                      aria-label={locale === "zh-TW" ? "啟用管理者" : t("common_enable")}
                     size="small"
                     onClick={async () => {
-                      await grant(params.row.id, params.row.name);
+                      await reactivate(params.row.id, params.row.name);
                     }}
                   >
-                    <AddIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                      <AddIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={locale === "zh-TW" ? "刪除停用管理者" : t("common_delete")}>
+                    <IconButton
+                      aria-label={locale === "zh-TW" ? "刪除停用管理者" : t("common_delete")}
+                      size="small"
+                      color="error"
+                      onClick={() => setPendingDeleteUser({ id: params.row.id, name: params.row.name })}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </>
               ) : (
                 <Tooltip title={locale === "zh-TW" ? "停用管理者" : t("common_disable")}>
                   <span>
@@ -210,10 +246,10 @@ export default function AdminPage({ auth }) {
         flex: 1,
         minWidth: 110,
         renderCell: (params) =>
-          adminStatusById.get(params.row.id) === "active" ? (
+          adminStatusById.has(params.row.id) ? (
             <Box sx={{ display: "flex", alignItems: "center", height: "100%" }}>
               <Typography variant="body2" color="text.secondary">
-                {t("admin_status_active")}
+                {adminStatusById.get(params.row.id) === "inactive" ? t("admin_status_inactive") : t("admin_status_active")}
               </Typography>
             </Box>
           ) : (
@@ -222,7 +258,16 @@ export default function AdminPage({ auth }) {
                 aria-label={locale === "zh-TW" ? "加入管理者" : t("common_add")}
                 size="small"
                 onClick={async () => {
-                  await grant(params.row.id, params.row.name);
+                  await grant(
+                    {
+                      id: params.row.id,
+                      account: params.row.account,
+                      name: params.row.name,
+                      email: params.row.email,
+                      department: params.row.department
+                    },
+                    params.row.name
+                  );
                 }}
               >
                 <AddIcon fontSize="small" />
@@ -301,6 +346,28 @@ export default function AdminPage({ auth }) {
             }}
           >
             {locale === "zh-TW" ? "確認停用" : t("common_disable")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(pendingDeleteUser)} onClose={() => setPendingDeleteUser(null)}>
+        <DialogTitle>{t("admin_dialog_delete_title")}</DialogTitle>
+        <DialogContent>
+          {t("admin_dialog_delete_body").replace("{name}", pendingDeleteUser?.name || t("common_owner"))}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingDeleteUser(null)}>{locale === "zh-TW" ? "取消" : "Cancel"}</Button>
+          <Button
+            color="error"
+            onClick={async () => {
+              const target = pendingDeleteUser;
+              setPendingDeleteUser(null);
+              if (target) {
+                await remove(target.id);
+              }
+            }}
+          >
+            {locale === "zh-TW" ? "確認刪除" : t("common_delete")}
           </Button>
         </DialogActions>
       </Dialog>

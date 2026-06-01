@@ -858,6 +858,30 @@ export const mockApiProvider = {
     return { item: mapUserForAdminPage(user) };
   },
 
+  async createAdmin(id, payload, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const existing = findUserById(id);
+    if (existing && existing.role === "admin") {
+      throw createError("ADMIN_ALREADY_EXISTS", "管理者已存在", 409);
+    }
+    const user = existing || findOrCreateUserByAuth({
+      account: payload.account,
+      name: payload.name,
+      email: payload.email,
+      department: payload.department || "",
+      sysid: Number(payload.id) || 0,
+      role: "user"
+    });
+    user.role = "admin";
+    user.status = "active";
+    user.account = payload.account;
+    user.name = payload.name;
+    user.email = payload.email;
+    user.department = payload.department || "";
+    return { item: mapUserForAdminPage(user) };
+  },
+
   async disableAdmin(id, auth) {
     await delay();
     ensureAdmin(auth);
@@ -871,6 +895,19 @@ export const mockApiProvider = {
     user.role = "admin";
     user.status = "inactive";
     return { item: mapUserForAdminPage(user) };
+  },
+
+  async deleteAdmin(id, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const user = findUserById(id);
+    if (!user || user.role !== "admin") {
+      throw createError("USER_NOT_FOUND", "使用者不存在", 404);
+    }
+    if (user.status !== "inactive") {
+      throw createError("VALIDATION_ERROR", "active admin cannot be deleted", 422);
+    }
+    users = users.filter((item) => item.id !== id);
   },
 
   async getLocalePreference(auth) {

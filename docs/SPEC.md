@@ -90,7 +90,10 @@
 - 可用 `account`、`name` 查詢使用者。
 - 可啟用一般使用者的管理者權限（對應 `enable`）。
 - 可停用其他管理者的管理者權限（對應 `disable`）。
+- 可新增管理者（對應 `PUT /main/api/v1/admins/{id}`，建立後狀態為 `active`）。
+- 可刪除停用中的管理者（對應 `DELETE /main/api/v1/admins/{id}`，僅允許 `inactive`）。
 - 前端需阻擋管理者對自己執行管理者停用（避免誤鎖管理權限）。
+- 前端在「新增管理者」查詢結果中，對已存在於管理者名單（`active` 或 `inactive`）的人員，不得顯示新增按鈕。
 
 ### 6) Admin Dashboard Page（管理者統計頁）
 - 僅 `admin` 可使用。
@@ -628,9 +631,14 @@ Base path：`/main/api/v1`
   - Persnl SOAP timeout/5xx 時回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 
 ### 6) 管理者啟用/停用 API
+- `PUT /main/api/v1/admins/{id}`：新增指定使用者管理者身分（建立後狀態為 `active`）
 - `POST /main/api/v1/admins/{id}/enable`：啟用指定使用者管理者身分
 - `POST /main/api/v1/admins/{id}/disable`：停用指定使用者管理者身分
+- `DELETE /main/api/v1/admins/{id}`：刪除指定停用中的管理者身分
 - 規則：僅 `admin` 可使用，且需記錄操作稽核資訊（操作者、時間）。
+- 規則補充：
+  - `PUT /main/api/v1/admins/{id}` 若 `admins.id` 已存在，回傳 `409 ADMIN_ALREADY_EXISTS`。
+  - `DELETE /main/api/v1/admins/{id}` 僅允許刪除 `inactive`；若目標為 `active`，回傳 `422 VALIDATION_ERROR`。
 
 ### 6-1) 關鍵操作稽核 log（v1）
 - 儲存方式：寫入 `operation_audit_logs`（DB 落地）。
@@ -642,6 +650,8 @@ Base path：`/main/api/v1`
   - `DELETE /main/api/v1/whitelists/{id}`
   - `POST /main/api/v1/admins/{id}/enable`
   - `POST /main/api/v1/admins/{id}/disable`
+  - `PUT /main/api/v1/admins/{id}`
+  - `DELETE /main/api/v1/admins/{id}`
   - `PATCH /main/api/v1/limit-strategy-config`
   - `POST /main/api/v1/institutes/sync`
 - 稽核欄位至少需可辨識：事件類型、動作、成功/失敗、操作者（`sysid/account/role`）、目標資源類型與 ID、`request_id`、時間、來源 IP、user-agent。
@@ -738,6 +748,10 @@ Base path：`/main/api/v1`
 17-2. 管理者可刪除特殊人員名單條目（`DELETE /main/api/v1/whitelists/{id}`）；成功刪除後該條目不得再出現在列表。
 18. 管理者可成功啟用/停用其他使用者的管理者身分（`/main/api/v1/admins/{id}/enable|disable`）。
 18-1. 管理者名單需顯示狀態欄位；停用後該管理者仍保留於名單，狀態改為 `inactive`。
+18-2. 管理者可透過 `PUT /main/api/v1/admins/{id}` 新增管理者，且新增後狀態為 `active`。
+18-3. `PUT /main/api/v1/admins/{id}` 若 `id` 已存在於 `admins`，需回傳 `409 ADMIN_ALREADY_EXISTS`。
+18-4. 管理者可刪除 `inactive` 管理者（`DELETE /main/api/v1/admins/{id}`）；`active` 管理者不得刪除並回傳 `422 VALIDATION_ERROR`。
+18-5. 管理者新增查詢結果中，對已存在於 `admins` 的人員（包含 `active`、`inactive`）不得顯示新增按鈕。
 19. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
 20. 若 auth context 缺少 `sysid`，申請 API 回傳 `VALIDATION_ERROR` 且不得建立申請紀錄。
 21. 管理者不可在前端停用自己的管理者權限（不可將自己的角色由 `admin` 降為 `user`）。
@@ -793,7 +807,7 @@ Base path：`/main/api/v1`
 70-1. `/main/login-denied` 必須是公開頁；使用者進入後可見拒絕說明與返回 `/main/login` 的操作，且不依賴 `GET /main/api/v1/users/me` 成功。
 71. `admin` 可於 `POST /main/api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。
 72. 代申請時若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
-73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`DELETE /main/api/v1/whitelists/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`PATCH /main/api/v1/limit-strategy-config`、`POST /main/api/v1/institutes/sync` 成功時皆需寫入 `operation_audit_logs`。
+73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`DELETE /main/api/v1/whitelists/{id}`、`PUT /main/api/v1/admins/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`DELETE /main/api/v1/admins/{id}`、`PATCH /main/api/v1/limit-strategy-config`、`POST /main/api/v1/institutes/sync` 成功時皆需寫入 `operation_audit_logs`。
 74. 第 73 項 8 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。
 75. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證（token/password/client secret）。
 76. `operation_audit_logs.metadata_json` 僅允許白名單欄位（例如 `application_id`、`key_id`、`whitelist_id`、`target_admin_id`、`status`、`duration_months`），不得落地原始敏感 payload。
