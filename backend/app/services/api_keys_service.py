@@ -27,6 +27,14 @@ from db.models.limit_strategy_config import LimitStrategyConfig
 from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
 from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
 
+LIMIT_STRATEGY_CONFIG_ID = "global-limit-strategy-config"
+LIMIT_STRATEGY_DEFAULTS = {
+    "budget_max_budget": "1000",
+    "budget_duration": "monthly",
+    "rate_limit_tpm": 10000,
+    "rate_limit_rpm": 500,
+}
+
 
 @dataclass(slots=True)
 class Pagination:
@@ -230,7 +238,7 @@ class ApiKeysService:
         }
 
     def _issue_application(self, application: ApiKeyApplication) -> str | None:
-        config = self._get_or_create_limit_strategy_config()
+        config = self._get_limit_strategy_config_for_issuance()
         max_budget = (config.budget_max_budget or "").strip()
         budget_duration = (config.budget_duration or "").strip()
         tpm_limit = config.rate_limit_tpm
@@ -284,10 +292,27 @@ class ApiKeysService:
         self.session.add(application)
         return plaintext
 
+    def _get_limit_strategy_config_for_issuance(self) -> LimitStrategyConfig:
+        config = self.session.get(LimitStrategyConfig, LIMIT_STRATEGY_CONFIG_ID)
+        if config is not None:
+            return config
+        now = datetime.now(UTC)
+        return LimitStrategyConfig(
+            id=LIMIT_STRATEGY_CONFIG_ID,
+            budget_max_budget=LIMIT_STRATEGY_DEFAULTS["budget_max_budget"],
+            budget_duration=LIMIT_STRATEGY_DEFAULTS["budget_duration"],
+            rate_limit_tpm=LIMIT_STRATEGY_DEFAULTS["rate_limit_tpm"],
+            rate_limit_rpm=LIMIT_STRATEGY_DEFAULTS["rate_limit_rpm"],
+            created_at=now,
+            updated_at=now,
+        )
+
     def get_limit_strategy_config(self, current_user: CurrentUser) -> dict:
         if current_user.role != "admin":
             raise ApiError("FORBIDDEN", "admin role required", 403)
-        config = self._get_or_create_limit_strategy_config()
+        config = self.session.get(LimitStrategyConfig, LIMIT_STRATEGY_CONFIG_ID)
+        if config is None:
+            return dict(LIMIT_STRATEGY_DEFAULTS)
         return {
             "budget_max_budget": config.budget_max_budget,
             "budget_duration": config.budget_duration,
@@ -306,12 +331,23 @@ class ApiKeysService:
             raise ApiError("MISSING_BUDGET_FIELDS", "budget config is required", 422)
         if rate_limit_tpm <= 0 or rate_limit_rpm <= 0:
             raise ApiError("MISSING_RATE_LIMIT_FIELDS", "rate limit config is required", 422)
-        config = self._get_or_create_limit_strategy_config()
+        config = self.session.get(LimitStrategyConfig, LIMIT_STRATEGY_CONFIG_ID)
+        now = datetime.now(UTC)
+        if config is None:
+            config = LimitStrategyConfig(
+                id=LIMIT_STRATEGY_CONFIG_ID,
+                budget_max_budget=LIMIT_STRATEGY_DEFAULTS["budget_max_budget"],
+                budget_duration=LIMIT_STRATEGY_DEFAULTS["budget_duration"],
+                rate_limit_tpm=LIMIT_STRATEGY_DEFAULTS["rate_limit_tpm"],
+                rate_limit_rpm=LIMIT_STRATEGY_DEFAULTS["rate_limit_rpm"],
+                created_at=now,
+                updated_at=now,
+            )
         config.budget_max_budget = budget_max_budget
         config.budget_duration = budget_duration
         config.rate_limit_tpm = rate_limit_tpm
         config.rate_limit_rpm = rate_limit_rpm
-        config.updated_at = datetime.now(UTC)
+        config.updated_at = now
         self.session.add(config)
         self.session.commit()
         return {
@@ -320,24 +356,6 @@ class ApiKeysService:
             "rate_limit_tpm": config.rate_limit_tpm,
             "rate_limit_rpm": config.rate_limit_rpm,
         }
-
-    def _get_or_create_limit_strategy_config(self) -> LimitStrategyConfig:
-        config = self.session.get(LimitStrategyConfig, "global-limit-strategy-config")
-        if config is not None:
-            return config
-        now = datetime.now(UTC)
-        config = LimitStrategyConfig(
-            id="global-limit-strategy-config",
-            budget_max_budget="1000",
-            budget_duration="monthly",
-            rate_limit_tpm=10000,
-            rate_limit_rpm=500,
-            created_at=now,
-            updated_at=now,
-        )
-        self.session.add(config)
-        self.session.flush()
-        return config
 
     def list_keys(
         self,
@@ -697,9 +715,23 @@ class ApiKeysService:
         if current_user.role != "admin":
             raise ApiError("FORBIDDEN", "admin role required", 403)
 
+        allowed_sort_by = {
+            "owner_account",
+            "owner_name",
+            "owner_email",
+            "owner_department",
+            "total_applications",
+            "active_count",
+            "revoked_count",
+            "expired_count",
+            "last_applied_at",
+        }
         allowed_scopes = {"all", "active", "revoked", "expired"}
         if scope not in allowed_scopes:
             raise ApiError("VALIDATION_ERROR", "scope must be one of all, active, revoked, expired", 422)
+
+        if sort_by not in allowed_sort_by:
+            raise ApiError("VALIDATION_ERROR", "sort_by is invalid", 422)
 
         if sort_dir not in {"asc", "desc"}:
             raise ApiError("VALIDATION_ERROR", "sort_dir must be asc or desc", 422)

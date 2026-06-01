@@ -404,6 +404,8 @@ Base path：`/main/api/v1`
   - `rpm_limit`：每分鐘請求數限制。
 - 每把 API Key 需同時套用 `budget` 與 `rate_limit` 兩種限制；不提供二選一模式。
 - 一般使用者不可查看或修改金鑰條件設定。
+- 若尚未有已儲存設定，`GET /main/api/v1/limit-strategy-config` 需回傳預設值（`1000/monthly/10000/500`），且不得因此建立資料列。
+- `PATCH /main/api/v1/limit-strategy-config` 需採 upsert：若設定不存在則建立，存在則更新。
 - `PATCH /main/api/v1/limit-strategy-config` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
 
 ### 2) 查詢 API Key 清單
@@ -743,6 +745,7 @@ Base path：`/main/api/v1`
 26. API Key 詳情視窗需顯示單位（`department`）；若無資料則顯示 `-`。
 27. 申請成功彈窗需提供明文 key 複製功能，點擊後 icon 應由複製狀態切換為成功 check，並可自動恢復。
 28. `admin` 可呼叫 `GET /main/api/v1/api-keys/statistics/users` 取得每位申請人的統計資料，且預設依 `total_applications desc` 排序。
+28-1. 統計 API `sort_by` 僅允許既定欄位（`owner_account|owner_name|owner_email|owner_department|total_applications|active_count|revoked_count|expired_count|last_applied_at`）；非法值需回傳 `422 VALIDATION_ERROR`，不得回 `500`。
 29. `scope=all|active|revoked|expired` 切換時，統計結果需符合對應狀態口徑。
 30. 統計 API `from`、`to` 應以 `application_date` 篩選，且日期格式需為 `YYYY-MM-DD`。
 31. 非 `admin` 呼叫 `GET /main/api/v1/api-keys/statistics/users` 時，API 回傳 `403`。

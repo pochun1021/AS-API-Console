@@ -223,9 +223,10 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[ApiKeyListItem], int]:
+        now_utc = datetime.now(timezone.utc)
         effective_status = case(
             (
-                (ApiKey.status == "active") & (ApiKeyApplication.expires_at < func.utc_timestamp()),
+                (ApiKey.status == "active") & (ApiKeyApplication.expires_at < now_utc),
                 "expired",
             ),
             else_=ApiKey.status,
@@ -271,9 +272,10 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         )
 
     def get_key_detail(self, key_id: str, requester_role: str, requester_account: str) -> ApiKeyDetail | None:
+        now_utc = datetime.now(timezone.utc)
         effective_status = case(
             (
-                (ApiKey.status == "active") & (ApiKeyApplication.expires_at < func.utc_timestamp()),
+                (ApiKey.status == "active") & (ApiKeyApplication.expires_at < now_utc),
                 "expired",
             ),
             else_=ApiKey.status,
@@ -397,9 +399,10 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[ApiKeyUserStatisticsItem], int]:
+        now_utc = datetime.now(timezone.utc)
         effective_status = case(
             (
-                (ApiKey.status == "active") & (ApiKeyApplication.expires_at < func.utc_timestamp()),
+                (ApiKey.status == "active") & (ApiKeyApplication.expires_at < now_utc),
                 "expired",
             ),
             else_=ApiKey.status,
@@ -441,23 +444,22 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
 
         stmt = stmt.group_by(ApiKeyApplication.account, ApiKeyApplication.name, ApiKeyApplication.email)
 
-        allowed_sort_columns = {
-            "owner_account": "owner_account",
-            "owner_name": "owner_name",
-            "owner_email": "owner_email",
-            "owner_department": "owner_department",
-            "total_applications": "total_applications",
-            "active_count": "active_count",
-            "revoked_count": "revoked_count",
-            "expired_count": "expired_count",
-            "last_applied_at": "last_applied_at",
+        sort_expressions = {
+            "owner_account": ApiKeyApplication.account,
+            "owner_name": ApiKeyApplication.name,
+            "owner_email": ApiKeyApplication.email,
+            "owner_department": func.max(ApiKeyApplication.department),
+            "total_applications": total_applications,
+            "active_count": active_count,
+            "revoked_count": revoked_count,
+            "expired_count": expired_count,
+            "last_applied_at": last_applied_at,
         }
-        sort_key = allowed_sort_columns.get(sort_by, "total_applications")
-        sort_expr = stmt.selected_columns[sort_key]
+        sort_expr = sort_expressions.get(sort_by, total_applications)
         if sort_dir == "asc":
-            stmt = stmt.order_by(sort_expr.asc(), stmt.selected_columns["owner_account"].asc())
+            stmt = stmt.order_by(sort_expr.asc(), ApiKeyApplication.account.asc())
         else:
-            stmt = stmt.order_by(sort_expr.desc(), stmt.selected_columns["owner_account"].asc())
+            stmt = stmt.order_by(sort_expr.desc(), ApiKeyApplication.account.asc())
 
         total_stmt = select(func.count()).select_from(stmt.subquery())
         total = int(self.session.scalar(total_stmt) or 0)

@@ -1,7 +1,7 @@
 import json
 from datetime import date
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -20,6 +20,25 @@ def _query_logs(event_type: str, action: str) -> list[OperationAuditLog]:
             .order_by(OperationAuditLog.created_at.asc())
         ).all()
     return rows
+
+
+def _delete_limit_strategy_config() -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM limit_strategy_config WHERE id = 'global-limit-strategy-config'"))
+
+
+def _count_limit_strategy_config() -> int:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT COUNT(*) FROM limit_strategy_config WHERE id = 'global-limit-strategy-config'")
+        ).first()
+    return int(row[0]) if row is not None else 0
 
 
 def _create_whitelist(client, admin_headers, sysid: int) -> None:
@@ -235,3 +254,34 @@ def test_limit_strategy_config_update_logs_success_and_failure(client, admin_hea
 
     assert failure_row.result == "failure"
     assert failure_row.error_code == "MISSING_BUDGET_FIELDS"
+
+
+def test_limit_strategy_get_returns_defaults_without_creating_row(client, admin_headers):
+    _delete_limit_strategy_config()
+    assert _count_limit_strategy_config() == 0
+
+    resp = client.get("/api/v1/limit-strategy-config", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "budget_max_budget": "1000",
+        "budget_duration": "monthly",
+        "rate_limit_tpm": 10000,
+        "rate_limit_rpm": 500,
+    }
+    assert _count_limit_strategy_config() == 0
+
+
+def test_limit_strategy_patch_upserts_missing_row(client, admin_headers):
+    _delete_limit_strategy_config()
+    assert _count_limit_strategy_config() == 0
+
+    payload = {
+        "budget_max_budget": "3000",
+        "budget_duration": "weekly",
+        "rate_limit_tpm": 13000,
+        "rate_limit_rpm": 700,
+    }
+    resp = client.patch("/api/v1/limit-strategy-config", headers=admin_headers, json=payload)
+    assert resp.status_code == 200
+    assert resp.json() == payload
+    assert _count_limit_strategy_config() == 1

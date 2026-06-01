@@ -59,6 +59,17 @@ export default function AdminDashboardPage({ auth }) {
     { value: "revoked_count", label: t("dashboard_y_revoked_count") },
     { value: "expired_count", label: t("dashboard_y_expired_count") }
   ];
+  const allowedSortFields = new Set([
+    "owner_account",
+    "owner_name",
+    "owner_email",
+    "owner_department",
+    "total_applications",
+    "active_count",
+    "revoked_count",
+    "expired_count",
+    "last_applied_at"
+  ]);
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(20);
@@ -180,7 +191,10 @@ export default function AdminDashboardPage({ auth }) {
     setLoading(true);
     setError("");
     try {
-      const sort = sortModel[0] || { field: "total_applications", sort: "desc" };
+      const requestedSort = sortModel[0] || { field: "total_applications", sort: "desc" };
+      const sort = allowedSortFields.has(requestedSort.field)
+        ? requestedSort
+        : { field: "total_applications", sort: "desc" };
       const response = await apiClient.listApiKeyUserStatistics(
         {
           page: page + 1,

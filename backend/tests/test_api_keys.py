@@ -959,6 +959,30 @@ def test_list_api_keys_total_is_full_match_count_not_page_size(client, admin_hea
     assert page2.json()["total"] == 3
 
 
+def test_list_api_keys_accepts_page_and_page_size_query_params(client, admin_headers):
+    user = build_headers(role="user", account="pagequery", email="pagequery@example.com", sysid="2202")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    resp = client.post(
+        "/api/v1/api-keys/applications",
+        headers=user,
+        json={
+            "application_date": str(date.today()),
+            "duration_months": 1,
+            "purpose": "page-query",
+            "max_budget": "1000",
+            "budget_duration": "monthly",
+        },
+    )
+    assert resp.status_code == 201
+
+    listed = client.get("/api/v1/api-keys?page=1&page_size=10", headers=user)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["page"] == 1
+    assert body["page_size"] == 10
+    assert body["total"] >= 1
+
+
 def test_reveal_plaintext_admin_only(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user1["x-sysid"])
@@ -1139,3 +1163,12 @@ def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_head
 
     forbidden = client.get("/api/v1/api-keys/statistics/users", headers=user)
     assert forbidden.status_code == 403
+
+
+def test_admin_user_statistics_rejects_invalid_sort_by(client, admin_headers):
+    resp = client.get(
+        "/api/v1/api-keys/statistics/users?sort_by=__invalid__",
+        headers=admin_headers,
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
