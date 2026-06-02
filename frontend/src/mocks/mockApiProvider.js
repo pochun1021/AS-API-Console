@@ -374,6 +374,24 @@ function normalizeAlias(item) {
   return item.key_alias || `for_${item.owner_account}`;
 }
 
+function resolveVersionedAlias(ownerAccount, currentAlias) {
+  const normalizedAlias = (currentAlias || "").trim();
+  if (!normalizedAlias) return `for_${ownerAccount}`;
+
+  const matched = normalizedAlias.match(/^(.*)_v(\d+)$/);
+  if (!matched) return `${normalizedAlias}_v2`;
+  return `${matched[1]}_v${Number(matched[2]) + 1}`;
+}
+
+function ensureUniqueAlias(ownerAccount, preferredAlias) {
+  let alias = (preferredAlias || "").trim() || `for_${ownerAccount}`;
+  const seen = new Set(apiKeys.map((item) => normalizeAlias(item)).filter(Boolean));
+  while (seen.has(alias)) {
+    alias = resolveVersionedAlias(ownerAccount, alias);
+  }
+  return alias;
+}
+
 function isExtendEligible(item, auth) {
   if (!["active", "expired"].includes(item.status)) return false;
   if (item.status === "expired") return true;
@@ -501,7 +519,7 @@ export const mockApiProvider = {
         application_date: payload.application_date,
         duration_months: payload.duration_months,
         purpose: payload.purpose.trim(),
-        key_alias: `for_${auth.account}`,
+        key_alias: ensureUniqueAlias(auth.account),
         department: auth.department,
         created_at: now.toISOString(),
         expires_at: expires.toISOString(),
@@ -649,6 +667,9 @@ export const mockApiProvider = {
     if (!normalizedAlias) {
       throw createError("VALIDATION_ERROR", "key alias cannot be empty", 422);
     }
+    if (apiKeys.some((item) => item.id !== id && normalizeAlias(item) === normalizedAlias)) {
+      throw createError("KEY_ALIAS_DUPLICATE", "key_alias already exists", 409);
+    }
     target.key_alias = normalizedAlias;
     return { item: { ...target, key_alias: normalizeAlias(target) } };
   },
@@ -699,7 +720,7 @@ export const mockApiProvider = {
         application_date: now.toISOString().slice(0, 10),
         duration_months: target.duration_months,
         purpose: target.purpose || "",
-        key_alias: `for_${target.owner_account}`,
+        key_alias: ensureUniqueAlias(target.owner_account, target.key_alias),
         department: target.department,
         created_at: now.toISOString(),
         expires_at: expires.toISOString(),
@@ -758,7 +779,7 @@ export const mockApiProvider = {
         application_date: now.toISOString().slice(0, 10),
         duration_months: durationMonths,
         purpose: target.purpose || "",
-        key_alias: `for_${target.owner_account}`,
+        key_alias: ensureUniqueAlias(target.owner_account, target.key_alias),
         department: target.department,
         created_at: now.toISOString(),
         expires_at: expires.toISOString(),

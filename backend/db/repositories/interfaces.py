@@ -40,6 +40,8 @@ class ApiKeyRepository(Protocol):
 
     def create_key(self, data: ApiKeyCreateInput) -> ApiKey: ...
 
+    def alias_exists(self, key_alias: str, *, exclude_key_id: str | None = None) -> bool: ...
+
     def list_keys(
         self,
         *,

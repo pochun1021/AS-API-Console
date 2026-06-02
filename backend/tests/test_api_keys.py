@@ -919,6 +919,41 @@ def test_provider_mutation_payloads_use_key_field_and_shared_contract(client, ad
         get_settings.cache_clear()
 
 
+def test_create_application_retries_key_alias_with_version_suffix(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderBadRequestError, ProviderGenerateResult
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    attempted_aliases: list[str] = []
+
+    def _generate_with_retry(self, payload):
+        attempted_aliases.append(payload["key_alias"])
+        if len(attempted_aliases) == 1:
+            raise ProviderBadRequestError("provider rejected request: 400")
+        return ProviderGenerateResult(key_plaintext="AS-generatedabcdefghijklmnopqrstuvwxyz")
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _generate_with_retry)
+    try:
+        create_resp = client.post(
+            _api("/api-keys/applications"),
+            headers=user,
+            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "retry alias"},
+        )
+        assert create_resp.status_code == 201
+        assert attempted_aliases == [f"for_{user['x-account']}", f"for_{user['x-account']}_v2"]
+
+        listed = client.get(_api("/api-keys"), headers=user)
+        assert listed.status_code == 200
+        assert listed.json()["items"][0]["key_alias"] == f"for_{user['x-account']}_v2"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
 def test_renew_permissions_and_visibility(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
@@ -1464,6 +1499,40 @@ def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
     assert listed.status_code == 200
     admin_item = next(item for item in listed.json()["items"] if item["id"] == key_id)
     assert admin_item["key_alias"] == "custom_admin_alias"
+
+
+def test_admin_update_key_alias_rejects_duplicates(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    _create_whitelist(client, admin_headers, user2["x-sysid"])
+
+    for headers in (user1, user2):
+        create_resp = client.post(
+            _api("/api-keys/applications"),
+            headers=headers,
+            json={"application_date": str(date.today()), "duration_months": 1, "purpose": headers["x-account"]},
+        )
+        assert create_resp.status_code == 201
+
+    listed = client.get(_api("/api-keys"), headers=admin_headers)
+    assert listed.status_code == 200
+    key_by_owner = {item["owner_account"]: item["id"] for item in listed.json()["items"] if item["owner_account"] in {"user1", "user2"}}
+
+    first_update = client.patch(
+        _api(f"/api-keys/{key_by_owner['user1']}"),
+        headers=admin_headers,
+        json={"key_alias": "shared_alias"},
+    )
+    assert first_update.status_code == 200
+
+    duplicate = client.patch(
+        _api(f"/api-keys/{key_by_owner['user2']}"),
+        headers=admin_headers,
+        json={"key_alias": "shared_alias"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "KEY_ALIAS_DUPLICATE"
 
 
 def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):

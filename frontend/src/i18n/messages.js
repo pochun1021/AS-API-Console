@@ -290,6 +290,7 @@ export const messages = {
     mykeys_save_key_alias: "儲存 Key Alias",
     mykeys_dialog_alias_title: "編輯 Key Alias",
     mykeys_alias_update_done: "Key Alias 已更新。",
+    mykeys_alias_duplicate: "Key Alias 重複，請改用其他名稱。",
     mykeys_alias_update_failed: "更新 Key Alias 失敗",
   },
   en: {
@@ -585,6 +586,7 @@ export const messages = {
     mykeys_save_key_alias: "Save Key Alias",
     mykeys_dialog_alias_title: "Edit Key Alias",
     mykeys_alias_update_done: "Key alias updated.",
+    mykeys_alias_duplicate: "Key alias already exists. Please choose another one.",
     mykeys_alias_update_failed: "Failed to update key alias",
   },
 };

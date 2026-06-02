@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Select, case, func, select
+from sqlalchemy import Select, case, func, literal, select
 from sqlalchemy.orm import Session
 
 from db.models.admins import Admin
@@ -231,6 +231,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             key_hash=data.key_hash,
             key_prefix="AS-",
             masked_key=data.masked_key,
+            key_alias=data.key_alias,
             key_ciphertext=data.key_ciphertext,
             key_kek_version=data.key_kek_version,
             length=30,
@@ -241,6 +242,20 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         self.session.add(key)
         self.session.flush()
         return key
+
+    def alias_exists(self, key_alias: str, *, exclude_key_id: str | None = None) -> bool:
+        effective_default_alias = literal("for_") + ApiKeyApplication.account
+        stmt = (
+            select(ApiKey.id)
+            .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
+            .where(
+                (ApiKey.key_alias == key_alias)
+                | ((ApiKey.key_alias.is_(None)) & (effective_default_alias == key_alias))
+            )
+        )
+        if exclude_key_id:
+            stmt = stmt.where(ApiKey.id != exclude_key_id)
+        return self.session.scalar(stmt.limit(1)) is not None
 
     def list_keys(
         self,

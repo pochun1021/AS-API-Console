@@ -253,7 +253,11 @@ export default function MyApiKeysPage({ auth }) {
         setDetailAliasValue(response.item.key_alias || "");
       }
     } catch (e) {
-      setBanner(e?.payload?.error?.message || t("mykeys_alias_update_failed"));
+      if (e?.payload?.error?.code === "KEY_ALIAS_DUPLICATE") {
+        setBanner(t("mykeys_alias_duplicate"));
+      } else {
+        setBanner(e?.payload?.error?.message || t("mykeys_alias_update_failed"));
+      }
     } finally {
       setAliasSaving(false);
     }

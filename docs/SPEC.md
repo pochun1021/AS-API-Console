@@ -61,7 +61,7 @@
 - 顯示範圍：僅本人帳號歷史紀錄（`active|revoked|expired`）；若舊 key 已被 renew，對一般使用者隱藏。
 - 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（`AS-...` + 後 4 碼）。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
-- 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示 `for_{owner_account}`。
+- 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示系統產生 alias（初始為 `for_{owner_account}`，若 provider 回報衝突則自動改為 `for_{owner_account}_vN`）。
 - 操作：
   - 對 `active` key 顯示「停用」與「展延（extend）」按鈕。
   - 對 `expired` key 顯示「展延（extend）」按鈕（icon + 文字）。
@@ -244,7 +244,7 @@
 - `application_id` (fk -> api_key_applications.id)
 - `key_hash` (string, required)
 - `masked_key` (string, 遮罩格式固定為 `AS-...` + 後 4 碼；response only)
-- `key_alias` (string, nullable；顯示預設值 `for_{owner_account}`，可由 admin 更新)
+- `key_alias` (string, nullable；顯示預設值為系統產生 alias，初始為 `for_{owner_account}`，必要時自動補 `_vN`，可由 admin 更新)
 - `key_ciphertext` (string, encrypted at rest, nullable for legacy rows)
 - `key_kek_version` (string, key-encryption-key version tag)
 - `length` (int, MVP 固定 30，表示隨機段長度，不含 `AS-` 前綴)
@@ -408,6 +408,7 @@ Base path：`/main/api/v1`
   - `budget_duration` 由系統設定映射：`daily->1d`、`weekly->7d`、`monthly->30d`
   - `duration` 由 `duration_months` 映射：`1->30d`、`6->180d`、`12->360d`
   - 若全域設定中的 `tpm_limit` 或 `rpm_limit` 為 `0`，送往 provider 時需轉為 `null`，表示不限制
+  - `key_alias` 預設先送 `for_{owner_account}`；若 provider 回 `400`，系統需自動依序重試 `for_{owner_account}_v2`、`_v3` ...，成功後將最終 alias 寫回本地 `api_keys.key_alias`
   - 目前不送 `budget_limits`
   - 僅送上述新欄位；不再送舊欄位（例如 `account`、`application_id`、`duration_months`、`purpose`、`limit_strategy`）
   - provider 成功回應需自 `response.key` 讀取新明文 secret；不得假設回傳欄位為 `api_key_plaintext`
@@ -447,7 +448,7 @@ Base path：`/main/api/v1`
       "id": "...",
       "status": "active",
       "masked_key": "AS-...wxyz",
-      "key_alias": "for_jane.doe",
+      "key_alias": "for_jane.doe_v2",
       "owner_account": "jane.doe",
       "owner_name": "Jane Doe",
       "expires_at": "..."
@@ -494,7 +495,7 @@ Base path：`/main/api/v1`
 - `GET /main/api/v1/api-keys/{id}`
 - 規則：`user` 僅可查本人資料；`admin` 可查任意資料；不可回傳明文 key。
 - 到期口徑：`expires_at` 早於查詢當下（UTC）且原始狀態為 `active` 時，API 對外狀態需視為 `expired`。
-- 回傳 `key_alias`；若資料未設定則回傳預設值 `for_{owner_account}`。
+- 回傳 `key_alias`；若資料未設定則回傳系統產生 alias（初始為 `for_{owner_account}`，若 provider 衝突則可能為 `for_{owner_account}_vN`）。
 - 回傳可包含申請人識別欄位 `owner_account`、`owner_name`（供管理者辨識申請來源）。
 - 回傳應包含 `purpose` 供詳情頁顯示；若歷史資料未留存用途，前端顯示 `-`。
 - 回傳應包含 `department` 供詳情頁顯示；若歷史資料未留存單位，前端顯示 `-`。
@@ -525,6 +526,7 @@ Base path：`/main/api/v1`
   - `user` 僅可續發本人 `revoked` key；`admin` 可續發任意 `revoked` key。
   - renew 對應 provider `regenerate`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
   - 呼叫 provider `regenerate` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format。
+  - renew 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫入新 key。
   - renew 會在 provider 成功後建立新 key（`status=active`），不是把舊 key 改回 `active`。
   - 新 key 的 `duration_months` 與 `purpose` 需沿用來源 key 的原資料。
   - provider 成功但本地同步失敗時，需保留可追蹤資訊並支援 retry / reconciliation，避免 provider 與本地資料不一致。
@@ -548,6 +550,7 @@ Base path：`/main/api/v1`
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
   - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
   - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format。
+  - extend 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫回原 key。
   - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`）。
   - provider timeout / 5xx / 明確拒絕、缺少密文、或解密失敗時，本地不得先更新有效期限或狀態。
   - extend 不會回傳 `api_key_plaintext`。
@@ -560,7 +563,7 @@ Base path：`/main/api/v1`
   "key_alias": "service_internal_batch"
 }
 ```
-- 規則：僅 `admin` 可使用；`key_alias` 不可為空字串；成功後回傳更新後單筆資料。
+- 規則：僅 `admin` 可使用；`key_alias` 不可為空字串；若與其他 key alias 重複需回傳 `409 KEY_ALIAS_DUPLICATE`；成功後回傳更新後單筆資料。
 
 ### 4-1) 受控回取 API Key 明文（Reveal）
 - `POST /main/api/v1/api-keys/{id}/reveal`
@@ -818,8 +821,8 @@ Base path：`/main/api/v1`
 40. 首次登入 DB 無偏好時，前端需依系統語言規則決定語系並觸發一次寫回。
 41. 手動切換語言後，重新登入需沿用 DB 偏好。
 42. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
-43. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳 `for_{owner_account}`。本次 `api_key_applications` schema 調整不得改變 `GET /main/api/v1/api-keys/{id}` 既有對外 response shape。
-44. `admin` 可透過 `PATCH /main/api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`。
+43. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳系統產生 alias（初始為 `for_{owner_account}`，必要時可為 `for_{owner_account}_vN`）。本次 `api_key_applications` schema 調整不得改變 `GET /main/api/v1/api-keys/{id}` 既有對外 response shape。
+44. `admin` 可透過 `PATCH /main/api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`；若 alias 與其他 key 重複需回傳 `409 KEY_ALIAS_DUPLICATE`。
 45. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
 46. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
 47. 限制策略設定僅 `admin` 可讀取與更新（`/main/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。

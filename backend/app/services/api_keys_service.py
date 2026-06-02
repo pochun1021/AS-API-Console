@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import re
 import secrets
 from asyncio import run as run_async
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyApiKeyRepositor
 from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
 
 LIMIT_STRATEGY_CONFIG_ID = "global-limit-strategy-config"
+MAX_KEY_ALIAS_ATTEMPTS = 20
 LIMIT_STRATEGY_DEFAULTS = {
     "budget_max_budget": "1000",
     "budget_duration": "monthly",
@@ -69,6 +71,23 @@ def _calc_expiration(issued_at: datetime, duration_months: int) -> datetime:
 
 def _default_alias(owner_account: str) -> str:
     return f"for_{owner_account}"
+
+
+def _versioned_alias(base_alias: str, version: int) -> str:
+    if version <= 1:
+        return base_alias
+    return f"{base_alias}_v{version}"
+
+
+def _alias_seed(owner_account: str, current_alias: str | None = None) -> tuple[str, int]:
+    normalized_alias = (current_alias or "").strip()
+    if not normalized_alias:
+        return _default_alias(owner_account), 1
+
+    match = re.match(r"^(?P<base>.+)_v(?P<version>\d+)$", normalized_alias)
+    if match:
+        return match.group("base"), int(match.group("version"))
+    return normalized_alias, 1
 
 
 def _to_provider_budget_duration(duration: str) -> str:
@@ -193,7 +212,7 @@ class ApiKeysService:
         expires_at = _calc_expiration(issued_at, duration_months)
         config = self._get_limit_strategy_values()
         try:
-            plaintext, provider_metadata = self._generate_key_for_application(
+            plaintext, provider_metadata, key_alias = self._generate_key_for_application(
                 owner_account=identity.account,
                 duration_months=duration_months,
                 config=config,
@@ -225,7 +244,7 @@ class ApiKeysService:
                 expires_at=expires_at,
             )
         )
-        self._create_key_record(application_id=application.id, plaintext=plaintext)
+        self._create_key_record(application_id=application.id, plaintext=plaintext, key_alias=key_alias)
 
         self.session.add(application)
         self.session.commit()
@@ -279,6 +298,7 @@ class ApiKeysService:
         owner_account: str,
         duration_months: int,
         config: IssuanceConfigValues,
+        key_alias: str,
     ) -> dict:
         return {
             "max_budget": float(config.max_budget),
@@ -286,7 +306,7 @@ class ApiKeysService:
             "duration": _to_provider_duration(duration_months),
             "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
             "rpm_limit": _to_provider_rate_limit(config.rpm_limit),
-            "key_alias": _default_alias(owner_account),
+            "key_alias": key_alias,
             "key_type": "llm_api",
         }
 
@@ -300,32 +320,63 @@ class ApiKeysService:
         owner_account: str,
         duration_months: int,
         config: IssuanceConfigValues,
-    ) -> tuple[str, dict]:
+    ) -> tuple[str, dict, str]:
         try:
             if self._provider_operates_remotely():
-                provider_result = self.provider_client.generate_key(
-                    self._build_provider_payload(
-                        owner_account=owner_account,
-                        duration_months=duration_months,
-                        config=config,
-                    )
+                provider_result, key_alias = self._retry_provider_alias_operation(
+                    owner_account=owner_account,
+                    duration_months=duration_months,
+                    config=config,
+                    current_alias=None,
+                    operation=lambda payload: self.provider_client.generate_key(payload),
                 )
                 return provider_result.key_plaintext, {
                     "provider_request_id": provider_result.request_id,
                     "provider_operation_id": provider_result.operation_id,
-                }
-            return _generate_api_key(), {}
+                }, key_alias
+            return _generate_api_key(), {}, _default_alias(owner_account)
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError as exc:
             raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
 
-    def _create_key_record(self, *, application_id: str, plaintext: str) -> ApiKey:
+    def _retry_provider_alias_operation(
+        self,
+        *,
+        owner_account: str,
+        duration_months: int,
+        config: IssuanceConfigValues,
+        current_alias: str | None,
+        operation,
+    ):
+        base_alias, start_version = _alias_seed(owner_account, current_alias)
+        last_error: ProviderBadRequestError | None = None
+        for attempt in range(MAX_KEY_ALIAS_ATTEMPTS):
+            candidate_alias = _versioned_alias(base_alias, start_version + attempt)
+            try:
+                return (
+                    operation(
+                        self._build_provider_payload(
+                            owner_account=owner_account,
+                            duration_months=duration_months,
+                            config=config,
+                            key_alias=candidate_alias,
+                        )
+                    ),
+                    candidate_alias,
+                )
+            except ProviderBadRequestError as exc:
+                last_error = exc
+        assert last_error is not None
+        raise last_error
+
+    def _create_key_record(self, *, application_id: str, plaintext: str, key_alias: str | None) -> ApiKey:
         return self.key_repo.create_key(
             ApiKeyCreateInput(
                 application_id=application_id,
                 key_hash=_hash_key(plaintext),
                 masked_key=_mask_key(plaintext),
+                key_alias=key_alias,
                 key_ciphertext=self.crypto.encrypt(plaintext),
                 key_kek_version=self.settings.api_key_kek_version,
             )
@@ -494,6 +545,8 @@ class ApiKeysService:
         normalized_alias = key_alias.strip()
         if not normalized_alias:
             raise ApiError("VALIDATION_ERROR", "key_alias cannot be empty", 422)
+        if self.key_repo.alias_exists(normalized_alias, exclude_key_id=key_id):
+            raise ApiError("KEY_ALIAS_DUPLICATE", "key_alias already exists", 409)
 
         exists = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
         if exists is None:
@@ -612,15 +665,17 @@ class ApiKeysService:
         try:
             source_plaintext = self._decrypt_key_for_provider(source_key)
             if self._provider_operates_remotely():
-                provider_result = self.provider_client.regenerate_key(
-                    {
-                        "key": source_plaintext,
-                        **self._build_provider_payload(
-                            owner_account=source_app.account,
-                            duration_months=source_app.duration_months,
-                            config=config,
-                        ),
-                    }
+                provider_result, key_alias = self._retry_provider_alias_operation(
+                    owner_account=source_app.account,
+                    duration_months=source_app.duration_months,
+                    config=config,
+                    current_alias=source_key.key_alias,
+                    operation=lambda payload: self.provider_client.regenerate_key(
+                        {
+                            "key": source_plaintext,
+                            **payload,
+                        }
+                    ),
                 )
                 plaintext = provider_result.key_plaintext
                 provider_metadata = self._provider_metadata(
@@ -630,6 +685,7 @@ class ApiKeysService:
             else:
                 plaintext = _generate_api_key()
                 provider_metadata = {}
+                key_alias = source_key.key_alias or _default_alias(source_app.account)
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError as exc:
@@ -667,7 +723,7 @@ class ApiKeysService:
                 expires_at=_calc_expiration(now, source_app.duration_months),
             )
         )
-        issued_key = self._create_key_record(application_id=application.id, plaintext=plaintext)
+        issued_key = self._create_key_record(application_id=application.id, plaintext=plaintext, key_alias=key_alias)
         email_warning: str | None = None
 
         try:
@@ -731,20 +787,24 @@ class ApiKeysService:
         try:
             plaintext = self._decrypt_key_for_provider(source_key)
             if self._provider_operates_remotely():
-                provider_result = self.provider_client.update_key(
-                    {
-                        "key": plaintext,
-                        **self._build_provider_payload(
-                            owner_account=source_app.account,
-                            duration_months=duration_months,
-                            config=config,
-                        ),
-                    }
+                provider_result, key_alias = self._retry_provider_alias_operation(
+                    owner_account=source_app.account,
+                    duration_months=duration_months,
+                    config=config,
+                    current_alias=source_key.key_alias,
+                    operation=lambda payload: self.provider_client.update_key(
+                        {
+                            "key": plaintext,
+                            **payload,
+                        }
+                    ),
                 )
                 provider_metadata = self._provider_metadata(
                     request_id=provider_result.request_id,
                     operation_id=provider_result.operation_id,
                 )
+            else:
+                key_alias = source_key.key_alias or _default_alias(source_app.account)
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError as exc:
@@ -761,6 +821,7 @@ class ApiKeysService:
         source_app.duration_months = duration_months
         source_app.status = "active"
         source_key.status = "active"
+        source_key.key_alias = key_alias
         source_app.updated_at = now
         self.session.add(source_key)
         self.session.add(source_app)

@@ -117,6 +117,22 @@ test("admin can edit key alias in list dialog", async () => {
   expect(await screen.findByText("service_ops")).toBeInTheDocument();
 });
 
+test("admin sees duplicate prompt when key alias already exists", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={adminAuth} />
+    </MemoryRouter>
+  );
+
+  await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
+  const aliasInput = await screen.findByLabelText("Key Alias");
+  await user.clear(aliasInput);
+  await user.type(aliasInput, "for_john.admin");
+  await user.click(screen.getByRole("button", { name: "儲存" }));
+  expect(await screen.findByText("Key Alias 重複，請改用其他名稱。")).toBeInTheDocument();
+});
+
 test("user renew hides old key from list", async () => {
   const user = userEvent.setup();
   render(

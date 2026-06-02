@@ -32,6 +32,7 @@ class ApiKeyCreateInput:
     application_id: str
     key_hash: str
     masked_key: str
+    key_alias: str | None
     key_ciphertext: str
     key_kek_version: str
     status: str = "active"
