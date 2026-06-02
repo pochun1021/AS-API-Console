@@ -397,12 +397,11 @@ Base path：`/main/api/v1`
 {
   "rpm_limit": 500,
   "tpm_limit": 10000,
-  "models": ["gemma-4-31B-it"],
   "max_budget": 1000.0,
   "budget_duration": "30d",
   "duration": "180d",
   "key_alias": "for_jane.doe",
-  "key_type": "AI API"
+  "key_type": "llm_api"
 }
 ```
   - auth header 固定為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；沿用既有 `PROVIDER_MASTER_KEY` 作為 Bearer token 值
@@ -874,7 +873,7 @@ Base path：`/main/api/v1`
 100. `admin` 可於 `/institute-view` 頁面查看 `GET /main/api/v1/institutes` 回傳的 `active` institutes 清單與 `total`，以確認 DB 資料已寫入。
 101. `admin` 可於 `/institute-view` 呼叫 `POST /main/api/v1/institutes/sync` 手動同步；成功後需回傳同步統計並可重新讀取最新 `active` institutes。
 102. `POST /main/api/v1/institutes/sync` 在 Persnl SOAP 不可用時需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
-103. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`models`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；其中 `models` 預設 `["gemma-4-31B-it"]`、`key_type` 固定 `"AI API"`、`duration` 需由 `duration_months(1|6|12)` 映射為 `30d|180d|360d`、且不得送 `budget_limits`。
+103. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`、`duration` 需由 `duration_months(1|6|12)` 映射為 `30d|180d|360d`、且不得送 `models` 或 `budget_limits`。
 104. 外部 provider auth header 需為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；不得再送 `x-master-key`。
 105. 外部 provider `POST /key/update`、`POST /key/regenerate`、`POST /key/block` 若需舊明文 key，request body 一律使用 `key` 欄位傳送；`generate`/`regenerate` 成功時一律自 response `key` 讀取新明文 secret。
 106. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。

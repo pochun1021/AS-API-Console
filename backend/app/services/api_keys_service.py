@@ -280,9 +280,8 @@ class ApiKeysService:
             "duration": _to_provider_duration(duration_months),
             "tpm_limit": config.tpm_limit,
             "rpm_limit": config.rpm_limit,
-            "models": ["gemma-4-31B-it"],
             "key_alias": _default_alias(owner_account),
-            "key_type": "AI API",
+            "key_type": "llm_api",
         }
 
     def _provider_operates_remotely(self) -> bool:
