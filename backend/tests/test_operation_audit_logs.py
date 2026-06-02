@@ -101,8 +101,7 @@ def test_revoke_logs_success_and_failure(client, admin_headers):
         headers=user1,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit"},
     )
-    app_id = create_resp.json()["application"]["id"]
-    client.post(api_path(f"/api-keys/applications/{app_id}/issue"), headers=admin_headers)
+    assert create_resp.status_code == 201
     key_id = client.get(api_path("/api-keys"), headers=user1).json()["items"][0]["id"]
 
     fail = client.post(api_path(f"/api-keys/{key_id}/revoke"), headers={**user2, "x-request-id": "req-revoke-fail"})
@@ -129,8 +128,7 @@ def test_renew_logs_success_and_failure(client, admin_headers):
         headers=user1,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit renew"},
     )
-    app_id = create_resp.json()["application"]["id"]
-    client.post(api_path(f"/api-keys/applications/{app_id}/issue"), headers=admin_headers)
+    assert create_resp.status_code == 201
     key_id = client.get(api_path("/api-keys"), headers=user1).json()["items"][0]["id"]
     client.post(api_path(f"/api-keys/{key_id}/revoke"), headers=user1)
 

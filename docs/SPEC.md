@@ -163,6 +163,7 @@
 - API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
 - API Key 明文只顯示一次
 - 系統儲存 `key_hash` 與加密密文（`key_ciphertext`），不直接儲存明文
+- API Key lifecycle 採 `External SoT + Encrypted Local Secret`：`applications/create`、`renew`、`extend`、`revoke` 皆以 provider 結果為主，本地僅於 provider 成功後同步狀態
 - 一般使用者可查看本人全部申請紀錄
 - 一般使用者查詢時 API Key 必須遮罩顯示
 - 一般使用者可自行停用本人已生效 key（軟停用）
@@ -174,6 +175,16 @@
 ### Nice to Have（後續）
 - 多安全等級與長度策略（隨機段長度 24-30 碼可配置）
 - 使用量監控與配額管理
+
+### API Key Lifecycle Authority
+- provider 為 API key lifecycle 的 source of truth：建立、續發（renew）、展延（extend）、停用（revoke）都需先完成 provider 操作，才可同步本地 `api_keys` 與 `api_key_applications`。
+- 本地僅保存驗證與受控回取所需資料：`key_hash`、`key_ciphertext`、`key_kek_version`；不得額外落地明文 key。
+- 當 provider 操作需要舊明文 key 時，後端必須從 `key_ciphertext` 解密，僅可在服務記憶體中短暫使用，直接 server-to-server 呼叫 provider。
+- 舊明文 key 與新明文 key 不得出現在 DB 欄位、request/response log、audit log、exception message、暫存檔、持久化 job payload。
+- `POST /main/api/v1/api-keys/{id}/reveal` 僅為 break-glass 流程；不得作為一般 `renew`、`extend`、`revoke` 的前置步驟或人工 workaround。
+- 若目標 key 缺少 `key_ciphertext` 或 `key_kek_version`，或解密失敗，`renew`、`extend`、`revoke` 必須立即失敗，不得呼叫 provider，也不得變更本地狀態。
+- provider timeout / 5xx / 明確拒絕時，本地不得先行更新狀態；若 provider 已成功但本地同步失敗，需保留可追蹤資訊並支援 retry / reconciliation。
+- `renew`、`extend`、`revoke` 需具備 idempotency 設計；若 provider 無原生 idempotency，需以本地 request fingerprint 或 operation record 補強去重。
 
 ## 資料模型草案
 ### Entity: `users`（已移除）
@@ -394,10 +405,12 @@ Base path：`/main/api/v1`
   "key_type": "AI API"
 }
 ```
+  - auth header 固定為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；沿用既有 `PROVIDER_MASTER_KEY` 作為 Bearer token 值
   - `budget_duration` 由系統設定映射：`daily->1d`、`weekly->7d`、`monthly->30d`
   - `duration` 由 `duration_months` 映射：`1->30d`、`6->180d`、`12->360d`
   - 目前不送 `budget_limits`
   - 僅送上述新欄位；不再送舊欄位（例如 `account`、`application_id`、`duration_months`、`purpose`、`limit_strategy`）
+  - provider 成功回應需自 `response.key` 讀取新明文 secret；不得假設回傳欄位為 `api_key_plaintext`
 
 ### 1-1) 全域金鑰條件設定（Admin only）
 - `GET /main/api/v1/limit-strategy-config`
@@ -499,15 +512,24 @@ Base path：`/main/api/v1`
 
 ### 4) 停用 API Key
 - `POST /main/api/v1/api-keys/{id}/revoke`
-- 規則：`user` 僅可停用本人 `active` key；`admin` 可停用任意 `active` key；停用為軟停用（`status=revoked`）。
+- 規則：
+  - `user` 僅可停用本人 `active` key；`admin` 可停用任意 `active` key。
+  - revoke 對應 provider `block`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
+  - 呼叫 provider `block` 時，request body 需以 `key` 欄位傳送舊明文 key。
+  - provider `block` 成功後，才可將本地 `api_keys.status` 與對應 `api_key_applications.status` 同步為 `revoked`。
+  - provider timeout / 5xx / 明確拒絕、缺少密文、或解密失敗時，本地不得先標記為 `revoked`。
 
 ### 4-2) 續發（Renew）API Key
 - `POST /main/api/v1/api-keys/{id}/renew`
 - 規則：
   - `user` 僅可續發本人 `revoked` key；`admin` 可續發任意 `revoked` key。
-  - renew 會建立新 key（`status=active`），不是把舊 key 改回 `active`。
+  - renew 對應 provider `regenerate`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
+  - 呼叫 provider `regenerate` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format。
+  - renew 會在 provider 成功後建立新 key（`status=active`），不是把舊 key 改回 `active`。
   - 新 key 的 `duration_months` 與 `purpose` 需沿用來源 key 的原資料。
+  - provider 成功但本地同步失敗時，需保留可追蹤資訊並支援 retry / reconciliation，避免 provider 與本地資料不一致。
 - renew 成功時，回傳一次性 `api_key_plaintext`。
+  - renew 的新明文需自 provider response `key` 讀取。
   - renew 成功後需寄送 Email 通知申請者「已更新金鑰」；通知信不得包含明文 key。
   - 續發成功後，來源 key 對 `user` 列表需隱藏；`admin` 列表仍需可見完整歷史。
 
@@ -524,7 +546,10 @@ Base path：`/main/api/v1`
   - `user` 展延 `active` key 時，若尚未寄送到期提醒（`expiration_notice_sent_at` 為空）不得展延，回傳 `409 KEY_EXTENSION_NOTICE_REQUIRED`；`expired` key 不受此限制。
   - `duration_months` 僅允許 `1|6|12`。
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
-  - extend 會沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`）。
+  - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
+  - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format。
+  - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`）。
+  - provider timeout / 5xx / 明確拒絕、缺少密文、或解密失敗時，本地不得先更新有效期限或狀態。
   - extend 不會回傳 `api_key_plaintext`。
 
 ### 4-0) 更新 API Key Alias
@@ -539,7 +564,8 @@ Base path：`/main/api/v1`
 
 ### 4-1) 受控回取 API Key 明文（Reveal）
 - `POST /main/api/v1/api-keys/{id}/reveal`
-- 規則：僅 `admin` 可使用；此端點為受控流程，不屬一般列表/詳情查詢。
+- 規則：僅 `admin` 可使用；此端點為受控 break-glass 流程，不屬一般列表/詳情查詢。
+- 規則：不得作為一般 `renew`、`extend`、`revoke` 流程依賴。
 - 規則：回應需帶 `Cache-Control: no-store`。
 - Response（200）：
 ```json
@@ -661,7 +687,7 @@ Base path：`/main/api/v1`
   - `POST /main/api/v1/institutes/sync`
 - 稽核欄位至少需可辨識：事件類型、動作、成功/失敗、操作者（`sysid/account/role`）、目標資源類型與 ID、`request_id`、時間、來源 IP、user-agent。
 - 成功與失敗都需記錄（含權限不足、驗證失敗、資源不存在等）。
-- metadata 採白名單策略，僅記錄必要且非敏感欄位。
+- metadata 採白名單策略，僅記錄必要且非敏感欄位；若 provider 提供 request id / operation id，可納入白名單欄位。
 - 若 audit 寫入失敗，不得改變原本 API 成功/失敗語意（主流程優先）。
 
 ### 6-2) 操作稽核熱資料查詢（v1）
@@ -739,9 +765,11 @@ Base path：`/main/api/v1`
 6. `application_date` 非法或晚於申請當日，API 回傳 `INVALID_APPLICATION_DATE`。
 7. 明文 key 預設僅於建立成功當下回傳一次；一般查詢端點不得回傳明文。
 8. 資料庫不得存 API Key 明文；需存 `key_hash`，並可存加密密文欄位供受控 reveal 流程使用。
+8-1. API key lifecycle 採 external provider 為主權威；`POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/api-keys/{id}/revoke` 皆需先完成 provider 操作，才可同步本地資料。
+8-2. `renew`、`extend`、`revoke` 若需舊明文 key，後端必須從 `key_ciphertext` 解密，且明文只可在服務記憶體中短暫使用；不得出現在 DB、log、audit log、exception message。
 9. 一般使用者登入後只能看到自己的全部歷史紀錄。
 10. 一般使用者查詢 API Key 時僅能看到 `masked_key`（格式 `AS-...XXXX`），不得看到明文。
-10-1. `POST /main/api/v1/api-keys/{id}/reveal` 僅 `admin` 可使用，且可回傳明文 key。
+10-1. `POST /main/api/v1/api-keys/{id}/reveal` 僅 `admin` 可使用，且可回傳明文 key；此端點僅供 break-glass，不得作為一般 lifecycle 流程依賴。
 11. 一般使用者可停用本人 `active` key，停用後狀態轉為 `revoked`。
 12. 一般使用者停用非本人 key 時，API 回傳 `KEY_NOT_OWNED_BY_USER`。
 13. 一般使用者停用非 `active` key 時，API 回傳 `KEY_NOT_ACTIVE`。
@@ -750,6 +778,7 @@ Base path：`/main/api/v1`
 13-3. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時，API 回傳 `KEY_NOT_EXTENDABLE`。
 13-3-1. 一般使用者展延本人 `active` key 前需已寄送到期提醒（`expiration_notice_sent_at` 非空）；未達條件時 API 回傳 `KEY_EXTENSION_NOTICE_REQUIRED`。`expired` key 不受此限制。
 13-4. 展延 `duration_months` 僅允許 `1|6|12`；非法值回傳 `422 VALIDATION_ERROR`。
+13-5. `renew`、`extend`、`revoke` 遇到 provider timeout/5xx/明確拒絕、缺少 `key_ciphertext` 或 `key_kek_version`、或解密失敗時，API 不得先改本地狀態，並需回傳對應錯誤。
 14. 未通過資格檢查或驗證失敗請求不得建立 `api_key_applications` 或 `api_keys` 紀錄。
 15. `user` 呼叫 `GET /main/api/v1/api-keys` 時僅可看到本人資料；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料。本次 `api_key_applications` schema 調整不得改變 `GET /main/api/v1/api-keys` 既有對外 response shape。
 16. `user` 查詢或停用非本人 key 時，API 回傳 `403`（或既有錯誤碼）。
@@ -801,9 +830,9 @@ Base path：`/main/api/v1`
 52. `POST /main/api/v1/api-keys/applications` 成功即時配發後，需寄送 Email 給申請者本人（不需寄送給管理者）。
 53. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
 54. 第 52 項若寄信失敗，`POST /main/api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
-54-2. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew` 或 `POST /main/api/v1/api-keys/{id}/extend` 若 provider timeout/5xx（`PROVIDER_UNAVAILABLE`）時，需寄送通知信給所有 `active` 管理者。
+54-2. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend` 或 `POST /main/api/v1/api-keys/{id}/revoke` 若 provider timeout/5xx（`PROVIDER_UNAVAILABLE`）時，需寄送通知信給所有 `active` 管理者。
 54-3. 第 54-2 項若管理者通知信寄送失敗，不得改變原 API 錯誤回應（仍維持原錯誤碼/狀態）。
-57. 當配發模式為 `local` 時，申請、renew 與 extend 需可在不連線外部 provider 的情況下成功 `issued`。
+57. 若部署使用 local provider adapter 作為開發/測試替身，`applications`、`renew`、`extend`、`revoke` 仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
 64. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。
 65. `GET /main/auth/callback` 成功時需建立 session auth context 並 redirect `/main/`。
 66. `GET /main/auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失）需回錯，且寫入 failure audit。
@@ -818,7 +847,7 @@ Base path：`/main/api/v1`
 73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`DELETE /main/api/v1/whitelists/{id}`、`PUT /main/api/v1/admins/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`DELETE /main/api/v1/admins/{id}`、`PATCH /main/api/v1/limit-strategy-config`、`POST /main/api/v1/institutes/sync` 成功時皆需寫入 `operation_audit_logs`。
 74. 第 73 項 8 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。
 75. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證（token/password/client secret）。
-76. `operation_audit_logs.metadata_json` 僅允許白名單欄位（例如 `application_id`、`key_id`、`whitelist_id`、`target_admin_id`、`status`、`duration_months`），不得落地原始敏感 payload。
+76. `operation_audit_logs.metadata_json` 僅允許白名單欄位（例如 `application_id`、`key_id`、`whitelist_id`、`target_admin_id`、`status`、`duration_months`、`provider_request_id`、`provider_operation_id`），不得落地原始敏感 payload。
 77. 關鍵操作稽核功能不得改動既有受保護 API 路徑與角色模型（`user|admin`）。
 78. `GET /main/api/v1/operation-audit-logs` 僅 `admin` 可呼叫，`user` 呼叫需回 `403`。
 79. 操作稽核查詢在未提供 `from/to` 時，需預設回傳最近 7 天熱資料。
@@ -829,7 +858,7 @@ Base path：`/main/api/v1`
 84. 登入稽核查詢結果需依 `created_at desc` 排序，並支援 `page/page_size` 分頁。
 85. 登入稽核查詢需支援 `provider` 與 `result` 篩選，且回傳不得包含敏感憑證資訊。
 86. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳狀態需以 `expires_at` 即時計算到期口徑；已過期者對外顯示為 `expired`。
-87. `POST /main/api/v1/api-keys/{id}/renew` 判定需採與查詢一致的到期口徑；已過期且未續發過之 key 可續發。
+87. `POST /main/api/v1/api-keys/{id}/renew` 僅允許 `revoked` key；`active|expired` 一律回傳 `KEY_NOT_RENEWABLE`。
 88. `GET /main/api/v1/api-keys/statistics/users` 的 `scope` 與 `active/revoked/expired` 計數需採同一到期口徑，避免已過期 key 被算入 `active`。
 89. 即使 expired 回填排程停用或失敗，`GET /main/api/v1/api-keys`、`GET /main/api/v1/api-keys/{id}`、`GET /main/api/v1/api-keys/statistics/users` 仍需依 effective status 正確呈現 expired。
 90. expired 回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked` 資料。
@@ -846,6 +875,9 @@ Base path：`/main/api/v1`
 101. `admin` 可於 `/institute-view` 呼叫 `POST /main/api/v1/institutes/sync` 手動同步；成功後需回傳同步統計並可重新讀取最新 `active` institutes。
 102. `POST /main/api/v1/institutes/sync` 在 Persnl SOAP 不可用時需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 103. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`models`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；其中 `models` 預設 `["gemma-4-31B-it"]`、`key_type` 固定 `"AI API"`、`duration` 需由 `duration_months(1|6|12)` 映射為 `30d|180d|360d`、且不得送 `budget_limits`。
+104. 外部 provider auth header 需為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；不得再送 `x-master-key`。
+105. 外部 provider `POST /key/update`、`POST /key/regenerate`、`POST /key/block` 若需舊明文 key，request body 一律使用 `key` 欄位傳送；`generate`/`regenerate` 成功時一律自 response `key` 讀取新明文 secret。
+106. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 
 ## Roadmap
 ### Phase 1：Foundation

@@ -1,6 +1,7 @@
 import logging
-from uuid import uuid4
+from types import SimpleNamespace
 from datetime import UTC, date, datetime, timedelta
+from uuid import uuid4
 
 from sqlalchemy import create_engine, text
 
@@ -59,6 +60,47 @@ def _set_expiration_notice_sent_at(key_id: str, sent_at: datetime | None) -> Non
             ),
             {"sent_at": sent_at, "key_id": key_id},
         )
+
+
+def _set_key_secret_material(key_id: str, *, key_ciphertext: str | None, key_kek_version: str | None) -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE api_keys
+                SET key_ciphertext = :key_ciphertext,
+                    key_kek_version = :key_kek_version
+                WHERE id = :key_id
+                """
+            ),
+            {
+                "key_ciphertext": key_ciphertext,
+                "key_kek_version": key_kek_version,
+                "key_id": key_id,
+            },
+        )
+
+
+def _fetch_key_status_row(key_id: str) -> dict:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT k.status AS key_status, a.status AS application_status, a.revoked_at, a.expires_at
+                FROM api_keys k
+                JOIN api_key_applications a ON a.id = k.application_id
+                WHERE k.id = :key_id
+                """
+            ),
+            {"key_id": key_id},
+        ).mappings().one()
+    return dict(row)
 
 
 def _fetch_application_row(application_id: str) -> dict:
@@ -767,6 +809,72 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
     assert second.json()["error"]["code"] == "KEY_NOT_ACTIVE"
 
 
+def test_revoke_provider_unavailable_does_not_change_local_status(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderUnavailableError
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "revoke provider fail"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "app.services.provider_client.ProviderClient.block_key",
+        lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
+    )
+    try:
+        resp = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
+        assert resp.status_code == 503
+        assert resp.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+        row = _fetch_key_status_row(key_id)
+        assert row["key_status"] == "active"
+        assert row["application_status"] == "active"
+        assert row["revoked_at"] is None
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
+def test_revoke_provider_payload_uses_key_field(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "revoke payload"},
+    )
+    assert create_resp.status_code == 201
+    created_plaintext = create_resp.json()["api_key_plaintext"]
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    captured_payload: dict = {}
+
+    def _capture_payload(self, payload):
+        captured_payload.update(payload)
+        return SimpleNamespace(request_id=None, operation_id=None)
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.block_key", _capture_payload)
+    try:
+        resp = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
+        assert resp.status_code == 200
+        assert captured_payload == {"key": created_plaintext}
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
 def test_renew_permissions_and_visibility(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
@@ -830,7 +938,7 @@ def test_renew_rejects_active_key(client, admin_headers, user_headers):
     assert renew.json()["error"]["code"] == "KEY_NOT_RENEWABLE"
 
 
-def test_expired_is_visible_and_renewable_by_expires_at(client, admin_headers, user_headers):
+def test_expired_is_visible_but_not_renewable_by_expires_at(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     create_resp = client.post(
         _api("/api-keys/applications"),
@@ -853,9 +961,76 @@ def test_expired_is_visible_and_renewable_by_expires_at(client, admin_headers, u
     _assert_utc_datetime_string(detail.json()["expires_at"])
 
     renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user_headers)
-    assert renew.status_code == 200
-    assert renew.json()["status"] == "active"
-    _assert_utc_datetime_string(renew.json()["expires_at"])
+    assert renew.status_code == 409
+    assert renew.json()["error"]["code"] == "KEY_NOT_RENEWABLE"
+
+
+def test_renew_rejects_expired_key_without_calling_provider(client, admin_headers, user_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "expired renew gate"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+    _set_key_expires_at_past(key_id)
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+
+    def _should_not_call_provider(self, payload):
+        raise AssertionError("provider should not be called for expired renew")
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.regenerate_key", _should_not_call_provider)
+    try:
+        renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user_headers)
+        assert renew.status_code == 409
+        assert renew.json()["error"]["code"] == "KEY_NOT_RENEWABLE"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
+def test_renew_provider_payload_uses_key_field(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderGenerateResult
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 6, "purpose": "renew payload"},
+    )
+    assert create_resp.status_code == 201
+    created_plaintext = create_resp.json()["api_key_plaintext"]
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    revoked = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
+    assert revoked.status_code == 200
+    captured_payload: dict = {}
+
+    def _capture_payload(self, payload):
+        captured_payload.update(payload)
+        return ProviderGenerateResult(key_plaintext="AS-renewedabcdefghijklmnopqrstuvwxyz")
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.regenerate_key", _capture_payload)
+    try:
+        renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user)
+        assert renew.status_code == 200
+        assert captured_payload["key"] == created_plaintext
+        assert captured_payload["duration"] == "180d"
+        assert "api_key_plaintext" not in captured_payload
+        assert renew.json()["api_key_plaintext"] == "AS-renewedabcdefghijklmnopqrstuvwxyz"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
 
 
 def test_extend_requires_notice_for_user_but_not_admin(client, admin_headers):
@@ -891,6 +1066,148 @@ def test_extend_requires_notice_for_user_but_not_admin(client, admin_headers):
     assert admin_allowed.status_code == 200
     assert admin_allowed.json()["status"] == "active"
     _assert_utc_datetime_string(admin_allowed.json()["expires_at"])
+
+
+def test_extend_provider_unavailable_does_not_change_expiration(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderUnavailableError
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "extend provider fail"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    _set_expiration_notice_sent_at(key_id, datetime.now(UTC))
+    before = _fetch_key_status_row(key_id)
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "app.services.provider_client.ProviderClient.update_key",
+        lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
+    )
+    try:
+        resp = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
+        assert resp.status_code == 503
+        assert resp.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+        after = _fetch_key_status_row(key_id)
+        assert after["key_status"] == before["key_status"]
+        assert after["application_status"] == before["application_status"]
+        assert after["expires_at"] == before["expires_at"]
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
+def test_extend_provider_payload_uses_key_field(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "extend payload"},
+    )
+    assert create_resp.status_code == 201
+    created_plaintext = create_resp.json()["api_key_plaintext"]
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    _set_expiration_notice_sent_at(key_id, datetime.now(UTC))
+    captured_payload: dict = {}
+
+    def _capture_payload(self, payload):
+        captured_payload.update(payload)
+        return SimpleNamespace(request_id=None, operation_id=None)
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _capture_payload)
+    try:
+        extend = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
+        assert extend.status_code == 200
+        assert captured_payload["key"] == created_plaintext
+        assert captured_payload["duration"] == "180d"
+        assert "api_key_plaintext" not in captured_payload
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
+def test_key_operations_require_secret_material_before_calling_provider(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "missing secret"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    _set_key_secret_material(key_id, key_ciphertext=None, key_kek_version=None)
+    _set_expiration_notice_sent_at(key_id, datetime.now(UTC))
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+
+    def _should_not_call_provider(self, payload):
+        raise AssertionError("provider should not be called without secret material")
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.block_key", _should_not_call_provider)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _should_not_call_provider)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.regenerate_key", _should_not_call_provider)
+    try:
+        revoke = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
+        assert revoke.status_code == 409
+        assert revoke.json()["error"]["code"] == "KEY_NOT_REVEALABLE"
+
+        extend = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 1})
+        assert extend.status_code == 409
+        assert extend.json()["error"]["code"] == "KEY_NOT_REVEALABLE"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
+def test_renew_requires_secret_material_after_revocation(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew missing secret"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    revoked = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
+    assert revoked.status_code == 200
+    _set_key_secret_material(key_id, key_ciphertext=None, key_kek_version=None)
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+
+    def _should_not_call_provider(self, payload):
+        raise AssertionError("provider should not be called without secret material")
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.regenerate_key", _should_not_call_provider)
+    try:
+        renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user)
+        assert renew.status_code == 409
+        assert renew.json()["error"]["code"] == "KEY_NOT_REVEALABLE"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
 
 
 def test_renew_sends_renewed_email_on_success(client, admin_headers, monkeypatch):
@@ -947,7 +1264,7 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
     )
     monkeypatch.setattr("app.services.mail_service.MailService.send_provider_issuance_failed_to_admins", _fake_admin_notify)
     monkeypatch.setattr(
-        "app.services.provider_client.ProviderClient.generate_key",
+        "app.services.provider_client.ProviderClient.regenerate_key",
         lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
     )
     try:
@@ -959,6 +1276,31 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
         assert admin_notify_calls[0]["operation"] == "renew"
         assert admin_notify_calls[0]["error_code"] == "PROVIDER_UNAVAILABLE"
         assert admin_notify_calls[0]["target_account"] == user["x-account"]
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
+
+
+def test_application_provider_422_maps_to_validation_error(client, admin_headers, user_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderBadRequestError
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.api_keys_service.LoginEligibilityService.is_eligible_by_sysid", lambda self, sysid: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "app.services.provider_client.ProviderClient.generate_key",
+        lambda self, payload: (_ for _ in ()).throw(ProviderBadRequestError("body.duration: invalid duration")),
+    )
+    try:
+        resp = client.post(
+            _api("/api-keys/applications"),
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_months": 6, "purpose": "provider-422"},
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         get_settings.cache_clear()

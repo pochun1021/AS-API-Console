@@ -42,6 +42,14 @@ class Pagination:
     page_size: int = 20
 
 
+@dataclass(slots=True)
+class IssuanceConfigValues:
+    max_budget: str
+    budget_duration: str
+    tpm_limit: int
+    rpm_limit: int
+
+
 def _hash_key(plaintext: str) -> str:
     return hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
 
@@ -179,24 +187,13 @@ class ApiKeysService:
 
         issued_at = datetime.now(UTC)
         expires_at = _calc_expiration(issued_at, duration_months)
-        application = self.key_repo.create_application(
-            ApplicationCreateInput(
-                identity=identity,
-                is_proxy_submission=is_proxy_submission,
-                proxy_operator_account=current_user.account if is_proxy_submission else None,
-                application_date=application_date,
-                duration_months=duration_months,
-                purpose=normalized_purpose,
-                max_budget=None,
-                budget_duration=None,
-                tpm_limit=None,
-                rpm_limit=None,
-                issued_at=issued_at,
-                expires_at=expires_at,
-            )
-        )
+        config = self._get_limit_strategy_values()
         try:
-            plaintext = self._issue_application(application)
+            plaintext, provider_metadata = self._generate_key_for_application(
+                owner_account=identity.account,
+                duration_months=duration_months,
+                config=config,
+            )
         except ApiError as exc:
             if exc.code == "PROVIDER_UNAVAILABLE":
                 self._notify_admins_issuance_failure(
@@ -207,6 +204,24 @@ class ApiKeysService:
                     error_code=exc.code,
                 )
             raise
+
+        application = self.key_repo.create_application(
+            ApplicationCreateInput(
+                identity=identity,
+                is_proxy_submission=is_proxy_submission,
+                proxy_operator_account=current_user.account if is_proxy_submission else None,
+                application_date=application_date,
+                duration_months=duration_months,
+                purpose=normalized_purpose,
+                max_budget=config.max_budget,
+                budget_duration=config.budget_duration,
+                tpm_limit=config.tpm_limit,
+                rpm_limit=config.rpm_limit,
+                issued_at=issued_at,
+                expires_at=expires_at,
+            )
+        )
+        self._create_key_record(application_id=application.id, plaintext=plaintext)
 
         self.session.add(application)
         self.session.commit()
@@ -231,9 +246,11 @@ class ApiKeysService:
                 "expires_at": application.expires_at,
             },
             "api_key_plaintext": plaintext,
+            "provider_request_id": provider_metadata.get("provider_request_id"),
+            "provider_operation_id": provider_metadata.get("provider_operation_id"),
         }
 
-    def _issue_application(self, application: ApiKeyApplication) -> str | None:
+    def _get_limit_strategy_values(self) -> IssuanceConfigValues:
         config = self._get_limit_strategy_config_for_issuance()
         max_budget = (config.budget_max_budget or "").strip()
         budget_duration = (config.budget_duration or "").strip()
@@ -243,48 +260,71 @@ class ApiKeysService:
             raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "budget config is incomplete", 409)
         if not tpm_limit or not rpm_limit or int(tpm_limit) <= 0 or int(rpm_limit) <= 0:
             raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "rate limit config is incomplete", 409)
-        application.max_budget = max_budget
-        application.budget_duration = budget_duration
-        application.tpm_limit = tpm_limit
-        application.rpm_limit = rpm_limit
+        return IssuanceConfigValues(
+            max_budget=max_budget,
+            budget_duration=budget_duration,
+            tpm_limit=int(tpm_limit),
+            rpm_limit=int(rpm_limit),
+        )
 
-        plaintext: str | None = None
+    def _build_provider_payload(
+        self,
+        *,
+        owner_account: str,
+        duration_months: int,
+        config: IssuanceConfigValues,
+    ) -> dict:
+        return {
+            "max_budget": float(config.max_budget),
+            "budget_duration": _to_provider_budget_duration(config.budget_duration),
+            "duration": _to_provider_duration(duration_months),
+            "tpm_limit": config.tpm_limit,
+            "rpm_limit": config.rpm_limit,
+            "models": ["gemma-4-31B-it"],
+            "key_alias": _default_alias(owner_account),
+            "key_type": "AI API",
+        }
+
+    def _provider_operates_remotely(self) -> bool:
+        provider_mode = (self.settings.issuance_provider_mode or "external").strip().lower()
+        return provider_mode != "local" and self.provider_client.is_configured()
+
+    def _generate_key_for_application(
+        self,
+        *,
+        owner_account: str,
+        duration_months: int,
+        config: IssuanceConfigValues,
+    ) -> tuple[str, dict]:
         try:
-            provider_mode = (self.settings.issuance_provider_mode or "external").strip().lower()
-            use_local_issuance = provider_mode == "local"
-            if not use_local_issuance and self.provider_client.is_configured():
-                provider_budget_duration = _to_provider_budget_duration(budget_duration)
+            if self._provider_operates_remotely():
                 provider_result = self.provider_client.generate_key(
-                    {
-                        "max_budget": float(max_budget),
-                        "budget_duration": provider_budget_duration,
-                        "duration": _to_provider_duration(application.duration_months),
-                        "tpm_limit": tpm_limit,
-                        "rpm_limit": rpm_limit,
-                        "models": ["gemma-4-31B-it"],
-                        "key_alias": _default_alias(application.account),
-                        "key_type": "AI API",
-                    }
+                    self._build_provider_payload(
+                        owner_account=owner_account,
+                        duration_months=duration_months,
+                        config=config,
+                    )
                 )
-                plaintext = provider_result.key_plaintext
-            else:
-                plaintext = _generate_api_key()
-            key = self.key_repo.create_key(
-                ApiKeyCreateInput(
-                    application_id=application.id,
-                    key_hash=_hash_key(plaintext),
-                    masked_key=_mask_key(plaintext),
-                    key_ciphertext=self.crypto.encrypt(plaintext),
-                    key_kek_version=self.settings.api_key_kek_version,
-                )
-            )
+                return provider_result.key_plaintext, {
+                    "provider_request_id": provider_result.request_id,
+                    "provider_operation_id": provider_result.operation_id,
+                }
+            return _generate_api_key(), {}
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError as exc:
             raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
-        application.updated_at = datetime.now(UTC)
-        self.session.add(application)
-        return plaintext
+
+    def _create_key_record(self, *, application_id: str, plaintext: str) -> ApiKey:
+        return self.key_repo.create_key(
+            ApiKeyCreateInput(
+                application_id=application_id,
+                key_hash=_hash_key(plaintext),
+                masked_key=_mask_key(plaintext),
+                key_ciphertext=self.crypto.encrypt(plaintext),
+                key_kek_version=self.settings.api_key_kek_version,
+            )
+        )
 
     def _get_limit_strategy_config_for_issuance(self) -> LimitStrategyConfig:
         config = self.session.get(LimitStrategyConfig, LIMIT_STRATEGY_CONFIG_ID)
@@ -476,6 +516,31 @@ class ApiKeysService:
             "expires_at": updated.expires_at,
         }
 
+    def _load_key_with_application(self, key_id: str) -> tuple[ApiKey, ApiKeyApplication]:
+        row = (
+            self.session.query(ApiKey, ApiKeyApplication)
+            .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
+            .filter(ApiKey.id == key_id)
+            .first()
+        )
+        if row is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+        return row
+
+    def _decrypt_key_for_provider(self, key: ApiKey) -> str:
+        if not key.key_ciphertext or not key.key_kek_version:
+            raise ApiError("KEY_NOT_REVEALABLE", "key plaintext is not available", 409)
+        try:
+            return self.crypto.decrypt(key.key_ciphertext)
+        except Exception as exc:  # noqa: BLE001
+            raise ApiError("KEY_NOT_REVEALABLE", "key plaintext is not available", 409) from exc
+
+    def _provider_metadata(self, *, request_id: str | None, operation_id: str | None) -> dict:
+        return {
+            "provider_request_id": request_id,
+            "provider_operation_id": operation_id,
+        }
+
     def revoke_key(self, current_user: CurrentUser, key_id: str) -> dict:
         exists = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
         if exists is None:
@@ -485,12 +550,39 @@ class ApiKeysService:
         if allowed is None:
             raise ApiError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403)
 
-        key = self.key_repo.revoke_key(key_id, current_user.role, current_user.account)
-        if key is None:
+        key, application = self._load_key_with_application(key_id)
+        if key.status != "active":
             raise ApiError("KEY_NOT_ACTIVE", "key is not active", 409)
 
+        provider_metadata: dict = {}
+        try:
+            plaintext = self._decrypt_key_for_provider(key)
+            if self._provider_operates_remotely():
+                provider_result = self.provider_client.block_key({"key": plaintext})
+                provider_metadata = self._provider_metadata(
+                    request_id=provider_result.request_id,
+                    operation_id=provider_result.operation_id,
+                )
+        except ProviderBadRequestError as exc:
+            raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
+        except ProviderUnavailableError as exc:
+            self._notify_admins_issuance_failure(
+                operation="revoke",
+                actor_account=current_user.account,
+                actor_role=current_user.role,
+                target_account=application.account,
+                error_code="PROVIDER_UNAVAILABLE",
+            )
+            raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
+
+        key.status = "revoked"
+        application.status = "revoked"
+        application.revoked_at = datetime.now(UTC)
+        application.updated_at = datetime.now(UTC)
+        self.session.add(key)
+        self.session.add(application)
         self.session.commit()
-        return {"id": key.id, "status": key.status}
+        return {"id": key.id, "status": key.status, **provider_metadata}
 
     def renew_key(self, current_user: CurrentUser, key_id: str) -> dict:
         exists = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
@@ -501,21 +593,46 @@ class ApiKeysService:
         if allowed is None:
             raise ApiError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403)
 
-        row = (
-            self.session.query(ApiKey, ApiKeyApplication)
-            .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
-            .filter(ApiKey.id == key_id)
-            .first()
-        )
-        if row is None:
-            raise ApiError("VALIDATION_ERROR", "key not found", 404)
-
-        source_key, source_app = row
+        source_key, source_app = self._load_key_with_application(key_id)
         source_effective_status = _effective_status(status=source_key.status, expires_at=source_app.expires_at)
-        if source_effective_status not in {"revoked", "expired"}:
-            raise ApiError("KEY_NOT_RENEWABLE", "only revoked or expired key can be renewed", 409)
+        if source_effective_status != "revoked":
+            raise ApiError("KEY_NOT_RENEWABLE", "only revoked key can be renewed", 409)
         if source_key.renewed_to_key_id:
             raise ApiError("KEY_ALREADY_RENEWED", "key already renewed", 409)
+
+        config = self._get_limit_strategy_values()
+        try:
+            source_plaintext = self._decrypt_key_for_provider(source_key)
+            if self._provider_operates_remotely():
+                provider_result = self.provider_client.regenerate_key(
+                    {
+                        "key": source_plaintext,
+                        **self._build_provider_payload(
+                            owner_account=source_app.account,
+                            duration_months=source_app.duration_months,
+                            config=config,
+                        ),
+                    }
+                )
+                plaintext = provider_result.key_plaintext
+                provider_metadata = self._provider_metadata(
+                    request_id=provider_result.request_id,
+                    operation_id=provider_result.operation_id,
+                )
+            else:
+                plaintext = _generate_api_key()
+                provider_metadata = {}
+        except ProviderBadRequestError as exc:
+            raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
+        except ProviderUnavailableError as exc:
+            self._notify_admins_issuance_failure(
+                operation="renew",
+                actor_account=current_user.account,
+                actor_role=current_user.role,
+                target_account=source_app.account,
+                error_code="PROVIDER_UNAVAILABLE",
+            )
+            raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
 
         identity = AuthIdentity(
             account=source_app.account,
@@ -534,28 +651,15 @@ class ApiKeysService:
                 application_date=date.today(),
                 duration_months=source_app.duration_months,
                 purpose=source_app.purpose,
-                max_budget=None,
-                budget_duration=None,
-                tpm_limit=None,
-                rpm_limit=None,
+                max_budget=config.max_budget,
+                budget_duration=config.budget_duration,
+                tpm_limit=config.tpm_limit,
+                rpm_limit=config.rpm_limit,
                 issued_at=now,
                 expires_at=_calc_expiration(now, source_app.duration_months),
             )
         )
-        try:
-            plaintext = self._issue_application(application)
-        except ApiError as exc:
-            if exc.code == "PROVIDER_UNAVAILABLE":
-                self._notify_admins_issuance_failure(
-                    operation="renew",
-                    actor_account=current_user.account,
-                    actor_role=current_user.role,
-                    target_account=source_app.account,
-                    error_code=exc.code,
-                )
-            raise
-
-        issued_key = self.session.query(ApiKey).filter(ApiKey.application_id == application.id).one_or_none()
+        issued_key = self._create_key_record(application_id=application.id, plaintext=plaintext)
         email_warning: str | None = None
 
         try:
@@ -569,11 +673,7 @@ class ApiKeysService:
         except Exception:  # noqa: BLE001
             logging.exception("failed to send key renewed email to applicant")
             email_warning = "key_renewed_email_failed"
-        if issued_key is None:
-            raise ApiError("INTERNAL_ERROR", "renew issued without key record", 500)
-
-        if issued_key is not None:
-            source_key.renewed_to_key_id = issued_key.id
+        source_key.renewed_to_key_id = issued_key.id
         source_app.updated_at = datetime.now(UTC)
         self.session.add(source_key)
         self.session.add(source_app)
@@ -585,6 +685,7 @@ class ApiKeysService:
             "renewed_from_key_id": source_key.id,
             "api_key_plaintext": plaintext,
             "email_warning": email_warning,
+            **provider_metadata,
         }
 
     def extend_key(self, current_user: CurrentUser, key_id: str, duration_months: int) -> dict:
@@ -599,16 +700,7 @@ class ApiKeysService:
         if allowed is None:
             raise ApiError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403)
 
-        row = (
-            self.session.query(ApiKey, ApiKeyApplication)
-            .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
-            .filter(ApiKey.id == key_id)
-            .first()
-        )
-        if row is None:
-            raise ApiError("VALIDATION_ERROR", "key not found", 404)
-
-        source_key, source_app = row
+        source_key, source_app = self._load_key_with_application(key_id)
         source_effective_status = _effective_status(status=source_key.status, expires_at=source_app.expires_at)
         if source_effective_status not in {"active", "expired"}:
             raise ApiError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409)
@@ -624,7 +716,40 @@ class ApiKeysService:
         now = datetime.now(UTC)
         if base_time < now:
             base_time = now
-        source_app.expires_at = _calc_expiration(base_time, duration_months)
+        next_expires_at = _calc_expiration(base_time, duration_months)
+
+        provider_metadata: dict = {}
+        config = self._get_limit_strategy_values()
+        try:
+            plaintext = self._decrypt_key_for_provider(source_key)
+            if self._provider_operates_remotely():
+                provider_result = self.provider_client.update_key(
+                    {
+                        "key": plaintext,
+                        **self._build_provider_payload(
+                            owner_account=source_app.account,
+                            duration_months=duration_months,
+                            config=config,
+                        ),
+                    }
+                )
+                provider_metadata = self._provider_metadata(
+                    request_id=provider_result.request_id,
+                    operation_id=provider_result.operation_id,
+                )
+        except ProviderBadRequestError as exc:
+            raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
+        except ProviderUnavailableError as exc:
+            self._notify_admins_issuance_failure(
+                operation="extend",
+                actor_account=current_user.account,
+                actor_role=current_user.role,
+                target_account=source_app.account,
+                error_code="PROVIDER_UNAVAILABLE",
+            )
+            raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
+
+        source_app.expires_at = next_expires_at
         source_app.duration_months = duration_months
         source_app.status = "active"
         source_key.status = "active"
@@ -636,6 +761,7 @@ class ApiKeysService:
             "id": source_key.id,
             "status": source_key.status,
             "expires_at": source_app.expires_at,
+            **provider_metadata,
         }
 
     def _notify_admins_issuance_failure(
