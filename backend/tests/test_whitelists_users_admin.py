@@ -1,24 +1,24 @@
 
 from datetime import datetime
 
-from tests.conftest import build_headers
+from tests.conftest import api_path, build_headers
 from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.session import get_db
 from db.models.institute import Institute
 
 
 def test_whitelist_admin_only(client, admin_headers, user_headers):
-    user_resp = client.get("/api/v1/whitelists", headers=user_headers)
+    user_resp = client.get(api_path("/whitelists"), headers=user_headers)
     assert user_resp.status_code == 403
 
     admin_resp = client.post(
-        "/api/v1/whitelists",
+        api_path("/whitelists"),
         headers=admin_headers,
         json={"sysid": 7001, "account": "u7001", "name": "User 7001", "email": "u7001@example.com", "note": "seed"},
     )
     assert admin_resp.status_code == 201
 
-    listed = client.get("/api/v1/whitelists", headers=admin_headers)
+    listed = client.get(api_path("/whitelists"), headers=admin_headers)
     assert listed.status_code == 200
     item = listed.json()["items"][0]
     for field in ("created_at", "updated_at"):
@@ -30,8 +30,8 @@ def test_whitelist_admin_only(client, admin_headers, user_headers):
 
 def test_whitelist_duplicate_sysid(client, admin_headers):
     payload = {"sysid": 7002, "account": "u7002", "name": "User 7002", "email": "u7002@example.com", "note": "seed"}
-    first = client.post("/api/v1/whitelists", headers=admin_headers, json=payload)
-    second = client.post("/api/v1/whitelists", headers=admin_headers, json=payload)
+    first = client.post(api_path("/whitelists"), headers=admin_headers, json=payload)
+    second = client.post(api_path("/whitelists"), headers=admin_headers, json=payload)
     assert first.status_code == 201
     assert second.status_code == 409
     assert second.json()["error"]["code"] == "WHITELIST_SYSID_DUPLICATED"
@@ -39,20 +39,20 @@ def test_whitelist_duplicate_sysid(client, admin_headers):
 
 def test_whitelist_delete_admin_only(client, admin_headers, user_headers):
     created = client.post(
-        "/api/v1/whitelists",
+        api_path("/whitelists"),
         headers=admin_headers,
         json={"sysid": 7010, "account": "u7010", "name": "User 7010", "email": "u7010@example.com", "note": "seed"},
     )
     assert created.status_code == 201
     whitelist_id = created.json()["id"]
 
-    forbidden = client.delete(f"/api/v1/whitelists/{whitelist_id}", headers=user_headers)
+    forbidden = client.delete(api_path(f"/whitelists/{whitelist_id}"), headers=user_headers)
     assert forbidden.status_code == 403
 
-    deleted = client.delete(f"/api/v1/whitelists/{whitelist_id}", headers=admin_headers)
+    deleted = client.delete(api_path(f"/whitelists/{whitelist_id}"), headers=admin_headers)
     assert deleted.status_code == 204
 
-    listed = client.get("/api/v1/whitelists", headers=admin_headers)
+    listed = client.get(api_path("/whitelists"), headers=admin_headers)
     assert listed.status_code == 200
     assert all(item["id"] != whitelist_id for item in listed.json()["items"])
 
@@ -60,7 +60,7 @@ def test_whitelist_delete_admin_only(client, admin_headers, user_headers):
 def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
     # bootstrap another admin identity via auth headers
     target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
-    bootstrap = client.get("/api/v1/api-keys", headers=target_admin_headers)
+    bootstrap = client.get(api_path("/api-keys"), headers=target_admin_headers)
     assert bootstrap.status_code == 200
 
     def fake_search_by_keyword(self, keyword, limit=20):
@@ -72,7 +72,7 @@ def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
         fake_search_by_keyword,
     )
 
-    users = client.get("/api/v1/users?q=u1", headers=admin_headers)
+    users = client.get(api_path("/users?q=u1"), headers=admin_headers)
     assert users.status_code == 200
     assert users.json()["total"] >= 1
     user_item = users.json()["items"][0]
@@ -82,7 +82,7 @@ def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
     assert user_item["department"] == "01"
 
     create = client.put(
-        f"/api/v1/admins/{user_id}",
+        api_path(f"/admins/{user_id}"),
         headers=admin_headers,
         json={
             "account": user_item["account"],
@@ -91,29 +91,28 @@ def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
             "department": user_item["department"],
         },
     )
-    assert create.status_code == 200
-    assert create.json()["role"] == "admin"
-    assert create.json()["status"] == "active"
+    assert create.status_code == 409
+    assert create.json()["error"]["code"] == "ADMIN_ALREADY_EXISTS"
 
-    disable = client.post(f"/api/v1/admins/{user_id}/disable", headers=admin_headers)
+    disable = client.post(api_path(f"/admins/{user_id}/disable"), headers=admin_headers)
     assert disable.status_code == 200
     assert disable.json()["role"] == "admin"
     assert disable.json()["status"] == "inactive"
 
-    disabled_list = client.get("/api/v1/api-keys", headers=target_admin_headers)
+    disabled_list = client.get(api_path("/api-keys"), headers=target_admin_headers)
     assert disabled_list.status_code == 403
     assert disabled_list.json()["error"]["code"] == "FORBIDDEN"
 
 
 def test_user_not_found_for_role_mutation(client, admin_headers):
-    resp = client.post("/api/v1/admins/999999/enable", headers=admin_headers)
+    resp = client.post(api_path("/admins/999999/enable"), headers=admin_headers)
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "USER_NOT_FOUND"
 
 
 def test_admin_create_conflict_and_delete_inactive_only(client, admin_headers):
     create_existing = client.put(
-        "/api/v1/admins/1001",
+        api_path("/admins/1001"),
         headers=admin_headers,
         json={
             "account": "admin",
@@ -126,16 +125,16 @@ def test_admin_create_conflict_and_delete_inactive_only(client, admin_headers):
     assert create_existing.json()["error"]["code"] == "ADMIN_ALREADY_EXISTS"
 
     target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
-    bootstrap = client.get("/api/v1/api-keys", headers=target_admin_headers)
+    bootstrap = client.get(api_path("/api-keys"), headers=target_admin_headers)
     assert bootstrap.status_code == 200
 
-    delete_active = client.delete("/api/v1/admins/7003", headers=admin_headers)
+    delete_active = client.delete(api_path("/admins/7003"), headers=admin_headers)
     assert delete_active.status_code == 422
 
-    disabled = client.post("/api/v1/admins/7003/disable", headers=admin_headers)
+    disabled = client.post(api_path("/admins/7003/disable"), headers=admin_headers)
     assert disabled.status_code == 200
 
-    delete_inactive = client.delete("/api/v1/admins/7003", headers=admin_headers)
+    delete_inactive = client.delete(api_path("/admins/7003"), headers=admin_headers)
     assert delete_inactive.status_code == 204
 
 
@@ -148,22 +147,22 @@ def test_users_returns_503_when_persnl_unavailable(client, admin_headers, monkey
         fake_search_by_keyword,
     )
 
-    users = client.get("/api/v1/users?q=u1", headers=admin_headers)
+    users = client.get(api_path("/users?q=u1"), headers=admin_headers)
     assert users.status_code == 503
     assert users.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
 
 
 def test_users_requires_query(client, admin_headers):
-    users = client.get("/api/v1/users", headers=admin_headers)
+    users = client.get(api_path("/users"), headers=admin_headers)
     assert users.status_code == 422
 
 
 def test_admins_list_reads_db_when_persnl_unavailable(client, admin_headers, monkeypatch):
     target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
-    bootstrap = client.get("/api/v1/api-keys", headers=target_admin_headers)
+    bootstrap = client.get(api_path("/api-keys"), headers=target_admin_headers)
     assert bootstrap.status_code == 200
 
-    disabled = client.post("/api/v1/admins/7003/disable", headers=admin_headers)
+    disabled = client.post(api_path("/admins/7003/disable"), headers=admin_headers)
     assert disabled.status_code == 200
 
     def fake_search_by_keyword(self, keyword, limit=20):
@@ -174,7 +173,7 @@ def test_admins_list_reads_db_when_persnl_unavailable(client, admin_headers, mon
         fake_search_by_keyword,
     )
 
-    admins = client.get("/api/v1/admins", headers=admin_headers)
+    admins = client.get(api_path("/admins"), headers=admin_headers)
     assert admins.status_code == 200
     payload = admins.json()
     assert payload["total"] >= 2
@@ -209,7 +208,7 @@ def test_list_institutes_returns_active_only(client, admin_headers):
     db.commit()
     db.close()
 
-    resp = client.get("/api/v1/institutes", headers=admin_headers)
+    resp = client.get(api_path("/institutes"), headers=admin_headers)
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["total"] == 1
@@ -230,19 +229,19 @@ def test_sync_institutes_admin_success(client, admin_headers, monkeypatch):
         ],
     )
 
-    resp = client.post("/api/v1/institutes/sync", headers=admin_headers)
+    resp = client.post(api_path("/institutes/sync"), headers=admin_headers)
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["fetched_count"] == 1
     assert payload["inserted_count"] == 1
 
-    listed = client.get("/api/v1/institutes", headers=admin_headers)
+    listed = client.get(api_path("/institutes"), headers=admin_headers)
     assert listed.status_code == 200
     assert listed.json()["total"] == 1
 
 
 def test_sync_institutes_forbidden_for_non_admin(client, user_headers):
-    resp = client.post("/api/v1/institutes/sync", headers=user_headers)
+    resp = client.post(api_path("/institutes/sync"), headers=user_headers)
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
@@ -256,6 +255,6 @@ def test_sync_institutes_returns_503_when_soap_unavailable(client, admin_headers
         raise_unavailable,
     )
 
-    resp = client.post("/api/v1/institutes/sync", headers=admin_headers)
+    resp = client.post(api_path("/institutes/sync"), headers=admin_headers)
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"

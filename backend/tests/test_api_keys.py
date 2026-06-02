@@ -6,13 +6,7 @@ from sqlalchemy import create_engine, text
 
 from app.core.config import get_settings
 from db.repositories.types import AuthIdentity
-from tests.conftest import build_headers
-
-API_BASE = "/main/api/v1"
-
-
-def _api(path: str) -> str:
-    return f"{API_BASE}{path}"
+from tests.conftest import api_path as _api, build_headers
 
 
 def _create_whitelist(client, admin_headers, sysid: str) -> None:
@@ -143,11 +137,18 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
 
 
 def test_application_rejects_non_whitelisted(client, user_headers):
-    resp = client.post(
-        _api("/api-keys/applications"),
-        headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
-    )
+    from app.services.persnl_soap_service import PersnlSoapService
+
+    original_is_configured = PersnlSoapService.is_configured
+    PersnlSoapService.is_configured = lambda self: False
+    try:
+        resp = client.post(
+            _api("/api-keys/applications"),
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        )
+    finally:
+        PersnlSoapService.is_configured = original_is_configured
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "APPLICANT_NOT_ELIGIBLE"
 
@@ -240,7 +241,7 @@ def test_admin_can_submit_proxy_application_for_target_user(client, admin_header
 
 def test_admin_proxy_application_validates_required_target_identity_fields(client, admin_headers):
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
@@ -271,7 +272,7 @@ def test_admin_proxy_application_target_account_not_found(client, admin_headers,
         _raise_not_found,
     )
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
@@ -300,7 +301,7 @@ def test_admin_proxy_application_directory_unavailable(client, admin_headers, mo
         _raise_unavailable,
     )
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
@@ -329,7 +330,7 @@ def test_admin_proxy_application_target_account_not_unique(client, admin_headers
         _raise_not_unique,
     )
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
@@ -412,7 +413,7 @@ def test_application_provider_timeout_returns_503(client, admin_headers, user_he
 
     try:
         resp = client.post(
-            "/api/v1/api-keys/applications",
+            _api("/api-keys/applications"),
             headers=user_headers,
             json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify failure"},
         )
@@ -445,7 +446,7 @@ def test_application_provider_payload_uses_new_fields_only(client, admin_headers
     monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _capture_payload)
     try:
         resp = client.post(
-            "/api/v1/api-keys/applications",
+            _api("/api-keys/applications"),
             headers=user_headers,
             json={"application_date": str(date.today()), "duration_months": 6, "purpose": "payload-shape-check"},
         )
@@ -687,22 +688,22 @@ def test_application_rejects_future_date(client, admin_headers, user_headers):
 
 
 def test_pending_endpoints_removed(client, admin_headers, user_headers):
-    forbidden_list = client.get("/api/v1/api-keys/applications/pending", headers=user_headers)
+    forbidden_list = client.get(_api("/api-keys/applications/pending"), headers=user_headers)
     assert forbidden_list.status_code == 404
 
-    pending_list = client.get("/api/v1/api-keys/applications/pending", headers=admin_headers)
+    pending_list = client.get(_api("/api-keys/applications/pending"), headers=admin_headers)
     assert pending_list.status_code == 404
 
 
 def test_issue_pending_endpoint_removed(client, admin_headers):
-    resp = client.post("/api/v1/api-keys/applications/dummy-id/issue", headers=admin_headers)
+    resp = client.post(_api("/api-keys/applications/dummy-id/issue"), headers=admin_headers)
     assert resp.status_code == 405
 
 
 def test_issue_pending_application_does_not_send_issued_email(client, admin_headers, user_headers, monkeypatch):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test issue mail"},
     )
@@ -719,7 +720,7 @@ def test_issue_pending_application_local_mode_does_not_call_provider(client, adm
     try:
         _create_whitelist(client, admin_headers, user_headers["x-sysid"])
         create_resp = client.post(
-            "/api/v1/api-keys/applications",
+            _api("/api-keys/applications"),
             headers=user_headers,
             json={"application_date": str(date.today()), "duration_months": 1, "purpose": "local issue mode"},
         )
@@ -746,22 +747,22 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
     _create_whitelist(client, admin_headers, user1["x-sysid"])
 
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user1,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
-    key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
+    key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
     assert create_resp.status_code == 201
 
-    not_owner = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user2)
+    not_owner = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user2)
     assert not_owner.status_code == 403
     assert not_owner.json()["error"]["code"] == "KEY_NOT_OWNED_BY_USER"
 
-    first = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user1)
+    first = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user1)
     assert first.status_code == 200
     assert first.json()["status"] == "revoked"
 
-    second = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user1)
+    second = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user1)
     assert second.status_code == 409
     assert second.json()["error"]["code"] == "KEY_NOT_ACTIVE"
 
@@ -818,13 +819,13 @@ def test_renew_permissions_and_visibility(client, admin_headers):
 def test_renew_rejects_active_key(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew active"},
     )
     assert create_resp.status_code == 201
-    key_id = client.get("/api/v1/api-keys", headers=user_headers).json()["items"][0]["id"]
-    renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user_headers)
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+    renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user_headers)
     assert renew.status_code == 409
     assert renew.json()["error"]["code"] == "KEY_NOT_RENEWABLE"
 
@@ -832,26 +833,26 @@ def test_renew_rejects_active_key(client, admin_headers, user_headers):
 def test_expired_is_visible_and_renewable_by_expires_at(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "expire-visible"},
     )
     assert create_resp.status_code == 201
-    key_id = client.get("/api/v1/api-keys", headers=user_headers).json()["items"][0]["id"]
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
     _set_key_expires_at_past(key_id)
 
-    listed = client.get("/api/v1/api-keys", headers=user_headers)
+    listed = client.get(_api("/api-keys"), headers=user_headers)
     assert listed.status_code == 200
     assert listed.json()["items"][0]["status"] == "expired"
     _assert_utc_datetime_string(listed.json()["items"][0]["expires_at"])
 
-    detail = client.get(f"/api/v1/api-keys/{key_id}", headers=user_headers)
+    detail = client.get(_api(f"/api-keys/{key_id}"), headers=user_headers)
     assert detail.status_code == 200
     assert detail.json()["status"] == "expired"
     _assert_utc_datetime_string(detail.json()["created_at"])
     _assert_utc_datetime_string(detail.json()["expires_at"])
 
-    renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user_headers)
+    renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user_headers)
     assert renew.status_code == 200
     assert renew.json()["status"] == "active"
     _assert_utc_datetime_string(renew.json()["expires_at"])
@@ -861,32 +862,32 @@ def test_extend_requires_notice_for_user_but_not_admin(client, admin_headers):
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user["x-sysid"])
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "extend notice gate"},
     )
     assert create_resp.status_code == 201
-    key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
 
-    blocked = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=user, json={"duration_months": 6})
+    blocked = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
     assert blocked.status_code == 409
     assert blocked.json()["error"]["code"] == "KEY_EXTENSION_NOTICE_REQUIRED"
 
     _set_expiration_notice_sent_at(key_id, datetime.now(UTC))
-    allowed = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=user, json={"duration_months": 6})
+    allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
     assert allowed.status_code == 200
     assert allowed.json()["status"] == "active"
     _assert_utc_datetime_string(allowed.json()["expires_at"])
 
     _set_key_expires_at_past(key_id)
     _set_expiration_notice_sent_at(key_id, None)
-    user_expired_allowed = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=user, json={"duration_months": 1})
+    user_expired_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 1})
     assert user_expired_allowed.status_code == 200
     assert user_expired_allowed.json()["status"] == "active"
     _assert_utc_datetime_string(user_expired_allowed.json()["expires_at"])
 
     _set_key_expires_at_past(key_id)
-    admin_allowed = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=admin_headers, json={"duration_months": 1})
+    admin_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={"duration_months": 1})
     assert admin_allowed.status_code == 200
     assert admin_allowed.json()["status"] == "active"
     _assert_utc_datetime_string(admin_allowed.json()["expires_at"])
@@ -896,12 +897,12 @@ def test_renew_sends_renewed_email_on_success(client, admin_headers, monkeypatch
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user["x-sysid"])
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew mail"},
     )
-    key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
-    client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user)
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
 
     calls: list[dict] = []
 
@@ -910,7 +911,7 @@ def test_renew_sends_renewed_email_on_success(client, admin_headers, monkeypatch
 
     monkeypatch.setattr("app.services.mail_service.MailService.send_key_renewed_notification", _fake_mail)
 
-    renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user)
+    renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user)
     assert create_resp.status_code == 201
     assert renew.status_code == 200
     assert len(calls) == 1
@@ -929,13 +930,13 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user["x-sysid"])
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew pending"},
     )
     assert create_resp.status_code == 201
-    key_id = client.get("/api/v1/api-keys", headers=user).json()["items"][0]["id"]
-    client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user)
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
     get_settings.cache_clear()
@@ -950,7 +951,7 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
         lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
     )
     try:
-        renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user)
+        renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user)
         assert renew.status_code == 503
         assert renew.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
         assert len(admin_notify_calls) == 1
@@ -982,7 +983,7 @@ def test_application_provider_timeout_admin_notify_failure_does_not_change_503(c
     )
     try:
         resp = client.post(
-            "/api/v1/api-keys/applications",
+            _api("/api-keys/applications"),
             headers=user_headers,
             json={"application_date": str(date.today()), "duration_months": 1, "purpose": "notify fail should not alter"},
         )
@@ -1000,18 +1001,18 @@ def test_admin_can_list_global_keys(client, admin_headers):
     _create_whitelist(client, admin_headers, user2["x-sysid"])
 
     resp1 = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user1,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     resp2 = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user2,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp1.status_code == 201
     assert resp2.status_code == 201
-    admin_list = client.get("/api/v1/api-keys", headers=admin_headers)
+    admin_list = client.get(_api("/api-keys"), headers=admin_headers)
     assert admin_list.status_code == 200
     owners = {item["owner_account"] for item in admin_list.json()["items"]}
     assert "user1" in owners
@@ -1025,31 +1026,31 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
     _create_whitelist(client, admin_headers, user2["x-sysid"])
 
     resp1 = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user1,
         json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp1.status_code == 201
-    key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
-    revoke = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user1)
+    key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
+    revoke = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user1)
     assert revoke.status_code == 200
 
     resp2 = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user1,
         json={"application_date": "2026-05-10", "duration_months": 1, "purpose": "u1-2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp2.status_code == 201
 
     resp3 = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user2,
         json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp3.status_code == 201
 
     filtered = client.get(
-        "/api/v1/api-keys?owner_account=user1&status=active&from=2026-05-05&to=2026-05-31",
+        _api("/api-keys?owner_account=user1&status=active&from=2026-05-05&to=2026-05-31"),
         headers=admin_headers,
     )
     assert filtered.status_code == 200
@@ -1066,7 +1067,7 @@ def test_list_api_keys_total_is_full_match_count_not_page_size(client, admin_hea
 
     for i in range(3):
         resp = client.post(
-            "/api/v1/api-keys/applications",
+            _api("/api-keys/applications"),
             headers=user,
             json={
                 "application_date": str(date.today()),
@@ -1078,8 +1079,8 @@ def test_list_api_keys_total_is_full_match_count_not_page_size(client, admin_hea
         )
         assert resp.status_code == 201
 
-    page1 = client.get("/api/v1/api-keys?page=1&page_size=1", headers=user)
-    page2 = client.get("/api/v1/api-keys?page=2&page_size=1", headers=user)
+    page1 = client.get(_api("/api-keys?page=1&page_size=1"), headers=user)
+    page2 = client.get(_api("/api-keys?page=2&page_size=1"), headers=user)
     assert page1.status_code == 200
     assert page2.status_code == 200
     assert len(page1.json()["items"]) == 1
@@ -1092,7 +1093,7 @@ def test_list_api_keys_accepts_page_and_page_size_query_params(client, admin_hea
     user = build_headers(role="user", account="pagequery", email="pagequery@example.com", sysid="2202")
     _create_whitelist(client, admin_headers, user["x-sysid"])
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user,
         json={
             "application_date": str(date.today()),
@@ -1104,7 +1105,7 @@ def test_list_api_keys_accepts_page_and_page_size_query_params(client, admin_hea
     )
     assert resp.status_code == 201
 
-    listed = client.get("/api/v1/api-keys?page=1&page_size=10", headers=user)
+    listed = client.get(_api("/api-keys?page=1&page_size=10"), headers=user)
     assert listed.status_code == 200
     body = listed.json()
     assert body["page"] == 1
@@ -1116,18 +1117,18 @@ def test_reveal_plaintext_admin_only(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user1["x-sysid"])
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user1,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
     created_plaintext = create_resp.json()["api_key_plaintext"]
-    key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
+    key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
 
-    forbidden = client.post(f"/api/v1/api-keys/{key_id}/reveal", headers=user1)
+    forbidden = client.post(_api(f"/api-keys/{key_id}/reveal"), headers=user1)
     assert forbidden.status_code == 403
 
-    reveal_resp = client.post(f"/api/v1/api-keys/{key_id}/reveal", headers=admin_headers)
+    reveal_resp = client.post(_api(f"/api-keys/{key_id}/reveal"), headers=admin_headers)
     assert reveal_resp.status_code == 200
     assert reveal_resp.json()["api_key_plaintext"] == created_plaintext
     assert reveal_resp.headers["cache-control"] == "no-store"
@@ -1135,7 +1136,7 @@ def test_reveal_plaintext_admin_only(client, admin_headers):
 
 def test_statistics_rejects_excessive_query_range(client, admin_headers):
     resp = client.get(
-        "/api/v1/api-keys/statistics/users?from=2026-01-01&to=2026-02-15",
+        _api("/api-keys/statistics/users?from=2026-01-01&to=2026-02-15"),
         headers=admin_headers,
     )
     assert resp.status_code == 422
@@ -1146,24 +1147,24 @@ def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
     user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user1["x-sysid"])
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user1,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
-    key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
+    key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
 
-    forbidden = client.patch(f"/api/v1/api-keys/{key_id}", headers=user1, json={"key_alias": "custom_user_alias"})
+    forbidden = client.patch(_api(f"/api-keys/{key_id}"), headers=user1, json={"key_alias": "custom_user_alias"})
     assert forbidden.status_code == 403
 
-    invalid = client.patch(f"/api/v1/api-keys/{key_id}", headers=admin_headers, json={"key_alias": "   "})
+    invalid = client.patch(_api(f"/api-keys/{key_id}"), headers=admin_headers, json={"key_alias": "   "})
     assert invalid.status_code == 422
 
-    updated = client.patch(f"/api/v1/api-keys/{key_id}", headers=admin_headers, json={"key_alias": "custom_admin_alias"})
+    updated = client.patch(_api(f"/api-keys/{key_id}"), headers=admin_headers, json={"key_alias": "custom_admin_alias"})
     assert updated.status_code == 200
     assert updated.json()["key_alias"] == "custom_admin_alias"
 
-    listed = client.get("/api/v1/api-keys", headers=admin_headers)
+    listed = client.get(_api("/api-keys"), headers=admin_headers)
     assert listed.status_code == 200
     admin_item = next(item for item in listed.json()["items"] if item["id"] == key_id)
     assert admin_item["key_alias"] == "custom_admin_alias"
@@ -1178,13 +1179,13 @@ def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
         "x-department": "IT",
         "x-role": "user",
     }
-    before = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
+    before = client.get(_api("/api-keys"), headers=admin_headers).json()["total"]
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=bad_headers,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
-    after = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
+    after = client.get(_api("/api-keys"), headers=admin_headers).json()["total"]
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
     assert before == after
@@ -1193,12 +1194,12 @@ def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
 def test_error_response_shape_consistency(client, admin_headers, user_headers):
     # non-whitelist application error
     e1 = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     # non-admin whitelist management error
-    e2 = client.get("/api/v1/whitelists", headers=user_headers)
+    e2 = client.get(_api("/whitelists"), headers=user_headers)
 
     for resp in (e1, e2):
         body = resp.json()
@@ -1219,19 +1220,19 @@ def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin
 
     for _ in range(2):
         resp = client.post(
-            "/api/v1/api-keys/applications",
+            _api("/api-keys/applications"),
             headers=user1,
             json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
         )
         assert resp.status_code == 201
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user2,
         json={"application_date": "2026-05-02", "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp.status_code == 201
 
-    stats_resp = client.get("/api/v1/api-keys/statistics/users", headers=admin_headers)
+    stats_resp = client.get(_api("/api-keys/statistics/users"), headers=admin_headers)
     assert stats_resp.status_code == 200
     body = stats_resp.json()
     assert body["total"] == 2
@@ -1246,31 +1247,31 @@ def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_head
     _create_whitelist(client, admin_headers, user["x-sysid"])
 
     first = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user,
         json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "first", "max_budget": "1000", "budget_duration": "monthly"},
     )
     second = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user,
         json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "second", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert first.status_code == 201
     assert second.status_code == 201
 
-    ids = [item["id"] for item in client.get("/api/v1/api-keys", headers=user).json()["items"]]
+    ids = [item["id"] for item in client.get(_api("/api-keys"), headers=user).json()["items"]]
     revoke_target_id = ids[0]
     expire_target_id = ids[1]
     _set_key_expires_at_past(expire_target_id)
-    revoke_resp = client.post(f"/api/v1/api-keys/{revoke_target_id}/revoke", headers=user)
+    revoke_resp = client.post(_api(f"/api-keys/{revoke_target_id}/revoke"), headers=user)
     assert revoke_resp.status_code == 200
 
-    all_resp = client.get("/api/v1/api-keys/statistics/users?scope=all", headers=admin_headers)
-    active_resp = client.get("/api/v1/api-keys/statistics/users?scope=active", headers=admin_headers)
-    revoked_resp = client.get("/api/v1/api-keys/statistics/users?scope=revoked", headers=admin_headers)
-    expired_resp = client.get("/api/v1/api-keys/statistics/users?scope=expired", headers=admin_headers)
+    all_resp = client.get(_api("/api-keys/statistics/users?scope=all"), headers=admin_headers)
+    active_resp = client.get(_api("/api-keys/statistics/users?scope=active"), headers=admin_headers)
+    revoked_resp = client.get(_api("/api-keys/statistics/users?scope=revoked"), headers=admin_headers)
+    expired_resp = client.get(_api("/api-keys/statistics/users?scope=expired"), headers=admin_headers)
     ranged_resp = client.get(
-        "/api/v1/api-keys/statistics/users?from=2026-05-02&to=2026-05-03",
+        _api("/api-keys/statistics/users?from=2026-05-02&to=2026-05-03"),
         headers=admin_headers,
     )
 
@@ -1290,13 +1291,13 @@ def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_head
     assert expired_resp.json()["total"] == 1
     assert ranged_item["total_applications"] == 1
 
-    forbidden = client.get("/api/v1/api-keys/statistics/users", headers=user)
+    forbidden = client.get(_api("/api-keys/statistics/users"), headers=user)
     assert forbidden.status_code == 403
 
 
 def test_admin_user_statistics_rejects_invalid_sort_by(client, admin_headers):
     resp = client.get(
-        "/api/v1/api-keys/statistics/users?sort_by=__invalid__",
+        _api("/api-keys/statistics/users?sort_by=__invalid__"),
         headers=admin_headers,
     )
     assert resp.status_code == 422

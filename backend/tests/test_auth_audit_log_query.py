@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from db.models.auth_audit_logs import AuthAuditLog
+from tests.conftest import api_path
 
 
 def _insert_log(created_at: datetime, provider: str, result: str) -> None:
@@ -33,10 +34,10 @@ def _insert_log(created_at: datetime, provider: str, result: str) -> None:
 
 
 def test_auth_audit_logs_admin_only(client, admin_headers, user_headers):
-    denied = client.get("/api/v1/auth-audit-logs", headers=user_headers)
+    denied = client.get(api_path("/auth-audit-logs"), headers=user_headers)
     assert denied.status_code == 403
 
-    ok = client.get("/api/v1/auth-audit-logs", headers=admin_headers)
+    ok = client.get(api_path("/auth-audit-logs"), headers=admin_headers)
     assert ok.status_code == 200
 
 
@@ -46,7 +47,7 @@ def test_auth_audit_logs_default_hot_window_and_filters(client, admin_headers):
     _insert_log(now - timedelta(days=10), "test-oauth", "failure")
     _insert_log(now - timedelta(days=1), "other-oauth", "failure")
 
-    resp = client.get("/api/v1/auth-audit-logs", headers=admin_headers)
+    resp = client.get(api_path("/auth-audit-logs"), headers=admin_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 2
@@ -57,7 +58,7 @@ def test_auth_audit_logs_default_hot_window_and_filters(client, admin_headers):
     assert created_at.endswith("Z") or created_at.endswith("+00:00")
 
     filtered = client.get(
-        "/api/v1/auth-audit-logs?provider=other-oauth&result=failure",
+        api_path("/auth-audit-logs?provider=other-oauth&result=failure"),
         headers=admin_headers,
     )
     assert filtered.status_code == 200

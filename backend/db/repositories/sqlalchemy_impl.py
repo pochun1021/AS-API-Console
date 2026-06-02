@@ -413,6 +413,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             duration_months=row.ApiKeyApplication.duration_months,
             created_at=row.ApiKey.created_at,
             expires_at=row.ApiKeyApplication.expires_at,
+            expiration_notice_sent_at=row.ApiKey.expiration_notice_sent_at,
         )
 
     def list_user_statistics(
