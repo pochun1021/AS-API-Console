@@ -182,6 +182,23 @@ test("user can see extend action for expired key even without notice", async () 
   expect(await screen.findByRole("menuitem", { name: "展延金鑰" })).toBeInTheDocument();
 });
 
+test("renders timestamps in Asia/Taipei on list and detail views", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={devUserAuth} />
+    </MemoryRouter>
+  );
+
+  expect(await screen.findByText("2026-03-10 19:00:00")).toBeInTheDocument();
+
+  const detailButtons = await screen.findAllByRole("button", { name: "查看詳情" });
+  await user.click(detailButtons[2]);
+
+  expect(await screen.findByText("建立時間: 2026-02-10 19:00:00")).toBeInTheDocument();
+  expect(await screen.findByText("到期時間: 2026-03-10 19:00:00")).toBeInTheDocument();
+});
+
 test("list uses server pagination params", async () => {
   const user = userEvent.setup();
   const spy = vi.spyOn(mockApiProvider, "listApiKeys");

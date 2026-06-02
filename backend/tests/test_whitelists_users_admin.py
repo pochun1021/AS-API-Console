@@ -1,4 +1,6 @@
 
+from datetime import datetime
+
 from tests.conftest import build_headers
 from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.session import get_db
@@ -15,6 +17,15 @@ def test_whitelist_admin_only(client, admin_headers, user_headers):
         json={"sysid": 7001, "account": "u7001", "name": "User 7001", "email": "u7001@example.com", "note": "seed"},
     )
     assert admin_resp.status_code == 201
+
+    listed = client.get("/api/v1/whitelists", headers=admin_headers)
+    assert listed.status_code == 200
+    item = listed.json()["items"][0]
+    for field in ("created_at", "updated_at"):
+        value = item[field]
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        assert parsed.tzinfo is not None
+        assert value.endswith("Z") or value.endswith("+00:00")
 
 
 def test_whitelist_duplicate_sysid(client, admin_headers):

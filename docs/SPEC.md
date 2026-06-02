@@ -143,6 +143,7 @@
 - Error（含重試）
 - 列表資料以 Data Table 呈現（支援排序與分頁）；僅「操作」欄位不可排序與不可 filter。
 - Login denied（公開頁）：當 OAuth callback 判定 `LOGIN_NOT_ELIGIBLE` 時，前端需停留於 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 顯示「沒有登入權限」訊息，且不得要求已有 session 才能顯示。
+- 前端所有使用者可見 datetime（如 `created_at`、`updated_at`、`issued_at`、`expires_at` 與稽核 log 時間）需固定顯示為 `Asia/Taipei`；後端 API payload 與業務判定口徑仍維持 UTC。
 
 ## 功能需求
 ### Must Have（MVP）
@@ -680,6 +681,10 @@ Base path：`/main/api/v1`
 - 回傳欄位（精簡）：`created_at`、`provider`、`result`、`account`、`sysid`、`role`、`error_code`、`request_id`。
 - `created_at` 格式需為 UTC `date-time`（RFC 3339，例如 `2026-05-21T08:28:20Z`）。
 - 回傳不得包含敏感憑證資訊（access token、refresh token、password、client secret）。
+
+### 6-4) 時間欄位輸出規則
+- 所有對外 API response 的 datetime 欄位（如 `created_at`、`updated_at`、`issued_at`、`expires_at`、`expiration_notice_sent_at`）都需輸出為 UTC `date-time`（RFC 3339，例如 `2026-05-21T08:28:20Z`）。
+- 若內部資料來源為無時區 datetime，序列化時仍需以 UTC 語意輸出，不得回傳省略時區的 datetime 字串。
 
 ### 7) 研究資格與目錄查詢服務（Persnl SOAP）
 - 用途：供「進入系統」與「送出申請」時檢查是否命中研究人員資格。

@@ -1,5 +1,8 @@
 from datetime import date, datetime
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, Field, field_serializer
+
+from app.schemas.datetime_serializers import serialize_utc_datetime
 
 
 class ApplicationCreateRequest(BaseModel):
@@ -20,6 +23,10 @@ class ApplicationSummary(BaseModel):
     issued_at: datetime
     expires_at: datetime
 
+    @field_serializer("issued_at", "expires_at")
+    def serialize_datetimes(self, value: datetime) -> str:
+        return serialize_utc_datetime(value)
+
 
 class ApplicationCreateResponse(BaseModel):
     application: ApplicationSummary
@@ -38,6 +45,12 @@ class ApiKeyListItemResponse(BaseModel):
     expires_at: datetime
     expiration_notice_sent_at: datetime | None = None
     extend_eligible: bool = False
+
+    @field_serializer("expires_at", "expiration_notice_sent_at")
+    def serialize_datetimes(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        return serialize_utc_datetime(value)
 
 
 class ApiKeyListResponse(BaseModel):
@@ -63,6 +76,12 @@ class ApiKeyDetailResponse(BaseModel):
     expiration_notice_sent_at: datetime | None = None
     extend_eligible: bool = False
 
+    @field_serializer("created_at", "expires_at", "expiration_notice_sent_at")
+    def serialize_datetimes(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        return serialize_utc_datetime(value)
+
 
 class RevokeResponse(BaseModel):
     id: str
@@ -77,6 +96,10 @@ class RenewResponse(BaseModel):
     api_key_plaintext: str | None = None
     email_warning: str | None = None
 
+    @field_serializer("expires_at")
+    def serialize_datetimes(self, value: datetime) -> str:
+        return serialize_utc_datetime(value)
+
 
 class ExtendRequest(BaseModel):
     duration_months: int = Field(..., description="allowed: 1, 6, 12")
@@ -86,6 +109,10 @@ class ExtendResponse(BaseModel):
     id: str
     status: str
     expires_at: datetime
+
+    @field_serializer("expires_at")
+    def serialize_datetimes(self, value: datetime) -> str:
+        return serialize_utc_datetime(value)
 
 
 class ApiKeyRevealResponse(BaseModel):

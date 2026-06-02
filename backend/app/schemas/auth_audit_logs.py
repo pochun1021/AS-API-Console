@@ -1,7 +1,9 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, field_serializer
+
+from app.schemas.datetime_serializers import serialize_utc_datetime
 
 
 class AuthAuditLogItemResponse(BaseModel):
@@ -17,8 +19,7 @@ class AuthAuditLogItemResponse(BaseModel):
 
     @field_serializer("created_at")
     def serialize_created_at(self, value: datetime) -> str:
-        normalized = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-        return normalized.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        return serialize_utc_datetime(value)
 
 
 class AuthAuditLogListResponse(BaseModel):

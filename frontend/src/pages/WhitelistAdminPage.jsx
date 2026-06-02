@@ -28,6 +28,7 @@ import { useTheme } from "@mui/material/styles";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { formatDateTimeInTaipei } from "../utils/datetime";
 
 const actionCellSx = {
   display: "flex",
@@ -38,11 +39,6 @@ const actionCellSx = {
   gap: 0.5,
   whiteSpace: "nowrap"
 };
-
-function formatDateTime(value) {
-  const dt = new Date(value);
-  return Number.isNaN(dt.getTime()) ? "-" : dt.toLocaleString();
-}
 
 function statusColor(status) {
   return status === "active" ? "success" : "default";
@@ -212,14 +208,14 @@ export default function WhitelistAdminPage({ auth }) {
         headerName: t("common_created_at"),
         flex: 1.5,
         minWidth: 180,
-        valueFormatter: (value) => formatDateTime(value)
+        valueFormatter: (value) => formatDateTimeInTaipei(value, { locale })
       },
       {
         field: "updated_at",
         headerName: t("common_updated_at"),
         flex: 1.5,
         minWidth: 180,
-        valueFormatter: (value) => formatDateTime(value)
+        valueFormatter: (value) => formatDateTimeInTaipei(value, { locale })
       },
       {
         field: "actions",

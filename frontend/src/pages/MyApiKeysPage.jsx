@@ -29,6 +29,7 @@ import { DataGrid } from "@mui/x-data-grid";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { formatDateTimeInTaipei } from "../utils/datetime";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 
 const actionCellSx = {
@@ -45,11 +46,6 @@ function statusColor(status) {
   if (status === "active") return "success";
   if (status === "revoked") return "warning";
   return "default";
-}
-
-function formatDateTime(value) {
-  const dt = new Date(value);
-  return Number.isNaN(dt.getTime()) ? "-" : dt.toLocaleString();
 }
 
 function formatMaskedKey(value) {
@@ -294,7 +290,7 @@ export default function MyApiKeysPage({ auth }) {
           headerName: t("mykeys_col_expires_at"),
           flex: 1.5,
           minWidth: 180,
-          valueFormatter: (value) => formatDateTime(value)
+          valueFormatter: (value) => formatDateTimeInTaipei(value, { locale })
         },
         {
           field: "masked_key",
@@ -568,8 +564,8 @@ export default function MyApiKeysPage({ auth }) {
               <Typography>
                 {t("mykeys_detail_masked_key")}: {formatMaskedKey(detailItem.masked_key)}
               </Typography>
-              <Typography>{t("mykeys_detail_created_at")}: {formatDateTime(detailItem.created_at)}</Typography>
-              <Typography>{t("mykeys_detail_expires_at")}: {formatDateTime(detailItem.expires_at)}</Typography>
+              <Typography>{t("mykeys_detail_created_at")}: {formatDateTimeInTaipei(detailItem.created_at, { locale })}</Typography>
+              <Typography>{t("mykeys_detail_expires_at")}: {formatDateTimeInTaipei(detailItem.expires_at, { locale })}</Typography>
               <Typography>{t("mykeys_detail_purpose")}: {detailItem.purpose || "-"}</Typography>
               {auth.role === "admin" ? (
                 <TextField

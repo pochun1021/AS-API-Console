@@ -104,6 +104,12 @@ def _fetch_application_row_for_key(key_id: str) -> dict:
     return dict(row)
 
 
+def _assert_utc_datetime_string(value: str) -> None:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    assert parsed.tzinfo is not None
+    assert value.endswith("Z") or value.endswith("+00:00")
+
+
 def test_application_success_and_no_plaintext_in_queries(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
@@ -115,6 +121,8 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert create_resp.status_code == 201
     body = create_resp.json()
     assert body["api_key_plaintext"].startswith("AS-")
+    _assert_utc_datetime_string(body["application"]["issued_at"])
+    _assert_utc_datetime_string(body["application"]["expires_at"])
     application = _fetch_application_row(body["application"]["id"])
     assert application["account"] == user_headers["x-account"]
     assert application["sysid"] == int(user_headers["x-sysid"])
@@ -131,6 +139,7 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert len(item["masked_key"]) == 10
     assert "expiration_notice_sent_at" in item
     assert "extend_eligible" in item
+    _assert_utc_datetime_string(item["expires_at"])
 
 
 def test_application_rejects_non_whitelisted(client, user_headers):
@@ -834,14 +843,18 @@ def test_expired_is_visible_and_renewable_by_expires_at(client, admin_headers, u
     listed = client.get("/api/v1/api-keys", headers=user_headers)
     assert listed.status_code == 200
     assert listed.json()["items"][0]["status"] == "expired"
+    _assert_utc_datetime_string(listed.json()["items"][0]["expires_at"])
 
     detail = client.get(f"/api/v1/api-keys/{key_id}", headers=user_headers)
     assert detail.status_code == 200
     assert detail.json()["status"] == "expired"
+    _assert_utc_datetime_string(detail.json()["created_at"])
+    _assert_utc_datetime_string(detail.json()["expires_at"])
 
     renew = client.post(f"/api/v1/api-keys/{key_id}/renew", headers=user_headers)
     assert renew.status_code == 200
     assert renew.json()["status"] == "active"
+    _assert_utc_datetime_string(renew.json()["expires_at"])
 
 
 def test_extend_requires_notice_for_user_but_not_admin(client, admin_headers):
@@ -863,17 +876,20 @@ def test_extend_requires_notice_for_user_but_not_admin(client, admin_headers):
     allowed = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=user, json={"duration_months": 6})
     assert allowed.status_code == 200
     assert allowed.json()["status"] == "active"
+    _assert_utc_datetime_string(allowed.json()["expires_at"])
 
     _set_key_expires_at_past(key_id)
     _set_expiration_notice_sent_at(key_id, None)
     user_expired_allowed = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=user, json={"duration_months": 1})
     assert user_expired_allowed.status_code == 200
     assert user_expired_allowed.json()["status"] == "active"
+    _assert_utc_datetime_string(user_expired_allowed.json()["expires_at"])
 
     _set_key_expires_at_past(key_id)
     admin_allowed = client.post(f"/api/v1/api-keys/{key_id}/extend", headers=admin_headers, json={"duration_months": 1})
     assert admin_allowed.status_code == 200
     assert admin_allowed.json()["status"] == "active"
+    _assert_utc_datetime_string(admin_allowed.json()["expires_at"])
 
 
 def test_renew_sends_renewed_email_on_success(client, admin_headers, monkeypatch):
