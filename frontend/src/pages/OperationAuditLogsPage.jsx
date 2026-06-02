@@ -6,12 +6,10 @@ import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { formatDateTimeInTaipei } from "../utils/datetime";
 
-function formatTs(value) {
-  if (!value) return "-";
-  const dt = dayjs(value);
-  if (!dt.isValid()) return "-";
-  return dt.format("YYYY-MM-DD HH:mm:ss");
+function formatTs(value, locale) {
+  return formatDateTimeInTaipei(value, { locale });
 }
 
 function defaultHotRange() {
@@ -24,7 +22,7 @@ const TAB_OPERATION = "operation";
 const TAB_LOGIN = "login";
 
 export default function OperationAuditLogsPage({ auth }) {
-  const { gridLocaleText, t } = useLocale();
+  const { gridLocaleText, locale, t } = useLocale();
   const hot = useMemo(defaultHotRange, []);
   const [activeTab, setActiveTab] = useState(TAB_OPERATION);
 
@@ -52,7 +50,7 @@ export default function OperationAuditLogsPage({ auth }) {
 
   const operationColumns = useMemo(
     () => [
-      { field: "created_at", headerName: t("auditlogs_col_created_at"), minWidth: 190, flex: 1.2, valueFormatter: (v) => formatTs(v) },
+      { field: "created_at", headerName: t("auditlogs_col_created_at"), minWidth: 190, flex: 1.2, valueFormatter: (v) => formatTs(v, locale) },
       { field: "event_type", headerName: t("auditlogs_col_event_type"), minWidth: 150, flex: 1 },
       { field: "action", headerName: t("auditlogs_col_action"), minWidth: 120, flex: 0.9 },
       { field: "result", headerName: t("auditlogs_col_result"), minWidth: 110, flex: 0.8 },
@@ -61,12 +59,12 @@ export default function OperationAuditLogsPage({ auth }) {
       { field: "target_id", headerName: t("auditlogs_col_target_id"), minWidth: 160, flex: 1.2 },
       { field: "error_code", headerName: t("auditlogs_col_error_code"), minWidth: 160, flex: 1.2 },
     ],
-    [t]
+    [locale, t]
   );
 
   const loginColumns = useMemo(
     () => [
-      { field: "created_at", headerName: t("auditlogs_col_created_at"), minWidth: 190, flex: 1.2, valueFormatter: (v) => formatTs(v) },
+      { field: "created_at", headerName: t("auditlogs_col_created_at"), minWidth: 190, flex: 1.2, valueFormatter: (v) => formatTs(v, locale) },
       { field: "provider", headerName: t("loginlogs_col_provider"), minWidth: 130, flex: 1 },
       { field: "result", headerName: t("auditlogs_col_result"), minWidth: 110, flex: 0.8 },
       { field: "account", headerName: t("loginlogs_col_account"), minWidth: 140, flex: 1 },
@@ -75,7 +73,7 @@ export default function OperationAuditLogsPage({ auth }) {
       { field: "error_code", headerName: t("auditlogs_col_error_code"), minWidth: 160, flex: 1.2 },
       { field: "request_id", headerName: t("loginlogs_col_request_id"), minWidth: 220, flex: 1.4 },
     ],
-    [t]
+    [locale, t]
   );
 
   useEffect(() => {

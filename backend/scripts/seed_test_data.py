@@ -120,17 +120,15 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
 
     for idx, status in enumerate(statuses, start=1):
         user_no = ((idx - 1) % 6) + 1
-        user_id = 920000 + user_no
+        sysid = 920000 + user_no
         account = f"user{user_no}"
         email = f"user{user_no}@example.com"
         issued_at = now - timedelta(days=idx * 7)
         duration_months = durations[idx % len(durations)]
         expires_at = _calc_expires_at(issued_at, duration_months)
         application_id = str(uuid.uuid4())
-        sysid = user_id
         revoked_at = issued_at + timedelta(days=3) if status == "revoked" else None
         # Keep seed rows aligned with combined strategy policy.
-        limit_strategy = "budget+rate_limit"
         max_budget = "1000"
         budget_duration = "monthly"
         tpm_limit = 10000
@@ -139,31 +137,23 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
         application = ApiKeyApplication(
             id=application_id,
             account=account,
-            user_id=user_id,
             name=f"User {user_no}",
             email=email,
             department=departments[idx % len(departments)],
             application_date=(date.today() - timedelta(days=min(idx * 5, 180))),
             duration_months=duration_months,
             purpose=purposes[idx % len(purposes)],
-            limit_strategy=limit_strategy,
             max_budget=max_budget,
             budget_duration=budget_duration,
             tpm_limit=tpm_limit,
             rpm_limit=rpm_limit,
-            issuance_status="issued",
-            pending_issued_at=None,
             status=status,
             issued_at=issued_at,
             expires_at=expires_at,
             revoked_at=revoked_at,
             sysid=sysid,
             is_proxy_submission=False,
-            operator_account=account,
-            operator_name=f"User {user_no}",
-            operator_email=email,
-            operator_department=departments[idx % len(departments)],
-            operator_sysid=sysid,
+            proxy_operator_account=None,
             created_at=issued_at,
             updated_at=issued_at,
         )
@@ -189,11 +179,11 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
 
 
 def _reset_seed_scope(session: Session) -> None:
-    seed_user_ids = [920000 + idx for idx in range(1, 7)] + [900001, 900002]
-    app_ids = [row[0] for row in session.query(ApiKeyApplication.id).filter(ApiKeyApplication.user_id.in_(seed_user_ids)).all()]
+    seed_sysids = [920000 + idx for idx in range(1, 7)] + [900001, 900002]
+    app_ids = [row[0] for row in session.query(ApiKeyApplication.id).filter(ApiKeyApplication.sysid.in_(seed_sysids)).all()]
     if app_ids:
         session.execute(delete(ApiKey).where(ApiKey.application_id.in_(app_ids)))
-    session.execute(delete(ApiKeyApplication).where(ApiKeyApplication.user_id.in_(seed_user_ids)))
+    session.execute(delete(ApiKeyApplication).where(ApiKeyApplication.sysid.in_(seed_sysids)))
     session.execute(delete(ApiKeyWhitelist).where(ApiKeyWhitelist.sysid.between(910001, 910199)))
     session.execute(delete(ApiKeyWhitelist).where(ApiKeyWhitelist.email.like("%seed@example.com")))
     session.execute(delete(ApiKeyWhitelist).where(ApiKeyWhitelist.email.like("user%@example.com")))

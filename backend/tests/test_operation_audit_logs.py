@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from db.models.operation_audit_logs import OperationAuditLog
-from tests.conftest import build_headers
+from tests.conftest import api_path, build_headers
 
 
 def _query_logs(event_type: str, action: str) -> list[OperationAuditLog]:
@@ -43,7 +43,7 @@ def _count_limit_strategy_config() -> int:
 
 def _create_whitelist(client, admin_headers, sysid: int) -> None:
     resp = client.post(
-        "/api/v1/whitelists",
+        api_path("/whitelists"),
         headers=admin_headers,
         json={
             "sysid": sysid,
@@ -60,14 +60,14 @@ def test_application_create_logs_success_and_failure(client, admin_headers, user
     _create_whitelist(client, admin_headers, int(user_headers["x-sysid"]))
 
     ok = client.post(
-        "/api/v1/api-keys/applications",
+        api_path("/api-keys/applications"),
         headers={**user_headers, "x-request-id": "req-app-ok", "x-forwarded-for": "198.51.100.20"},
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit"},
     )
     assert ok.status_code == 201
 
     bad = client.post(
-        "/api/v1/api-keys/applications",
+        api_path("/api-keys/applications"),
         headers={**user_headers, "x-request-id": "req-app-fail"},
         json={"application_date": str(date.today()), "duration_months": 2, "purpose": "audit"},
     )
@@ -97,17 +97,17 @@ def test_revoke_logs_success_and_failure(client, admin_headers):
     user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
     _create_whitelist(client, admin_headers, 2001)
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        api_path("/api-keys/applications"),
         headers=user1,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit"},
     )
     app_id = create_resp.json()["application"]["id"]
-    client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
-    key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
+    client.post(api_path(f"/api-keys/applications/{app_id}/issue"), headers=admin_headers)
+    key_id = client.get(api_path("/api-keys"), headers=user1).json()["items"][0]["id"]
 
-    fail = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers={**user2, "x-request-id": "req-revoke-fail"})
+    fail = client.post(api_path(f"/api-keys/{key_id}/revoke"), headers={**user2, "x-request-id": "req-revoke-fail"})
     assert fail.status_code == 403
-    ok = client.post(f"/api/v1/api-keys/{key_id}/revoke", headers={**user1, "x-request-id": "req-revoke-ok"})
+    ok = client.post(api_path(f"/api-keys/{key_id}/revoke"), headers={**user1, "x-request-id": "req-revoke-ok"})
     assert ok.status_code == 200
 
     logs = _query_logs("api_key", "revoke")
@@ -125,18 +125,18 @@ def test_renew_logs_success_and_failure(client, admin_headers):
     user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
     _create_whitelist(client, admin_headers, 2001)
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        api_path("/api-keys/applications"),
         headers=user1,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit renew"},
     )
     app_id = create_resp.json()["application"]["id"]
-    client.post(f"/api/v1/api-keys/applications/{app_id}/issue", headers=admin_headers)
-    key_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
-    client.post(f"/api/v1/api-keys/{key_id}/revoke", headers=user1)
+    client.post(api_path(f"/api-keys/applications/{app_id}/issue"), headers=admin_headers)
+    key_id = client.get(api_path("/api-keys"), headers=user1).json()["items"][0]["id"]
+    client.post(api_path(f"/api-keys/{key_id}/revoke"), headers=user1)
 
-    fail = client.post(f"/api/v1/api-keys/{key_id}/renew", headers={**user2, "x-request-id": "req-renew-fail"})
+    fail = client.post(api_path(f"/api-keys/{key_id}/renew"), headers={**user2, "x-request-id": "req-renew-fail"})
     assert fail.status_code == 403
-    ok = client.post(f"/api/v1/api-keys/{key_id}/renew", headers={**user1, "x-request-id": "req-renew-ok"})
+    ok = client.post(api_path(f"/api-keys/{key_id}/renew"), headers={**user1, "x-request-id": "req-renew-ok"})
     assert ok.status_code == 200
 
     logs = _query_logs("api_key", "renew")
@@ -151,13 +151,13 @@ def test_renew_logs_success_and_failure(client, admin_headers):
 
 def test_whitelist_create_update_delete_logs_success_and_failure(client, admin_headers, user_headers):
     create_forbidden = client.post(
-        "/api/v1/whitelists",
+        api_path("/whitelists"),
         headers=user_headers,
         json={"sysid": 7008, "account": "user7008", "name": "User 7008", "email": "user7008@example.com", "note": "forbidden"},
     )
     assert create_forbidden.status_code == 403
     create_ok = client.post(
-        "/api/v1/whitelists",
+        api_path("/whitelists"),
         headers=admin_headers,
         json={"sysid": 7008, "account": "user7008", "name": "User 7008", "email": "user7008@example.com", "note": "ok"},
     )
@@ -165,20 +165,20 @@ def test_whitelist_create_update_delete_logs_success_and_failure(client, admin_h
 
     whitelist_id = create_ok.json()["id"]
     update_fail = client.patch(
-        f"/api/v1/whitelists/{whitelist_id}",
+        api_path(f"/whitelists/{whitelist_id}"),
         headers=admin_headers,
         json={"status": "bad-status", "note": "bad"},
     )
     assert update_fail.status_code == 422
     update_ok = client.patch(
-        f"/api/v1/whitelists/{whitelist_id}",
+        api_path(f"/whitelists/{whitelist_id}"),
         headers=admin_headers,
         json={"status": "inactive", "note": "ok"},
     )
     assert update_ok.status_code == 200
-    delete_fail = client.delete(f"/api/v1/whitelists/{whitelist_id}", headers=user_headers)
+    delete_fail = client.delete(api_path(f"/whitelists/{whitelist_id}"), headers=user_headers)
     assert delete_fail.status_code == 403
-    delete_ok = client.delete(f"/api/v1/whitelists/{whitelist_id}", headers=admin_headers)
+    delete_ok = client.delete(api_path(f"/whitelists/{whitelist_id}"), headers=admin_headers)
     assert delete_ok.status_code == 204
 
     create_logs = _query_logs("whitelist", "create")
@@ -204,16 +204,16 @@ def test_whitelist_create_update_delete_logs_success_and_failure(client, admin_h
 
 
 def test_admin_enable_disable_logs_success_and_failure(client, admin_headers, user_headers):
-    fail_enable = client.post("/api/v1/admins/999999/enable", headers=admin_headers)
+    fail_enable = client.post(api_path("/admins/999999/enable"), headers=admin_headers)
     assert fail_enable.status_code == 404
 
     target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
-    bootstrap = client.get("/api/v1/api-keys", headers=target_admin_headers)
+    bootstrap = client.get(api_path("/api-keys"), headers=target_admin_headers)
     assert bootstrap.status_code == 200
 
-    ok_disable = client.post("/api/v1/admins/7003/disable", headers={**admin_headers, "x-request-id": "req-disable-ok"})
+    ok_disable = client.post(api_path("/admins/7003/disable"), headers={**admin_headers, "x-request-id": "req-disable-ok"})
     assert ok_disable.status_code == 200
-    forbidden_enable = client.post("/api/v1/admins/7003/enable", headers=user_headers)
+    forbidden_enable = client.post(api_path("/admins/7003/enable"), headers=user_headers)
     assert forbidden_enable.status_code == 403
 
     enable_logs = _query_logs("admin_management", "enable")
@@ -229,7 +229,7 @@ def test_admin_enable_disable_logs_success_and_failure(client, admin_headers, us
 
 def test_admin_create_delete_logs_success_and_failure(client, admin_headers):
     create_fail = client.put(
-        "/api/v1/admins/1001",
+        api_path("/admins/1001"),
         headers={**admin_headers, "x-request-id": "req-admin-create-fail"},
         json={
             "account": "admin",
@@ -241,7 +241,7 @@ def test_admin_create_delete_logs_success_and_failure(client, admin_headers):
     assert create_fail.status_code == 409
 
     create_ok = client.put(
-        "/api/v1/admins/5016408",
+        api_path("/admins/5016408"),
         headers={**admin_headers, "x-request-id": "req-admin-create-ok"},
         json={
             "account": "u5016408",
@@ -252,12 +252,12 @@ def test_admin_create_delete_logs_success_and_failure(client, admin_headers):
     )
     assert create_ok.status_code == 200
 
-    delete_fail = client.delete("/api/v1/admins/5016408", headers={**admin_headers, "x-request-id": "req-admin-delete-fail"})
+    delete_fail = client.delete(api_path("/admins/5016408"), headers={**admin_headers, "x-request-id": "req-admin-delete-fail"})
     assert delete_fail.status_code == 422
 
-    disabled = client.post("/api/v1/admins/5016408/disable", headers=admin_headers)
+    disabled = client.post(api_path("/admins/5016408/disable"), headers=admin_headers)
     assert disabled.status_code == 200
-    delete_ok = client.delete("/api/v1/admins/5016408", headers={**admin_headers, "x-request-id": "req-admin-delete-ok"})
+    delete_ok = client.delete(api_path("/admins/5016408"), headers={**admin_headers, "x-request-id": "req-admin-delete-ok"})
     assert delete_ok.status_code == 204
 
     create_logs = _query_logs("admin_management", "create")
@@ -281,21 +281,21 @@ def test_limit_strategy_config_update_logs_success_and_failure(client, admin_hea
         "rate_limit_rpm": 600,
     }
     ok = client.patch(
-        "/api/v1/limit-strategy-config",
+        api_path("/limit-strategy-config"),
         headers={**admin_headers, "x-request-id": "req-limit-ok", "x-forwarded-for": "203.0.113.18"},
         json=payload,
     )
     assert ok.status_code == 200
 
     forbidden = client.patch(
-        "/api/v1/limit-strategy-config",
+        api_path("/limit-strategy-config"),
         headers={**user_headers, "x-request-id": "req-limit-forbidden"},
         json=payload,
     )
     assert forbidden.status_code == 403
 
     fail = client.patch(
-        "/api/v1/limit-strategy-config",
+        api_path("/limit-strategy-config"),
         headers={**admin_headers, "x-request-id": "req-limit-fail"},
         json={
             "budget_max_budget": "",
@@ -331,7 +331,7 @@ def test_limit_strategy_get_returns_defaults_when_row_is_missing(client, admin_h
     _delete_limit_strategy_config()
     assert _count_limit_strategy_config() == 0
 
-    resp = client.get("/api/v1/limit-strategy-config", headers=admin_headers)
+    resp = client.get(api_path("/limit-strategy-config"), headers=admin_headers)
     assert resp.status_code == 200
     assert resp.json() == {
         "budget_max_budget": "1000",
@@ -352,7 +352,7 @@ def test_limit_strategy_patch_upserts_missing_row(client, admin_headers):
         "rate_limit_tpm": 13000,
         "rate_limit_rpm": 700,
     }
-    resp = client.patch("/api/v1/limit-strategy-config", headers=admin_headers, json=payload)
+    resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
     assert resp.status_code == 200
     assert resp.json() == payload
     assert _count_limit_strategy_config() == 1

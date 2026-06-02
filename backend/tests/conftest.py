@@ -19,6 +19,12 @@ from db.base import Base
 from db import models  # noqa: F401
 from db.session import get_db
 
+API_BASE = "/main/api/v1"
+
+
+def api_path(path: str) -> str:
+    return f"{API_BASE}{path}"
+
 
 @pytest.fixture(autouse=True)
 def disable_provider_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:

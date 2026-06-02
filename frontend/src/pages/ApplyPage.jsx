@@ -30,8 +30,45 @@ import { apiClient } from "../api/client";
 import { useLocale } from "../i18n/locale";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 
+function resolveValidationMessage(message, t) {
+  const normalized = String(message || "").trim();
+  if (!normalized) return t("apply_error_validation");
+  if (normalized.startsWith("missing auth headers:")) {
+    const fields = normalized
+      .replace("missing auth headers:", "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(", ");
+    return t("apply_error_missing_auth_headers", { fields });
+  }
+  if (normalized === "x-sysid must be numeric") {
+    return t("apply_error_invalid_auth_sysid_numeric");
+  }
+  if (normalized === "x-sysid must be positive integer") {
+    return t("apply_error_invalid_auth_sysid_positive");
+  }
+  if (normalized === "purpose is required") {
+    return t("apply_error_required_purpose");
+  }
+  if (normalized === "target_identity.account is required for admin proxy submission") {
+    return t("apply_error_required_proxy_identity");
+  }
+  if (normalized === "target account not found") {
+    return t("apply_proxy_lookup_not_found");
+  }
+  if (normalized === "target account is not unique") {
+    return t("apply_proxy_lookup_not_unique");
+  }
+  if (normalized === "invalid role") {
+    return t("apply_error_invalid_auth_role");
+  }
+  return normalized;
+}
+
 function toErrorMessage(error, t) {
   const code = error?.payload?.error?.code;
+  const rawMessage = error?.payload?.error?.message || error?.message || "";
   const map = {
     APPLICANT_NOT_ELIGIBLE: t("apply_error_not_eligible"),
     RESEARCH_LIST_SERVICE_UNAVAILABLE: t("apply_error_research_unavailable"),
@@ -39,10 +76,10 @@ function toErrorMessage(error, t) {
     DIRECTORY_SERVICE_UNAVAILABLE: t("apply_error_directory_unavailable"),
     INVALID_APPLICATION_DATE: t("apply_error_invalid_date"),
     INVALID_DURATION_MONTHS: t("apply_error_invalid_duration"),
-    VALIDATION_ERROR: t("apply_error_validation")
+    VALIDATION_ERROR: resolveValidationMessage(rawMessage, t)
   };
   if (code && map[code]) return map[code];
-  return error?.payload?.error?.message || t("error_request_failed");
+  return rawMessage || t("error_request_failed");
 }
 
 async function copyText(text) {
@@ -340,26 +377,22 @@ export default function ApplyPage({ auth }) {
       </Box>
 
       <Dialog open={Boolean(issued)} onClose={closeIssuedDialog}>
-        <DialogTitle>{issued?.issuance_status === "pending" ? t("apply_pending_title") : (isZh ? "API Key 已建立" : "API Key Created")}</DialogTitle>
+        <DialogTitle>{isZh ? "API Key 已建立" : "API Key Created"}</DialogTitle>
         <DialogContent>
-          {issued?.issuance_status === "pending" ? (
-            <Alert severity="warning">{t("apply_pending_message")}</Alert>
-          ) : (
-            <>
-              <Typography sx={{ mb: 1 }}>{isZh ? "此明文金鑰只會顯示一次，請立即保存。" : "This plaintext key is shown only once. Save it now."}</Typography>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Typography sx={{ fontFamily: "monospace", bgcolor: "grey.100", p: 1, borderRadius: 1, flex: 1, userSelect: "text", wordBreak: "break-all" }}>
-                  {issued?.api_key_plaintext}
-                </Typography>
-                <Tooltip title={copySucceeded ? "已複製" : "複製金鑰"}>
-                  <IconButton aria-label={copySucceeded ? "已複製金鑰" : "複製金鑰"} onClick={onCopyKey}>
-                    {copySucceeded ? <CheckIcon /> : <ContentCopyIcon />}
-                  </IconButton>
-                </Tooltip>
-              </Box>
-              {copyError ? <Alert severity="error" sx={{ mt: 1 }}>{copyError}</Alert> : null}
-            </>
-          )}
+          <>
+            <Typography sx={{ mb: 1 }}>{isZh ? "此明文金鑰只會顯示一次，請立即保存。" : "This plaintext key is shown only once. Save it now."}</Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Typography sx={{ fontFamily: "monospace", bgcolor: "grey.100", p: 1, borderRadius: 1, flex: 1, userSelect: "text", wordBreak: "break-all" }}>
+                {issued?.api_key_plaintext}
+              </Typography>
+              <Tooltip title={copySucceeded ? "已複製" : "複製金鑰"}>
+                <IconButton aria-label={copySucceeded ? "已複製金鑰" : "複製金鑰"} onClick={onCopyKey}>
+                  {copySucceeded ? <CheckIcon /> : <ContentCopyIcon />}
+                </IconButton>
+              </Tooltip>
+            </Box>
+            {copyError ? <Alert severity="error" sx={{ mt: 1 }}>{copyError}</Alert> : null}
+          </>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeIssuedDialog}>{isZh ? "我知道了" : "Saved"}</Button>

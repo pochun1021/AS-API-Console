@@ -177,31 +177,20 @@ class ApiKeysService:
             if not self.login_eligibility.is_allowed_by_tcode(tcode):
                 raise ApiError("APPLICANT_NOT_ELIGIBLE", "applicant is not eligible", 403)
 
-        operator_identity = AuthIdentity(
-            account=current_user.account,
-            name=current_user.name,
-            email=current_user.email,
-            department=current_user.department,
-            sysid=current_user.sysid,
-        )
         issued_at = datetime.now(UTC)
         expires_at = _calc_expiration(issued_at, duration_months)
         application = self.key_repo.create_application(
             ApplicationCreateInput(
-                user_id=identity.sysid,
                 identity=identity,
-                operator_identity=operator_identity,
                 is_proxy_submission=is_proxy_submission,
+                proxy_operator_account=current_user.account if is_proxy_submission else None,
                 application_date=application_date,
                 duration_months=duration_months,
                 purpose=normalized_purpose,
-                limit_strategy="",
                 max_budget=None,
                 budget_duration=None,
                 tpm_limit=None,
                 rpm_limit=None,
-                issuance_status="issued",
-                pending_issued_at=None,
                 issued_at=issued_at,
                 expires_at=expires_at,
             )
@@ -221,18 +210,17 @@ class ApiKeysService:
 
         self.session.add(application)
         self.session.commit()
-        if application.issuance_status == "issued":
-            try:
-                run_async(
-                    self.mail_service.send_application_received_to_applicant(
-                        to_email=application.email,
-                        owner_name=application.name,
-                        application_id=application.id,
-                        app_domain=self.settings.app_domain,
-                    )
+        try:
+            run_async(
+                self.mail_service.send_application_received_to_applicant(
+                    to_email=application.email,
+                    owner_name=application.name,
+                    application_id=application.id,
+                    app_domain=self.settings.app_domain,
                 )
-            except Exception:  # noqa: BLE001
-                logging.exception("failed to send application received email to applicant")
+            )
+        except Exception:  # noqa: BLE001
+            logging.exception("failed to send application received email to applicant")
 
         return {
             "application": {
@@ -242,7 +230,6 @@ class ApiKeysService:
                 "issued_at": application.issued_at,
                 "expires_at": application.expires_at,
             },
-            "issuance_status": application.issuance_status,
             "api_key_plaintext": plaintext,
         }
 
@@ -256,7 +243,6 @@ class ApiKeysService:
             raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "budget config is incomplete", 409)
         if not tpm_limit or not rpm_limit or int(tpm_limit) <= 0 or int(rpm_limit) <= 0:
             raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "rate limit config is incomplete", 409)
-        application.limit_strategy = "budget+rate_limit"
         application.max_budget = max_budget
         application.budget_duration = budget_duration
         application.tpm_limit = tpm_limit
@@ -292,8 +278,6 @@ class ApiKeysService:
                     key_kek_version=self.settings.api_key_kek_version,
                 )
             )
-            application.issuance_status = "issued"
-            application.pending_issued_at = datetime.now(UTC)
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError as exc:
@@ -540,30 +524,20 @@ class ApiKeysService:
             department=source_app.department,
             sysid=source_app.sysid,
         )
-        operator_identity = AuthIdentity(
-            account=current_user.account,
-            name=current_user.name,
-            email=current_user.email,
-            department=current_user.department,
-            sysid=current_user.sysid,
-        )
         now = datetime.now(UTC)
+        is_proxy_submission = current_user.role == "admin" and current_user.account != source_app.account
         application = self.key_repo.create_application(
             ApplicationCreateInput(
-                user_id=source_app.user_id,
                 identity=identity,
-                operator_identity=operator_identity,
-                is_proxy_submission=current_user.role == "admin" and current_user.account != source_app.account,
+                is_proxy_submission=is_proxy_submission,
+                proxy_operator_account=current_user.account if is_proxy_submission else None,
                 application_date=date.today(),
                 duration_months=source_app.duration_months,
                 purpose=source_app.purpose,
-                limit_strategy="",
                 max_budget=None,
                 budget_duration=None,
                 tpm_limit=None,
                 rpm_limit=None,
-                issuance_status="issued",
-                pending_issued_at=None,
                 issued_at=now,
                 expires_at=_calc_expiration(now, source_app.duration_months),
             )
@@ -584,19 +558,18 @@ class ApiKeysService:
         issued_key = self.session.query(ApiKey).filter(ApiKey.application_id == application.id).one_or_none()
         email_warning: str | None = None
 
-        if application.issuance_status == "issued":
-            try:
-                run_async(
-                    self.mail_service.send_key_renewed_notification(
-                        to_email=source_app.email,
-                        owner_name=source_app.name,
-                        app_domain=self.settings.app_domain,
-                    )
+        try:
+            run_async(
+                self.mail_service.send_key_renewed_notification(
+                    to_email=source_app.email,
+                    owner_name=source_app.name,
+                    app_domain=self.settings.app_domain,
                 )
-            except Exception:  # noqa: BLE001
-                logging.exception("failed to send key renewed email to applicant")
-                email_warning = "key_renewed_email_failed"
-        if issued_key is None and application.issuance_status == "issued":
+            )
+        except Exception:  # noqa: BLE001
+            logging.exception("failed to send key renewed email to applicant")
+            email_warning = "key_renewed_email_failed"
+        if issued_key is None:
             raise ApiError("INTERNAL_ERROR", "renew issued without key record", 500)
 
         if issued_key is not None:
@@ -606,10 +579,9 @@ class ApiKeysService:
         self.session.add(source_app)
         self.session.commit()
         return {
-            "id": issued_key.id if issued_key is not None else source_key.id,
-            "status": issued_key.status if issued_key is not None else source_key.status,
+            "id": issued_key.id,
+            "status": issued_key.status,
             "expires_at": application.expires_at,
-            "issuance_status": application.issuance_status,
             "renewed_from_key_id": source_key.id,
             "api_key_plaintext": plaintext,
             "email_warning": email_warning,

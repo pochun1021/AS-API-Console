@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from db.models.operation_audit_logs import OperationAuditLog
+from tests.conftest import api_path
 
 
 def _insert_log(created_at: datetime, event_type: str, result: str) -> None:
@@ -35,10 +36,10 @@ def _insert_log(created_at: datetime, event_type: str, result: str) -> None:
 
 
 def test_operation_audit_logs_admin_only(client, admin_headers, user_headers):
-    denied = client.get("/api/v1/operation-audit-logs", headers=user_headers)
+    denied = client.get(api_path("/operation-audit-logs"), headers=user_headers)
     assert denied.status_code == 403
 
-    ok = client.get("/api/v1/operation-audit-logs", headers=admin_headers)
+    ok = client.get(api_path("/operation-audit-logs"), headers=admin_headers)
     assert ok.status_code == 200
 
 
@@ -48,14 +49,18 @@ def test_operation_audit_logs_default_hot_window_and_filters(client, admin_heade
     _insert_log(now - timedelta(days=10), "api_key", "failure")
     _insert_log(now - timedelta(days=1), "whitelist", "failure")
 
-    resp = client.get("/api/v1/operation-audit-logs", headers=admin_headers)
+    resp = client.get(api_path("/operation-audit-logs"), headers=admin_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 2
     assert all(item["event_type"] in {"api_key", "whitelist"} for item in body["items"])
+    created_at = body["items"][0]["created_at"]
+    parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    assert parsed.tzinfo is not None
+    assert created_at.endswith("Z") or created_at.endswith("+00:00")
 
     filtered = client.get(
-        "/api/v1/operation-audit-logs?event_type=whitelist&result=failure",
+        api_path("/operation-audit-logs?event_type=whitelist&result=failure"),
         headers=admin_headers,
     )
     assert filtered.status_code == 200
