@@ -534,7 +534,6 @@ export const mockApiProvider = {
         issued_at: now.toISOString(),
         expires_at: expires.toISOString()
       },
-      issuance_status: "issued",
       api_key_plaintext: plain
     };
   },
@@ -730,10 +729,8 @@ export const mockApiProvider = {
       id: idNew,
       status: "active",
       expires_at: expires.toISOString(),
-      issuance_status: "issued",
       renewed_from_key_id: target.id,
-      api_key_plaintext: plain,
-      pending_reason: null
+      api_key_plaintext: plain
     };
   },
 
@@ -791,10 +788,8 @@ export const mockApiProvider = {
       id: idNew,
       status: "active",
       expires_at: expires.toISOString(),
-      issuance_status: "issued",
       renewed_from_key_id: target.id,
-      api_key_plaintext: plain,
-      pending_reason: null
+      api_key_plaintext: plain
     };
   },
 
@@ -1023,7 +1018,7 @@ export const mockApiProvider = {
   async updateApplicationIssuanceMode(id, mode, auth) {
     await delay();
     ensureAdmin(auth);
-    return { id, selected_issuance_mode: mode, issuance_status: "pending" };
+    return { id, selected_issuance_mode: mode };
   },
 
   async issueApplication(id, auth) {
@@ -1031,9 +1026,7 @@ export const mockApiProvider = {
     ensureAdmin(auth);
     return {
       application: { id, account: "mock", status: "active", issued_at: new Date().toISOString(), expires_at: new Date().toISOString() },
-      issuance_status: "issued",
-      api_key_plaintext: "AS-mockmockmockmockmockmockmockmo",
-      pending_reason: null
+      api_key_plaintext: "AS-mockmockmockmockmockmockmockmo"
     };
   },
 

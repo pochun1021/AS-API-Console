@@ -212,8 +212,6 @@
 - `application_date` (date, required)
 - `duration_months` (int, required, allowed: `1|6|12`)
 - `purpose` (string, required)
-- `issuance_status` (enum: `issued`)
-- `pending_issued_at` (datetime, nullable)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `issued_at` (datetime)
 - `expires_at` (datetime)
@@ -370,7 +368,6 @@ Base path：`/main/api/v1`
     "issued_at": "...",
     "expires_at": "..."
   },
-  "issuance_status": "issued",
   "api_key_plaintext": "AS-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 }
 ```
@@ -509,7 +506,7 @@ Base path：`/main/api/v1`
   - `user` 僅可續發本人 `revoked` key；`admin` 可續發任意 `revoked` key。
   - renew 會建立新 key（`status=active`），不是把舊 key 改回 `active`。
   - 新 key 的 `duration_months` 與 `purpose` 需沿用來源 key 的原資料。
-- renew 即時成功（`issuance_status=issued`）時，回傳一次性 `api_key_plaintext`。
+- renew 成功時，回傳一次性 `api_key_plaintext`。
   - renew 成功後需寄送 Email 通知申請者「已更新金鑰」；通知信不得包含明文 key。
   - 續發成功後，來源 key 對 `user` 列表需隱藏；`admin` 列表仍需可見完整歷史。
 
@@ -792,12 +789,11 @@ Base path：`/main/api/v1`
 45. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
 46. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
 47. 限制策略設定僅 `admin` 可讀取與更新（`/main/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。
-48. 申請策略綁定僅 `admin` 可查改；`user` 呼叫需回 `403`。
 49. Provider timeout/5xx 時，`POST /main/api/v1/api-keys/applications` 需回 `503 PROVIDER_UNAVAILABLE`，且不得建立 pending 申請。
 50. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
 50-1. 每把 API Key 的限制策略需同時包含 `budget` 與 `rate_limit`；不得提供二選一 `issuance_mode`。
 50-2. 不提供 pending 補發端點；前端不得提供待審申請頁面入口。
-52. `POST /main/api/v1/api-keys/applications` 成功即時配發（`issuance_status=issued`）後，需寄送 Email 給申請者本人（不需寄送給管理者）。
+52. `POST /main/api/v1/api-keys/applications` 成功即時配發後，需寄送 Email 給申請者本人（不需寄送給管理者）。
 53. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
 54. 第 52 項若寄信失敗，`POST /main/api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
 54-2. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew` 或 `POST /main/api/v1/api-keys/{id}/extend` 若 provider timeout/5xx（`PROVIDER_UNAVAILABLE`）時，需寄送通知信給所有 `active` 管理者。

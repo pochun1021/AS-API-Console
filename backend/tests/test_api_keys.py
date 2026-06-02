@@ -8,11 +8,17 @@ from app.core.config import get_settings
 from db.repositories.types import AuthIdentity
 from tests.conftest import build_headers
 
+API_BASE = "/main/api/v1"
+
+
+def _api(path: str) -> str:
+    return f"{API_BASE}{path}"
+
 
 def _create_whitelist(client, admin_headers, sysid: str) -> None:
     parsed_sysid = int(sysid)
     resp = client.post(
-        "/api/v1/whitelists",
+        _api("/whitelists"),
         headers=admin_headers,
         json={
             "sysid": parsed_sysid,
@@ -61,20 +67,61 @@ def _set_expiration_notice_sent_at(key_id: str, sent_at: datetime | None) -> Non
         )
 
 
+def _fetch_application_row(application_id: str) -> dict:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, account, name, email, department, sysid, is_proxy_submission, proxy_operator_account
+                FROM api_key_applications
+                WHERE id = :application_id
+                """
+            ),
+            {"application_id": application_id},
+        ).mappings().one()
+    return dict(row)
+
+
+def _fetch_application_row_for_key(key_id: str) -> dict:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT a.id, a.account, a.name, a.email, a.department, a.sysid, a.is_proxy_submission, a.proxy_operator_account
+                FROM api_key_applications a
+                JOIN api_keys k ON k.application_id = a.id
+                WHERE k.id = :key_id
+                """
+            ),
+            {"key_id": key_id},
+        ).mappings().one()
+    return dict(row)
+
+
 def test_application_success_and_no_plaintext_in_queries(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
     )
     assert create_resp.status_code == 201
     body = create_resp.json()
-    assert body["issuance_status"] == "issued"
     assert body["api_key_plaintext"].startswith("AS-")
+    application = _fetch_application_row(body["application"]["id"])
+    assert application["account"] == user_headers["x-account"]
+    assert application["sysid"] == int(user_headers["x-sysid"])
+    assert application["is_proxy_submission"] in {0, False}
+    assert application["proxy_operator_account"] is None
 
-    list_resp = client.get("/api/v1/api-keys", headers=user_headers)
+    list_resp = client.get(_api("/api-keys"), headers=user_headers)
     assert list_resp.status_code == 200
     item = list_resp.json()["items"][0]
     assert "api_key_plaintext" not in item
@@ -88,12 +135,56 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
 
 def test_application_rejects_non_whitelisted(client, user_headers):
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
     )
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "APPLICANT_NOT_ELIGIBLE"
+
+
+def test_application_rejects_missing_auth_headers_with_field_details(client, user_headers):
+    _create_whitelist(client, admin_headers=build_headers(role="admin", account="admin", email="admin@example.com", sysid="1001"), sysid=user_headers["x-sysid"])
+    invalid_headers = dict(user_headers)
+    invalid_headers.pop("x-name")
+
+    resp = client.post(
+        _api("/api-keys/applications"),
+        headers=invalid_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert "x-name" in resp.json()["error"]["message"]
+
+
+def test_application_rejects_non_numeric_sysid(client, user_headers):
+    invalid_headers = build_headers(role="user", account="user1", email="user1@example.com", sysid="not-a-number")
+
+    resp = client.post(
+        _api("/api-keys/applications"),
+        headers=invalid_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert resp.json()["error"]["message"] == "x-sysid must be numeric"
+
+
+def test_application_rejects_blank_purpose(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "   "},
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert resp.json()["error"]["message"] == "purpose is required"
 
 
 def test_admin_can_submit_proxy_application_for_target_user(client, admin_headers, monkeypatch):
@@ -115,7 +206,7 @@ def test_admin_can_submit_proxy_application_for_target_user(client, admin_header
     )
 
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
@@ -128,6 +219,14 @@ def test_admin_can_submit_proxy_application_for_target_user(client, admin_header
     )
     assert resp.status_code == 201
     assert resp.json()["application"]["account"] == "target.user"
+    application = _fetch_application_row(resp.json()["application"]["id"])
+    assert application["account"] == "target.user"
+    assert application["name"] == "Target User"
+    assert application["email"] == "target.user@example.com"
+    assert application["department"] == "R&D"
+    assert application["sysid"] == target_sysid
+    assert application["is_proxy_submission"] in {1, True}
+    assert application["proxy_operator_account"] == admin_headers["x-account"]
 
 
 def test_admin_proxy_application_validates_required_target_identity_fields(client, admin_headers):
@@ -247,12 +346,12 @@ def test_application_immediate_issue_sends_mail(client, admin_headers, user_head
     )
 
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify"},
     )
     assert resp.status_code == 201
-    assert resp.json()["issuance_status"] == "issued"
+    assert resp.json()["api_key_plaintext"].startswith("AS-")
     assert len(calls) == 1
     assert calls[0]["to_email"] == user_headers["x-email"]
 
@@ -269,12 +368,12 @@ def test_application_mail_failure_does_not_block_success(client, admin_headers, 
     )
 
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
         json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify failure"},
     )
     assert resp.status_code == 201
-    assert resp.json()["issuance_status"] == "issued"
+    assert resp.json()["api_key_plaintext"].startswith("AS-")
 
 
 def test_application_provider_timeout_returns_503(client, admin_headers, user_headers, monkeypatch):
@@ -515,12 +614,12 @@ def test_application_success_for_research_eligible_without_whitelist(client, use
     )
 
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
     )
     assert create_resp.status_code == 201
-    assert create_resp.json()["issuance_status"] == "issued"
+    assert create_resp.json()["api_key_plaintext"].startswith("AS-")
 
 
 def test_application_research_service_unavailable_returns_503_and_no_records(client, admin_headers, user_headers, monkeypatch):
@@ -543,13 +642,13 @@ def test_application_research_service_unavailable_returns_503_and_no_records(cli
         _raise_unavailable,
     )
 
-    before = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
+    before = client.get(_api("/api-keys"), headers=admin_headers).json()["total"]
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
     )
-    after = client.get("/api/v1/api-keys", headers=admin_headers).json()["total"]
+    after = client.get(_api("/api-keys"), headers=admin_headers).json()["total"]
 
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
@@ -559,9 +658,9 @@ def test_application_research_service_unavailable_returns_503_and_no_records(cli
 def test_application_rejects_invalid_duration(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 2, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_months": 2, "purpose": "test"},
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "INVALID_DURATION_MONTHS"
@@ -570,9 +669,9 @@ def test_application_rejects_invalid_duration(client, admin_headers, user_header
 def test_application_rejects_future_date(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": "2999-01-01", "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": "2999-01-01", "duration_months": 1, "purpose": "test"},
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "INVALID_APPLICATION_DATE"
@@ -600,7 +699,6 @@ def test_issue_pending_application_does_not_send_issued_email(client, admin_head
     )
     assert create_resp.status_code == 201
     body = create_resp.json()
-    assert body["issuance_status"] == "issued"
     assert body["api_key_plaintext"].startswith("AS-")
 
 
@@ -626,7 +724,6 @@ def test_issue_pending_application_local_mode_does_not_call_provider(client, adm
             "app.services.provider_client.ProviderClient.generate_key",
             _raise_provider_should_not_be_called,
         )
-        assert create_resp.json()["issuance_status"] == "issued"
         assert create_resp.json()["api_key_plaintext"].startswith("AS-")
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
@@ -666,41 +763,45 @@ def test_renew_permissions_and_visibility(client, admin_headers):
 
     _create_whitelist(client, admin_headers, user1["x-sysid"])
     create_resp = client.post(
-        "/api/v1/api-keys/applications",
+        _api("/api-keys/applications"),
         headers=user1,
         json={"application_date": str(date.today()), "duration_months": 6, "purpose": "renew test"},
     )
     assert create_resp.status_code == 201
-    source_id = client.get("/api/v1/api-keys", headers=user1).json()["items"][0]["id"]
-    revoke = client.post(f"/api/v1/api-keys/{source_id}/revoke", headers=user1)
+    source_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
+    revoke = client.post(_api(f"/api-keys/{source_id}/revoke"), headers=user1)
     assert revoke.status_code == 200
 
-    not_owner = client.post(f"/api/v1/api-keys/{source_id}/renew", headers=user2)
+    not_owner = client.post(_api(f"/api-keys/{source_id}/renew"), headers=user2)
     assert not_owner.status_code == 403
     assert not_owner.json()["error"]["code"] == "KEY_NOT_OWNED_BY_USER"
 
-    renew = client.post(f"/api/v1/api-keys/{source_id}/renew", headers=user1)
+    renew = client.post(_api(f"/api-keys/{source_id}/renew"), headers=user1)
     assert renew.status_code == 200
     body = renew.json()
     assert body["status"] == "active"
-    assert body["issuance_status"] == "issued"
     assert body["renewed_from_key_id"] == source_id
     assert body["api_key_plaintext"].startswith("AS-")
+    renewed_application = _fetch_application_row_for_key(body["id"])
+    assert renewed_application["account"] == user1["x-account"]
+    assert renewed_application["sysid"] == int(user1["x-sysid"])
+    assert renewed_application["is_proxy_submission"] in {0, False}
+    assert renewed_application["proxy_operator_account"] is None
 
-    user_list = client.get("/api/v1/api-keys", headers=user1)
+    user_list = client.get(_api("/api-keys"), headers=user1)
     assert user_list.status_code == 200
     user_items = user_list.json()["items"]
     assert len(user_items) == 1
     assert user_items[0]["id"] == body["id"]
     assert user_items[0]["duration_months"] == 6
 
-    admin_list = client.get("/api/v1/api-keys", headers=admin_headers)
+    admin_list = client.get(_api("/api-keys"), headers=admin_headers)
     assert admin_list.status_code == 200
     admin_ids = {item["id"] for item in admin_list.json()["items"]}
     assert source_id in admin_ids
     assert body["id"] in admin_ids
 
-    duplicate = client.post(f"/api/v1/api-keys/{source_id}/renew", headers=user1)
+    duplicate = client.post(_api(f"/api-keys/{source_id}/renew"), headers=user1)
     assert duplicate.status_code == 409
     assert duplicate.json()["error"]["code"] == "KEY_ALREADY_RENEWED"
 

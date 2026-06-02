@@ -1,6 +1,4 @@
 from datetime import date, datetime
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 
@@ -25,7 +23,6 @@ class ApplicationSummary(BaseModel):
 
 class ApplicationCreateResponse(BaseModel):
     application: ApplicationSummary
-    issuance_status: Literal["issued"]
     api_key_plaintext: str | None = None
 
 
@@ -76,7 +73,6 @@ class RenewResponse(BaseModel):
     id: str
     status: str
     expires_at: datetime
-    issuance_status: Literal["issued"]
     renewed_from_key_id: str
     api_key_plaintext: str | None = None
     email_warning: str | None = None

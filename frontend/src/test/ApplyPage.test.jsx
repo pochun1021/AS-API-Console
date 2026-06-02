@@ -138,6 +138,46 @@ test("shows Chinese error message when API returns English message", async () =>
   expect(await screen.findByText("你目前不符合申請資格，無法申請 API Key。")).toBeInTheDocument();
 });
 
+test("shows actionable auth-context validation message", async () => {
+  const user = userEvent.setup();
+  setApiProvider({
+    createApplication: vi.fn().mockRejectedValue({
+      payload: {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "missing auth headers: x-name, x-email"
+        }
+      }
+    })
+  });
+
+  renderPage(<ApplyPage auth={auth} />);
+  await user.type(screen.getByLabelText("用途"), "integration test");
+  await user.click(screen.getByRole("button", { name: "送出申請" }));
+
+  expect(await screen.findByText("登入資訊缺少必要欄位：x-name, x-email。請重新登入後再試。")).toBeInTheDocument();
+});
+
+test("shows actionable sysid validation message", async () => {
+  const user = userEvent.setup();
+  setApiProvider({
+    createApplication: vi.fn().mockRejectedValue({
+      payload: {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "x-sysid must be numeric"
+        }
+      }
+    })
+  });
+
+  renderPage(<ApplyPage auth={auth} />);
+  await user.type(screen.getByLabelText("用途"), "integration test");
+  await user.click(screen.getByRole("button", { name: "送出申請" }));
+
+  expect(await screen.findByText("登入資訊中的 SysID 格式錯誤，必須是數字。")).toBeInTheDocument();
+});
+
 test("admin proxy mode sends target_identity", async () => {
   const user = userEvent.setup();
   const searchUsers = vi.fn().mockResolvedValue({
@@ -145,9 +185,7 @@ test("admin proxy mode sends target_identity", async () => {
   });
   const createApplication = vi.fn().mockResolvedValue({
     application: { id: "app-1", account: "target.user", status: "active", issued_at: new Date().toISOString(), expires_at: new Date().toISOString() },
-    issuance_status: "pending",
-    api_key_plaintext: null,
-    pending_reason: "awaiting_admin_mode_selection"
+    api_key_plaintext: "AS-abcdefghijklmnopqrstuvwxyz1234"
   });
   setApiProvider({ createApplication, searchUsers });
   renderPage(<ApplyPage auth={adminAuth} />);
@@ -250,7 +288,35 @@ test("proxy lookup service unavailable shows soap service unavailable", async ()
   await user.type(accountInput, "target.user");
   await user.tab();
 
-  expect(await screen.findByText("soap service unavailable")).toBeInTheDocument();
+  expect(await screen.findByText("帳號查詢服務暫時不可用，請稍後再試。")).toBeInTheDocument();
+});
+
+test("proxy submit shows target-not-unique validation detail", async () => {
+  const user = userEvent.setup();
+  setApiProvider({
+    searchUsers: vi.fn().mockResolvedValue({
+      items: [{ id: "u1", account: "target.user", name: "Target User", email: "target.user@company.com", department: "02", sysid: 9999 }]
+    }),
+    createApplication: vi.fn().mockRejectedValue({
+      payload: {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "target account is not unique"
+        }
+      }
+    })
+  });
+
+  renderPage(<ApplyPage auth={adminAuth} />);
+
+  await user.click(screen.getByRole("radio", { name: "協助他人申請" }));
+  const accountInput = screen.getByLabelText("帳號");
+  await user.type(accountInput, "target.user");
+  await user.tab();
+  await user.type(screen.getByLabelText("用途"), "proxy apply");
+  await user.click(screen.getByRole("button", { name: "送出申請" }));
+
+  expect(await screen.findByText("查詢到多筆相同帳號，請重新查詢並選擇正確人員。")).toBeInTheDocument();
 });
 
 test("proxy account lookup hint is visible only in proxy mode", async () => {

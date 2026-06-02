@@ -3,13 +3,29 @@ import { enUS, zhTW } from "@mui/x-data-grid/locales";
 import { messages } from "./messages";
 
 const LocaleContext = createContext(null);
+
+function formatMessage(template, params = {}) {
+  return Object.entries(params).reduce(
+    (message, [key, value]) => message.replaceAll(`{${key}}`, String(value)),
+    String(template || ""),
+  );
+}
+
+function normalizeTranslationArgs(fallbackOrParams, maybeParams) {
+  if (fallbackOrParams && typeof fallbackOrParams === "object" && !Array.isArray(fallbackOrParams)) {
+    return { fallback: "", params: fallbackOrParams };
+  }
+  return { fallback: fallbackOrParams || "", params: maybeParams || {} };
+}
+
 const fallbackLocaleContext = {
   locale: "zh-TW",
   setLocale: () => {},
   gridLocaleText: zhTW.components.MuiDataGrid.defaultProps.localeText,
-  t(key, fallback = "") {
+  t(key, fallbackOrParams = "", maybeParams = {}) {
     const dict = messages["zh-TW"];
-    return dict[key] || fallback || key;
+    const { fallback, params } = normalizeTranslationArgs(fallbackOrParams, maybeParams);
+    return formatMessage(dict[key] || fallback || key, params);
   }
 };
 
@@ -43,8 +59,9 @@ export function LocaleProvider({ children }) {
       locale,
       setLocale,
       gridLocaleText,
-      t(key, fallback = "") {
-        return dict[key] || fallback || key;
+      t(key, fallbackOrParams = "", maybeParams = {}) {
+        const { fallback, params } = normalizeTranslationArgs(fallbackOrParams, maybeParams);
+        return formatMessage(dict[key] || fallback || key, params);
       }
     };
   }, [locale]);

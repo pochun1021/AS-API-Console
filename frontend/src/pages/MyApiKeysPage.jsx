@@ -148,12 +148,10 @@ export default function MyApiKeysPage({ auth }) {
     setBanner("");
     try {
       const response = await apiClient.renewApiKey(id, auth);
-      if (response?.issuance_status === "issued" && response?.api_key_plaintext) {
+      if (response?.api_key_plaintext) {
         setRenewIssued(response);
         setRenewCopySucceeded(false);
         setRenewCopyError("");
-      } else {
-        setBanner(t("mykeys_renew_pending"));
       }
       setBanner((prev) => prev || t("mykeys_renew_done"));
       await load();
