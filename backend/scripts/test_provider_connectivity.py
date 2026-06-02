@@ -27,13 +27,12 @@ def main() -> int:
 
     test_payload = {
         "key_alias": f"connectivity_test_{os.getpid()}",
-        "duration": "30s",
-        "models": ["gemma-4-31B-it"],
+        "duration": "30d",
         "max_budget": 0.01,
         "tpm_limit": 1,
         "rpm_limit": 1,
-        "budget_duration": "30s",
-        "key_type": "default"
+        "budget_duration": "30d",
+        "key_type": "llm_api"
     }
 
     url = f"{base_url}/key/generate"
@@ -65,7 +64,8 @@ def main() -> int:
                 print("\n[HINT] POSSIBLE CAUSES FOR 403:")
                 print("1. PROVIDER_MASTER_KEY is incorrect or has been revoked.")
                 print("2. The IP address of this server is not whitelisted by the provider.")
-                print("3. The payload contains models or settings your key is not authorized to use.")
+                print("3. The request was rejected by a gateway, WAF, or upstream policy before reaching the provider app.")
+                print("4. The payload fields do not match the provider contract expected by this deployment.")
             return 1
 
     except httpx.TimeoutException:

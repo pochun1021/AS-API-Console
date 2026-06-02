@@ -2,8 +2,8 @@
 
 > Source domain: `api.ascs.sinica.edu.tw`  
 > Purpose: API key management for AI API service  
-> Default model: `["gemma-4-31B-it"]`  
-> Default key type: `AI API`
+> Repo integration contract: no `models` field in outbound requests  
+> Repo key type: `llm_api`
 
 ---
 
@@ -22,6 +22,7 @@ https://api.ascs.sinica.edu.tw
 
 - All endpoints are related to API key lifecycle management.
 - Request and response examples are based on the provided external API specification.
+- This repo currently uses a narrower outbound contract than the broader upstream provider API: generated requests omit `models` and send `key_type=llm_api`.
 - Sensitive fields such as `key`, `token`, and generated API keys must not be logged in plaintext.
 - Recommended timeout: define explicitly in application code, for example `30s`.
 - Authentication method was not specified in the source file. Confirm whether these management APIs require Bearer Token, API Key, or another authorization mechanism before implementation.
@@ -79,7 +80,6 @@ Generate an API key based on the provided data.
 |---|---|---:|---|
 | `duration` | `string` | No | Token validity duration. Example: `30s`, `30m`, `30h`, `30d`. |
 | `key_alias` | `string` | No | User-defined key alias. |
-| `models` | `array` | No | Model names the user is allowed to call. If empty, the key can call all models. |
 | `max_budget` | `float` | No | Maximum budget for the generated key. |
 | `rpm_limit` | `integer` | No | Requests per minute limit. |
 | `tpm_limit` | `integer` | No | Tokens per minute limit. |
@@ -92,12 +92,11 @@ Generate an API key based on the provided data.
 {
   "key_alias": "string",
   "duration": "string",
-  "models": [],
   "max_budget": 0,
   "tpm_limit": 0,
   "rpm_limit": 0,
   "budget_duration": "string",
-  "key_type": "default"
+  "key_type": "llm_api"
 }
 ```
 
