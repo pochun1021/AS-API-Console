@@ -37,15 +37,17 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 2. Check whether requested changes touch protected contract or protected API surface.
 3. If yes, update `docs/SPEC.md` in the same task and keep acceptance criteria consistent.
 4. Keep changes scoped; do not mix unrelated edits.
-5. For DB migration changes, verify Alembic `revision` naming constraints (length <= 32 chars) before running upgrade.
-6. After any frontend code change, run `npm run build` in `frontend` and report the result.
-7. Report what changed, which spec rules were affected, and any residual risk.
+5. For DB migration changes, verify Alembic `revision` naming constraints (length <= 32 chars) and `down_revision` links before validation.
+6. For DB migration changes, run `cd backend && uv run alembic upgrade head` and treat any failure (missing `uv`, env/config issue, DB connectivity issue, or Alembic error) as a blocking error that must be reported.
+7. After any frontend code change, run `npm run build` in `frontend` and report the result.
+8. Report what changed, which spec rules were affected, and any residual risk.
 
 ## Change Rules
 - Terminology must stay consistent across files (`sysid`, `user/admin`, resource-oriented routes).
 - Do not silently introduce new roles, duplicate status flags, or parallel auth truth sources.
 - Because not all environments have `uv`, Python dependency management must provide both `pyproject.toml` and `requirements.txt`; dependency changes must keep them in sync.
 - Alembic migration `revision` value (in `backend/db/migrations/versions/*.py`) must be <= 32 characters to fit `alembic_version.version_num`.
+- DB migration validation command for agents is `cd backend && uv run alembic upgrade head`; do not mark migration work as validated if this command did not succeed.
 - Do not revert unrelated local changes.
 - If unexpected dirty changes are found, stop and ask for direction.
 
@@ -54,7 +56,7 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - `README.md` and `docs/SPEC.md` use consistent route/identity/role wording when touched.
 - Acceptance criteria are updated when behavior or contract changes.
 - If Python dependencies changed, ensure `requirements.txt` exists and is updated consistently with `pyproject.toml`.
-- If a migration is added/edited, ensure Alembic `revision` length is <= 32 chars and `down_revision` links correctly.
+- If a migration is added/edited, ensure Alembic `revision` length is <= 32 chars, `down_revision` links correctly, and `cd backend && uv run alembic upgrade head` succeeds.
 - If frontend files were modified, `npm run build` has been executed in `frontend` successfully.
 
 ## CI / Workflow Trigger Rules
