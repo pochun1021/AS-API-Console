@@ -39,11 +39,14 @@
   - `status in ('active', 'inactive')`
 
 ### `api_key_applications`
-- 核心欄位：`id`, `account`, `user_id`, `name`, `email`, `department`, `application_date`, `duration_months`, `purpose`, `status`, `issued_at`, `expires_at`, `revoked_at`, `sysid`, `created_at`, `updated_at`
-- 關聯：`user_id -> users.id`
+- 核心欄位：`id`, `account`, `name`, `email`, `department`, `application_date`, `duration_months`, `purpose`, `status`, `issued_at`, `expires_at`, `revoked_at`, `sysid`, `is_proxy_submission`, `proxy_operator_account`, `created_at`, `updated_at`
 - 約束：
   - `duration_months in (1, 6, 12)`
   - `status in ('active', 'revoked', 'expired')`
+- 欄位語意：
+  - application ownership 以 applicant snapshot（`account`, `name`, `email`, `department`, `sysid`）為準
+  - `is_proxy_submission = false` 時，`proxy_operator_account = NULL`
+  - `is_proxy_submission = true` 時，`proxy_operator_account` 記錄實際代送的 `admin account`
 
 ### `api_keys`
 - 核心欄位：`id`, `application_id`, `key_hash`, `masked_key`, `key_ciphertext`, `key_kek_version`, `key_prefix`, `length`, `security_level`, `status`, `created_at`
