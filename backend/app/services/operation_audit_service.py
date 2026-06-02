@@ -9,6 +9,28 @@ from sqlalchemy.orm import Session
 from app.core.auth import CurrentUser
 from db.models.operation_audit_logs import OperationAuditLog
 
+ALLOWED_METADATA_KEYS = {
+    "application_id",
+    "budget_duration",
+    "budget_max_budget",
+    "deactivated_count",
+    "fetched_count",
+    "inserted_count",
+    "key_id",
+    "note",
+    "rate_limit_rpm",
+    "rate_limit_tpm",
+    "whitelist_id",
+    "target_admin_id",
+    "status",
+    "duration_months",
+    "is_proxy_submission",
+    "provider_request_id",
+    "provider_operation_id",
+    "unchanged_count",
+    "updated_count",
+}
+
 
 @dataclass(slots=True)
 class RequestAuditContext:
@@ -33,6 +55,16 @@ class OperationAuditService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    def _sanitize_metadata(self, metadata: dict | None) -> dict | None:
+        if not metadata:
+            return None
+        sanitized = {
+            key: value
+            for key, value in metadata.items()
+            if key in ALLOWED_METADATA_KEYS and value is not None
+        }
+        return sanitized or None
+
     def log(
         self,
         *,
@@ -46,7 +78,8 @@ class OperationAuditService:
         target_id: str | None = None,
         metadata: dict | None = None,
     ) -> None:
-        metadata_json = json.dumps(metadata, ensure_ascii=False) if metadata else None
+        sanitized_metadata = self._sanitize_metadata(metadata)
+        metadata_json = json.dumps(sanitized_metadata, ensure_ascii=False) if sanitized_metadata else None
         row = OperationAuditLog(
             event_type=event_type,
             action=action,

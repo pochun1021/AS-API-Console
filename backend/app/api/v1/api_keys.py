@@ -102,6 +102,8 @@ def create_application(
             "application_id": result["application"]["id"],
             "duration_months": payload.duration_months,
             "is_proxy_submission": payload.target_identity is not None,
+            "provider_request_id": result.get("provider_request_id"),
+            "provider_operation_id": result.get("provider_operation_id"),
         },
     )
     return result
@@ -232,7 +234,12 @@ def revoke_api_key(
         target_type=target_type,
         target_id=result["id"],
         context=context,
-        metadata={"key_id": result["id"], "status": result["status"]},
+        metadata={
+            "key_id": result["id"],
+            "status": result["status"],
+            "provider_request_id": result.get("provider_request_id"),
+            "provider_operation_id": result.get("provider_operation_id"),
+        },
     )
     return result
 
@@ -292,7 +299,12 @@ def renew_api_key(
         target_type=target_type,
         target_id=result["id"],
         context=context,
-        metadata={"key_id": result["id"], "status": result["status"]},
+        metadata={
+            "key_id": result["id"],
+            "status": result["status"],
+            "provider_request_id": result.get("provider_request_id"),
+            "provider_operation_id": result.get("provider_operation_id"),
+        },
     )
     return result
 
@@ -353,7 +365,13 @@ def extend_api_key(
         target_type=target_type,
         target_id=result["id"],
         context=context,
-        metadata={"key_id": result["id"], "status": result["status"], "duration_months": payload.duration_months},
+        metadata={
+            "key_id": result["id"],
+            "status": result["status"],
+            "duration_months": payload.duration_months,
+            "provider_request_id": result.get("provider_request_id"),
+            "provider_operation_id": result.get("provider_operation_id"),
+        },
     )
     return result
 

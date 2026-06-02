@@ -405,10 +405,12 @@ Base path：`/main/api/v1`
   "key_type": "AI API"
 }
 ```
+  - auth header 固定為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；沿用既有 `PROVIDER_MASTER_KEY` 作為 Bearer token 值
   - `budget_duration` 由系統設定映射：`daily->1d`、`weekly->7d`、`monthly->30d`
   - `duration` 由 `duration_months` 映射：`1->30d`、`6->180d`、`12->360d`
   - 目前不送 `budget_limits`
   - 僅送上述新欄位；不再送舊欄位（例如 `account`、`application_id`、`duration_months`、`purpose`、`limit_strategy`）
+  - provider 成功回應需自 `response.key` 讀取新明文 secret；不得假設回傳欄位為 `api_key_plaintext`
 
 ### 1-1) 全域金鑰條件設定（Admin only）
 - `GET /main/api/v1/limit-strategy-config`
@@ -513,6 +515,7 @@ Base path：`/main/api/v1`
 - 規則：
   - `user` 僅可停用本人 `active` key；`admin` 可停用任意 `active` key。
   - revoke 對應 provider `block`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
+  - 呼叫 provider `block` 時，request body 需以 `key` 欄位傳送舊明文 key。
   - provider `block` 成功後，才可將本地 `api_keys.status` 與對應 `api_key_applications.status` 同步為 `revoked`。
   - provider timeout / 5xx / 明確拒絕、缺少密文、或解密失敗時，本地不得先標記為 `revoked`。
 
@@ -521,10 +524,12 @@ Base path：`/main/api/v1`
 - 規則：
   - `user` 僅可續發本人 `revoked` key；`admin` 可續發任意 `revoked` key。
   - renew 對應 provider `regenerate`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
+  - 呼叫 provider `regenerate` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format。
   - renew 會在 provider 成功後建立新 key（`status=active`），不是把舊 key 改回 `active`。
   - 新 key 的 `duration_months` 與 `purpose` 需沿用來源 key 的原資料。
   - provider 成功但本地同步失敗時，需保留可追蹤資訊並支援 retry / reconciliation，避免 provider 與本地資料不一致。
 - renew 成功時，回傳一次性 `api_key_plaintext`。
+  - renew 的新明文需自 provider response `key` 讀取。
   - renew 成功後需寄送 Email 通知申請者「已更新金鑰」；通知信不得包含明文 key。
   - 續發成功後，來源 key 對 `user` 列表需隱藏；`admin` 列表仍需可見完整歷史。
 
@@ -542,6 +547,7 @@ Base path：`/main/api/v1`
   - `duration_months` 僅允許 `1|6|12`。
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
   - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
+  - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format。
   - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`）。
   - provider timeout / 5xx / 明確拒絕、缺少密文、或解密失敗時，本地不得先更新有效期限或狀態。
   - extend 不會回傳 `api_key_plaintext`。
@@ -852,7 +858,7 @@ Base path：`/main/api/v1`
 84. 登入稽核查詢結果需依 `created_at desc` 排序，並支援 `page/page_size` 分頁。
 85. 登入稽核查詢需支援 `provider` 與 `result` 篩選，且回傳不得包含敏感憑證資訊。
 86. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳狀態需以 `expires_at` 即時計算到期口徑；已過期者對外顯示為 `expired`。
-87. `POST /main/api/v1/api-keys/{id}/renew` 判定需採與查詢一致的到期口徑；已過期且未續發過之 key 可續發。
+87. `POST /main/api/v1/api-keys/{id}/renew` 僅允許 `revoked` key；`active|expired` 一律回傳 `KEY_NOT_RENEWABLE`。
 88. `GET /main/api/v1/api-keys/statistics/users` 的 `scope` 與 `active/revoked/expired` 計數需採同一到期口徑，避免已過期 key 被算入 `active`。
 89. 即使 expired 回填排程停用或失敗，`GET /main/api/v1/api-keys`、`GET /main/api/v1/api-keys/{id}`、`GET /main/api/v1/api-keys/statistics/users` 仍需依 effective status 正確呈現 expired。
 90. expired 回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked` 資料。
@@ -869,6 +875,9 @@ Base path：`/main/api/v1`
 101. `admin` 可於 `/institute-view` 呼叫 `POST /main/api/v1/institutes/sync` 手動同步；成功後需回傳同步統計並可重新讀取最新 `active` institutes。
 102. `POST /main/api/v1/institutes/sync` 在 Persnl SOAP 不可用時需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 103. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`models`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；其中 `models` 預設 `["gemma-4-31B-it"]`、`key_type` 固定 `"AI API"`、`duration` 需由 `duration_months(1|6|12)` 映射為 `30d|180d|360d`、且不得送 `budget_limits`。
+104. 外部 provider auth header 需為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；不得再送 `x-master-key`。
+105. 外部 provider `POST /key/update`、`POST /key/regenerate`、`POST /key/block` 若需舊明文 key，request body 一律使用 `key` 欄位傳送；`generate`/`regenerate` 成功時一律自 response `key` 讀取新明文 secret。
+106. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 
 ## Roadmap
 ### Phase 1：Foundation
