@@ -354,3 +354,15 @@ def test_limit_strategy_patch_upserts_missing_row(client, admin_headers):
     assert resp.status_code == 200
     assert resp.json() == payload
     assert _count_limit_strategy_config() == 1
+
+
+def test_limit_strategy_patch_accepts_zero_rate_limits(client, admin_headers):
+    payload = {
+        "budget_max_budget": "3000",
+        "budget_duration": "weekly",
+        "rate_limit_tpm": 0,
+        "rate_limit_rpm": 0,
+    }
+    resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
+    assert resp.status_code == 200
+    assert resp.json() == payload

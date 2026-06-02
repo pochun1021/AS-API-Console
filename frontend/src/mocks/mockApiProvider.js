@@ -984,14 +984,16 @@ export const mockApiProvider = {
     if (!String(payload?.budget_max_budget || "").trim() || !String(payload?.budget_duration || "").trim()) {
       throw createError("MISSING_BUDGET_FIELDS", "budget config is required", 422);
     }
-    if (!Number(payload?.rate_limit_tpm) || !Number(payload?.rate_limit_rpm)) {
+    const rateLimitTpm = Number(payload?.rate_limit_tpm);
+    const rateLimitRpm = Number(payload?.rate_limit_rpm);
+    if (!Number.isFinite(rateLimitTpm) || !Number.isFinite(rateLimitRpm) || rateLimitTpm < 0 || rateLimitRpm < 0) {
       throw createError("MISSING_RATE_LIMIT_FIELDS", "rate limit config is required", 422);
     }
     limitStrategyConfig = {
       budget_max_budget: String(payload.budget_max_budget).trim(),
       budget_duration: String(payload.budget_duration).trim(),
-      rate_limit_tpm: Number(payload.rate_limit_tpm),
-      rate_limit_rpm: Number(payload.rate_limit_rpm)
+      rate_limit_tpm: rateLimitTpm,
+      rate_limit_rpm: rateLimitRpm
     };
     return { ...limitStrategyConfig };
   },

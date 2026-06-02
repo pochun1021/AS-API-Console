@@ -15,6 +15,14 @@ import { apiClient } from "../api/client";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 
+function parseRateLimitInput(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+  return Number(normalized);
+}
+
 export default function LimitStrategiesPage({ auth }) {
   const { t } = useLocale();
   const [loading, setLoading] = useState(true);
@@ -54,11 +62,17 @@ export default function LimitStrategiesPage({ auth }) {
     setBanner("");
     setSaving(true);
     try {
+      const rateLimitTpm = parseRateLimitInput(form.rate_limit_tpm);
+      const rateLimitRpm = parseRateLimitInput(form.rate_limit_rpm);
+      if (rateLimitTpm === null || rateLimitRpm === null || Number.isNaN(rateLimitTpm) || Number.isNaN(rateLimitRpm)) {
+        setBanner(t("apply_error_rate_limit_required"));
+        return;
+      }
       const payload = {
         budget_max_budget: String(form.budget_max_budget).trim(),
         budget_duration: String(form.budget_duration).trim(),
-        rate_limit_tpm: Number(form.rate_limit_tpm),
-        rate_limit_rpm: Number(form.rate_limit_rpm)
+        rate_limit_tpm: rateLimitTpm,
+        rate_limit_rpm: rateLimitRpm
       };
       await apiClient.updateLimitStrategyConfig(payload, auth);
       setBanner(t("limit_strategy_updated_done"));

@@ -498,6 +498,26 @@ def test_provider_payload_builder_uses_external_contract():
     }
 
 
+def test_provider_payload_builder_converts_zero_rate_limits_to_null():
+    from app.services.api_keys_service import ApiKeysService, IssuanceConfigValues
+
+    service = object.__new__(ApiKeysService)
+
+    payload = service._build_provider_payload(
+        owner_account="user1",
+        duration_months=1,
+        config=IssuanceConfigValues(
+            max_budget="1000",
+            budget_duration="monthly",
+            tpm_limit=0,
+            rpm_limit=0,
+        ),
+    )
+
+    assert payload["tpm_limit"] is None
+    assert payload["rpm_limit"] is None
+
+
 def test_applicant_mail_body_does_not_include_application_id():
     from app.services.mail_service import MailService
 

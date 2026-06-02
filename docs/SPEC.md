@@ -407,6 +407,7 @@ Base path：`/main/api/v1`
   - auth header 固定為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；沿用既有 `PROVIDER_MASTER_KEY` 作為 Bearer token 值
   - `budget_duration` 由系統設定映射：`daily->1d`、`weekly->7d`、`monthly->30d`
   - `duration` 由 `duration_months` 映射：`1->30d`、`6->180d`、`12->360d`
+  - 若全域設定中的 `tpm_limit` 或 `rpm_limit` 為 `0`，送往 provider 時需轉為 `null`，表示不限制
   - 目前不送 `budget_limits`
   - 僅送上述新欄位；不再送舊欄位（例如 `account`、`application_id`、`duration_months`、`purpose`、`limit_strategy`）
   - provider 成功回應需自 `response.key` 讀取新明文 secret；不得假設回傳欄位為 `api_key_plaintext`
@@ -420,8 +421,8 @@ Base path：`/main/api/v1`
 - 欄位語意同金鑰條件模板：
   - `max_budget`：總金額額度（USD）。
   - `budget_duration`：重置週期（`daily|weekly|monthly`）。
-  - `tpm_limit`：每分鐘 Token 數限制。
-  - `rpm_limit`：每分鐘請求數限制。
+  - `tpm_limit`：每分鐘 Token 數限制；允許 `0`，表示送往 provider 時轉為 `null`（不限制）。
+  - `rpm_limit`：每分鐘請求數限制；允許 `0`，表示送往 provider 時轉為 `null`（不限制）。
 - 每把 API Key 需同時套用 `budget` 與 `rate_limit` 兩種限制；不提供二選一模式。
 - 一般使用者不可查看或修改金鑰條件設定。
 - 系統需透過 migration 預先補齊 `global-limit-strategy-config` 預設資料列（`1000/monthly/10000/500`）。
@@ -873,7 +874,7 @@ Base path：`/main/api/v1`
 100. `admin` 可於 `/institute-view` 頁面查看 `GET /main/api/v1/institutes` 回傳的 `active` institutes 清單與 `total`，以確認 DB 資料已寫入。
 101. `admin` 可於 `/institute-view` 呼叫 `POST /main/api/v1/institutes/sync` 手動同步；成功後需回傳同步統計並可重新讀取最新 `active` institutes。
 102. `POST /main/api/v1/institutes/sync` 在 Persnl SOAP 不可用時需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
-103. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`、`duration` 需由 `duration_months(1|6|12)` 映射為 `30d|180d|360d`、且不得送 `models` 或 `budget_limits`。
+103. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`、`duration` 需由 `duration_months(1|6|12)` 映射為 `30d|180d|360d`、`rpm_limit` / `tpm_limit` 若本地設定值為 `0` 則需送 `null`，且不得送 `models` 或 `budget_limits`。
 104. 外部 provider auth header 需為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；不得再送 `x-master-key`。
 105. 外部 provider `POST /key/update`、`POST /key/regenerate`、`POST /key/block` 若需舊明文 key，request body 一律使用 `key` 欄位傳送；`generate`/`regenerate` 成功時一律自 response `key` 讀取新明文 secret。
 106. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。

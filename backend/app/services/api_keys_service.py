@@ -91,6 +91,10 @@ def _to_provider_duration(duration_months: int) -> str:
     return mapping[duration_months]
 
 
+def _to_provider_rate_limit(limit: int) -> int | None:
+    return None if limit == 0 else limit
+
+
 def _effective_status(*, status: str, expires_at: datetime) -> str:
     expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
     if status == "active" and expires_at_utc < datetime.now(UTC):
@@ -258,7 +262,9 @@ class ApiKeysService:
         rpm_limit = config.rate_limit_rpm
         if not max_budget or not budget_duration:
             raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "budget config is incomplete", 409)
-        if not tpm_limit or not rpm_limit or int(tpm_limit) <= 0 or int(rpm_limit) <= 0:
+        if tpm_limit is None or rpm_limit is None:
+            raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "rate limit config is incomplete", 409)
+        if int(tpm_limit) < 0 or int(rpm_limit) < 0:
             raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "rate limit config is incomplete", 409)
         return IssuanceConfigValues(
             max_budget=max_budget,
@@ -278,8 +284,8 @@ class ApiKeysService:
             "max_budget": float(config.max_budget),
             "budget_duration": _to_provider_budget_duration(config.budget_duration),
             "duration": _to_provider_duration(duration_months),
-            "tpm_limit": config.tpm_limit,
-            "rpm_limit": config.rpm_limit,
+            "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
+            "rpm_limit": _to_provider_rate_limit(config.rpm_limit),
             "key_alias": _default_alias(owner_account),
             "key_type": "llm_api",
         }
@@ -358,11 +364,14 @@ class ApiKeysService:
             raise ApiError("FORBIDDEN", "admin role required", 403)
         budget_max_budget = str(payload.get("budget_max_budget") or "").strip()
         budget_duration = str(payload.get("budget_duration") or "").strip()
-        rate_limit_tpm = int(payload.get("rate_limit_tpm") or 0)
-        rate_limit_rpm = int(payload.get("rate_limit_rpm") or 0)
+        try:
+            rate_limit_tpm = int(payload["rate_limit_tpm"])
+            rate_limit_rpm = int(payload["rate_limit_rpm"])
+        except (KeyError, TypeError, ValueError):
+            raise ApiError("MISSING_RATE_LIMIT_FIELDS", "rate limit config is required", 422) from None
         if not budget_max_budget or not budget_duration:
             raise ApiError("MISSING_BUDGET_FIELDS", "budget config is required", 422)
-        if rate_limit_tpm <= 0 or rate_limit_rpm <= 0:
+        if rate_limit_tpm < 0 or rate_limit_rpm < 0:
             raise ApiError("MISSING_RATE_LIMIT_FIELDS", "rate limit config is required", 422)
         config = self.session.get(LimitStrategyConfig, LIMIT_STRATEGY_CONFIG_ID)
         now = datetime.now(UTC)
