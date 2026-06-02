@@ -97,6 +97,7 @@ export ENV_FILE=/home/app/config/.env
 - `PROVIDER_BASE_URL`：可選，外部 key provider base URL（例如 `https://provider.internal`）；系統會用於 `POST /key/generate`、`/key/update`、`/key/regenerate`、`/key/block`
 - `PROVIDER_MASTER_KEY`：可選，provider Bearer token 值；系統會送出 `Authorization: Bearer ${PROVIDER_MASTER_KEY}`
 - `PROVIDER_TIMEOUT_SECONDS`：可選，provider timeout 秒數（預設 `3.0`）
+- `PROVIDER_DEBUG_LOGGING`：可選，啟用 provider outbound debug log；僅記錄 path、status code、payload keys、request_id / operation_id 等非敏感摘要，不記錄 Bearer token 或 key/token 明文
   - provider `generate/regenerate` 成功時，後端會自 provider response `key` 讀取新明文 key，再轉成對外 API 的一次性 `api_key_plaintext`
 - `SESSION_SECRET_KEY`：必填（正式環境），FastAPI session 簽章密鑰
 - `ALLOW_HEADER_AUTH`：可選；僅供 `dev/test` 使用的 header auth bootstrap，正式環境應為 `false`

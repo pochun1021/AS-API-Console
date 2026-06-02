@@ -1,9 +1,14 @@
 import json
+import logging
 from dataclasses import dataclass
-from urllib import error, request
+
+import requests
 
 from app.core.config import get_settings
 from app.core.outbound import validate_outbound_url
+
+logger = logging.getLogger(__name__)
+_SENSITIVE_FIELDS = {"authorization", "key", "token"}
 
 
 @dataclass(slots=True)
@@ -63,15 +68,60 @@ def _normalize_provider_base_url(base_url: str | None) -> str:
         raise ProviderUnavailableError("provider base url must use http or https") from exc
 
 
+def _response_summary(payload: object) -> dict[str, object]:
+    if isinstance(payload, dict):
+        return {"json_keys": sorted(str(key) for key in payload.keys() if str(key).lower() not in _SENSITIVE_FIELDS)}
+    if isinstance(payload, list):
+        return {"json_type": "list", "items": len(payload)}
+    if isinstance(payload, str):
+        return {"text_length": len(payload)}
+    return {"json_type": type(payload).__name__}
+
+
 class ProviderClient:
     def __init__(self) -> None:
         settings = get_settings()
         self.base_url = _normalize_provider_base_url(settings.provider_base_url)
         self.master_key = settings.provider_master_key or ""
         self.timeout_seconds = settings.provider_timeout_seconds
+        self.debug_logging = settings.provider_debug_logging
 
     def is_configured(self) -> bool:
         return bool(self.base_url and self.master_key)
+
+    def _log_request(self, *, path: str, payload: dict) -> None:
+        if not self.debug_logging:
+            return
+        logger.info(
+            "provider request",
+            extra={
+                "provider_path": path,
+                "payload_keys": sorted(payload.keys()),
+                "timeout_seconds": self.timeout_seconds,
+            },
+        )
+
+    def _log_response(
+        self,
+        *,
+        path: str,
+        status_code: int,
+        payload: object,
+        request_id: str | None = None,
+        operation_id: str | None = None,
+    ) -> None:
+        if not self.debug_logging:
+            return
+        logger.info(
+            "provider response",
+            extra={
+                "provider_path": path,
+                "status_code": status_code,
+                "request_id": request_id,
+                "operation_id": operation_id,
+                **_response_summary(payload),
+            },
+        )
 
     def _perform_request(
         self,
@@ -83,31 +133,34 @@ class ProviderClient:
         if not self.is_configured():
             raise ProviderUnavailableError("provider is not configured")
 
-        req = request.Request(
-            f"{self.base_url}{path}",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.master_key}",
-            },
-            method="POST",
-        )
+        self._log_request(path=path, payload=payload)
 
         try:
-            with request.urlopen(req, timeout=self.timeout_seconds) as resp:  # nosec B310
-                data = json.loads(resp.read().decode("utf-8") or "{}")
-        except error.HTTPError as exc:
+            resp = requests.post(
+                f"{self.base_url}{path}",
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.master_key}",
+                },
+                timeout=self.timeout_seconds,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.HTTPError as exc:
             response_payload: object = {}
             try:
-                response_payload = json.loads(exc.read().decode("utf-8") or "{}")
+                response_payload = exc.response.json() if exc.response is not None else {}
             except Exception:  # noqa: BLE001
                 response_payload = {}
-            if exc.code == 422:
+            status_code = exc.response.status_code if exc.response is not None else 0
+            self._log_response(path=path, status_code=status_code, payload=response_payload)
+            if status_code == 422:
                 raise ProviderBadRequestError(_extract_validation_message(response_payload)) from exc
-            if 400 <= exc.code < 500:
-                raise ProviderBadRequestError(f"provider rejected request: {exc.code}") from exc
-            raise ProviderUnavailableError(f"provider unavailable: {exc.code}") from exc
-        except (error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            if 400 <= status_code < 500:
+                raise ProviderBadRequestError(f"provider rejected request: {status_code}") from exc
+            raise ProviderUnavailableError(f"provider unavailable: {status_code}") from exc
+        except (requests.RequestException, json.JSONDecodeError) as exc:
             raise ProviderUnavailableError("provider unavailable") from exc
 
         request_id: str | None = None
@@ -115,6 +168,13 @@ class ProviderClient:
         if isinstance(data, dict):
             request_id = str(data.get("request_id") or "").strip() or None
             operation_id = str(data.get("operation_id") or "").strip() or None
+        self._log_response(
+            path=path,
+            status_code=resp.status_code,
+            payload=data,
+            request_id=request_id,
+            operation_id=operation_id,
+        )
         if not require_plaintext:
             return ProviderMutationResult(success=True, request_id=request_id, operation_id=operation_id)
 
