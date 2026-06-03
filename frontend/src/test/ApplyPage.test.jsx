@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -38,6 +38,30 @@ test("shows plaintext key once after successful submit", async () => {
   expect(await screen.findByText("此明文金鑰只會顯示一次，請立即保存。")).toBeInTheDocument();
   const plaintext = screen.getByText((content) => content.startsWith("AS-"));
   expect(plaintext.textContent).toHaveLength(33);
+  await user.click(screen.getByRole("button", { name: "我知道了" }));
+  await waitFor(() => {
+    expect(screen.queryByText("此明文金鑰只會顯示一次，請立即保存。")).not.toBeInTheDocument();
+  });
+});
+
+test("issued key dialog stays open on backdrop click and escape", async () => {
+  const user = userEvent.setup();
+  renderPage(<ApplyPage auth={auth} />);
+
+  await user.type(screen.getByLabelText("用途"), "integration test");
+  await user.click(screen.getByRole("button", { name: "送出申請" }));
+
+  expect(await screen.findByText("此明文金鑰只會顯示一次，請立即保存。")).toBeInTheDocument();
+
+  const backdrop = document.querySelector(".MuiBackdrop-root");
+  expect(backdrop).not.toBeNull();
+  fireEvent.mouseDown(backdrop);
+  fireEvent.click(backdrop);
+  expect(screen.getByText("此明文金鑰只會顯示一次，請立即保存。")).toBeInTheDocument();
+
+  fireEvent.keyDown(document.activeElement || document.body, { key: "Escape" });
+  expect(screen.getByText("此明文金鑰只會顯示一次，請立即保存。")).toBeInTheDocument();
+
   await user.click(screen.getByRole("button", { name: "我知道了" }));
   await waitFor(() => {
     expect(screen.queryByText("此明文金鑰只會顯示一次，請立即保存。")).not.toBeInTheDocument();

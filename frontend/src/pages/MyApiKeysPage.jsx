@@ -67,6 +67,13 @@ async function copyText(text) {
   }
 }
 
+function handlePersistentDialogClose(reason, closeDialog) {
+  if (reason === "backdropClick" || reason === "escapeKeyDown") {
+    return;
+  }
+  closeDialog();
+}
+
 export default function MyApiKeysPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const { formatDepartment } = useDepartmentDisplay(auth);
@@ -523,7 +530,11 @@ export default function MyApiKeysPage({ auth }) {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(renewIssued)} onClose={closeRenewIssuedDialog}>
+      <Dialog
+        open={Boolean(renewIssued)}
+        disableEscapeKeyDown
+        onClose={(_event, reason) => handlePersistentDialogClose(reason, closeRenewIssuedDialog)}
+      >
         <DialogTitle>{locale === "zh-TW" ? "金鑰已更新" : "API Key Renewed"}</DialogTitle>
         <DialogContent>
           <Typography sx={{ mb: 1 }}>

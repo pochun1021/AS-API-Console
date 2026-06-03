@@ -103,6 +103,13 @@ async function copyText(text) {
   }
 }
 
+function handlePersistentDialogClose(reason, closeDialog) {
+  if (reason === "backdropClick" || reason === "escapeKeyDown") {
+    return;
+  }
+  closeDialog();
+}
+
 export default function ApplyPage({ auth }) {
   const { locale, t } = useLocale();
   const isZh = locale === "zh-TW";
@@ -376,7 +383,11 @@ export default function ApplyPage({ auth }) {
         </Card>
       </Box>
 
-      <Dialog open={Boolean(issued)} onClose={closeIssuedDialog}>
+      <Dialog
+        open={Boolean(issued)}
+        disableEscapeKeyDown
+        onClose={(_event, reason) => handlePersistentDialogClose(reason, closeIssuedDialog)}
+      >
         <DialogTitle>{isZh ? "API Key 已建立" : "API Key Created"}</DialogTitle>
         <DialogContent>
           <>

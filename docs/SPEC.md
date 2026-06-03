@@ -54,6 +54,7 @@
   - `admin` 代申請時，若帳號查無需顯示「查無帳號」；若查詢服務異常需顯示 `soap service unavailable`，兩者皆以獨立 `error` alert 顯示於上述 info 提示之後
   - 限制策略由管理者透過模板資源維護；一般使用者申請時不可提交策略細節
 - 成功送出後顯示一次性 key，並提供複製操作；複製成功需有明確視覺回饋（check icon 後恢復）。
+- 一次性明文 key 彈窗僅可透過明示確認按鈕關閉；不得因 backdrop click、`Esc` 或其他一般 `onClose` 事件消失。
 - 複製流程以 Clipboard API 為唯一可驗證複製路徑；若不可用或複製失敗，需提示使用者手動複製。
 - 透過複製 icon 觸發時不得要求使用者先反白金鑰文字，系統需直接完成複製。
 
@@ -789,7 +790,7 @@ Base path：`/main/api/v1`
 7. 核發成功的 API Key 格式需為 `AS-` + 30 碼隨機字元（總長 33）；明文 key 預設僅於建立成功當下回傳一次，一般查詢端點不得再次回傳明文。
 8. 資料庫不得儲存 API Key 明文；需保存 `key_hash`，並可保存 `key_ciphertext` / `key_kek_version` 供受控 reveal 與 lifecycle 操作使用。
 9. `POST /main/api/v1/api-keys/{id}/reveal` 僅 `admin` 可使用，回應需包含 `Cache-Control: no-store`；此端點僅供 break-glass，不得成為一般 `renew`、`extend`、`revoke` 流程的依賴。
-10. 申請成功彈窗需提供明文 key 複製功能，點擊後 icon 需切換為成功狀態並可自動恢復。
+10. 一次性明文 key 彈窗（含申請成功與 renew 成功）需提供明文 key 複製功能，點擊後 icon 需切換為成功狀態並可自動恢復，且僅可透過明示確認按鈕關閉；不得因 backdrop click、`Esc` 或其他一般 `onClose` 事件消失。
 
 ### Provider 與 Lifecycle
 11. API key lifecycle 採 external provider 為主權威；`applications`、`renew`、`extend`、`revoke` 均需先完成 provider 操作，再同步本地資料。

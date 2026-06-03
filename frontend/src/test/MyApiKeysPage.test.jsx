@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { mockApiProvider } from "../mocks/mockApiProvider";
@@ -151,6 +151,36 @@ test("user renew hides old key from list", async () => {
   expect(await screen.findByText("金鑰已更新")).toBeInTheDocument();
   await waitFor(() => {
     expect(screen.queryByText("AS-...mn56")).not.toBeInTheDocument();
+  });
+});
+
+test("renewed key dialog stays open on backdrop click and escape", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={auth} />
+    </MemoryRouter>
+  );
+
+  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
+  await user.click(moreActionButtons[1]);
+  await user.click(await screen.findByRole("menuitem", { name: "更新金鑰" }));
+  await user.click(screen.getByRole("button", { name: "確認" }));
+
+  expect(await screen.findByText("此明文金鑰只會顯示一次，請立即保存。")).toBeInTheDocument();
+
+  const backdrop = document.querySelector(".MuiBackdrop-root");
+  expect(backdrop).not.toBeNull();
+  fireEvent.mouseDown(backdrop);
+  fireEvent.click(backdrop);
+  expect(screen.getByText("此明文金鑰只會顯示一次，請立即保存。")).toBeInTheDocument();
+
+  fireEvent.keyDown(document.activeElement || document.body, { key: "Escape" });
+  expect(screen.getByText("此明文金鑰只會顯示一次，請立即保存。")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "我知道了" }));
+  await waitFor(() => {
+    expect(screen.queryByText("此明文金鑰只會顯示一次，請立即保存。")).not.toBeInTheDocument();
   });
 });
 
