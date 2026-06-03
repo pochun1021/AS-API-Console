@@ -5,6 +5,7 @@ from uuid import uuid4
 from threading import Event
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
 from db.repositories.types import AuthIdentity
@@ -63,6 +64,26 @@ def _set_expiration_notice_sent_at(key_id: str, sent_at: datetime | None) -> Non
         )
 
 
+def _set_key_expires_at_offset_days(key_id: str, *, days: int, hours: int = 1) -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    target_date = (datetime.now(UTC) + timedelta(days=days)).date()
+    target = datetime(target_date.year, target_date.month, target_date.day, hours, 0, 0, tzinfo=UTC)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE api_key_applications a
+                JOIN api_keys k ON k.application_id = a.id
+                SET a.expires_at = :target
+                WHERE k.id = :key_id
+                """
+            ),
+            {"target": target, "key_id": key_id},
+        )
+
+
 def _set_key_secret_material(key_id: str, *, key_ciphertext: str | None, key_kek_version: str | None) -> None:
     settings = get_settings()
     db_url = settings.test_database_url or settings.database_url
@@ -104,6 +125,43 @@ def _fetch_key_status_row(key_id: str) -> dict:
     return dict(row)
 
 
+def _fetch_key_notice_state(key_id: str) -> dict:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT expiration_notice_sent_at
+                FROM api_keys
+                WHERE id = :key_id
+                """
+            ),
+            {"key_id": key_id},
+        ).mappings().one()
+    return dict(row)
+
+
+def _fetch_expiration_notice_rows(key_id: str) -> list[dict]:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT notice_days_before, status, sent_at, error_message, success_notice_days_before, expires_at_snapshot
+                FROM api_key_expiration_notices
+                WHERE key_id = :key_id
+                ORDER BY created_at ASC, id ASC
+                """
+            ),
+            {"key_id": key_id},
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
 def _fetch_application_row(application_id: str) -> dict:
     settings = get_settings()
     db_url = settings.test_database_url or settings.database_url
@@ -130,7 +188,7 @@ def _fetch_application_row_for_key(key_id: str) -> dict:
         row = conn.execute(
             text(
                 """
-                SELECT a.id, a.account, a.name, a.email, a.department, a.sysid, a.is_proxy_submission, a.proxy_operator_account
+                SELECT a.id, a.account, a.name, a.email, a.department, a.sysid, a.is_proxy_submission, a.proxy_operator_account, a.expires_at
                 FROM api_key_applications a
                 JOIN api_keys k ON k.application_id = a.id
                 WHERE k.id = :key_id
@@ -637,89 +695,157 @@ def test_expiration_notice_mail_contains_expiration_and_extend_hint(monkeypatch)
         service.send_key_expiration_notice(
             to_email="user@example.com",
             owner_name="User One",
+            days_before=7,
             expires_at=expires_at,
             app_domain="",
         )
     )
 
-    assert "即將到期提醒" in captured["subject"]
+    assert "7 天後到期" in captured["subject"]
     assert captured["recipients"] == ["user@example.com"]
-    assert "到期時間：2026-06-30 01:02 UTC" in captured["body"]
+    assert "將於 7 天後到期" in captured["body"]
+    assert "到期時間：2026-06-30 09:02 台灣時間" in captured["body"]
     assert "可於到期前或到期後進行展延" in captured["body"]
-    assert "Expiration time: 2026-06-30 01:02 UTC" in captured["body"]
+    assert "expire in 7 days" in captured["body"]
+    assert "Expiration time: 2026-06-30 09:02 Asia/Taipei" in captured["body"]
     assert "You can extend this key before or after expiration." in captured["body"]
 
 
-def test_expiration_reminder_script_sends_once(client, admin_headers, user_headers, monkeypatch):
+def test_expiration_reminder_script_supports_multi_stage_and_keeps_first_notice_timestamp(
+    client, admin_headers, user_headers, monkeypatch
+):
     from scripts import send_expiration_reminders
 
     calls: list[dict] = []
-    commits = {"count": 0}
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    reminder_engine = create_engine(db_url, future=True)
+    monkeypatch.setattr(
+        "scripts.send_expiration_reminders.SessionLocal",
+        sessionmaker(bind=reminder_engine, autoflush=False, autocommit=False, class_=Session),
+    )
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "multi stage reminder"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
 
-    class _FakeRow:
-        def __init__(self):
-            self.ApiKey = type("Key", (), {"id": str(uuid4()), "expiration_notice_sent_at": None})()
-            self.ApiKeyApplication = type(
-                "App",
-                (),
-                {
-                    "id": str(uuid4()),
-                    "name": "Tester",
-                    "email": "user1@example.com",
-                    "expires_at": datetime.now(UTC) + timedelta(days=30, hours=1),
-                },
-            )()
-
-    class _FakeResult:
-        def __init__(self, items):
-            self._items = items
-
-        def all(self):
-            return self._items
-
-    row = _FakeRow()
-    queued_results = [_FakeResult([row]), _FakeResult([])]
-
-    class _FakeSession:
-        def execute(self, stmt):
-            return queued_results.pop(0)
-
-        def add(self, obj):
-            return None
-
-        def commit(self):
-            commits["count"] += 1
-
-        def rollback(self):
-            return None
-
-    class _FakeSessionCtx:
-        def __init__(self):
-            self.session = _FakeSession()
-
-        def __enter__(self):
-            return self.session
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    monkeypatch.setattr("scripts.send_expiration_reminders.SessionLocal", _FakeSessionCtx)
+    _set_key_expires_at_offset_days(key_id, days=30)
+    app = _fetch_application_row_for_key(key_id)
+    expires_at = datetime.fromisoformat(str(app["expires_at"]).replace("Z", "+00:00"))
 
     async def _fake_notice(self, **kwargs):
+        del self
         calls.append(kwargs)
 
     monkeypatch.setattr("app.services.mail_service.MailService.send_key_expiration_notice", _fake_notice)
 
-    processed_1, sent_1 = send_expiration_reminders.run_once(batch_size=100, dry_run=False, logger=logging.getLogger())
-    processed_2, sent_2 = send_expiration_reminders.run_once(batch_size=100, dry_run=False, logger=logging.getLogger())
+    for notice_days_before in (30, 14, 7, 3, 1):
+        candidate = send_expiration_reminders.ReminderCandidate(
+            key_id=key_id,
+            application_id=app["id"],
+            owner_name=app["name"],
+            email=app["email"],
+            expires_at=expires_at,
+            notice_days_before=notice_days_before,
+        )
+        assert send_expiration_reminders._send_candidate_notice(candidate=candidate, logger=logging.getLogger()) is True
 
-    assert processed_1 == 1
-    assert sent_1 == 1
-    assert processed_2 == 0
-    assert sent_2 == 0
-    assert len(calls) == 1
-    assert calls[0]["to_email"] == user_headers["x-email"]
-    assert commits["count"] == 1
+    duplicate_candidate = send_expiration_reminders.ReminderCandidate(
+        key_id=key_id,
+        application_id=app["id"],
+        owner_name=app["name"],
+        email=app["email"],
+        expires_at=expires_at,
+        notice_days_before=7,
+    )
+    assert send_expiration_reminders._send_candidate_notice(
+        candidate=duplicate_candidate, logger=logging.getLogger()
+    ) is False
+
+    assert [call["days_before"] for call in calls] == [30, 14, 7, 3, 1]
+    notice_rows = _fetch_expiration_notice_rows(key_id)
+    assert len(notice_rows) == 5
+    assert {(row["notice_days_before"], row["status"]) for row in notice_rows} == {
+        (30, "sent"),
+        (14, "sent"),
+        (7, "sent"),
+        (3, "sent"),
+        (1, "sent"),
+    }
+    key_notice_state = _fetch_key_notice_state(key_id)
+    assert key_notice_state["expiration_notice_sent_at"] == notice_rows[0]["sent_at"]
+
+
+def test_expiration_reminder_script_retries_failed_notice_and_stops_after_success(
+    client, admin_headers, user_headers, monkeypatch
+):
+    from scripts import send_expiration_reminders
+
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    reminder_engine = create_engine(db_url, future=True)
+    monkeypatch.setattr(
+        "scripts.send_expiration_reminders.SessionLocal",
+        sessionmaker(bind=reminder_engine, autoflush=False, autocommit=False, class_=Session),
+    )
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "retry reminder"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+    _set_key_expires_at_offset_days(key_id, days=14)
+
+    attempts = {"count": 0}
+
+    async def _flaky_notice(self, **kwargs):
+        del self, kwargs
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("smtp down")
+
+    monkeypatch.setattr("app.services.mail_service.MailService.send_key_expiration_notice", _flaky_notice)
+
+    dry_processed, dry_sent = send_expiration_reminders.run_once(
+        batch_size=100,
+        dry_run=True,
+        logger=logging.getLogger(),
+    )
+    failed_processed, failed_sent = send_expiration_reminders.run_once(
+        batch_size=100,
+        dry_run=False,
+        logger=logging.getLogger(),
+    )
+    retry_processed, retry_sent = send_expiration_reminders.run_once(
+        batch_size=100,
+        dry_run=False,
+        logger=logging.getLogger(),
+    )
+    final_processed, final_sent = send_expiration_reminders.run_once(
+        batch_size=100,
+        dry_run=False,
+        logger=logging.getLogger(),
+    )
+
+    assert (dry_processed, dry_sent) == (1, 0)
+    assert (failed_processed, failed_sent) == (1, 0)
+    assert (retry_processed, retry_sent) == (1, 1)
+    assert (final_processed, final_sent) == (0, 0)
+
+    notice_rows = _fetch_expiration_notice_rows(key_id)
+    assert len(notice_rows) == 2
+    failed_row = next(row for row in notice_rows if row["status"] == "failed")
+    sent_row = next(row for row in notice_rows if row["status"] == "sent")
+    assert failed_row["notice_days_before"] == 14
+    assert failed_row["error_message"] == "smtp down"
+    assert sent_row["success_notice_days_before"] == 14
+    assert _fetch_key_notice_state(key_id)["expiration_notice_sent_at"] == sent_row["sent_at"]
 
 
 def test_application_success_for_research_eligible_without_whitelist(client, user_headers, monkeypatch):
@@ -1159,6 +1285,11 @@ def test_extend_requires_notice_for_user_but_not_admin(client, admin_headers):
     assert allowed.status_code == 200
     assert allowed.json()["status"] == "active"
     _assert_utc_datetime_string(allowed.json()["expires_at"])
+    assert _fetch_key_notice_state(key_id)["expiration_notice_sent_at"] is None
+
+    blocked_again = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 1})
+    assert blocked_again.status_code == 409
+    assert blocked_again.json()["error"]["code"] == "KEY_EXTENSION_NOTICE_REQUIRED"
 
     _set_key_expires_at_past(key_id)
     _set_expiration_notice_sent_at(key_id, None)

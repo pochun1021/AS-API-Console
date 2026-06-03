@@ -5,6 +5,7 @@ from asyncio import run as run_async
 from datetime import UTC, datetime
 from threading import Thread
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 try:
     from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
@@ -12,6 +13,8 @@ except ModuleNotFoundError:  # pragma: no cover - dependency guard for environme
     ConnectionConfig = FastMail = MessageSchema = MessageType = None  # type: ignore[assignment]
 
 from app.core.config import get_settings
+
+MAIL_DISPLAY_TZ = ZoneInfo("Asia/Taipei")
 
 
 class MailService:
@@ -177,18 +180,21 @@ class MailService:
         *,
         to_email: str,
         owner_name: str,
+        days_before: int,
         expires_at: datetime,
         app_domain: str,
     ) -> None:
         expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
-        expires_text = expires_at_utc.strftime("%Y-%m-%d %H:%M UTC")
+        expires_at_taipei = expires_at_utc.astimezone(MAIL_DISPLAY_TZ)
+        expires_text_zh = expires_at_taipei.strftime("%Y-%m-%d %H:%M 台灣時間")
+        expires_text_en = expires_at_taipei.strftime("%Y-%m-%d %H:%M Asia/Taipei")
         await self._send_html(
-            subject="[AS API Console] API Key 即將到期提醒 / API key expiration reminder",
+            subject=f"[AS API Console] API Key 將於 {days_before} 天後到期 / Expires in {days_before} days",
             recipients=[to_email],
             body=(
                 "<p>親愛的使用者，您好：</p>"
-                "<p>提醒您，您的 API Key 將於下列時間到期：</p>"
-                f"<p>到期時間：{expires_text}</p>"
+                f"<p>提醒您，您的 API Key 將於 {days_before} 天後到期。</p>"
+                f"<p>到期時間：{expires_text_zh}</p>"
                 "<p>您可於到期前或到期後進行展延（extend）。</p>"
                 "<p>若此操作非您本人執行，請立即連繫資訊服務處。</p>"
                 "<p>若您有任何疑問，歡迎向資訊服務處服務台反映。</p>"
@@ -199,8 +205,8 @@ class MailService:
                 "<p>中央研究院資訊服務處 敬啟</p>"
                 "<hr/>"
                 "<p>Dear user,</p>"
-                "<p>This is a reminder that your API key will expire at:</p>"
-                f"<p>Expiration time: {expires_text}</p>"
+                f"<p>This is a reminder that your API key will expire in {days_before} days.</p>"
+                f"<p>Expiration time: {expires_text_en}</p>"
                 "<p>You can extend this key before or after expiration.</p>"
                 "<p>If this action was not performed by you, please contact the IT Service Desk immediately.</p>"
                 "<p>If you have any questions, please contact the IT Service Desk.</p>"
