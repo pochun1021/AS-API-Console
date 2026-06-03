@@ -777,135 +777,79 @@ Base path：`/main/api/v1`
 - 前端對 `VALIDATION_ERROR` 不得僅顯示通用錯誤；需優先顯示後端回傳的具體 `message`，讓使用者可判斷缺少或格式錯誤的欄位
 
 ## 驗收標準
-1. 研究人員名單職稱代碼命中者可成功核發 API Key，格式為 `AS-` + 30 碼隨機字元（總長 33）。
-2. 研究名單未命中但特殊人員名單 `active` 命中者可成功核發 API Key。
-3. 研究名單未命中且特殊人員名單未命中者，系統不得允許進入，且申請 API 回傳 `403` 與 `APPLICANT_NOT_ELIGIBLE`。
-4. 當資格判斷需查詢 `tCode` 且 Persnl SOAP 服務失敗（timeout/5xx）時，申請 API 回傳 `503` 與 `SOAP_SERVICE_UNAVAILABLE`。
-5. `duration_months` 非 `1|6|12` 時，API 回傳 `INVALID_DURATION_MONTHS`。
-6. `application_date` 非法或晚於申請當日，API 回傳 `INVALID_APPLICATION_DATE`。
-7. 明文 key 預設僅於建立成功當下回傳一次；一般查詢端點不得回傳明文。
-8. 資料庫不得存 API Key 明文；需存 `key_hash`，並可存加密密文欄位供受控 reveal 流程使用。
-8-1. API key lifecycle 採 external provider 為主權威；`POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/api-keys/{id}/revoke` 皆需先完成 provider 操作，才可同步本地資料。
-8-2. `renew`、`extend`、`revoke` 若需舊明文 key，後端必須從 `key_ciphertext` 解密，且明文只可在服務記憶體中短暫使用；不得出現在 DB、log、audit log、exception message。
-9. 一般使用者登入後只能看到自己的全部歷史紀錄。
-10. 一般使用者查詢 API Key 時僅能看到 `masked_key`（格式 `AS-...XXXX`），不得看到明文。
-10-1. `POST /main/api/v1/api-keys/{id}/reveal` 僅 `admin` 可使用，且可回傳明文 key；此端點僅供 break-glass，不得作為一般 lifecycle 流程依賴。
-11. 一般使用者可停用本人 `active` key，停用後狀態轉為 `revoked`。
-12. 一般使用者停用非本人 key 時，API 回傳 `KEY_NOT_OWNED_BY_USER`。
-13. 一般使用者停用非 `active` key 時，API 回傳 `KEY_NOT_ACTIVE`。
-13-1. 一般使用者可續發本人 `revoked` key；續發 `active|expired` key 時，API 回傳 `KEY_NOT_RENEWABLE`。
-13-2. 同一把舊 key 不可重複續發；重複續發時 API 回傳 `KEY_ALREADY_RENEWED`。
-13-3. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時，API 回傳 `KEY_NOT_EXTENDABLE`。
-13-3-1. 一般使用者展延本人 `active` key 前需已寄送本輪任一到期提醒（`expiration_notice_sent_at` 非空）；未達條件時 API 回傳 `KEY_EXTENSION_NOTICE_REQUIRED`。`expired` key 不受此限制。
-13-4. 展延 `duration_months` 僅允許 `1|6|12`；非法值回傳 `422 VALIDATION_ERROR`。
-13-5. `renew`、`extend`、`revoke` 遇到 provider timeout/5xx/明確拒絕、缺少 `key_ciphertext` 或 `key_kek_version`、或解密失敗時，API 不得先改本地狀態，並需回傳對應錯誤。
-13-6. 到期提醒排程需支援 `30|14|7|3|1` 天多段觸發；符合各時段條件的 `active` key 執行後應收到對應提醒。
-13-7. 同一把 key 在同一輪 `expires_at`、同一提醒時段重跑排程時，最多成功寄送一次；不同提醒時段可在不同日期分別成功寄送。
-13-8. 同一把 key extend 後若 `expires_at` 改變，新的到期日需重新觸發完整提醒週期，不得被舊提醒紀錄阻擋。
-13-9. 某提醒時段寄送失敗時，不得影響其他 key 或其他提醒時段處理；在該時段尚未成功前，後續重跑需可再次嘗試。
-13-10. 本輪首次成功寄出任一提醒後，`api_keys.expiration_notice_sent_at` 需填值；後續提醒時段不得覆蓋其既有語意。
-14. 未通過資格檢查或驗證失敗請求不得建立 `api_key_applications` 或 `api_keys` 紀錄。
-15. `user` 呼叫 `GET /main/api/v1/api-keys` 時僅可看到本人資料；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料。本次 `api_key_applications` schema 調整不得改變 `GET /main/api/v1/api-keys` 既有對外 response shape。
-16. `user` 查詢或停用非本人 key 時，API 回傳 `403`（或既有錯誤碼）。
-17. 非 `admin` 使用特殊人員名單管理 API（`/main/api/v1/whitelists*`）時，回傳 `403`。
-17-1. 特殊人員名單比對主鍵為 `sysid`，新增重複 `sysid` 時需回傳 `409` 與 `WHITELIST_SYSID_DUPLICATED`。
-17-2. 管理者可刪除特殊人員名單條目（`DELETE /main/api/v1/whitelists/{id}`）；成功刪除後該條目不得再出現在列表。
-18. 管理者可成功啟用/停用其他使用者的管理者身分（`/main/api/v1/admins/{id}/enable|disable`）。
-18-1. 管理者名單需顯示狀態欄位；停用後該管理者仍保留於名單，狀態改為 `inactive`。
-18-2. 管理者可透過 `PUT /main/api/v1/admins/{id}` 新增管理者，且新增後狀態為 `active`。
-18-3. `PUT /main/api/v1/admins/{id}` 若 `id` 已存在於 `admins`，需回傳 `409 ADMIN_ALREADY_EXISTS`。
-18-4. 管理者可刪除 `inactive` 管理者（`DELETE /main/api/v1/admins/{id}`）；`active` 管理者不得刪除並回傳 `422 VALIDATION_ERROR`。
-18-5. 管理者新增查詢結果中，對已存在於 `admins` 的人員（包含 `active`、`inactive`）不得顯示新增按鈕。
-19. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`。
-20. 若 auth context 缺少任一必要欄位（`account`、`name`、`email`、`department`、`sysid`），或 `sysid` 非數字 / 非正整數，申請 API 需回 `422 VALIDATION_ERROR`，訊息需指出缺少或格式錯誤的欄位，且不得建立申請紀錄。
-21. 管理者不可在前端停用自己的管理者權限（不可將自己的角色由 `admin` 降為 `user`）。
-22. `admin` 呼叫 `GET /main/api/v1/api-keys` 時，每筆資料需可辨識申請人（至少包含 `owner_account`、`owner_name`）。
-23. 調整申請人識別欄位後，既有受保護 API 路徑與角色模型（`user|admin`）不得改動。
-23-1. 特殊人員名單新增人員查詢（`GET /main/api/v1/users`）僅可用 `account`、`name` 查詢，不得以 `sysid` 或 `email` 作為查詢條件。
-23-2. 管理者名單查詢（`GET /main/api/v1/admins`）需直接讀取 `admins`，不得依賴 Persnl SOAP。
-24. API Keys 清單頁不得顯示建立時間；建立時間僅顯示於單筆詳情視窗。
-25. API Key 詳情視窗需顯示用途（`purpose`）；若無資料則顯示 `-`。
-26. API Key 詳情視窗需顯示單位（`department`）；若無資料則顯示 `-`。
-27. 申請成功彈窗需提供明文 key 複製功能，點擊後 icon 應由複製狀態切換為成功 check，並可自動恢復。
-28. `admin` 可呼叫 `GET /main/api/v1/api-keys/statistics/users` 取得每位申請人的統計資料，且預設依 `total_applications desc` 排序。
-28-1. 統計 API `sort_by` 僅允許既定欄位（`owner_account|owner_name|owner_email|owner_department|total_applications|active_count|revoked_count|expired_count|last_applied_at`）；非法值需回傳 `422 VALIDATION_ERROR`，不得回 `500`。
-29. `scope=all|active|revoked|expired` 切換時，統計結果需符合對應狀態口徑。
-30. 統計 API `from`、`to` 應以 `application_date` 篩選，且日期格式需為 `YYYY-MM-DD`。
-31. 非 `admin` 呼叫 `GET /main/api/v1/api-keys/statistics/users` 時，API 回傳 `403`。
-32. 統計 API 回傳不得包含 `api_key_plaintext`，且不得改變既有受保護 API 路徑與角色模型。
-33. 統計 API 每筆資料需包含 `owner_department`（可為空值），供管理者統計圖表 X 軸切換使用。
-34. 系統語言 `zh-TW` 首次進站時（DB 無偏好）需顯示中文。
-35. 系統語言 `en-US` 首次進站時（DB 無偏好）需顯示英文。
-36. 系統語言非 `zh*|en*`（例如 `ja-JP`）首次進站時（DB 無偏好）需 fallback 顯示英文。
-37. 手動切換語言後，重新登入需沿用 DB 偏好。
-38. `GET /main/api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 成功後可立即由 `GET` 讀回。
-39. `PATCH /main/api/v1/users/preferences/locale` 僅允許 `zh-TW|en`；非法值（如 `ja-JP`）需回傳 `422` 與 `VALIDATION_ERROR`。
-40. 首次登入 DB 無偏好時，前端需依系統語言規則決定語系並觸發一次寫回。
-41. 手動切換語言後，重新登入需沿用 DB 偏好。
-42. 導覽列、各頁標題與按鈕、錯誤/提示訊息、DataGrid locale 文案需隨語言切換更新。
-43. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳系統產生 alias（初始為 `for_{owner_account}`，必要時可為 `for_{owner_account}_vN`）。本次 `api_key_applications` schema 調整不得改變 `GET /main/api/v1/api-keys/{id}` 既有對外 response shape。
-44. `admin` 可透過 `PATCH /main/api/v1/api-keys/{id}` 更新 `key_alias`，`user` 呼叫同端點需回傳 `403`；若 alias 與其他 key 重複需回傳 `409 KEY_ALIAS_DUPLICATE`。
-45. 管理者統計表格中 `total_applications` 與 `active_count` 可點擊，並以 Dialog 顯示對應 API Key 明細（僅 `key_alias`、`masked_key`、`status`）。
-46. 管理者統計明細 Dialog 查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
-47. 限制策略設定僅 `admin` 可讀取與更新（`/main/api/v1/limit-strategy-config`）；`user` 呼叫需回 `403`。
-49. Provider timeout/5xx 時，`POST /main/api/v1/api-keys/applications` 需回 `503 PROVIDER_UNAVAILABLE`，且不得建立 pending 申請。
-50. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
-50-1. 每把 API Key 的限制策略需同時包含 `budget` 與 `rate_limit`；不得提供二選一 `issuance_mode`。
-50-2. 不提供 pending 補發端點；前端不得提供待審申請頁面入口。
-52. `POST /main/api/v1/api-keys/applications` 成功即時配發後，需寄送 Email 給申請者本人（不需寄送給管理者），但寄信必須採不阻塞成功回應的方式執行。
-53. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
-54. 第 52 項若寄信失敗，`POST /main/api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料；失敗僅記錄供追查，不得延遲一次性明文 key 的成功回應。
-54-2. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend` 或 `POST /main/api/v1/api-keys/{id}/revoke` 若 provider timeout/5xx（`PROVIDER_UNAVAILABLE`）時，需寄送通知信給所有 `active` 管理者。
-54-3. 第 54-2 項若管理者通知信寄送失敗，不得改變原 API 錯誤回應（仍維持原錯誤碼/狀態）。
-57. 若部署使用 local provider adapter 作為開發/測試替身，`applications`、`renew`、`extend`、`revoke` 仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
-64. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。
-65. `GET /main/auth/callback` 成功時需建立 session auth context 並 redirect `/main/`。
-66. `GET /main/auth/callback` 失敗（含 token/basic 取得失敗、必要欄位缺失）需回錯，且寫入 failure audit。
-66-1. 正式環境不得接受 header auth 作為正式認證來源；僅 `dev/test` 可啟用。
-67. OAuth 成功登入寫入的角色需固定為 `user`，不得由 OAuth payload 直接升權為 `admin`。
-68. OAuth 流程不得落地 access token/refresh token/password/client secret。
-69. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。
-70. OAuth callback 需做登入資格審核：`active whitelist(sysid)` 或 `active admins(id=sysid)` 命中可登入；否則需命中 `LOGIN_ALLOWED_TITLE_CODES`，未命中則 redirect `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 且不得建立 session。
-70-1. `/main/login-denied` 必須是公開頁；使用者進入後可見拒絕說明與返回 `/main/login` 的操作，且不依賴 `GET /main/api/v1/users/me` 成功。
-71. `admin` 可於 `POST /main/api/v1/api-keys/applications` 透過 `target_identity.account` 代他人送出申請；資格檢查需以目標使用者身份執行。前端輸入 `target_identity.account` 並離開欄位後，需查詢並顯示目標 `name/email/department/sysid`；若查詢結果多筆需由管理者先選定目標再送出。若目錄服務查無帳號或帳號不唯一，API 回傳 `422 VALIDATION_ERROR`；若 Persnl SOAP timeout/5xx，API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
-72. 一般申請建立的 application row 需保留申請人快照欄位，`is_proxy_submission=false`，且 `proxy_operator_account=NULL`；代申請建立的 application row 需保留目標申請人快照欄位，`is_proxy_submission=true`，且 `proxy_operator_account=<實際代送的 admin account>`。renew flow 不得再依賴 `user_id`；需以 application 的申請人快照欄位，尤其 `sysid`，維持 ownership 與 renew 行為。此次 schema 調整需透過 migration/backfill 保留既有 application ownership、`is_proxy_submission` 判斷與 proxy submission 歷史，不得因欄位搬移遺失既有語意。
-73. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/revoke`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend`、`POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`DELETE /main/api/v1/whitelists/{id}`、`PUT /main/api/v1/admins/{id}`、`POST /main/api/v1/admins/{id}/enable`、`POST /main/api/v1/admins/{id}/disable`、`DELETE /main/api/v1/admins/{id}`、`PATCH /main/api/v1/limit-strategy-config`、`POST /main/api/v1/institutes/sync` 成功時皆需寫入 `operation_audit_logs`。
-74. 第 73 項 8 個 API 失敗時（含 `403/404/409/422`）皆需寫入 failure audit，且需可辨識 `error_code`。
-75. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證（token/password/client secret）。
-76. `operation_audit_logs.metadata_json` 僅允許白名單欄位（例如 `application_id`、`key_id`、`whitelist_id`、`target_admin_id`、`status`、`duration_months`、`provider_request_id`、`provider_operation_id`），不得落地原始敏感 payload。
-77. 關鍵操作稽核功能不得改動既有受保護 API 路徑與角色模型（`user|admin`）。
-78. `GET /main/api/v1/operation-audit-logs` 僅 `admin` 可呼叫，`user` 呼叫需回 `403`。
-79. 操作稽核查詢在未提供 `from/to` 時，需預設回傳最近 7 天熱資料。
-80. 操作稽核查詢結果需依 `created_at desc` 排序，並支援 `page/page_size` 分頁。
-81. 操作稽核查詢需支援 `event_type` 與 `result` 篩選，且回傳不得包含敏感憑證資訊。
-82. `GET /main/api/v1/auth-audit-logs` 僅 `admin` 可呼叫，`user` 呼叫需回 `403`。
-83. 登入稽核查詢在未提供 `from/to` 時，需預設回傳最近 7 天熱資料。
-84. 登入稽核查詢結果需依 `created_at desc` 排序，並支援 `page/page_size` 分頁。
-85. 登入稽核查詢需支援 `provider` 與 `result` 篩選，且回傳不得包含敏感憑證資訊。
-86. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳狀態需以 `expires_at` 即時計算到期口徑；已過期者對外顯示為 `expired`。
-87. `POST /main/api/v1/api-keys/{id}/renew` 僅允許 `revoked` key；`active|expired` 一律回傳 `KEY_NOT_RENEWABLE`。
-88. `GET /main/api/v1/api-keys/statistics/users` 的 `scope` 與 `active/revoked/expired` 計數需採同一到期口徑，避免已過期 key 被算入 `active`。
-89. 即使 expired 回填排程停用或失敗，`GET /main/api/v1/api-keys`、`GET /main/api/v1/api-keys/{id}`、`GET /main/api/v1/api-keys/statistics/users` 仍需依 effective status 正確呈現 expired。
-90. expired 回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked` 資料。
-91. `GET /main/api/v1/users/me` 需回傳目前使用者資料與 `csrf_token`。
-92. 所有 `POST/PATCH` 端點在 session auth 模式下，缺少或錯誤 `X-CSRF-Token` 需回 `403 FORBIDDEN`。
-93. `GET /main/api/v1/api-keys/statistics/users`、`GET /main/api/v1/operation-audit-logs`、`GET /main/api/v1/auth-audit-logs` 的 `from/to` 查詢區間不得超過 `31` 天。
-94. `GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
-95. `POST /main/api/v1/api-keys/{id}/reveal` 回應需包含 `Cache-Control: no-store`。
-96. 系統需提供背景排程寄送 API Key 到期提醒信；單一排程入口需在同次執行中處理 `30|14|7|3|1` 天全部提醒時段。
-97. 提醒判定條件需以 UTC 日期窗口為準：當 `api_keys.status='active'` 且 `expires_at` 落在 `now(UTC)+N days` 的當日區間時，觸發對應 `N` 天提醒；`N` 僅允許 `30|14|7|3|1`。
-98. 到期提醒信僅寄送申請者本人（`api_key_applications.email`），內容需中英並列，且需包含正確剩餘天數、到期時間與可展延提示；信內顯示的到期時間需轉為 `Asia/Taipei`，但提醒判定與資料儲存仍維持 UTC。
-99. 每把 key 的每個提醒時段需獨立去重；同一把 key 在同一輪 `expires_at`、同一個 `notice_days_before` 最多成功寄送一次，但不同提醒時段可並存。
-100. 同一把 key 若 extend 後 `expires_at` 改變，新的到期日需視為新一輪提醒週期，不得因舊到期日的提醒紀錄而阻擋新一輪通知。
-101. 到期提醒信寄送失敗不得影響其他符合條件資料處理；需保留失敗記錄供追查，且在同提醒時段尚未成功前允許後續排程再次嘗試。
-102. `api_keys.expiration_notice_sent_at` 需維持既有展延權限語意：本輪首次成功寄出任一提醒後填值；寄送失敗不得填值；後續其他提醒時段不得覆蓋既有語意。
-103. `admin` 可於 `/institute-view` 頁面查看 `GET /main/api/v1/institutes` 回傳的 `active` institutes 清單與 `total`，以確認 DB 資料已寫入。
-104. `admin` 可於 `/institute-view` 呼叫 `POST /main/api/v1/institutes/sync` 手動同步；成功後需回傳同步統計並可重新讀取最新 `active` institutes。
-105. `POST /main/api/v1/institutes/sync` 在 Persnl SOAP 不可用時需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
-106. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`、`duration` 需由 `duration_months(1|6|12)` 映射為 `30d|180d|360d`、`rpm_limit` / `tpm_limit` 若本地設定值為 `0` 則需送 `null`，且不得送 `models` 或 `budget_limits`。
-107. 外部 provider auth header 需為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；不得再送 `x-master-key`。
-108. 外部 provider `POST /key/update`、`POST /key/regenerate`、`POST /key/block` 若需舊明文 key，request body 一律使用 `key` 欄位傳送；`generate`/`regenerate` 成功時一律自 response `key` 讀取新明文 secret。
-109. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
+### 申請與資格
+1. 研究人員名單職稱代碼命中者，或研究名單未命中但特殊人員名單 `active` 命中者，可成功核發 API Key；兩者皆未命中時不得允許進入系統，且申請 API 回傳 `403 APPLICANT_NOT_ELIGIBLE`。
+2. 當資格判斷需查詢 `tCode` 且 Persnl SOAP 服務 timeout/5xx 時，登入流程可放行，但申請 API 必須回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
+3. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`；若 auth context 缺少必要欄位、`sysid` 非數字或非正整數，申請 API 需回傳 `422 VALIDATION_ERROR`，且不得建立申請或 key 紀錄。
+4. `duration_months` 僅允許 `1|6|12`，`application_date` 需為合法日期且不得晚於申請當日；非法值需回傳對應驗證錯誤。
+5. `admin` 可透過 `target_identity.account` 代他人送出申請；若目錄服務查無帳號、結果不唯一或 Persnl SOAP timeout/5xx，API 需回傳對應 `422 VALIDATION_ERROR` 或 `503 SOAP_SERVICE_UNAVAILABLE`。
+6. 一般申請建立的 application row 需保留申請人快照欄位，`is_proxy_submission=false`、`proxy_operator_account=NULL`；代申請需保留目標申請人快照，`is_proxy_submission=true`，且 `proxy_operator_account` 為實際代送的 admin account。
+
+### Key 核發、保存與受控回取
+7. 核發成功的 API Key 格式需為 `AS-` + 30 碼隨機字元（總長 33）；明文 key 預設僅於建立成功當下回傳一次，一般查詢端點不得再次回傳明文。
+8. 資料庫不得儲存 API Key 明文；需保存 `key_hash`，並可保存 `key_ciphertext` / `key_kek_version` 供受控 reveal 與 lifecycle 操作使用。
+9. `POST /main/api/v1/api-keys/{id}/reveal` 僅 `admin` 可使用，回應需包含 `Cache-Control: no-store`；此端點僅供 break-glass，不得成為一般 `renew`、`extend`、`revoke` 流程的依賴。
+10. 申請成功彈窗需提供明文 key 複製功能，點擊後 icon 需切換為成功狀態並可自動恢復。
+
+### Provider 與 Lifecycle
+11. API key lifecycle 採 external provider 為主權威；`applications`、`renew`、`extend`、`revoke` 均需先完成 provider 操作，再同步本地資料。
+12. `renew`、`extend`、`revoke` 若需舊明文 key，後端必須從 `key_ciphertext` 解密，且明文只可在服務記憶體中短暫使用；不得出現在 DB、log、audit log、exception message。
+13. 若 provider timeout/5xx、明確拒絕、缺少密文材料、解密失敗或回應不完整，本地不得先改動狀態或有效期限，並需回傳對應錯誤。
+14. 若部署使用 local provider adapter 作為開發/測試替身，仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
+15. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 需送 `null`，且不得送 `models` 或 `budget_limits`。
+16. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`regenerate`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`generate` / `regenerate` 成功時一律自 response `key` 讀取新明文 secret。
+17. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
+
+### Key 查詢、狀態與 Lifecycle 權限
+18. `user` 登入後只能看到自己的全部歷史紀錄；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料，且每筆至少需能辨識 `owner_account`、`owner_name`。
+19. 一般查詢僅能看到 `masked_key`（格式 `AS-...XXXX`），不得看到明文；清單頁不得顯示建立時間，建立時間僅顯示於單筆詳情視窗。
+20. 單筆詳情需顯示 `purpose`、`department`；若無資料需顯示 `-`。
+21. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 的到期口徑需以 `expires_at` 即時計算；原始狀態為 `active` 且已過期者，對外需顯示為 `expired`。
+22. 即使 expired 回填排程停用或失敗，清單、詳情與統計 API 仍需依 effective status 正確呈現 `expired`；回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked`。
+23. 一般使用者可停用本人 `active` key；停用非本人 key 時需回傳 `KEY_NOT_OWNED_BY_USER` / `403`，停用非 `active` key 時需回傳 `KEY_NOT_ACTIVE`。
+24. 一般使用者僅可續發本人 `revoked` key；續發 `active|expired` key 時需回傳 `KEY_NOT_RENEWABLE`，且同一把舊 key 不得重複續發，重複續發需回傳 `KEY_ALREADY_RENEWED`。
+25. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時需回傳 `KEY_NOT_EXTENDABLE`。`user` 展延 `active` key 前需已寄送本輪任一到期提醒（`expiration_notice_sent_at` 非空），未達條件時需回傳 `KEY_EXTENSION_NOTICE_REQUIRED`；`expired` key 不受此限制。
+26. `renew`、`extend`、`revoke` 的本地同步不得改變既有受保護 API 路徑、角色模型或現有對外 response shape。
+
+### 到期提醒與通知信
+27. 系統需提供背景排程寄送 API Key 到期提醒信；單一排程入口需在同次執行中處理 `30|14|7|3|1` 天全部提醒時段。
+28. 提醒判定條件需以 UTC 日期窗口為準：當 `api_keys.status='active'` 且 `expires_at` 落在 `now(UTC)+N days` 的當日區間時，觸發對應 `N` 天提醒；`N` 僅允許 `30|14|7|3|1`。
+29. 同一把 key 在同一輪 `expires_at`、同一提醒時段最多成功寄送一次，但不同提醒時段可在不同日期成功寄送；若 `extend` 後 `expires_at` 改變，新的到期日需重新啟動完整提醒週期。
+30. 某提醒時段寄送失敗時，不得影響其他 key 或其他提醒時段；只要該時段尚未成功，後續重跑需可再次嘗試。
+31. 本輪首次成功寄出任一提醒後，`api_keys.expiration_notice_sent_at` 需填值；寄送失敗不得填值；後續提醒時段不得覆蓋其既有語意。
+32. `POST /main/api/v1/api-keys/applications` 成功後需以非阻塞方式寄送申請成功通知信給申請者本人；寄信失敗時 API 仍需回 `201`，且不得回滾申請資料或延遲一次性明文 key 回應。
+33. `POST /main/api/v1/api-keys/{id}/renew` 成功後需寄送 renew 成功通知信給申請者本人，且通知信不得包含明文 key。
+34. `applications`、`renew`、`extend`、`revoke` 若遇 provider timeout/5xx（`PROVIDER_UNAVAILABLE`），需寄送通知信給所有 `active` 管理者；若管理者通知信寄送失敗，不得改變原 API 錯誤回應。
+35. 所有業務通知信內容需中英並列（中文在前、英文在後）；到期提醒信僅寄送申請者本人，需包含正確剩餘天數、到期時間與可展延提示，且信內顯示的到期時間需轉為 `Asia/Taipei`，但提醒判定與資料儲存仍維持 UTC。
+36. 通知信模板屬正式契約；主旨、收件者、動態欄位與中英段落順序變更時，需同步更新 `docs/mail.md`。詳細主旨與完整模板內容以 `docs/mail.md` 為準。
+
+### 管理功能與後台查詢
+37. 非 `admin` 呼叫特殊人員名單、管理者名單、限制策略、統計、稽核與單位同步相關管理 API 時，均需回傳 `403`。
+38. 特殊人員名單比對主鍵為 `sysid`；新增重複 `sysid` 時需回傳 `409 WHITELIST_SYSID_DUPLICATED`，且管理者可刪除條目，刪除後不得再出現在列表。
+39. 特殊人員名單新增前使用者查詢（`GET /main/api/v1/users`）僅可使用 `account`、`name` 查詢；不得以 `sysid` 或 `email` 作為查詢條件。管理者名單查詢（`GET /main/api/v1/admins`）需直接讀取 `admins`，不得依賴 Persnl SOAP。
+40. 管理者可新增、啟用、停用與刪除管理者；新增後狀態為 `active`，停用後仍保留於名單且狀態改為 `inactive`。`PUT /main/api/v1/admins/{id}` 若已存在需回 `409 ADMIN_ALREADY_EXISTS`；`DELETE` 僅允許刪除 `inactive` 管理者。
+41. 前端需阻擋管理者停用自己的管理者權限；管理者新增查詢結果中，對已存在於 `admins` 的人員（包含 `active`、`inactive`）不得顯示新增按鈕。
+42. `GET /main/api/v1/api-keys/statistics/users` 僅 `admin` 可用，預設依 `total_applications desc` 排序；`sort_by` 僅允許既定欄位，`scope`、`from`、`to` 與 `application_date` 篩選需生效，且統計結果不得包含 `api_key_plaintext`。
+43. 統計 API 每筆資料需包含 `owner_department`；管理者統計表格中的 `total_applications` 與 `active_count` 需可點擊開啟 API Key 明細 Dialog，且明細查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
+44. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳系統產生 alias。`admin` 可透過 `PATCH /main/api/v1/api-keys/{id}` 更新 alias，`user` 呼叫需回傳 `403`，重複 alias 需回傳 `409 KEY_ALIAS_DUPLICATE`。
+45. 限制策略設定僅 `admin` 可讀取與更新；`budget_duration` 僅允許 `daily|weekly|monthly`，管理端顯示映射需為 `1天|7天|30天`，且每把 API Key 的限制策略需同時包含 `budget` 與 `rate_limit`，不得提供 pending 補發端點或 `issuance_mode` 二選一模式。
+46. `admin` 可於 `/institute-view` 查看 `active` institutes 清單與 `total`，並可手動觸發同步；若 Persnl SOAP 不可用，`POST /main/api/v1/institutes/sync` 需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
+
+### OAuth、Session 與語系
+47. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。`GET /main/auth/callback` 成功時需建立 session 並 redirect `/main/`，失敗時需回錯且寫入 failure audit。
+48. 正式環境不得接受 header auth 作為正式認證來源；僅 `dev/test` 可啟用。OAuth 成功登入寫入的角色需固定為 `user`，且流程不得落地 access token、refresh token、password 或 client secret。
+49. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。登入資格判斷需遵循 `active whitelist(sysid)` 或 `active admins(id=sysid)`，否則才比對 `LOGIN_ALLOWED_TITLE_CODES`。
+50. `/main/login-denied` 必須是公開頁；登入失敗導向 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 時，使用者需可直接看到拒絕說明與返回登入操作，且不依賴 `GET /main/api/v1/users/me` 成功。
+51. `GET /main/api/v1/users/me` 需回傳目前使用者資料與 `csrf_token`；所有 `POST/PATCH` 端點在 session auth 模式下，缺少或錯誤 `X-CSRF-Token` 時需回傳 `403 FORBIDDEN`。
+52. 系統語言僅支援 `zh-TW`、`en`；DB 無偏好時，系統語言命中 `zh*` 顯示中文、命中 `en*` 顯示英文，其他語系 fallback 為英文，並需立即寫回 DB 作為初始偏好。
+53. `GET /main/api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 僅允許 `zh-TW|en`，成功後可立即由 `GET` 讀回。手動切換語言後，重新登入需沿用 DB 偏好，且導覽列、頁標題、按鈕、錯誤/提示訊息與 DataGrid locale 文案需隨語言切換更新。
+
+### 稽核、查詢限制與安全邊界
+54. `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`limit-strategy-config`、`institutes/sync` 等關鍵異動 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`。
+55. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證；`metadata_json` 僅允許白名單欄位。若 audit 寫入失敗，不得改變主流程成功或失敗語意。
+56. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 僅 `admin` 可使用；未提供 `from/to` 時預設回傳最近 7 天熱資料，結果依 `created_at desc` 排序，並支援分頁與既定篩選條件。
+57. `GET /main/api/v1/api-keys/statistics/users`、`GET /main/api/v1/operation-audit-logs`、`GET /main/api/v1/auth-audit-logs` 的 `from/to` 查詢區間不得超過 `31` 天；`GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
+58. 關鍵操作稽核功能、申請人識別欄位調整、統計與 lifecycle 擴充，均不得改動既有受保護 API 路徑、角色模型（`user|admin`）與既有對外 response shape。
 
 ## Roadmap
 ### Phase 1：Foundation
