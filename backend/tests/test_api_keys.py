@@ -180,17 +180,34 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
 
 
 def test_application_success_dispatches_mail_without_blocking_response(client, admin_headers, user_headers, monkeypatch):
+    from app.services import mail_service
     from app.services.mail_service import MailService
 
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    original_dispatch_background = MailService.dispatch_background
 
     background_called = Event()
+    applicant_calls: list[dict] = []
 
-    def _fake_dispatch_background(self, task_factory, *, error_message: str):
-        del self, task_factory, error_message
+    class _ImmediateThread:
+        def __init__(self, *, target, name: str, daemon: bool):
+            del name, daemon
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    async def _fake_applicant_mail(self, **kwargs):
+        del self
+        applicant_calls.append(kwargs)
+
+    def _observed_dispatch(self, task_factory, *, error_message: str):
         background_called.set()
+        return original_dispatch_background(self, task_factory, error_message=error_message)
 
-    monkeypatch.setattr(MailService, "dispatch_background", _fake_dispatch_background)
+    monkeypatch.setattr(mail_service, "Thread", _ImmediateThread)
+    monkeypatch.setattr(MailService, "send_application_received_to_applicant", _fake_applicant_mail)
+    monkeypatch.setattr(MailService, "dispatch_background", _observed_dispatch)
 
     create_resp = client.post(
         _api("/api-keys/applications"),
@@ -200,6 +217,8 @@ def test_application_success_dispatches_mail_without_blocking_response(client, a
 
     assert create_resp.status_code == 201
     assert background_called.is_set()
+    assert len(applicant_calls) == 1
+    assert applicant_calls[0]["to_email"] == user_headers["x-email"]
 
 
 def test_application_success_still_returns_201_when_mail_dispatch_fails(client, admin_headers, user_headers, monkeypatch, caplog):
@@ -442,39 +461,26 @@ def test_admin_proxy_application_target_account_not_unique(client, admin_headers
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
-def test_application_immediate_issue_sends_mail(client, admin_headers, user_headers, monkeypatch):
-    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
-    calls: list[dict] = []
-
-    async def _fake_applicant_mail(self, **kwargs):
-        calls.append(kwargs)
-
-    monkeypatch.setattr(
-        "app.services.mail_service.MailService.send_application_received_to_applicant",
-        _fake_applicant_mail,
-    )
-
-    resp = client.post(
-        _api("/api-keys/applications"),
-        headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify"},
-    )
-    assert resp.status_code == 201
-    assert resp.json()["api_key_plaintext"].startswith("AS-")
-    assert len(calls) == 1
-    assert calls[0]["to_email"] == user_headers["x-email"]
-
-
 def test_application_mail_failure_does_not_block_success(client, admin_headers, user_headers, monkeypatch):
+    from app.services import mail_service
+    from app.services.mail_service import MailService
+
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    class _ImmediateThread:
+        def __init__(self, *, target, name: str, daemon: bool):
+            del name, daemon
+            self._target = target
+
+        def start(self):
+            self._target()
 
     async def _raise_mail_error(self, **kwargs):
+        del self, kwargs
         raise RuntimeError("smtp unavailable")
 
-    monkeypatch.setattr(
-        "app.services.mail_service.MailService.send_application_received_to_applicant",
-        _raise_mail_error,
-    )
+    monkeypatch.setattr(mail_service, "Thread", _ImmediateThread)
+    monkeypatch.setattr(MailService, "send_application_received_to_applicant", _raise_mail_error)
 
     resp = client.post(
         _api("/api-keys/applications"),
@@ -535,6 +541,7 @@ def test_provider_payload_builder_uses_external_contract():
 
     payload = service._build_provider_payload(
         owner_account="user1",
+        key_alias="for_user1",
         duration_months=6,
         config=IssuanceConfigValues(
             max_budget="1000",
@@ -562,6 +569,7 @@ def test_provider_payload_builder_converts_zero_rate_limits_to_null():
 
     payload = service._build_provider_payload(
         owner_account="user1",
+        key_alias="for_user1",
         duration_months=1,
         config=IssuanceConfigValues(
             max_budget="1000",

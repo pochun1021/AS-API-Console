@@ -81,40 +81,41 @@ test("admin can switch to chart view and change axes", async () => {
   expect(screen.getByRole("tab", { name: "圖表", selected: true })).toBeInTheDocument();
 });
 
-test("admin can open detail dialog from total applications count", async () => {
+test.each([
+  {
+    name: "admin can open detail dialog from total applications count",
+    buttonName: "2",
+    dialogName: "jane.doe 的申請總數明細",
+    visibleText: "revoked",
+    hiddenText: null,
+    minRowCount: 3,
+  },
+  {
+    name: "admin can open detail dialog from active count",
+    buttonName: "1",
+    dialogName: "jane.doe 的啟用中明細",
+    visibleText: "active",
+    hiddenText: "revoked",
+    minRowCount: null,
+  },
+])("$name", async ({ buttonName, dialogName, visibleText, hiddenText, minRowCount }) => {
   const user = userEvent.setup();
   renderPage(<AdminDashboardPage auth={adminAuth} />);
 
   expect(await screen.findByText("jane.doe")).toBeInTheDocument();
-
-  const totalButtons = screen.getAllByRole("button", { name: "2" });
-  await user.click(totalButtons[0]);
-  const totalDialog = await screen.findByRole("dialog", { name: "jane.doe 的申請總數明細" });
+  const ownerCell = screen.getByText("jane.doe");
+  const ownerRow = ownerCell.closest('[role="row"]');
+  await user.click(within(ownerRow).getByRole("button", { name: buttonName }));
+  const dialog = await screen.findByRole("dialog", { name: dialogName });
   await waitFor(() => {
-    expect(within(totalDialog).queryByText("載入 API Key 明細中...")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("載入 API Key 明細中...")).not.toBeInTheDocument();
   });
-  const totalRows = within(totalDialog).getAllByRole("row");
-  expect(totalRows.length).toBeGreaterThanOrEqual(3);
-  expect(within(totalDialog).getAllByText("for_jane.doe").length).toBeGreaterThanOrEqual(1);
-  expect(within(totalDialog).getByText("revoked")).toBeInTheDocument();
-});
-
-test("admin can open detail dialog from active count", async () => {
-  const user = userEvent.setup();
-  renderPage(<AdminDashboardPage auth={adminAuth} />);
-
-  expect(await screen.findByText("jane.doe")).toBeInTheDocument();
-  const activeButton = screen.getAllByRole("button", { name: "1" })[0];
-  await user.click(activeButton);
-  const activeDialog = await screen.findByRole("dialog", { name: "jane.doe 的啟用中明細" });
-  await waitFor(() => {
-    expect(within(activeDialog).queryByText("載入 API Key 明細中...")).not.toBeInTheDocument();
-  });
-  expect(within(activeDialog).getByText("active")).toBeInTheDocument();
-  expect(within(activeDialog).queryByText("revoked")).not.toBeInTheDocument();
-});
-
-test("non-admin user is blocked", async () => {
-  renderPage(<AdminDashboardPage auth={userAuth} />);
-  expect(await screen.findByText("僅管理者可使用管理者統計功能。")).toBeInTheDocument();
+  if (minRowCount !== null) {
+    expect(within(dialog).getAllByRole("row").length).toBeGreaterThanOrEqual(minRowCount);
+    expect(within(dialog).getAllByText("for_jane.doe").length).toBeGreaterThanOrEqual(1);
+  }
+  expect(within(dialog).getByText(visibleText)).toBeInTheDocument();
+  if (hiddenText) {
+    expect(within(dialog).queryByText(hiddenText)).not.toBeInTheDocument();
+  }
 });

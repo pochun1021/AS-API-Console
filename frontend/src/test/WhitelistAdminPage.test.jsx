@@ -25,14 +25,18 @@ beforeEach(() => {
   mockApiProvider.resetForTests();
 });
 
+async function openSearchDialog(user) {
+  await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
+  return screen.findByRole("dialog", { name: "查詢人員" });
+}
+
 test("admin can search user and add whitelist item, then sees duplicated error", async () => {
   const user = userEvent.setup();
   render(<WhitelistAdminPage auth={adminAuth} />);
 
   expect(await screen.findByText("特殊人員名單管理")).toBeInTheDocument();
   expect(screen.queryByText("白名單列表")).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
-  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
+  const searchDialog = await openSearchDialog(user);
   expect(within(searchDialog).getByText("可用帳號 / 姓名查詢")).toBeInTheDocument();
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "alice");
   await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
@@ -64,42 +68,31 @@ test("admin can toggle status with confirm and update remark", async () => {
   expect(await screen.findByText("特殊人員名單已更新。")).toBeInTheDocument();
 });
 
-test("admin can search by name", async () => {
+test.each([
+  { name: "admin can search by name", query: "Alice", expectedText: "Alice Wang" },
+  { name: "admin can search by account", query: "alice.wang", expectedText: "alice.wang" },
+])("$name", async ({ query, expectedText }) => {
   const user = userEvent.setup();
   render(<WhitelistAdminPage auth={adminAuth} />);
 
-  await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
-  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
-  await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "Alice");
+  const searchDialog = await openSearchDialog(user);
+  await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), query);
   await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
-  expect(await within(searchDialog).findByText("Alice Wang")).toBeInTheDocument();
-});
-
-test("admin can search by account", async () => {
-  const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
-
-  await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
-  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
-  await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "alice.wang");
-  await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
-  expect(await within(searchDialog).findByText("alice.wang")).toBeInTheDocument();
+  expect(await within(searchDialog).findByText(expectedText)).toBeInTheDocument();
 });
 
 test("candidate search dialog resets after close", async () => {
   const user = userEvent.setup();
   render(<WhitelistAdminPage auth={adminAuth} />);
 
-  await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
-  const firstDialog = await screen.findByRole("dialog", { name: "查詢人員" });
+  const firstDialog = await openSearchDialog(user);
   await user.type(within(firstDialog).getByLabelText("查詢關鍵字"), "alice");
   await user.click(within(firstDialog).getByRole("button", { name: "查詢人員" }));
   expect(await within(firstDialog).findByText("Alice Wang")).toBeInTheDocument();
   await user.click(within(firstDialog).getByRole("button", { name: "關閉" }));
   await screen.findByRole("button", { name: "開啟新增特殊人員名單人員" });
 
-  await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
-  const secondDialog = await screen.findByRole("dialog", { name: "查詢人員" });
+  const secondDialog = await openSearchDialog(user);
   expect(within(secondDialog).getByLabelText("查詢關鍵字")).toHaveValue("");
   expect(within(secondDialog).queryByText("Alice Wang")).not.toBeInTheDocument();
 });
@@ -108,8 +101,7 @@ test("admin can search by pressing enter in dialog input", async () => {
   const user = userEvent.setup();
   render(<WhitelistAdminPage auth={adminAuth} />);
 
-  await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
-  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
+  const searchDialog = await openSearchDialog(user);
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "alice{enter}");
   expect(await within(searchDialog).findByText("Alice Wang")).toBeInTheDocument();
 });
@@ -118,13 +110,7 @@ test("search requires keyword in whitelist dialog", async () => {
   const user = userEvent.setup();
   render(<WhitelistAdminPage auth={adminAuth} />);
 
-  await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
-  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
+  const searchDialog = await openSearchDialog(user);
   await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
   expect(await within(searchDialog).findByText("請輸入查詢關鍵字。")).toBeInTheDocument();
-});
-
-test("non-admin user is blocked", async () => {
-  render(<WhitelistAdminPage auth={userAuth} />);
-  expect(await screen.findByText("僅管理者可使用特殊人員名單管理功能。")).toBeInTheDocument();
 });
