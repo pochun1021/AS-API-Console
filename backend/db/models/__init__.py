@@ -1,4 +1,5 @@
 from db.models.api_keys import ApiKey
+from db.models.api_key_expiration_notices import ApiKeyExpirationNotice
 from db.models.admins import Admin
 from db.models.applications import ApiKeyApplication
 from db.models.auth_audit_logs import AuthAuditLog
@@ -13,6 +14,7 @@ __all__ = [
     "ApiKeyWhitelist",
     "ApiKeyApplication",
     "ApiKey",
+    "ApiKeyExpirationNotice",
     "AuthAuditLog",
     "OperationAuditLog",
     "LimitStrategyConfig",

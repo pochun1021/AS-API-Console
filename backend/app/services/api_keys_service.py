@@ -827,6 +827,7 @@ class ApiKeysService:
         source_app.status = "active"
         source_key.status = "active"
         source_key.key_alias = key_alias
+        source_key.expiration_notice_sent_at = None
         source_app.updated_at = now
         self.session.add(source_key)
         self.session.add(source_app)

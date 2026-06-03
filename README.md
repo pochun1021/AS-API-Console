@@ -218,6 +218,7 @@ ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run
 ## API Key 多段式到期提醒排程
 - 目的：針對即將於 `30`、`14`、`7`、`3`、`1` 天後到期的 `active` API Key 寄送提醒信給申請者本人，提醒正確剩餘天數、到期時間與可展延。
 - 判定口徑：以 UTC 日期窗口判定；當 `expires_at` 落在 `now(UTC)+N days` 的當日區間時，觸發對應 `N` 天提醒。
+- 信件顯示：提醒信內的到期時間顯示為 `Asia/Taipei`；排程判定與資料儲存仍維持 UTC。
 - 去重規則：同一把 key 在同一輪 `expires_at`、同一提醒時段最多成功寄送一次；不同提醒時段可並存。
 - 週期規則：同一把 key 若 extend 後 `expires_at` 改變，新的到期日會重新啟動完整提醒週期。
 - 單一入口：維持使用同一支 `run_expiration_reminder.sh`，單次執行會一併處理 `30|14|7|3|1` 全部提醒時段。

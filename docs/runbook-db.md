@@ -17,7 +17,7 @@
 - Python MariaDB driver：`mariadb`（需先安裝 MariaDB Connector/C，確保 `mariadb_config` 可用）
 - Alembic path：`backend/alembic.ini`
 - Migration 目錄：`backend/db/migrations/versions`
-- 目前 head revision：`0028_add_api_key_expiration_notice_sent_at`
+- 目前 head revision：`0033_api_key_exp_notices`
 - 環境檔載入順序：`ENV_FILE`（若有設定）→ `/home/app/config/.env`（若存在）→ `backend/.env`（開發預設）
 
 ## Schema 實作對照
@@ -110,7 +110,7 @@ cd backend
 export DATABASE_URL='mariadb+mariadbconnector://<user>:<password>@<host>:3306/as_api_console'
 alembic current
 ```
-預期：顯示目前最新 head revision（例如 `0028_add_api_key_expiration_notice_sent_at (head)`）。
+預期：顯示目前最新 head revision（例如 `0033_api_key_exp_notices (head)`）。
 
 ### 2) 表存在檢查（MariaDB）
 ```bash

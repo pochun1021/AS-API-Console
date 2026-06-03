@@ -894,7 +894,7 @@ Base path：`/main/api/v1`
 95. `POST /main/api/v1/api-keys/{id}/reveal` 回應需包含 `Cache-Control: no-store`。
 96. 系統需提供背景排程寄送 API Key 到期提醒信；單一排程入口需在同次執行中處理 `30|14|7|3|1` 天全部提醒時段。
 97. 提醒判定條件需以 UTC 日期窗口為準：當 `api_keys.status='active'` 且 `expires_at` 落在 `now(UTC)+N days` 的當日區間時，觸發對應 `N` 天提醒；`N` 僅允許 `30|14|7|3|1`。
-98. 到期提醒信僅寄送申請者本人（`api_key_applications.email`），內容需中英並列，且需包含正確剩餘天數、到期時間與可展延提示。
+98. 到期提醒信僅寄送申請者本人（`api_key_applications.email`），內容需中英並列，且需包含正確剩餘天數、到期時間與可展延提示；信內顯示的到期時間需轉為 `Asia/Taipei`，但提醒判定與資料儲存仍維持 UTC。
 99. 每把 key 的每個提醒時段需獨立去重；同一把 key 在同一輪 `expires_at`、同一個 `notice_days_before` 最多成功寄送一次，但不同提醒時段可並存。
 100. 同一把 key 若 extend 後 `expires_at` 改變，新的到期日需視為新一輪提醒週期，不得因舊到期日的提醒紀錄而阻擋新一輪通知。
 101. 到期提醒信寄送失敗不得影響其他符合條件資料處理；需保留失敗記錄供追查，且在同提醒時段尚未成功前允許後續排程再次嘗試。

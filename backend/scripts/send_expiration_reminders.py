@@ -4,26 +4,41 @@ import argparse
 import logging
 import os
 from asyncio import run as run_async
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 LOG_TZ = ZoneInfo("Asia/Taipei")
 LOG_ROOT = Path(os.getenv("SCHEDULER_LOG_ROOT", "/home/app/log"))
 LOG_DIR = LOG_ROOT / "send_expiration_reminders"
 LOGGER_NAME = "send_expiration_reminders"
+REMINDER_DAYS = (30, 14, 7, 3, 1)
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.core.config import get_settings
 from app.services.mail_service import MailService
 from db import models  # noqa: F401
+from db.models.api_key_expiration_notices import ApiKeyExpirationNotice
 from db.models.api_keys import ApiKey
 from db.models.applications import ApiKeyApplication
 from db.session import SessionLocal
+
+
+@dataclass(slots=True)
+class ReminderCandidate:
+    key_id: str
+    application_id: str
+    owner_name: str
+    email: str
+    expires_at: datetime
+    notice_days_before: int
 
 
 class TaipeiDateFormatter(logging.Formatter):
@@ -52,7 +67,9 @@ def _build_logger() -> logging.Logger:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Send API key expiration reminders for keys expiring in 30 days.")
+    parser = argparse.ArgumentParser(
+        description="Send API key expiration reminders for keys expiring in 30, 14, 7, 3, or 1 days."
+    )
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -67,63 +84,172 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _target_window(now: datetime) -> tuple[datetime, datetime]:
-    target_day = (now + timedelta(days=30)).date()
+def _target_window(now: datetime, notice_days_before: int) -> tuple[datetime, datetime]:
+    target_day = (now + timedelta(days=notice_days_before)).date()
     start = datetime(target_day.year, target_day.month, target_day.day, tzinfo=UTC)
     end = start + timedelta(days=1)
     return start, end
 
 
-def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger) -> tuple[int, int]:
-    now = datetime.now(UTC)
-    window_start, window_end = _target_window(now)
-    stmt = (
+def _candidate_stmt(*, now: datetime, notice_days_before: int, limit: int):
+    window_start, window_end = _target_window(now, notice_days_before)
+    sent_exists = (
+        select(ApiKeyExpirationNotice.id)
+        .where(
+            ApiKeyExpirationNotice.key_id == ApiKey.id,
+            ApiKeyExpirationNotice.expires_at_snapshot == ApiKeyApplication.expires_at,
+            ApiKeyExpirationNotice.success_notice_days_before == notice_days_before,
+        )
+        .exists()
+    )
+    return (
         select(ApiKey, ApiKeyApplication)
         .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
         .where(ApiKey.status == "active")
-        .where(ApiKey.expiration_notice_sent_at.is_(None))
         .where(ApiKeyApplication.expires_at >= window_start)
         .where(ApiKeyApplication.expires_at < window_end)
+        .where(~sent_exists)
         .order_by(ApiKeyApplication.expires_at.asc(), ApiKey.id.asc())
-        .limit(batch_size)
+        .limit(limit)
     )
 
-    with SessionLocal() as session:
-        rows = session.execute(stmt).all()
-        if dry_run:
-            return len(rows), 0
 
-        mail_service = MailService()
-        settings = get_settings()
-        processed = 0
-        success = 0
-        for row in rows:
-            processed += 1
-            key = row.ApiKey
-            app = row.ApiKeyApplication
-            try:
-                run_async(
-                    mail_service.send_key_expiration_notice(
-                        to_email=app.email,
-                        owner_name=app.name,
-                        expires_at=app.expires_at,
-                        app_domain=settings.app_domain,
-                    )
+def _collect_candidates(*, now: datetime, batch_size: int) -> list[ReminderCandidate]:
+    candidates: list[ReminderCandidate] = []
+    with SessionLocal() as session:
+        for notice_days_before in REMINDER_DAYS:
+            remaining = batch_size - len(candidates)
+            if remaining <= 0:
+                break
+            rows = session.execute(
+                _candidate_stmt(now=now, notice_days_before=notice_days_before, limit=remaining)
+            ).all()
+            candidates.extend(
+                ReminderCandidate(
+                    key_id=row.ApiKey.id,
+                    application_id=row.ApiKeyApplication.id,
+                    owner_name=row.ApiKeyApplication.name,
+                    email=row.ApiKeyApplication.email,
+                    expires_at=row.ApiKeyApplication.expires_at,
+                    notice_days_before=notice_days_before,
                 )
-                key.expiration_notice_sent_at = datetime.now(UTC)
+                for row in rows
+            )
+    return candidates
+
+
+def _record_failure(
+    *,
+    session,
+    candidate: ReminderCandidate,
+    error_message: str,
+) -> None:
+    session.add(
+        ApiKeyExpirationNotice(
+            id=str(uuid4()),
+            key_id=candidate.key_id,
+            application_id=candidate.application_id,
+            expires_at_snapshot=candidate.expires_at,
+            notice_days_before=candidate.notice_days_before,
+            status="failed",
+            sent_at=None,
+            error_message=error_message,
+            success_notice_days_before=None,
+        )
+    )
+
+
+def _send_candidate_notice(*, candidate: ReminderCandidate, logger: logging.Logger) -> bool:
+    mail_service = MailService()
+    settings = get_settings()
+    with SessionLocal() as session, session.begin():
+        locked = session.execute(
+            select(ApiKey, ApiKeyApplication)
+            .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
+            .where(ApiKey.id == candidate.key_id)
+            .with_for_update()
+        ).one_or_none()
+        if locked is None:
+            return False
+
+        key = locked.ApiKey
+        app = locked.ApiKeyApplication
+        if key.status != "active":
+            return False
+        if app.expires_at != candidate.expires_at:
+            return False
+
+        sent_exists = session.execute(
+            select(ApiKeyExpirationNotice.id).where(
+                ApiKeyExpirationNotice.key_id == candidate.key_id,
+                ApiKeyExpirationNotice.expires_at_snapshot == candidate.expires_at,
+                ApiKeyExpirationNotice.success_notice_days_before == candidate.notice_days_before,
+            )
+        ).first()
+        if sent_exists is not None:
+            return False
+
+        try:
+            run_async(
+                mail_service.send_key_expiration_notice(
+                    to_email=app.email,
+                    owner_name=app.name,
+                    days_before=candidate.notice_days_before,
+                    expires_at=app.expires_at,
+                    app_domain=settings.app_domain,
+                )
+            )
+            sent_at = datetime.now(UTC)
+            session.add(
+                ApiKeyExpirationNotice(
+                    id=str(uuid4()),
+                    key_id=key.id,
+                    application_id=app.id,
+                    expires_at_snapshot=app.expires_at,
+                    notice_days_before=candidate.notice_days_before,
+                    status="sent",
+                    sent_at=sent_at,
+                    error_message=None,
+                    success_notice_days_before=candidate.notice_days_before,
+                )
+            )
+            if key.expiration_notice_sent_at is None:
+                key.expiration_notice_sent_at = sent_at
                 session.add(key)
-                session.commit()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            _record_failure(session=session, candidate=candidate, error_message=str(exc))
+            logger.exception(
+                "event=expiration_reminder_send_failed key_id=%s application_id=%s expires_at=%s notice_days_before=%s email=%s",
+                candidate.key_id,
+                candidate.application_id,
+                candidate.expires_at.isoformat(),
+                candidate.notice_days_before,
+                candidate.email,
+            )
+            return False
+
+
+def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger) -> tuple[int, int]:
+    now = datetime.now(UTC)
+    candidates = _collect_candidates(now=now, batch_size=batch_size)
+    if dry_run:
+        return len(candidates), 0
+
+    success = 0
+    for candidate in candidates:
+        try:
+            if _send_candidate_notice(candidate=candidate, logger=logger):
                 success += 1
-            except Exception:  # noqa: BLE001
-                session.rollback()
-                logger.exception(
-                    "event=expiration_reminder_send_failed key_id=%s application_id=%s expires_at=%s email=%s",
-                    key.id,
-                    app.id,
-                    app.expires_at.isoformat(),
-                    app.email,
-                )
-        return processed, success
+        except IntegrityError:
+            logger.info(
+                "event=expiration_reminder_duplicate_skip key_id=%s application_id=%s expires_at=%s notice_days_before=%s",
+                candidate.key_id,
+                candidate.application_id,
+                candidate.expires_at.isoformat(),
+                candidate.notice_days_before,
+            )
+    return len(candidates), success
 
 
 def main() -> None:
