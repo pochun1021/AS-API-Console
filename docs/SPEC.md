@@ -158,7 +158,7 @@
 - 本系統不同步維護本地研究人員名單；申請時以外部服務即時查詢為準
 - 外部研究人員服務失敗（timeout/5xx）時：允許進入系統，但阻擋申請
 - 申請成功時立即核發 API Key，且成功通知信不得延遲成功回應；provider timeout/5xx 時直接回傳 `503 PROVIDER_UNAVAILABLE`
-- 需提供 API Key 到期前一個月（固定 30 天）提醒信機制，通知申請者本人可進行展延
+- 需提供 API Key 到期前 `30|14|7|3|1` 天多段式提醒信機制，通知申請者本人可進行展延
 - API 生效時長固定月數選單（`1|6|12`）
 - API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
 - API Key 明文只顯示一次
@@ -250,7 +250,23 @@
 - `length` (int, MVP 固定 30，表示隨機段長度，不含 `AS-` 前綴)
 - `security_level` (enum, MVP 固定 `high`)
 - `status` (enum: `active` | `revoked` | `expired`)
+- `expiration_notice_sent_at` (datetime, nullable；本輪首次成功寄出任一到期提醒後填值)
 - `created_at` (datetime)
+
+### Entity: `api_key_expiration_notices`
+- `id` (string/uuid)
+- `key_id` (fk -> api_keys.id)
+- `application_id` (fk -> api_key_applications.id)
+- `expires_at_snapshot` (datetime, required；記錄本輪提醒對應的到期時間快照)
+- `notice_days_before` (int, required；允許值 `30|14|7|3|1`)
+- `status` (enum: `sent` | `failed`)
+- `sent_at` (datetime, nullable；成功寄送時間)
+- `error_message` (string, nullable；失敗原因摘要)
+- `created_at` (datetime)
+- 唯一性語意：
+  - 同一把 key、同一個 `expires_at_snapshot`、同一個 `notice_days_before`，最多只能有一筆成功提醒紀錄。
+  - 同一把 key 若 extend 後 `expires_at` 改變，需允許建立新一輪提醒紀錄。
+  - 失敗紀錄不得阻止後續重試；只要同提醒時段尚未成功，後續排程仍可再次嘗試。
 
 ### Entity: `auth_audit_logs`
 - `id` (string/uuid)
@@ -545,13 +561,14 @@ Base path：`/main/api/v1`
 ```
 - 規則：
   - `user` 僅可展延本人 `active|expired` key；`admin` 可展延任意 `active|expired` key。
-  - `user` 展延 `active` key 時，若尚未寄送到期提醒（`expiration_notice_sent_at` 為空）不得展延，回傳 `409 KEY_EXTENSION_NOTICE_REQUIRED`；`expired` key 不受此限制。
+  - `user` 展延 `active` key 時，若尚未寄送本輪任一到期提醒（`expiration_notice_sent_at` 為空）不得展延，回傳 `409 KEY_EXTENSION_NOTICE_REQUIRED`；`expired` key 不受此限制。
   - `duration_months` 僅允許 `1|6|12`。
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
   - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
   - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format。
   - extend 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫回原 key。
   - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`）。
+  - extend 成功後，後續到期提醒需以新的 `expires_at` 重新啟動完整 `30|14|7|3|1` 通知週期。
   - provider timeout / 5xx / 明確拒絕、缺少密文、或解密失敗時，本地不得先更新有效期限或狀態。
   - extend 不會回傳 `api_key_plaintext`。
 
@@ -779,9 +796,14 @@ Base path：`/main/api/v1`
 13-1. 一般使用者可續發本人 `revoked` key；續發 `active|expired` key 時，API 回傳 `KEY_NOT_RENEWABLE`。
 13-2. 同一把舊 key 不可重複續發；重複續發時 API 回傳 `KEY_ALREADY_RENEWED`。
 13-3. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時，API 回傳 `KEY_NOT_EXTENDABLE`。
-13-3-1. 一般使用者展延本人 `active` key 前需已寄送到期提醒（`expiration_notice_sent_at` 非空）；未達條件時 API 回傳 `KEY_EXTENSION_NOTICE_REQUIRED`。`expired` key 不受此限制。
+13-3-1. 一般使用者展延本人 `active` key 前需已寄送本輪任一到期提醒（`expiration_notice_sent_at` 非空）；未達條件時 API 回傳 `KEY_EXTENSION_NOTICE_REQUIRED`。`expired` key 不受此限制。
 13-4. 展延 `duration_months` 僅允許 `1|6|12`；非法值回傳 `422 VALIDATION_ERROR`。
 13-5. `renew`、`extend`、`revoke` 遇到 provider timeout/5xx/明確拒絕、缺少 `key_ciphertext` 或 `key_kek_version`、或解密失敗時，API 不得先改本地狀態，並需回傳對應錯誤。
+13-6. 到期提醒排程需支援 `30|14|7|3|1` 天多段觸發；符合各時段條件的 `active` key 執行後應收到對應提醒。
+13-7. 同一把 key 在同一輪 `expires_at`、同一提醒時段重跑排程時，最多成功寄送一次；不同提醒時段可在不同日期分別成功寄送。
+13-8. 同一把 key extend 後若 `expires_at` 改變，新的到期日需重新觸發完整提醒週期，不得被舊提醒紀錄阻擋。
+13-9. 某提醒時段寄送失敗時，不得影響其他 key 或其他提醒時段處理；在該時段尚未成功前，後續重跑需可再次嘗試。
+13-10. 本輪首次成功寄出任一提醒後，`api_keys.expiration_notice_sent_at` 需填值；後續提醒時段不得覆蓋其既有語意。
 14. 未通過資格檢查或驗證失敗請求不得建立 `api_key_applications` 或 `api_keys` 紀錄。
 15. `user` 呼叫 `GET /main/api/v1/api-keys` 時僅可看到本人資料；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料。本次 `api_key_applications` schema 調整不得改變 `GET /main/api/v1/api-keys` 既有對外 response shape。
 16. `user` 查詢或停用非本人 key 時，API 回傳 `403`（或既有錯誤碼）。
@@ -870,17 +892,20 @@ Base path：`/main/api/v1`
 93. `GET /main/api/v1/api-keys/statistics/users`、`GET /main/api/v1/operation-audit-logs`、`GET /main/api/v1/auth-audit-logs` 的 `from/to` 查詢區間不得超過 `31` 天。
 94. `GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
 95. `POST /main/api/v1/api-keys/{id}/reveal` 回應需包含 `Cache-Control: no-store`。
-96. 系統需提供背景排程寄送 API Key 到期提醒信；判定條件為 `api_keys.status='active'` 且 `expires_at` 落在 `now(UTC)+30 days` 當日。
-97. 到期提醒信僅寄送申請者本人（`api_key_applications.email`），內容需中英並列，且需包含到期時間與可展延提示。
-98. 每把 key 到期提醒信僅可寄送一次；重跑排程不得重複寄送同一把 key 的提醒信。
-99. 到期提醒信寄送失敗不得影響其他符合條件資料處理；需保留失敗記錄供追查。
-100. `admin` 可於 `/institute-view` 頁面查看 `GET /main/api/v1/institutes` 回傳的 `active` institutes 清單與 `total`，以確認 DB 資料已寫入。
-101. `admin` 可於 `/institute-view` 呼叫 `POST /main/api/v1/institutes/sync` 手動同步；成功後需回傳同步統計並可重新讀取最新 `active` institutes。
-102. `POST /main/api/v1/institutes/sync` 在 Persnl SOAP 不可用時需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
-103. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`、`duration` 需由 `duration_months(1|6|12)` 映射為 `30d|180d|360d`、`rpm_limit` / `tpm_limit` 若本地設定值為 `0` 則需送 `null`，且不得送 `models` 或 `budget_limits`。
-104. 外部 provider auth header 需為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；不得再送 `x-master-key`。
-105. 外部 provider `POST /key/update`、`POST /key/regenerate`、`POST /key/block` 若需舊明文 key，request body 一律使用 `key` 欄位傳送；`generate`/`regenerate` 成功時一律自 response `key` 讀取新明文 secret。
-106. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
+96. 系統需提供背景排程寄送 API Key 到期提醒信；單一排程入口需在同次執行中處理 `30|14|7|3|1` 天全部提醒時段。
+97. 提醒判定條件需以 UTC 日期窗口為準：當 `api_keys.status='active'` 且 `expires_at` 落在 `now(UTC)+N days` 的當日區間時，觸發對應 `N` 天提醒；`N` 僅允許 `30|14|7|3|1`。
+98. 到期提醒信僅寄送申請者本人（`api_key_applications.email`），內容需中英並列，且需包含正確剩餘天數、到期時間與可展延提示。
+99. 每把 key 的每個提醒時段需獨立去重；同一把 key 在同一輪 `expires_at`、同一個 `notice_days_before` 最多成功寄送一次，但不同提醒時段可並存。
+100. 同一把 key 若 extend 後 `expires_at` 改變，新的到期日需視為新一輪提醒週期，不得因舊到期日的提醒紀錄而阻擋新一輪通知。
+101. 到期提醒信寄送失敗不得影響其他符合條件資料處理；需保留失敗記錄供追查，且在同提醒時段尚未成功前允許後續排程再次嘗試。
+102. `api_keys.expiration_notice_sent_at` 需維持既有展延權限語意：本輪首次成功寄出任一提醒後填值；寄送失敗不得填值；後續其他提醒時段不得覆蓋既有語意。
+103. `admin` 可於 `/institute-view` 頁面查看 `GET /main/api/v1/institutes` 回傳的 `active` institutes 清單與 `total`，以確認 DB 資料已寫入。
+104. `admin` 可於 `/institute-view` 呼叫 `POST /main/api/v1/institutes/sync` 手動同步；成功後需回傳同步統計並可重新讀取最新 `active` institutes。
+105. `POST /main/api/v1/institutes/sync` 在 Persnl SOAP 不可用時需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
+106. 外部 provider `POST /key/generate` payload 需僅包含：`rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`、`duration` 需由 `duration_months(1|6|12)` 映射為 `30d|180d|360d`、`rpm_limit` / `tpm_limit` 若本地設定值為 `0` 則需送 `null`，且不得送 `models` 或 `budget_limits`。
+107. 外部 provider auth header 需為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；不得再送 `x-master-key`。
+108. 外部 provider `POST /key/update`、`POST /key/regenerate`、`POST /key/block` 若需舊明文 key，request body 一律使用 `key` 欄位傳送；`generate`/`regenerate` 成功時一律自 response `key` 讀取新明文 secret。
+109. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 
 ## Roadmap
 ### Phase 1：Foundation

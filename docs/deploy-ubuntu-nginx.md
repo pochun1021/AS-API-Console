@@ -626,7 +626,9 @@ sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/backend && ENV_FILE=/hom
 
 到期提醒寄信採背景排程模式：
 - 執行腳本：`backend/scripts/run_expiration_reminder.sh`
-- 建議頻率：每日 `00:30`（與 expired 回填 `00:10`、單位同步 `00:20` 錯峰）
+- 處理時段：單次執行同時處理 `30|14|7|3|1` 天全部提醒時段
+- 建議頻率：每日 `08:30`、`12:30`、`16:30`
+- 部署原則：維持單一排程入口，不依提醒天數拆分多個 service、timer 或 cron job
 
 ### 18.1 方案 A（建議）：systemd timer
 
@@ -648,10 +650,12 @@ ExecStart=/home/app/AS-API-Console/backend/scripts/run_expiration_reminder.sh
 建立 `/etc/systemd/system/as-api-expiration-reminder.timer`：
 ```ini
 [Unit]
-Description=Run API key expiration reminder mailer daily at 00:30
+Description=Run API key expiration reminder mailer three times daily
 
 [Timer]
-OnCalendar=*-*-* 00:30:00
+OnCalendar=*-*-* 08:30:00
+OnCalendar=*-*-* 12:30:00
+OnCalendar=*-*-* 16:30:00
 Persistent=true
 Unit=as-api-expiration-reminder.service
 
@@ -683,7 +687,7 @@ sudo -u asapic crontab -e
 
 加入：
 ```cron
-30 0 * * * ENV_FILE=/home/app/config/.env /home/app/AS-API-Console/backend/scripts/run_expiration_reminder.sh
+30 8,12,16 * * * ENV_FILE=/home/app/config/.env /home/app/AS-API-Console/backend/scripts/run_expiration_reminder.sh
 ```
 
 檢查：
@@ -696,7 +700,8 @@ sudo -u asapic tail -n 100 /home/app/log/send_expiration_reminders/$(TZ=Asia/Tai
 - `MAIL_ENABLED` 不是 `true`：會略過寄信；請檢查 `/home/app/config/.env`。
 - SMTP 參數缺失：檢查 `MAIL_SERVER`、`MAIL_PORT`、`MAIL_FROM` 與帳密設定。
 - 執行環境找不到 `uv`：腳本會自動 fallback 到 `.venv/bin/python` 或 `python`，但仍需先安裝依賴。
-- 若查無資料寄送：先以 `--dry-run` 檢查是否有命中「30 天後到期且 active」資料。
+- 若查無資料寄送：先以 `--dry-run` 檢查是否有命中任一 `30|14|7|3|1` 提醒時段的 `active` 資料。
+- 若只收到部分提醒：確認 `api_key_expiration_notices` 是否已有該 key、該輪 `expires_at`、該提醒時段的成功紀錄；同時段成功紀錄存在時不應重寄。
 
 ### 18.4 驗證清單（建議）
 1. 檢查排程已啟用：
@@ -708,7 +713,13 @@ sudo -u asapic crontab -l
 ```bash
 sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/backend && ENV_FILE=/home/app/config/.env ./scripts/run_expiration_reminder.sh --dry-run'
 ```
+   - 預期：輸出會反映是否命中任一 `30|14|7|3|1` 提醒時段，不限於 30 天。
 3. 檢查當日日誌：
 ```bash
 sudo -u asapic tail -n 100 /home/app/log/send_expiration_reminders/$(TZ=Asia/Taipei date +%F).log
 ```
+4. 若需手動驗證正式寄送：
+```bash
+sudo systemctl start as-api-expiration-reminder.service
+```
+   - 預期：同一次執行會處理全部提醒時段；郵件主旨或內容需顯示正確剩餘天數。

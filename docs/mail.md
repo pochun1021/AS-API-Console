@@ -80,5 +80,7 @@ ENV_FILE=/home/app/config/.env ./scripts/run_expiration_reminder.sh --dry-run
 ```
 
 說明：
-- `--dry-run` 僅檢查目前命中提醒條件的資料筆數，不會實際寄信。
+- `--dry-run` 會檢查目前是否命中任一 `30|14|7|3|1` 天提醒時段的資料筆數，不會實際寄信。
+- 提醒判定以 UTC 日期窗口為準；同一支腳本一次會處理全部提醒時段。
 - 正式寄送時移除 `--dry-run`；寄送結果與錯誤會寫入 `log/send_expiration_reminders/`。
+- 驗收時需確認郵件主旨或內容顯示正確剩餘天數，例如 `30`、`14`、`7`、`3`、`1` 天。
