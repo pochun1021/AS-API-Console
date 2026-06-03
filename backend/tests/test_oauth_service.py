@@ -40,7 +40,10 @@ def test_exchange_code_logs_upstream_status_and_body_preview(
 ) -> None:
     req = httpx.Request("POST", "https://oauth.example/token")
     res = httpx.Response(400, request=req, text='{"error":"invalid_grant","error_description":"bad code"}')
-    monkeypatch.setattr("app.services.oauth_service.build_safe_httpx_client", lambda timeout_seconds: _FakeClient(res))
+    monkeypatch.setattr(
+        "app.services.oauth_service.build_safe_httpx_client",
+        lambda timeout_seconds, **kwargs: _FakeClient(res),
+    )
 
     with caplog.at_level(logging.WARNING, logger="app.services.oauth_service"):
         with pytest.raises(ApiError) as exc_info:

@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
+import httpx
 import pytest
-import requests
 from pydantic import ValidationError
 
 from app.core.config import Settings
@@ -11,6 +11,29 @@ from app.services.provider_client import (
     ProviderUnavailableError,
     _normalize_provider_base_url,
 )
+
+
+class _FakeClient:
+    def __init__(self, response: httpx.Response) -> None:
+        self._response = response
+        self.calls: list[dict[str, object]] = []
+
+    def __enter__(self) -> "_FakeClient":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def post(self, url: str, *, json: dict, headers: dict[str, str]) -> httpx.Response:
+        self.calls.append({"url": url, "json": json, "headers": headers})
+        return self._response
+
+
+def _response(payload: object, *, status_code: int = 200) -> httpx.Response:
+    request = httpx.Request("POST", "https://provider.internal/test")
+    if isinstance(payload, str):
+        return httpx.Response(status_code, request=request, text=payload)
+    return httpx.Response(status_code, request=request, json=payload)
 
 
 def test_settings_accepts_https_provider_base_url() -> None:
@@ -57,22 +80,6 @@ def test_provider_client_is_configured_for_https_base_url(monkeypatch: pytest.Mo
     assert client.timeout_seconds == 3.0
 
 
-class _FakeResponse:
-    def __init__(self, payload: object, *, status_code: int = 200) -> None:
-        self.payload = payload
-        self.status_code = status_code
-
-    def json(self) -> object:
-        if isinstance(self.payload, Exception):
-            raise self.payload
-        return self.payload
-
-    def raise_for_status(self) -> None:
-        if self.status_code < 400:
-            return
-        raise requests.HTTPError(response=self)
-
-
 def _build_client(monkeypatch: pytest.MonkeyPatch) -> ProviderClient:
     monkeypatch.setattr(
         ProviderClient,
@@ -93,24 +100,33 @@ def _build_client(monkeypatch: pytest.MonkeyPatch) -> ProviderClient:
 
 def test_generate_key_uses_bearer_auth_and_reads_key_field(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch)
-    captured: dict = {}
+    fake_client = _FakeClient(_response({"key": "AS-plain", "request_id": "req-1", "operation_id": "op-1"}))
+    captured: dict[str, object] = {}
 
-    def _fake_post(url, *, json, headers, timeout):
-        captured["url"] = url
-        captured["auth"] = headers.get("Authorization")
-        captured["legacy_auth"] = headers.get("x-master-key")
-        captured["body"] = json
-        captured["timeout"] = timeout
-        return _FakeResponse({"key": "AS-plain", "request_id": "req-1", "operation_id": "op-1"})
+    def _fake_httpx_client(*, timeout_seconds: float, base_url: str | None = None, follow_redirects: bool = False) -> _FakeClient:
+        captured["timeout_seconds"] = timeout_seconds
+        captured["base_url"] = base_url
+        captured["follow_redirects"] = follow_redirects
+        return fake_client
 
-    monkeypatch.setattr("app.services.provider_client.requests.post", _fake_post)
+    monkeypatch.setattr("app.services.provider_client.build_safe_httpx_client", _fake_httpx_client)
     result = client.generate_key({"duration": "30d"})
 
-    assert captured["url"] == "https://provider.internal/key/generate"
-    assert captured["auth"] == "Bearer secret-token"
-    assert captured["legacy_auth"] is None
-    assert captured["body"] == {"duration": "30d"}
-    assert captured["timeout"] == 3.0
+    assert captured == {
+        "timeout_seconds": 3.0,
+        "base_url": "https://provider.internal",
+        "follow_redirects": False,
+    }
+    assert fake_client.calls == [
+        {
+            "url": "/key/generate",
+            "json": {"duration": "30d"},
+            "headers": {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer secret-token",
+            },
+        }
+    ]
     assert result.key_plaintext == "AS-plain"
     assert result.request_id == "req-1"
     assert result.operation_id == "op-1"
@@ -118,10 +134,9 @@ def test_generate_key_uses_bearer_auth_and_reads_key_field(monkeypatch: pytest.M
 
 def test_update_key_accepts_string_response(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch)
-
     monkeypatch.setattr(
-        "app.services.provider_client.requests.post",
-        lambda url, **kwargs: _FakeResponse("success"),
+        "app.services.provider_client.build_safe_httpx_client",
+        lambda **kwargs: _FakeClient(_response("success")),
     )
 
     result = client.update_key({"key": "AS-old"})
@@ -133,10 +148,12 @@ def test_update_key_accepts_string_response(monkeypatch: pytest.MonkeyPatch) -> 
 def test_provider_422_maps_detail_array(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch)
     monkeypatch.setattr(
-        "app.services.provider_client.requests.post",
-        lambda url, **kwargs: _FakeResponse(
-            {"detail": [{"loc": ["body", "duration"], "msg": "invalid duration", "type": "value_error"}]},
-            status_code=422,
+        "app.services.provider_client.build_safe_httpx_client",
+        lambda **kwargs: _FakeClient(
+            _response(
+                {"detail": [{"loc": ["body", "duration"], "msg": "invalid duration", "type": "value_error"}]},
+                status_code=422,
+            )
         ),
     )
 
@@ -146,10 +163,9 @@ def test_provider_422_maps_detail_array(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_provider_missing_key_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch)
-
     monkeypatch.setattr(
-        "app.services.provider_client.requests.post",
-        lambda url, **kwargs: _FakeResponse({"token": "secret"}),
+        "app.services.provider_client.build_safe_httpx_client",
+        lambda **kwargs: _FakeClient(_response({"token": "secret"})),
     )
 
     with pytest.raises(ProviderUnavailableError, match="provider response missing key"):
@@ -175,8 +191,8 @@ def test_provider_403_logs_upstream_status_when_debug_enabled(
         ),
     )
     monkeypatch.setattr(
-        "app.services.provider_client.requests.post",
-        lambda url, **kwargs: _FakeResponse({"detail": "forbidden", "token": "hidden"}, status_code=403),
+        "app.services.provider_client.build_safe_httpx_client",
+        lambda **kwargs: _FakeClient(_response({"detail": "forbidden", "token": "hidden"}, status_code=403)),
     )
     client = ProviderClient()
 

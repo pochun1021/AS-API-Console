@@ -29,5 +29,16 @@ def validate_outbound_url(raw_url: str | None, *, config_name: str) -> str:
     return normalized
 
 
-def build_safe_httpx_client(*, timeout_seconds: float) -> httpx.Client:
-    return httpx.Client(timeout=timeout_seconds, follow_redirects=False)
+def build_safe_httpx_client(
+    *,
+    timeout_seconds: float,
+    base_url: str | None = None,
+    follow_redirects: bool = False,
+) -> httpx.Client:
+    client_kwargs: dict[str, object] = {
+        "timeout": timeout_seconds,
+        "follow_redirects": follow_redirects,
+    }
+    if base_url:
+        client_kwargs["base_url"] = base_url
+    return httpx.Client(**client_kwargs)

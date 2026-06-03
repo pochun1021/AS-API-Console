@@ -2,10 +2,10 @@ import json
 import logging
 from dataclasses import dataclass
 
-import requests
+import httpx
 
 from app.core.config import get_settings
-from app.core.outbound import validate_outbound_url
+from app.core.outbound import build_safe_httpx_client, validate_outbound_url
 
 logger = logging.getLogger(__name__)
 _SENSITIVE_FIELDS = {"authorization", "key", "token"}
@@ -136,18 +136,23 @@ class ProviderClient:
         self._log_request(path=path, payload=payload)
 
         try:
-            resp = requests.post(
-                f"{self.base_url}{path}",
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.master_key}",
-                },
-                timeout=self.timeout_seconds,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except requests.HTTPError as exc:
+            with build_safe_httpx_client(timeout_seconds=self.timeout_seconds, base_url=self.base_url) as client:
+                resp = client.post(
+                    path,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {self.master_key}",
+                    },
+                )
+                resp.raise_for_status()
+                try:
+                    data = resp.json()
+                except json.JSONDecodeError:
+                    if require_plaintext:
+                        raise
+                    data = resp.text
+        except httpx.HTTPStatusError as exc:
             response_payload: object = {}
             try:
                 response_payload = exc.response.json() if exc.response is not None else {}
@@ -160,7 +165,7 @@ class ProviderClient:
             if 400 <= status_code < 500:
                 raise ProviderBadRequestError(f"provider rejected request: {status_code}") from exc
             raise ProviderUnavailableError(f"provider unavailable: {status_code}") from exc
-        except (requests.RequestException, json.JSONDecodeError) as exc:
+        except (httpx.RequestError, json.JSONDecodeError) as exc:
             raise ProviderUnavailableError("provider unavailable") from exc
 
         request_id: str | None = None

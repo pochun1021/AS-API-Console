@@ -88,7 +88,7 @@ def main() -> int:
     attrs = json.dumps(["sysId", "cn", "chName", "email", "instCode", "tCode"], ensure_ascii=False)
 
     try:
-        with httpx.Client(timeout=timeout_seconds) as client:
+        with httpx.Client(timeout=timeout_seconds, follow_redirects=False) as client:
             login_response = _soap_call(client, url, "login", [user, password])
             login_ok = str(login_response).strip() == "0"
             results["login"] = _bool_record(login_ok, "login success" if login_ok else f"login failed: {login_response}")

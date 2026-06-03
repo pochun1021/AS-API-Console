@@ -44,7 +44,7 @@ def main() -> int:
     print(f"[INFO] sending test request to {url}...")
     
     try:
-        with httpx.Client(timeout=timeout_seconds) as client:
+        with httpx.Client(timeout=timeout_seconds, follow_redirects=False) as client:
             resp = client.post(url, json=test_payload, headers=headers)
             
             if resp.status_code == 200:

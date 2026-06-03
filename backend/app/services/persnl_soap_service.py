@@ -10,6 +10,7 @@ from zeep import Client as ZeepClient
 from zeep import Settings as ZeepSettings
 
 from app.core.config import get_settings
+from app.core.outbound import build_safe_httpx_client
 
 
 class PersnlSoapUnavailableError(RuntimeError):
@@ -40,7 +41,7 @@ class PersnlSoapService:
         self.logged_in = False
         self.unavailable_reason = None
         self.last_login_at = None
-        self._client = httpx.Client(timeout=self.timeout_seconds)
+        self._client = build_safe_httpx_client(timeout_seconds=self.timeout_seconds)
         self._zeep_client = None
         self._zeep_service = None
 
