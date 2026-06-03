@@ -24,7 +24,7 @@
 2. 通過進入資格後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`（對應 OAuth claims：`cn`、`chName`、`email`、`instCode`、`sysId`）。
 3. 一般使用者填寫申請日期、用途與 API 生效時長；管理者可選擇代他人送出申請，僅需填寫目標 `account`，其餘身份欄位由系統查詢補齊。
 4. 送出申請時依 `POST /main/api/v1/api-keys/applications` 契約再次檢查資格與 request/auth 驗證。
-5. 資格檢查通過後系統立即核發 API Key 並回傳一次性明文；不需經過常態管理者審核。若 provider timeout/5xx，系統直接回傳 `503 PROVIDER_UNAVAILABLE`，且不得建立 pending 申請。
+5. 資格檢查通過後系統立即核發 API Key 並回傳一次性明文；不需經過常態管理者審核。成功回應不得等待成功通知信送達後才返回。若 provider timeout/5xx，系統直接回傳 `503 PROVIDER_UNAVAILABLE`，且不得建立 pending 申請。
 6. 系統只顯示一次明文 API Key，使用者需立即保存。
 7. 一般使用者可在「我的 API Key 紀錄」查看本人歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩（`AS-...` + 後 4 碼）；若舊 key 已被 renew，該舊 key 對一般使用者隱藏。
 8. 一般使用者可自行停用本人已生效（`active`）的 Key。
@@ -157,7 +157,7 @@
 - 研究人員名單由外部服務提供並以職稱代碼判斷
 - 本系統不同步維護本地研究人員名單；申請時以外部服務即時查詢為準
 - 外部研究人員服務失敗（timeout/5xx）時：允許進入系統，但阻擋申請
-- 申請成功時立即核發 API Key；provider timeout/5xx 時直接回傳 `503 PROVIDER_UNAVAILABLE`
+- 申請成功時立即核發 API Key，且成功通知信不得延遲成功回應；provider timeout/5xx 時直接回傳 `503 PROVIDER_UNAVAILABLE`
 - 需提供 API Key 到期前一個月（固定 30 天）提醒信機制，通知申請者本人可進行展延
 - API 生效時長固定月數選單（`1|6|12`）
 - API Key 格式固定為 `AS-` + 30 碼隨機字元（總長 33）
@@ -830,9 +830,9 @@ Base path：`/main/api/v1`
 50. `budget_duration` 僅允許 `daily|weekly|monthly`；管理端顯示映射需為 `1天|7天|30天`。
 50-1. 每把 API Key 的限制策略需同時包含 `budget` 與 `rate_limit`；不得提供二選一 `issuance_mode`。
 50-2. 不提供 pending 補發端點；前端不得提供待審申請頁面入口。
-52. `POST /main/api/v1/api-keys/applications` 成功即時配發後，需寄送 Email 給申請者本人（不需寄送給管理者）。
+52. `POST /main/api/v1/api-keys/applications` 成功即時配發後，需寄送 Email 給申請者本人（不需寄送給管理者），但寄信必須採不阻塞成功回應的方式執行。
 53. 第 52 項通知信內容需中英並列（中文在前、英文在後）。
-54. 第 52 項若寄信失敗，`POST /main/api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料。
+54. 第 52 項若寄信失敗，`POST /main/api/v1/api-keys/applications` 仍需回 `201`，且不回滾申請資料；失敗僅記錄供追查，不得延遲一次性明文 key 的成功回應。
 54-2. `POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew`、`POST /main/api/v1/api-keys/{id}/extend` 或 `POST /main/api/v1/api-keys/{id}/revoke` 若 provider timeout/5xx（`PROVIDER_UNAVAILABLE`）時，需寄送通知信給所有 `active` 管理者。
 54-3. 第 54-2 項若管理者通知信寄送失敗，不得改變原 API 錯誤回應（仍維持原錯誤碼/狀態）。
 57. 若部署使用 local provider adapter 作為開發/測試替身，`applications`、`renew`、`extend`、`revoke` 仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。

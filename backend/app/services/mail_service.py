@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
+from asyncio import run as run_async
 from datetime import UTC, datetime
+from threading import Thread
+from typing import Callable
 
 try:
     from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
@@ -26,6 +30,18 @@ class MailService:
         password = (self.settings.mail_password or "").strip()
         use_credentials = bool(username and password)
         return username, password, use_credentials
+
+    def dispatch_background(self, task_factory: Callable[[], object], *, error_message: str) -> None:
+        def _runner() -> None:
+            try:
+                run_async(task_factory())
+            except Exception:  # noqa: BLE001
+                logging.exception(error_message)
+
+        try:
+            Thread(target=_runner, name="mail-dispatch", daemon=True).start()
+        except Exception:  # noqa: BLE001
+            logging.exception(error_message)
 
     async def _send_html(self, *, subject: str, recipients: list[str], body: str) -> None:
         if not self.is_enabled():

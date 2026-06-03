@@ -2,7 +2,6 @@ import hashlib
 import logging
 import re
 import secrets
-from asyncio import run as run_async
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -245,28 +244,33 @@ class ApiKeysService:
             )
         )
         self._create_key_record(application_id=application.id, plaintext=plaintext, key_alias=key_alias)
+        application_id = application.id
+        application_account = application.account
+        application_status = application.status
+        application_issued_at = application.issued_at
+        application_expires_at = application.expires_at
+        applicant_email = application.email
+        applicant_name = application.name
 
         self.session.add(application)
         self.session.commit()
-        try:
-            run_async(
-                self.mail_service.send_application_received_to_applicant(
-                    to_email=application.email,
-                    owner_name=application.name,
-                    application_id=application.id,
-                    app_domain=self.settings.app_domain,
-                )
-            )
-        except Exception:  # noqa: BLE001
-            logging.exception("failed to send application received email to applicant")
+        self.mail_service.dispatch_background(
+            lambda: self.mail_service.send_application_received_to_applicant(
+                to_email=applicant_email,
+                owner_name=applicant_name,
+                application_id=application_id,
+                app_domain=self.settings.app_domain,
+            ),
+            error_message="failed to send application received email to applicant",
+        )
 
         return {
             "application": {
-                "id": application.id,
-                "account": application.account,
-                "status": application.status,
-                "issued_at": application.issued_at,
-                "expires_at": application.expires_at,
+                "id": application_id,
+                "account": application_account,
+                "status": application_status,
+                "issued_at": application_issued_at,
+                "expires_at": application_expires_at,
             },
             "api_key_plaintext": plaintext,
             "provider_request_id": provider_metadata.get("provider_request_id"),

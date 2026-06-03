@@ -2,6 +2,7 @@ import logging
 from types import SimpleNamespace
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
+from threading import Event
 
 from sqlalchemy import create_engine, text
 
@@ -176,6 +177,62 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert "expiration_notice_sent_at" in item
     assert "extend_eligible" in item
     _assert_utc_datetime_string(item["expires_at"])
+
+
+def test_application_success_dispatches_mail_without_blocking_response(client, admin_headers, user_headers, monkeypatch):
+    from app.services.mail_service import MailService
+
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    background_called = Event()
+
+    def _fake_dispatch_background(self, task_factory, *, error_message: str):
+        del self, task_factory, error_message
+        background_called.set()
+
+    monkeypatch.setattr(MailService, "dispatch_background", _fake_dispatch_background)
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+
+    assert create_resp.status_code == 201
+    assert background_called.is_set()
+
+
+def test_application_success_still_returns_201_when_mail_dispatch_fails(client, admin_headers, user_headers, monkeypatch, caplog):
+    from app.services import mail_service
+    from app.services.mail_service import MailService
+
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    class _ImmediateThread:
+        def __init__(self, *, target, name: str, daemon: bool):
+            del name, daemon
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    async def _raise_send(self, **kwargs):
+        del self, kwargs
+        raise RuntimeError("smtp down")
+
+    monkeypatch.setattr(mail_service, "Thread", _ImmediateThread)
+    monkeypatch.setattr(MailService, "send_application_received_to_applicant", _raise_send)
+
+    with caplog.at_level(logging.ERROR):
+        create_resp = client.post(
+            _api("/api-keys/applications"),
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        )
+
+    assert create_resp.status_code == 201
+    assert create_resp.json()["api_key_plaintext"].startswith("AS-")
+    assert "failed to send application received email to applicant" in caplog.text
 
 
 def test_application_rejects_non_whitelisted(client, user_headers):
