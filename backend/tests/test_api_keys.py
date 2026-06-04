@@ -595,6 +595,7 @@ def test_application_provider_timeout_returns_503(client, admin_headers, user_he
         admin_notify_calls.append(kwargs)
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
@@ -626,16 +627,47 @@ def test_application_provider_timeout_returns_503(client, admin_headers, user_he
         assert admin_notify_calls[0]["target_account"] == user_headers["x-account"]
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
+
+
+def test_application_external_provider_requires_team_id(client, admin_headers, user_headers, monkeypatch):
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+    get_settings.cache_clear()
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+
+    provider_called = {"count": 0}
+
+    def _should_not_call_provider(self, payload):
+        provider_called["count"] += 1
+        raise AssertionError("provider should not be called when PROVIDER_TEAM_ID is missing")
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _should_not_call_provider)
+
+    try:
+        resp = client.post(
+            _api("/api-keys/applications"),
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "missing team id"},
+        )
+        assert resp.status_code == 503
+        assert resp.json()["error"]["code"] == "PROVIDER_TEAM_ID_REQUIRED"
+        assert provider_called["count"] == 0
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         get_settings.cache_clear()
 
 
 def test_provider_payload_builder_uses_external_contract():
     from app.services.api_keys_service import ApiKeysService, IssuanceConfigValues
+    from types import SimpleNamespace
 
     service = object.__new__(ApiKeysService)
+    service.settings = SimpleNamespace(provider_team_id="team-001")
 
     payload = service._build_provider_payload(
-        owner_account="user1",
         key_alias="for_user1",
         duration_months=6,
         config=IssuanceConfigValues(
@@ -652,6 +684,7 @@ def test_provider_payload_builder_uses_external_contract():
         "duration": "180d",
         "tpm_limit": 10000,
         "rpm_limit": 500,
+        "team_id": "team-001",
         "key_alias": "for_user1",
         "key_type": "llm_api",
     }
@@ -659,11 +692,12 @@ def test_provider_payload_builder_uses_external_contract():
 
 def test_provider_payload_builder_converts_zero_rate_limits_to_null():
     from app.services.api_keys_service import ApiKeysService, IssuanceConfigValues
+    from types import SimpleNamespace
 
     service = object.__new__(ApiKeysService)
+    service.settings = SimpleNamespace(provider_team_id="team-001")
 
     payload = service._build_provider_payload(
-        owner_account="user1",
         key_alias="for_user1",
         duration_months=1,
         config=IssuanceConfigValues(
@@ -676,6 +710,39 @@ def test_provider_payload_builder_converts_zero_rate_limits_to_null():
 
     assert payload["tpm_limit"] is None
     assert payload["rpm_limit"] is None
+    assert payload["team_id"] == "team-001"
+
+
+def test_prod_env_masks_and_stores_sk_prefix(client, admin_headers, user_headers, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("ALLOW_HEADER_AUTH", "true")
+    get_settings.cache_clear()
+
+    try:
+        _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+        create_resp = client.post(
+            _api("/api-keys/applications"),
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "prod prefix"},
+        )
+        assert create_resp.status_code == 201
+        assert create_resp.json()["api_key_plaintext"].startswith("sk-")
+
+        key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+        listed = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
+        assert listed["masked_key"].startswith("sk-...")
+
+        settings = get_settings()
+        db_url = settings.test_database_url or settings.database_url
+        engine = create_engine(db_url, future=True)
+        with engine.begin() as conn:
+            row = conn.execute(text("SELECT key_prefix FROM api_keys WHERE id = :key_id"), {"key_id": key_id}).first()
+        assert row is not None
+        assert row[0] == "sk-"
+    finally:
+        monkeypatch.delenv("ALLOW_HEADER_AUTH", raising=False)
+        monkeypatch.setenv("APP_ENV", "test")
+        get_settings.cache_clear()
 
 
 def test_applicant_mail_body_does_not_include_application_id():
@@ -1062,6 +1129,7 @@ def test_revoke_provider_unavailable_does_not_change_local_status(client, admin_
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
     monkeypatch.setattr(
@@ -1078,6 +1146,7 @@ def test_revoke_provider_unavailable_does_not_change_local_status(client, admin_
         assert row["revoked_at"] is None
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
         get_settings.cache_clear()
 
 
@@ -1096,15 +1165,15 @@ def test_provider_mutation_payloads_use_key_field_and_shared_contract(client, ad
     created_plaintext = create_resp.json()["api_key_plaintext"]
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
     captured_block_payload: dict = {}
-    captured_regenerate_payload: dict = {}
+    captured_generate_payload: dict = {}
     captured_update_payload: dict = {}
 
     def _capture_block_payload(self, payload):
         captured_block_payload.update(payload)
         return SimpleNamespace(request_id=None, operation_id=None)
 
-    def _capture_regenerate_payload(self, payload):
-        captured_regenerate_payload.update(payload)
+    def _capture_generate_payload(self, payload):
+        captured_generate_payload.update(payload)
         return ProviderGenerateResult(key_plaintext="AS-renewedabcdefghijklmnopqrstuvwxyz")
 
     def _capture_update_payload(self, payload):
@@ -1112,10 +1181,11 @@ def test_provider_mutation_payloads_use_key_field_and_shared_contract(client, ad
         return SimpleNamespace(request_id=None, operation_id=None)
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
     monkeypatch.setattr("app.services.provider_client.ProviderClient.block_key", _capture_block_payload)
-    monkeypatch.setattr("app.services.provider_client.ProviderClient.regenerate_key", _capture_regenerate_payload)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _capture_generate_payload)
     monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _capture_update_payload)
     try:
         revoke = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
@@ -1126,12 +1196,13 @@ def test_provider_mutation_payloads_use_key_field_and_shared_contract(client, ad
         assert renew.status_code == 200
         renewed_key_id = renew.json()["id"]
         renewed_plaintext = renew.json()["api_key_plaintext"]
-        assert captured_regenerate_payload["key"] == created_plaintext
-        assert captured_regenerate_payload["duration"] == "30d"
-        assert captured_regenerate_payload["key_alias"] == f"for_{user['x-account']}"
-        assert captured_regenerate_payload["key_type"] == "llm_api"
-        assert "models" not in captured_regenerate_payload
-        assert "api_key_plaintext" not in captured_regenerate_payload
+        assert "key" not in captured_generate_payload
+        assert captured_generate_payload["duration"] == "30d"
+        assert captured_generate_payload["key_alias"] == f"for_{user['x-account']}"
+        assert captured_generate_payload["key_type"] == "llm_api"
+        assert captured_generate_payload["team_id"] == "team-001"
+        assert "models" not in captured_generate_payload
+        assert "api_key_plaintext" not in captured_generate_payload
 
         _set_expiration_notice_sent_at(renewed_key_id, datetime.now(UTC))
         extend = client.post(_api(f"/api-keys/{renewed_key_id}/extend"), headers=user, json={"duration_months": 6})
@@ -1140,10 +1211,58 @@ def test_provider_mutation_payloads_use_key_field_and_shared_contract(client, ad
         assert captured_update_payload["duration"] == "180d"
         assert captured_update_payload["key_alias"] == f"for_{user['x-account']}"
         assert captured_update_payload["key_type"] == "llm_api"
+        assert captured_update_payload["team_id"] == "team-001"
         assert "models" not in captured_update_payload
         assert "api_key_plaintext" not in captured_update_payload
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
+
+
+def test_extend_sends_latest_key_alias_to_provider(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "extend alias preservation"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+
+    admin_update = client.patch(
+        _api(f"/api-keys/{key_id}"),
+        headers=admin_headers,
+        json={"key_alias": "custom_admin_alias"},
+    )
+    assert admin_update.status_code == 200
+
+    _set_key_expires_at_offset_days(key_id, days=3)
+    captured_update_payload: dict = {}
+
+    def _capture_update_payload(self, payload):
+        captured_update_payload.update(payload)
+        return SimpleNamespace(request_id=None, operation_id=None)
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _capture_update_payload)
+    try:
+        extend = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
+        assert extend.status_code == 200
+        assert captured_update_payload["key_alias"] == "custom_admin_alias"
+
+        detail = client.get(_api(f"/api-keys/{key_id}"), headers=admin_headers)
+        assert detail.status_code == 200
+        assert detail.json()["key_alias"] == "custom_admin_alias"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
         get_settings.cache_clear()
 
 
@@ -1162,6 +1281,7 @@ def test_create_application_retries_key_alias_with_version_suffix(client, admin_
         return ProviderGenerateResult(key_plaintext="AS-generatedabcdefghijklmnopqrstuvwxyz")
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
     monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _generate_with_retry)
@@ -1179,6 +1299,7 @@ def test_create_application_retries_key_alias_with_version_suffix(client, admin_
         assert listed.json()["items"][0]["key_alias"] == f"for_{user['x-account']}_v2"
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
         get_settings.cache_clear()
 
 
@@ -1286,19 +1407,21 @@ def test_renew_rejects_expired_key_without_calling_provider(client, admin_header
     _set_key_expires_at_past(key_id)
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
 
     def _should_not_call_provider(self, payload):
         raise AssertionError("provider should not be called for expired renew")
 
-    monkeypatch.setattr("app.services.provider_client.ProviderClient.regenerate_key", _should_not_call_provider)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _should_not_call_provider)
     try:
         renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user_headers)
         assert renew.status_code == 409
         assert renew.json()["error"]["code"] == "KEY_NOT_RENEWABLE"
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
         get_settings.cache_clear()
 
 
@@ -1394,6 +1517,7 @@ def test_extend_provider_unavailable_does_not_change_expiration(client, admin_he
     before = _fetch_key_status_row(key_id)
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
     monkeypatch.setattr(
@@ -1410,6 +1534,7 @@ def test_extend_provider_unavailable_does_not_change_expiration(client, admin_he
         assert after["expires_at"] == before["expires_at"]
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
         get_settings.cache_clear()
 
 
@@ -1441,15 +1566,21 @@ def test_provider_operations_require_secret_material_before_calling_provider(cli
     _set_key_secret_material(revoked_key_id, key_ciphertext=None, key_kek_version=None)
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    renew_calls = {"count": 0}
 
     def _should_not_call_provider(self, payload):
         raise AssertionError("provider should not be called without secret material")
 
+    def _generate_without_secret_dependency(self, payload):
+        renew_calls["count"] += 1
+        return SimpleNamespace(key_plaintext="AS-renewedabcdefghijklmnopqrstuvwxyz", request_id=None, operation_id=None)
+
     monkeypatch.setattr("app.services.provider_client.ProviderClient.block_key", _should_not_call_provider)
     monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _should_not_call_provider)
-    monkeypatch.setattr("app.services.provider_client.ProviderClient.regenerate_key", _should_not_call_provider)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.generate_key", _generate_without_secret_dependency)
     try:
         revoke = client.post(_api(f"/api-keys/{active_key_id}/revoke"), headers=user)
         assert revoke.status_code == 409
@@ -1460,10 +1591,11 @@ def test_provider_operations_require_secret_material_before_calling_provider(cli
         assert extend.json()["error"]["code"] == "KEY_NOT_REVEALABLE"
 
         renew = client.post(_api(f"/api-keys/{revoked_key_id}/renew"), headers=user)
-        assert renew.status_code == 409
-        assert renew.json()["error"]["code"] == "KEY_NOT_REVEALABLE"
+        assert renew.status_code == 200
+        assert renew_calls["count"] == 1
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
         get_settings.cache_clear()
 
 
@@ -1513,6 +1645,7 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
     client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
     monkeypatch.setattr(
@@ -1521,7 +1654,7 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
     )
     monkeypatch.setattr("app.services.mail_service.MailService.send_provider_issuance_failed_to_admins", _fake_admin_notify)
     monkeypatch.setattr(
-        "app.services.provider_client.ProviderClient.regenerate_key",
+        "app.services.provider_client.ProviderClient.generate_key",
         lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
     )
     try:
@@ -1535,6 +1668,7 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
         assert admin_notify_calls[0]["target_account"] == user["x-account"]
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
         get_settings.cache_clear()
 
 
@@ -1543,6 +1677,7 @@ def test_application_provider_422_maps_to_validation_error(client, admin_headers
     from app.services.provider_client import ProviderBadRequestError
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.api_keys_service.LoginEligibilityService.is_eligible_by_sysid", lambda self, sysid: True)
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
@@ -1560,6 +1695,7 @@ def test_application_provider_422_maps_to_validation_error(client, admin_headers
         assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
         get_settings.cache_clear()
 
 
@@ -1571,6 +1707,7 @@ def test_application_provider_timeout_admin_notify_failure_does_not_change_503(c
         raise RuntimeError("smtp down")
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
@@ -1590,6 +1727,7 @@ def test_application_provider_timeout_admin_notify_failure_does_not_change_503(c
         assert resp.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
         get_settings.cache_clear()
 
 
@@ -1767,6 +1905,153 @@ def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
     assert listed.status_code == 200
     admin_item = next(item for item in listed.json()["items"] if item["id"] == key_id)
     assert admin_item["key_alias"] == "custom_admin_alias"
+
+
+def test_admin_update_key_alias_syncs_provider_before_local_commit(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 6, "purpose": "u1"},
+    )
+    assert create_resp.status_code == 201
+    created_plaintext = create_resp.json()["api_key_plaintext"]
+    key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
+    captured_payload: dict = {}
+
+    def _capture_update_payload(self, payload):
+        captured_payload.update(payload)
+        return SimpleNamespace(request_id=None, operation_id=None)
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _capture_update_payload)
+    try:
+        updated = client.patch(_api(f"/api-keys/{key_id}"), headers=admin_headers, json={"key_alias": "custom_admin_alias"})
+        assert updated.status_code == 200
+        assert updated.json()["key_alias"] == "custom_admin_alias"
+        assert captured_payload["key"] == created_plaintext
+        assert captured_payload["duration"] == "180d"
+        assert captured_payload["key_alias"] == "custom_admin_alias"
+        assert captured_payload["team_id"] == "team-001"
+        assert captured_payload["key_type"] == "llm_api"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
+
+
+def test_admin_update_key_alias_provider_unavailable_leaves_local_alias_unchanged(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderUnavailableError
+
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "app.services.provider_client.ProviderClient.update_key",
+        lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
+    )
+    try:
+        updated = client.patch(_api(f"/api-keys/{key_id}"), headers=admin_headers, json={"key_alias": "custom_admin_alias"})
+        assert updated.status_code == 503
+        assert updated.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+
+        detail = client.get(_api(f"/api-keys/{key_id}"), headers=admin_headers)
+        assert detail.status_code == 200
+        assert detail.json()["key_alias"] == "for_user1"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
+
+
+def test_admin_update_key_alias_provider_validation_error_leaves_local_alias_unchanged(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+    from app.services.provider_client import ProviderBadRequestError
+
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "app.services.provider_client.ProviderClient.update_key",
+        lambda self, payload: (_ for _ in ()).throw(ProviderBadRequestError("body.key_alias: invalid alias")),
+    )
+    try:
+        updated = client.patch(_api(f"/api-keys/{key_id}"), headers=admin_headers, json={"key_alias": "custom_admin_alias"})
+        assert updated.status_code == 422
+        assert updated.json()["error"]["code"] == "VALIDATION_ERROR"
+
+        detail = client.get(_api(f"/api-keys/{key_id}"), headers=admin_headers)
+        assert detail.status_code == 200
+        assert detail.json()["key_alias"] == "for_user1"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
+
+
+def test_admin_update_key_alias_requires_secret_material_before_provider_call(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
+    _set_key_secret_material(key_id, key_ciphertext=None, key_kek_version=None)
+
+    provider_calls = {"count": 0}
+
+    def _should_not_call_provider(self, payload):
+        provider_calls["count"] += 1
+        raise AssertionError("provider should not be called without secret material")
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _should_not_call_provider)
+    try:
+        updated = client.patch(_api(f"/api-keys/{key_id}"), headers=admin_headers, json={"key_alias": "custom_admin_alias"})
+        assert updated.status_code == 409
+        assert updated.json()["error"]["code"] == "KEY_NOT_REVEALABLE"
+        assert provider_calls["count"] == 0
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
 
 
 def test_admin_update_key_alias_rejects_duplicates(client, admin_headers):

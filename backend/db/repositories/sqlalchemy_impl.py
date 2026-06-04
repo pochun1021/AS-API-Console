@@ -229,7 +229,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             application_id=data.application_id,
             renewed_to_key_id=None,
             key_hash=data.key_hash,
-            key_prefix="AS-",
+            key_prefix=data.key_prefix,
             masked_key=data.masked_key,
             key_alias=data.key_alias,
             key_ciphertext=data.key_ciphertext,

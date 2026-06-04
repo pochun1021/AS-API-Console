@@ -625,7 +625,7 @@ Base path：`/main/api/v1`
   "key_alias": "service_internal_batch"
 }
 ```
-- 規則：僅 `admin` 可使用；`key_alias` 不可為空字串；若與其他 key alias 重複需回傳 `409 KEY_ALIAS_DUPLICATE`；成功後回傳更新後單筆資料。
+- 規則：僅 `admin` 可使用；`key_alias` 不可為空字串；若與其他 key alias 重複需回傳 `409 KEY_ALIAS_DUPLICATE`；external provider mode 下需先同步 provider `update` 成功後才可提交本地更新，成功後回傳更新後單筆資料。
 - `key_alias` 需通過 persisted-text 驗證；若包含明顯程式語法片段，回傳 `422 VALIDATION_ERROR`。
 
 ### 4-1) 受控回取 API Key 明文（Reveal）
@@ -850,7 +850,7 @@ Base path：`/main/api/v1`
 14. 若 provider timeout/5xx、明確拒絕、缺少密文材料、解密失敗或回應不完整，本地不得先改動狀態或有效期限，並需回傳對應錯誤。
 15. 若部署使用 local provider adapter 作為開發/測試替身，仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
 16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 需送 `null`，且不得送 `models` 或 `budget_limits`。
-17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
+17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`update` 用於 extend 或 alias 同步時可帶 `key_alias`；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
 18. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 
 ### Key 查詢、狀態與 Lifecycle 權限
@@ -890,7 +890,7 @@ Base path：`/main/api/v1`
 41. 前端需阻擋管理者停用自己的管理者權限；管理者新增查詢結果中，對已存在於 `admins` 的人員（包含 `active`、`inactive`）不得顯示新增按鈕。
 42. `GET /main/api/v1/api-keys/statistics/users` 僅 `admin` 可用，預設依 `total_applications desc` 排序；`sort_by` 僅允許既定欄位，`scope`、`from`、`to` 與 `application_date` 篩選需生效，且統計結果不得包含 `api_key_plaintext`。
 43. 統計 API 每筆資料需包含 `owner_department`；管理者統計表格中的 `total_applications` 與 `active_count` 需可點擊開啟 API Key 明細 Dialog，且明細查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
-44. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳系統產生 alias。`admin` 可透過 `PATCH /main/api/v1/api-keys/{id}` 更新 alias，`user` 呼叫需回傳 `403`，重複 alias 需回傳 `409 KEY_ALIAS_DUPLICATE`。
+44. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳系統產生 alias。`admin` 可透過 `PATCH /main/api/v1/api-keys/{id}` 更新 alias，`user` 呼叫需回傳 `403`，重複 alias 需回傳 `409 KEY_ALIAS_DUPLICATE`；external provider mode 下 alias 更新需同步 provider 狀態。
 45. 限制策略設定僅 `admin` 可讀取與更新；`budget_duration` 僅允許 `daily|weekly|monthly`，管理端顯示映射需為 `1天|7天|30天`，且每把 API Key 的限制策略需同時包含 `budget` 與 `rate_limit`，不得提供 pending 補發端點或 `issuance_mode` 二選一模式。
 46. `admin` 可於 `/institute-view` 查看 `active` institutes 清單與 `total`，並可手動觸發同步；若 Persnl SOAP 不可用，`POST /main/api/v1/institutes/sync` 需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 
