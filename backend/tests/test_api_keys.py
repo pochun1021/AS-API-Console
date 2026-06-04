@@ -1301,34 +1301,39 @@ def test_renew_rejects_expired_key_without_calling_provider(client, admin_header
         get_settings.cache_clear()
 
 
-def test_extend_requires_notice_for_user_but_not_admin(client, admin_headers):
+def test_extend_active_keys_must_be_near_expiry_for_user_and_admin(client, admin_headers):
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user["x-sysid"])
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "extend notice gate"},
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "extend near expiry gate"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    _set_key_expires_at_offset_days(key_id, days=31)
 
     blocked = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
     assert blocked.status_code == 409
-    assert blocked.json()["error"]["code"] == "KEY_EXTENSION_NOTICE_REQUIRED"
+    assert blocked.json()["error"]["code"] == "KEY_EXTEND_NOT_NEAR_EXPIRY"
 
-    _set_expiration_notice_sent_at(key_id, datetime.now(UTC))
+    blocked_admin = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={"duration_months": 6})
+    assert blocked_admin.status_code == 409
+    assert blocked_admin.json()["error"]["code"] == "KEY_EXTEND_NOT_NEAR_EXPIRY"
+
+    _set_key_expires_at_offset_days(key_id, days=30)
     allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
     assert allowed.status_code == 200
     assert allowed.json()["status"] == "active"
     _assert_utc_datetime_string(allowed.json()["expires_at"])
     assert _fetch_key_notice_state(key_id)["expiration_notice_sent_at"] is None
 
+    _set_key_expires_at_offset_days(key_id, days=31)
     blocked_again = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 1})
     assert blocked_again.status_code == 409
-    assert blocked_again.json()["error"]["code"] == "KEY_EXTENSION_NOTICE_REQUIRED"
+    assert blocked_again.json()["error"]["code"] == "KEY_EXTEND_NOT_NEAR_EXPIRY"
 
     _set_key_expires_at_past(key_id)
-    _set_expiration_notice_sent_at(key_id, None)
     user_expired_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 1})
     assert user_expired_allowed.status_code == 200
     assert user_expired_allowed.json()["status"] == "active"
@@ -1354,7 +1359,7 @@ def test_extend_provider_unavailable_does_not_change_expiration(client, admin_he
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
-    _set_expiration_notice_sent_at(key_id, datetime.now(UTC))
+    _set_key_expires_at_offset_days(key_id, days=14)
     before = _fetch_key_status_row(key_id)
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
@@ -1390,7 +1395,7 @@ def test_provider_operations_require_secret_material_before_calling_provider(cli
     assert active_resp.status_code == 201
     active_key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
     _set_key_secret_material(active_key_id, key_ciphertext=None, key_kek_version=None)
-    _set_expiration_notice_sent_at(active_key_id, datetime.now(UTC))
+    _set_key_expires_at_offset_days(active_key_id, days=14)
 
     revoked_resp = client.post(
         _api("/api-keys/applications"),

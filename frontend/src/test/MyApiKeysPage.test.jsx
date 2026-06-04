@@ -221,13 +221,18 @@ test("user can extend active key with selected duration", async () => {
 
 test.each([
   {
-    name: "user cannot see extend action before expiration notice",
+    name: "user cannot see extend action for active key outside near-expiry window",
     buttonIndex: 0,
     shouldSeeExtend: false,
   },
   {
-    name: "user can see extend action for expired key even without notice",
+    name: "user can see extend action for expired key",
     buttonIndex: 2,
+    shouldSeeExtend: true,
+  },
+  {
+    name: "user can see extend action for active key within near-expiry window",
+    buttonIndex: 3,
     shouldSeeExtend: true,
   },
 ])("$name", async ({ buttonIndex, shouldSeeExtend }) => {
@@ -247,6 +252,19 @@ test.each([
   }
 });
 
+test("admin does not see extend action for active key outside near-expiry window", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={adminAuth} />
+    </MemoryRouter>
+  );
+
+  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
+  await user.click(moreActionButtons[1]);
+  expect(screen.queryByRole("menuitem", { name: "展延金鑰" })).not.toBeInTheDocument();
+});
+
 test("renders timestamps in Asia/Taipei on list and detail views", async () => {
   const user = userEvent.setup();
   render(
@@ -258,7 +276,7 @@ test("renders timestamps in Asia/Taipei on list and detail views", async () => {
   expect(await screen.findByText("2026-03-10 19:00:00")).toBeInTheDocument();
 
   const detailButtons = await screen.findAllByRole("button", { name: "查看詳情" });
-  await user.click(detailButtons[2]);
+  await user.click(detailButtons[1]);
 
   expect(await screen.findByText("建立時間: 2026-02-10 19:00:00")).toBeInTheDocument();
   expect(await screen.findByText("到期時間: 2026-03-10 19:00:00")).toBeInTheDocument();

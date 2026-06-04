@@ -4,7 +4,7 @@ import re
 import secrets
 from asyncio import run as run_async
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -126,19 +126,24 @@ def _effective_status(*, status: str, expires_at: datetime) -> str:
     return status
 
 
+def _is_active_key_near_expiry(*, expires_at: datetime, now: datetime | None = None) -> bool:
+    expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
+    now_utc = now or datetime.now(UTC)
+    if expires_at_utc < now_utc:
+        return False
+    return expires_at_utc - now_utc <= timedelta(days=30)
+
+
 def _is_extend_eligible(
     *,
-    role: str,
     status: str,
-    expiration_notice_sent_at: datetime | None,
+    expires_at: datetime,
 ) -> bool:
     if status not in {"active", "expired"}:
         return False
     if status == "expired":
         return True
-    if role == "admin":
-        return True
-    return expiration_notice_sent_at is not None
+    return _is_active_key_near_expiry(expires_at=expires_at)
 
 
 class ApiKeysService:
@@ -505,9 +510,8 @@ class ApiKeysService:
                     "expires_at": item.expires_at,
                     "expiration_notice_sent_at": item.expiration_notice_sent_at,
                     "extend_eligible": _is_extend_eligible(
-                        role=current_user.role,
                         status=_effective_status(status=item.status, expires_at=item.expires_at),
-                        expiration_notice_sent_at=item.expiration_notice_sent_at,
+                        expires_at=item.expires_at,
                     ),
                 }
                 for item in items
@@ -542,9 +546,8 @@ class ApiKeysService:
             "expires_at": scoped.expires_at,
             "expiration_notice_sent_at": scoped.expiration_notice_sent_at,
             "extend_eligible": _is_extend_eligible(
-                role=current_user.role,
                 status=effective_status,
-                expiration_notice_sent_at=scoped.expiration_notice_sent_at,
+                expires_at=scoped.expires_at,
             ),
         }
 
@@ -776,12 +779,12 @@ class ApiKeysService:
         source_effective_status = _effective_status(status=source_key.status, expires_at=source_app.expires_at)
         if source_effective_status not in {"active", "expired"}:
             raise ApiError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409)
-        if (
-            current_user.role != "admin"
-            and source_effective_status == "active"
-            and source_key.expiration_notice_sent_at is None
-        ):
-            raise ApiError("KEY_EXTENSION_NOTICE_REQUIRED", "extension requires expiration notice", 409)
+        if source_effective_status == "active" and not _is_active_key_near_expiry(expires_at=source_app.expires_at):
+            raise ApiError(
+                "KEY_EXTEND_NOT_NEAR_EXPIRY",
+                "active keys can only be extended within 30 days before expiration",
+                409,
+            )
         base_time = source_app.expires_at
         if base_time.tzinfo is None:
             base_time = base_time.replace(tzinfo=UTC)
