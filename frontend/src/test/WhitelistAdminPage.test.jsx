@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import WhitelistAdminPage from "../pages/WhitelistAdminPage";
 import { mockApiProvider } from "../mocks/mockApiProvider";
@@ -78,7 +78,30 @@ test("admin can save chinese and english mixed note", async () => {
   await user.click((await screen.findAllByRole("button", { name: "儲存備註" }))[0]);
 
   expect(await screen.findByText("特殊人員名單已更新。")).toBeInTheDocument();
-  expect(remarkInput).toHaveValue("平台team備註2026");
+  const { items } = await mockApiProvider.listWhitelists(adminAuth);
+  expect(items.find((item) => item.account === "jane.doe")?.note).toBe("平台 team 備註 2026");
+});
+
+test("whitelist note keeps chinese draft during ime composition", async () => {
+  const user = userEvent.setup();
+  render(<WhitelistAdminPage auth={adminAuth} />);
+
+  const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];
+  await user.clear(remarkInput);
+
+  fireEvent.compositionStart(remarkInput);
+  fireEvent.change(remarkInput, { target: { value: "平" } });
+  expect(remarkInput).toHaveValue("平");
+
+  fireEvent.change(remarkInput, { target: { value: "平台 team" } });
+  expect(remarkInput).toHaveValue("平台 team");
+
+  fireEvent.compositionEnd(remarkInput, { data: "台", target: { value: "平台 team" } });
+  await user.click((await screen.findAllByRole("button", { name: "儲存備註" }))[0]);
+
+  expect(await screen.findByText("特殊人員名單已更新。")).toBeInTheDocument();
+  const { items } = await mockApiProvider.listWhitelists(adminAuth);
+  expect(items.find((item) => item.account === "jane.doe")?.note).toBe("平台 team");
 });
 
 test("admin cannot save unsafe whitelist note", async () => {

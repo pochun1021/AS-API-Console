@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import AddIcon from "@mui/icons-material/Add";
 import SaveIcon from "@mui/icons-material/Save";
@@ -45,6 +45,44 @@ function statusColor(status) {
   return status === "active" ? "success" : "default";
 }
 
+function WhitelistNoteField({ note, onDraftChange }) {
+  const [draft, setDraft] = useState(note || "");
+  const composingRef = useRef(false);
+
+  useEffect(() => {
+    if (composingRef.current) {
+      return;
+    }
+    setDraft(note || "");
+  }, [note]);
+
+  return (
+    <TextField
+      size="small"
+      value={draft}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+      }}
+      onCompositionStart={() => {
+        composingRef.current = true;
+      }}
+      onCompositionEnd={(e) => {
+        composingRef.current = false;
+        const nextValue = e.target.value;
+        setDraft(nextValue);
+        onDraftChange(nextValue);
+      }}
+      onChange={(e) => {
+        const nextValue = e.target.value;
+        setDraft(nextValue);
+        if (!composingRef.current) {
+          onDraftChange(nextValue);
+        }
+      }}
+    />
+  );
+}
+
 export default function WhitelistAdminPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const [items, setItems] = useState([]);
@@ -53,13 +91,13 @@ export default function WhitelistAdminPage({ auth }) {
   const [searching, setSearching] = useState(false);
   const [searchMessage, setSearchMessage] = useState("");
   const [dialogMessage, setDialogMessage] = useState("");
-  const [editingRemark, setEditingRemark] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
   const [pendingStatusChange, setPendingStatusChange] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const editingRemarkRef = useRef({});
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
 
@@ -78,6 +116,7 @@ export default function WhitelistAdminPage({ auth }) {
     try {
       const response = await apiClient.listWhitelists(auth);
       setItems(response.items);
+      editingRemarkRef.current = {};
     } catch (e) {
       setError(e?.payload?.error?.message || t("whitelist_load_failed"));
     } finally {
@@ -201,10 +240,11 @@ export default function WhitelistAdminPage({ auth }) {
         minWidth: 220,
         renderCell: (params) => (
           <Box sx={{ display: "flex", alignItems: "center", height: "100%", width: "100%" }}>
-            <TextField
-              size="small"
-              value={editingRemark[params.row.id] ?? params.row.note}
-              onChange={(e) => setEditingRemark((prev) => ({ ...prev, [params.row.id]: e.target.value }))}
+            <WhitelistNoteField
+              note={editingRemarkRef.current[params.row.id] ?? params.row.note}
+              onDraftChange={(nextValue) => {
+                editingRemarkRef.current[params.row.id] = nextValue;
+              }}
             />
           </Box>
         )
@@ -242,7 +282,7 @@ export default function WhitelistAdminPage({ auth }) {
                 onClick={() =>
                   updateItem(params.row.id, {
                     status: params.row.status,
-                    note: editingRemark[params.row.id] ?? params.row.note
+                    note: editingRemarkRef.current[params.row.id] ?? params.row.note
                   })
                 }
               >
@@ -257,7 +297,8 @@ export default function WhitelistAdminPage({ auth }) {
                 onClick={() =>
                   setPendingStatusChange({
                     id: params.row.id,
-                    nextStatus: params.row.status === "active" ? "inactive" : "active"
+                    nextStatus: params.row.status === "active" ? "inactive" : "active",
+                    note: editingRemarkRef.current[params.row.id] ?? params.row.note
                   })
                 }
               >
@@ -278,7 +319,7 @@ export default function WhitelistAdminPage({ auth }) {
         )
       }
     ],
-    [editingRemark, t, locale]
+    [t, locale]
   );
 
   if (auth.role !== "admin") {
@@ -345,7 +386,7 @@ export default function WhitelistAdminPage({ auth }) {
               const target = pendingStatusChange;
               setPendingStatusChange(null);
               if (target) {
-                await updateItem(target.id, { status: target.nextStatus });
+                await updateItem(target.id, { status: target.nextStatus, note: target.note });
               }
             }}
           >
