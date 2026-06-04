@@ -96,11 +96,13 @@ export ENV_FILE=/home/app/config/.env
 - `PERSNL_SOAP_TIMEOUT_SECONDS`：可選，SOAP 呼叫 timeout 秒數（預設 `3.0`）
 - `API_KEY_ENCRYPTION_SECRET`：必填（正式環境），用於 API key 密文加解密的主密鑰來源
 - `API_KEY_KEK_VERSION`：可選，金鑰版本標記（預設 `v1`）
-- `PROVIDER_BASE_URL`：可選，外部 key provider base URL（例如 `https://provider.internal`）；系統會用於 `POST /key/generate`、`/key/update`、`/key/regenerate`、`/key/block`
+- `PROVIDER_BASE_URL`：可選，外部 key provider base URL（例如 `https://provider.internal`）；系統會用於 `POST /key/generate`、`/key/update`、`/key/block`、`/team/update`
 - `PROVIDER_MASTER_KEY`：可選，provider Bearer token 值；系統會送出 `Authorization: Bearer ${PROVIDER_MASTER_KEY}`
+- `PROVIDER_TEAM_ID`：external provider mode 必填；create/renew 的 `POST /key/generate` payload 與 `PATCH /main/api/v1/limit-strategy-config` 對應的 `POST /team/update` payload 都會帶此值。若缺少此設定，系統需 fail fast，且不得呼叫 provider
 - `PROVIDER_TIMEOUT_SECONDS`：可選，provider timeout 秒數（預設 `3.0`）
 - `PROVIDER_DEBUG_LOGGING`：可選，啟用 provider outbound debug log；僅記錄 path、status code、payload keys、request_id / operation_id 等非敏感摘要，不記錄 Bearer token 或 key/token 明文
-  - provider `generate/regenerate` 成功時，後端會自 provider response `key` 讀取新明文 key，再轉成對外 API 的一次性 `api_key_plaintext`
+  - application create 與 renew 的 generate-based flow 成功時，後端會自 provider response `key` 讀取新明文 key，再轉成對外 API 的一次性 `api_key_plaintext`
+- `APP_ENV`：`prod` 時新配發 key 與對外 `masked_key` 使用 `sk-` / `sk-...XXXX`；`dev/test` 維持既有 `AS-` / `AS-...XXXX`
 - `SESSION_SECRET_KEY`：必填（正式環境），FastAPI session 簽章密鑰
 - `ALLOW_HEADER_AUTH`：可選；僅供 `dev/test` 使用的 header auth bootstrap，正式環境應為 `false`
 - `ALLOWED_HOSTS`：可選；允許的 Host 清單（逗號分隔）。部署 `api.ascs.sinica.edu.tw` 時建議設為 `api.ascs.sinica.edu.tw,localhost,127.0.0.1`
