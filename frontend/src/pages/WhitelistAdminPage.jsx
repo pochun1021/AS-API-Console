@@ -29,6 +29,7 @@ import { apiClient } from "../api/client";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { formatDateTimeInTaipei } from "../utils/datetime";
+import { validatePersistedText } from "../utils/inputValidation";
 
 const actionCellSx = {
   display: "flex",
@@ -122,8 +123,13 @@ export default function WhitelistAdminPage({ auth }) {
 
   async function updateItem(id, payload) {
     setBanner("");
+    const noteValidation = validatePersistedText(payload.note, { required: false });
+    if (!noteValidation.ok) {
+      setBanner(t("whitelist_note_unsafe"));
+      return;
+    }
     try {
-      await apiClient.updateWhitelist(id, payload, auth);
+      await apiClient.updateWhitelist(id, { ...payload, note: noteValidation.value || null }, auth);
       setBanner(t("whitelist_updated_done"));
       await load();
     } catch (e) {
@@ -197,7 +203,7 @@ export default function WhitelistAdminPage({ auth }) {
           <Box sx={{ display: "flex", alignItems: "center", height: "100%", width: "100%" }}>
             <TextField
               size="small"
-              value={editingRemark[params.row.id] ?? params.row.remark}
+              value={editingRemark[params.row.id] ?? params.row.note}
               onChange={(e) => setEditingRemark((prev) => ({ ...prev, [params.row.id]: e.target.value }))}
             />
           </Box>
@@ -236,7 +242,7 @@ export default function WhitelistAdminPage({ auth }) {
                 onClick={() =>
                   updateItem(params.row.id, {
                     status: params.row.status,
-                    remark: editingRemark[params.row.id] ?? params.row.remark
+                    note: editingRemark[params.row.id] ?? params.row.note
                   })
                 }
               >

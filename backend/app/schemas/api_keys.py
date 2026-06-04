@@ -1,6 +1,8 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, model_validator
+
+from app.core.input_validation import parse_ascii_digits, validate_ascii_digits_string, validate_safe_persisted_text
 
 from app.schemas.datetime_serializers import serialize_utc_datetime
 
@@ -11,9 +13,19 @@ class ApplicationCreateRequest(BaseModel):
     purpose: str
     target_identity: "ApplicationTargetIdentityRequest | None" = None
 
+    @model_validator(mode="after")
+    def validate_inputs(self) -> "ApplicationCreateRequest":
+        self.purpose = validate_safe_persisted_text(field_name="purpose", value=self.purpose, required=True)
+        return self
+
 
 class ApplicationTargetIdentityRequest(BaseModel):
     account: str
+
+    @model_validator(mode="after")
+    def validate_inputs(self) -> "ApplicationTargetIdentityRequest":
+        self.account = validate_safe_persisted_text(field_name="target_identity.account", value=self.account, required=True)
+        return self
 
 
 class ApplicationSummary(BaseModel):
@@ -124,6 +136,11 @@ class ApiKeyRevealResponse(BaseModel):
 class ApiKeyAliasUpdateRequest(BaseModel):
     key_alias: str
 
+    @model_validator(mode="after")
+    def validate_inputs(self) -> "ApiKeyAliasUpdateRequest":
+        self.key_alias = validate_safe_persisted_text(field_name="key_alias", value=self.key_alias, required=True)
+        return self
+
 
 class ApiKeyUserStatisticsItemResponse(BaseModel):
     owner_account: str
@@ -156,3 +173,17 @@ class LimitStrategyConfigUpdateRequest(BaseModel):
     budget_duration: str
     rate_limit_tpm: int
     rate_limit_rpm: int
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_inputs(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        raw = dict(data)
+        raw["budget_max_budget"] = validate_ascii_digits_string(
+            field_name="budget_max_budget",
+            value=raw.get("budget_max_budget"),
+        )
+        raw["rate_limit_tpm"] = parse_ascii_digits(field_name="rate_limit_tpm", value=raw.get("rate_limit_tpm"))
+        raw["rate_limit_rpm"] = parse_ascii_digits(field_name="rate_limit_rpm", value=raw.get("rate_limit_rpm"))
+        return raw

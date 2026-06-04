@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, field_serializer
+from pydantic import BaseModel, field_serializer, model_validator
+
+from app.core.input_validation import validate_safe_persisted_text
 
 from app.schemas.datetime_serializers import serialize_utc_datetime
 
@@ -11,6 +13,11 @@ class WhitelistCreateRequest(BaseModel):
     name: str
     email: str
     note: str | None = None
+
+    @model_validator(mode="after")
+    def validate_inputs(self) -> "WhitelistCreateRequest":
+        self.note = validate_safe_persisted_text(field_name="note", value=self.note, allow_empty=True)
+        return self
 
 
 class WhitelistItemResponse(BaseModel):
@@ -41,3 +48,8 @@ class WhitelistListResponse(BaseModel):
 class WhitelistUpdateRequest(BaseModel):
     status: str
     note: str | None = None
+
+    @model_validator(mode="after")
+    def validate_inputs(self) -> "WhitelistUpdateRequest":
+        self.note = validate_safe_persisted_text(field_name="note", value=self.note, allow_empty=True)
+        return self

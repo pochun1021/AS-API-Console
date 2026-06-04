@@ -28,6 +28,19 @@ test("validates purpose is required", async () => {
   expect(await screen.findByText("請填寫用途")).toBeInTheDocument();
 });
 
+test("blocks unsafe purpose before submit", async () => {
+  const user = userEvent.setup();
+  const createApplication = vi.fn();
+  setApiProvider({ createApplication });
+  renderPage(<ApplyPage auth={auth} />);
+
+  await user.type(screen.getByLabelText("用途"), "<script>alert(1)</script>");
+  await user.click(screen.getByRole("button", { name: "送出申請" }));
+
+  expect(await screen.findByText("用途不可包含明顯程式語法。")).toBeInTheDocument();
+  expect(createApplication).not.toHaveBeenCalled();
+});
+
 test("shows plaintext key once after successful submit", async () => {
   const user = userEvent.setup();
   renderPage(<ApplyPage auth={auth} />);
@@ -247,6 +260,21 @@ test("proxy account blur auto-fills identity fields", async () => {
 
   expect(await screen.findByDisplayValue("Target User")).toBeInTheDocument();
   expect(screen.getByDisplayValue("target.user@company.com")).toBeInTheDocument();
+});
+
+test("blocks unsafe proxy account before lookup", async () => {
+  const user = userEvent.setup();
+  const searchUsers = vi.fn();
+  setApiProvider({ searchUsers, createApplication: vi.fn() });
+  renderPage(<ApplyPage auth={adminAuth} />);
+
+  await user.click(screen.getByRole("radio", { name: "協助他人申請" }));
+  const accountInput = screen.getByLabelText("帳號");
+  await user.type(accountInput, "foo => bar");
+  await user.tab();
+
+  expect(await screen.findByText("代申請帳號不可包含明顯程式語法。")).toBeInTheDocument();
+  expect(searchUsers).not.toHaveBeenCalled();
 });
 
 test("proxy account lookup opens picker when multiple candidates", async () => {

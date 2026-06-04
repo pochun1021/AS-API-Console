@@ -68,6 +68,31 @@ test("admin can toggle status with confirm and update remark", async () => {
   expect(await screen.findByText("特殊人員名單已更新。")).toBeInTheDocument();
 });
 
+test("admin can save chinese and english mixed note", async () => {
+  const user = userEvent.setup();
+  render(<WhitelistAdminPage auth={adminAuth} />);
+
+  const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];
+  await user.clear(remarkInput);
+  await user.type(remarkInput, "平台 team 備註 2026");
+  await user.click((await screen.findAllByRole("button", { name: "儲存備註" }))[0]);
+
+  expect(await screen.findByText("特殊人員名單已更新。")).toBeInTheDocument();
+  expect(remarkInput).toHaveValue("平台team備註2026");
+});
+
+test("admin cannot save unsafe whitelist note", async () => {
+  const user = userEvent.setup();
+  render(<WhitelistAdminPage auth={adminAuth} />);
+
+  const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];
+  await user.clear(remarkInput);
+  await user.type(remarkInput, "<script>alert(1)</script>");
+  await user.click((await screen.findAllByRole("button", { name: "儲存備註" }))[0]);
+
+  expect(await screen.findByText("備註不可包含明顯程式語法。")).toBeInTheDocument();
+});
+
 test.each([
   { name: "admin can search by name", query: "Alice", expectedText: "Alice Wang" },
   { name: "admin can search by account", query: "alice.wang", expectedText: "alice.wang" },

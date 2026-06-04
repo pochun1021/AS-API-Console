@@ -105,6 +105,7 @@ class Settings(BaseSettings):
             raise ValueError("PROVIDER_BASE_URL must be a valid http(s) URL")
         return normalized
 
+
     @field_validator(
         "persnl_soap_url",
         "persnl_soap_wsdl_url",

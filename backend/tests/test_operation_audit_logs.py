@@ -322,7 +322,7 @@ def test_limit_strategy_config_update_logs_success_and_failure(client, admin_hea
     assert forbidden_row.error_code == "FORBIDDEN"
 
     assert failure_row.result == "failure"
-    assert failure_row.error_code == "MISSING_BUDGET_FIELDS"
+    assert failure_row.error_code == "VALIDATION_ERROR"
 
 
 def test_limit_strategy_get_returns_defaults_when_row_is_missing(client, admin_headers):
@@ -366,3 +366,15 @@ def test_limit_strategy_patch_accepts_zero_rate_limits(client, admin_headers):
     resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
     assert resp.status_code == 200
     assert resp.json() == payload
+
+
+def test_limit_strategy_patch_rejects_non_ascii_digits_payload(client, admin_headers):
+    payload = {
+        "budget_max_budget": "１２３",
+        "budget_duration": "weekly",
+        "rate_limit_tpm": "1e3",
+        "rate_limit_rpm": 500,
+    }
+    resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"

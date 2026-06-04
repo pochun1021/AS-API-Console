@@ -14,11 +14,15 @@ import {
 import { apiClient } from "../api/client";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { isAsciiDigits, shouldAllowDigitsInput, shouldAllowDigitsPaste } from "../utils/inputValidation";
 
 function parseRateLimitInput(value) {
   const normalized = String(value ?? "").trim();
   if (!normalized) {
     return null;
+  }
+  if (!isAsciiDigits(normalized)) {
+    return Number.NaN;
   }
   return Number(normalized);
 }
@@ -58,6 +62,25 @@ export default function LimitStrategiesPage({ auth }) {
     load();
   }, []);
 
+  function handleDigitsChange(key) {
+    return (event) => {
+      const nextValue = event.target.value;
+      if (!shouldAllowDigitsInput(nextValue)) {
+        return;
+      }
+      setForm((prev) => ({ ...prev, [key]: nextValue }));
+      setBanner("");
+    };
+  }
+
+  function handleDigitsPaste(event) {
+    const pasted = event.clipboardData?.getData("text") || "";
+    if (!shouldAllowDigitsPaste(pasted)) {
+      event.preventDefault();
+      setBanner(t("common_digits_only"));
+    }
+  }
+
   async function save() {
     setBanner("");
     setSaving(true);
@@ -68,8 +91,13 @@ export default function LimitStrategiesPage({ auth }) {
         setBanner(t("apply_error_rate_limit_required"));
         return;
       }
+      const normalizedBudget = String(form.budget_max_budget).trim();
+      if (!isAsciiDigits(normalizedBudget)) {
+        setBanner(t("common_digits_only"));
+        return;
+      }
       const payload = {
-        budget_max_budget: String(form.budget_max_budget).trim(),
+        budget_max_budget: normalizedBudget,
         budget_duration: String(form.budget_duration).trim(),
         rate_limit_tpm: rateLimitTpm,
         rate_limit_rpm: rateLimitRpm
@@ -109,7 +137,9 @@ export default function LimitStrategiesPage({ auth }) {
                   label={t("apply_max_budget")}
                   value={form.budget_max_budget}
                   helperText={t("limit_strategy_budget_helper")}
-                  onChange={(e) => setForm((prev) => ({ ...prev, budget_max_budget: e.target.value }))}
+                  inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
+                  onChange={handleDigitsChange("budget_max_budget")}
+                  onPaste={handleDigitsPaste}
                 />
                 <TextField
                   select
@@ -129,18 +159,20 @@ export default function LimitStrategiesPage({ auth }) {
               <Typography variant="h6">{t("apply_strategy_rate_limit")}</Typography>
               <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 2 }}>
                 <TextField
-                  type="number"
                   label={t("apply_tpm_limit")}
                   value={form.rate_limit_tpm}
                   helperText={t("limit_strategy_tpm_helper")}
-                  onChange={(e) => setForm((prev) => ({ ...prev, rate_limit_tpm: e.target.value }))}
+                  inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
+                  onChange={handleDigitsChange("rate_limit_tpm")}
+                  onPaste={handleDigitsPaste}
                 />
                 <TextField
-                  type="number"
                   label={t("apply_rpm_limit")}
                   value={form.rate_limit_rpm}
                   helperText={t("limit_strategy_rpm_helper")}
-                  onChange={(e) => setForm((prev) => ({ ...prev, rate_limit_rpm: e.target.value }))}
+                  inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
+                  onChange={handleDigitsChange("rate_limit_rpm")}
+                  onPaste={handleDigitsPaste}
                 />
               </Box>
 

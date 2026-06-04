@@ -29,6 +29,7 @@ import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { useLocale } from "../i18n/locale";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
+import { validatePersistedText } from "../utils/inputValidation";
 
 function resolveValidationMessage(message, t) {
   const normalized = String(message || "").trim();
@@ -51,8 +52,17 @@ function resolveValidationMessage(message, t) {
   if (normalized === "purpose is required") {
     return t("apply_error_required_purpose");
   }
+  if (normalized === "purpose contains unsafe syntax") {
+    return t("apply_error_unsafe_purpose");
+  }
   if (normalized === "target_identity.account is required for admin proxy submission") {
     return t("apply_error_required_proxy_identity");
+  }
+  if (normalized === "target_identity.account is required") {
+    return t("apply_error_required_proxy_identity");
+  }
+  if (normalized === "target_identity.account contains unsafe syntax") {
+    return t("apply_error_unsafe_proxy_identity");
   }
   if (normalized === "target account not found") {
     return t("apply_proxy_lookup_not_found");
@@ -158,6 +168,10 @@ export default function ApplyPage({ auth }) {
     setCandidateItems([]);
     setCandidateDialogOpen(false);
     if (!keyword) return;
+    if (!validatePersistedText(keyword, { required: true }).ok) {
+      setLookupError(t("apply_error_unsafe_proxy_identity"));
+      return;
+    }
 
     setLookupLoading(true);
     try {
@@ -200,16 +214,26 @@ export default function ApplyPage({ auth }) {
       return;
     }
 
-    if (!form.purpose.trim()) {
-      setError(t("apply_error_required_purpose"));
+    const purposeValidation = validatePersistedText(form.purpose, { required: true });
+    if (!purposeValidation.ok) {
+      setError(
+        purposeValidation.reason === "required"
+          ? t("apply_error_required_purpose")
+          : t("apply_error_unsafe_purpose")
+      );
       return;
     }
     if (auth.role === "admin" && proxyEnabled) {
-      if (!targetIdentity.account.trim()) {
-        setError(t("apply_error_required_proxy_identity"));
+      const targetAccountValidation = validatePersistedText(targetIdentity.account, { required: true });
+      if (!targetAccountValidation.ok) {
+        setError(
+          targetAccountValidation.reason === "required"
+            ? t("apply_error_required_proxy_identity")
+            : t("apply_error_unsafe_proxy_identity")
+        );
         return;
       }
-      if (!targetProfile || String(targetProfile.account || "").trim() !== targetIdentity.account.trim()) {
+      if (!targetProfile || String(targetProfile.account || "").trim() !== targetAccountValidation.value) {
         setError(t("apply_error_proxy_lookup_required"));
         return;
       }
@@ -219,11 +243,11 @@ export default function ApplyPage({ auth }) {
       const payload = {
         application_date: form.application_date,
         duration_months: form.duration_months,
-        purpose: form.purpose
+        purpose: purposeValidation.value
       };
       if (auth.role === "admin" && proxyEnabled) {
         payload.target_identity = {
-          account: targetIdentity.account.trim()
+          account: validatePersistedText(targetIdentity.account, { required: true }).value
         };
       }
       const response = await apiClient.createApplication(payload, auth);

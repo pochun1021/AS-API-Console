@@ -237,6 +237,42 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     _assert_utc_datetime_string(item["expires_at"])
 
 
+def test_application_rejects_unsafe_purpose(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "<script>alert(1)</script>"},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert resp.json()["error"]["message"] == "purpose contains unsafe syntax"
+
+
+def test_application_rejects_unsafe_proxy_account(client, admin_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, admin_headers["x-sysid"])
+
+    monkeypatch.setattr(
+        "app.services.directory_identity_service.DirectoryIdentityService.is_configured",
+        lambda self: True,
+    )
+
+    resp = client.post(
+        _api("/api-keys/applications"),
+        headers=admin_headers,
+        json={
+            "application_date": str(date.today()),
+            "duration_months": 1,
+            "purpose": "normal purpose",
+            "target_identity": {"account": "foo => bar"},
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert resp.json()["error"]["message"] == "target_identity.account contains unsafe syntax"
+
+
 def test_application_success_dispatches_mail_without_blocking_response(client, admin_headers, user_headers, monkeypatch):
     from app.services import mail_service
     from app.services.mail_service import MailService
@@ -1729,6 +1765,23 @@ def test_admin_update_key_alias_rejects_duplicates(client, admin_headers):
     )
     assert duplicate.status_code == 409
     assert duplicate.json()["error"]["code"] == "KEY_ALIAS_DUPLICATE"
+
+
+def test_admin_update_key_alias_rejects_unsafe_syntax(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
+
+    invalid = client.patch(_api(f"/api-keys/{key_id}"), headers=admin_headers, json={"key_alias": "foo => bar"})
+    assert invalid.status_code == 422
+    assert invalid.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert invalid.json()["error"]["message"] == "key_alias contains unsafe syntax"
 
 
 def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
