@@ -69,7 +69,7 @@
   - 對 `active` key 顯示「停用」與「展延（extend）」按鈕。
   - 對 `expired` key 顯示「展延（extend）」按鈕（icon + 文字）。
   - 對 `revoked` key 顯示「續發（renew）」按鈕（icon + 文字）。
-  - `user` 的 `active` key 僅在已寄送到期提醒（`expiration_notice_sent_at` 非空）時顯示展延按鈕；`expired` key 一律顯示展延按鈕；`admin` 不受此限制。
+  - `active` key 僅在 `expires_at - now(UTC) <= 30 days` 時顯示展延按鈕；此門檻同時適用於 `user` 與 `admin`。`expired` key 一律顯示展延按鈕。
   - extend 需以 Dialog 讓使用者選擇 `duration_months=1|6|12` 後送出。
   - renew 會建立新 key，來源 key 對 `user` 列表需隱藏。
   - extend 會沿用原 key，只延長有效期限。
@@ -177,6 +177,7 @@
 - API Key 明文只顯示一次
 - 系統儲存 `key_hash` 與加密密文（`key_ciphertext`），不直接儲存明文
 - API Key lifecycle 採 `External SoT + Encrypted Local Secret`：`applications/create`、`renew`、`extend`、`revoke` 皆以 provider 結果為主，本地僅於 provider 成功後同步狀態
+- `active` key 僅可在到期前 30 天內展延；`expired` key 仍可展延，`revoked` key 不可展延
 - 一般使用者可查看本人全部申請紀錄
 - 一般使用者查詢時 API Key 必須遮罩顯示
 - 一般使用者可自行停用本人已生效 key（軟停用）
@@ -581,7 +582,7 @@ Base path：`/main/api/v1`
 ```
 - 規則：
   - `user` 僅可展延本人 `active|expired` key；`admin` 可展延任意 `active|expired` key。
-  - `user` 展延 `active` key 時，若尚未寄送本輪任一到期提醒（`expiration_notice_sent_at` 為空）不得展延，回傳 `409 KEY_EXTENSION_NOTICE_REQUIRED`；`expired` key 不受此限制。
+  - `active` key 僅可在 `expires_at - now(UTC) <= 30 days` 時展延；若距離到期超過 30 天，需回傳 `409 KEY_EXTEND_NOT_NEAR_EXPIRY`。此門檻同時適用於 `user` 與 `admin`。
   - `duration_months` 僅允許 `1|6|12`。
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
   - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
@@ -800,7 +801,7 @@ Base path：`/main/api/v1`
 - `APPLICATION_ALREADY_ISSUED`
 - `KEY_NOT_RENEWABLE`
 - `KEY_ALREADY_RENEWED`
-- `KEY_EXTENSION_NOTICE_REQUIRED`
+- `KEY_EXTEND_NOT_NEAR_EXPIRY`
 - 前端對 `VALIDATION_ERROR` 不得僅顯示通用錯誤；需優先顯示後端回傳的具體 `message`，讓使用者可判斷缺少或格式錯誤的欄位
 
 ## 驗收標準
@@ -836,7 +837,7 @@ Base path：`/main/api/v1`
 22. 即使 expired 回填排程停用或失敗，清單、詳情與統計 API 仍需依 effective status 正確呈現 `expired`；回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked`。
 23. 一般使用者可停用本人 `active` key；停用非本人 key 時需回傳 `KEY_NOT_OWNED_BY_USER` / `403`，停用非 `active` key 時需回傳 `KEY_NOT_ACTIVE`。
 24. 一般使用者僅可續發本人 `revoked` key；續發 `active|expired` key 時需回傳 `KEY_NOT_RENEWABLE`，且同一把舊 key 不得重複續發，重複續發需回傳 `KEY_ALREADY_RENEWED`。
-25. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時需回傳 `KEY_NOT_EXTENDABLE`。`user` 展延 `active` key 前需已寄送本輪任一到期提醒（`expiration_notice_sent_at` 非空），未達條件時需回傳 `KEY_EXTENSION_NOTICE_REQUIRED`；`expired` key 不受此限制。
+25. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時需回傳 `KEY_NOT_EXTENDABLE`。`active` key 僅能在 `expires_at - now(UTC) <= 30 days` 時展延，且此門檻同時適用於 `user` 與 `admin`；超過 30 天時需回傳 `KEY_EXTEND_NOT_NEAR_EXPIRY`。`expired` key 不受此限制。
 26. `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm` 僅接受 ASCII `0-9`；非數字字元、科學記號、小數、負號、全形數字與混合字串不得通過前端送出，也不得通過後端 API 驗證。
 27. whitelist `note` 需可正常輸入與儲存中英文混合內容，且中文輸入法組字不得被前端驗證破壞；若內容包含明顯程式語法，前後端都需拒絕。
 28. `key_alias` 若包含明顯程式語法，前端需阻擋儲存，後端直接打 API 時需回傳 `422 VALIDATION_ERROR`。

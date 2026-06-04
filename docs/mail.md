@@ -186,7 +186,7 @@ This notice does not include plaintext keys or sensitive credentials.
 親愛的使用者，您好：
 提醒您，您的 API Key 將於 {days_before} 天後到期。
 到期時間：{expires_at_zh}
-您可於到期前或到期後進行展延（extend）。
+若距離到期 30 天內或已到期，您可進行展延（extend）。
 若此操作非您本人執行，請立即連繫資訊服務處。
 若您有任何疑問，歡迎向資訊服務處服務台反映。
 聯絡窗口：中央研究院資訊服務處
@@ -198,7 +198,7 @@ This notice does not include plaintext keys or sensitive credentials.
 Dear user,
 This is a reminder that your API key will expire in {days_before} days.
 Expiration time: {expires_at_en}
-You can extend this key before or after expiration.
+You can extend this key within 30 days before expiration or after it has expired.
 If this action was not performed by you, please contact the IT Service Desk immediately.
 If you have any questions, please contact the IT Service Desk.
 Contact: Institute of Information Science, Academia Sinica IT Service Desk
