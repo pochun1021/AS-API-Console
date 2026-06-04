@@ -796,39 +796,27 @@ export const mockApiProvider = {
       throw createError("KEY_ALREADY_RENEWED", "key already renewed", 409);
     }
 
-    const idNew = `key_${String(apiKeys.length + 1).padStart(3, "0")}`;
     const now = new Date();
-    const expires = new Date(now);
-    expires.setMonth(expires.getMonth() + durationMonths);
-    const plain = generatePlainKey();
+    if (target.status === "expired") {
+      const expires = new Date(now);
+      expires.setMonth(expires.getMonth() + durationMonths);
+      target.application_date = now.toISOString().slice(0, 10);
+      target.duration_months = durationMonths;
+      target.expires_at = expires.toISOString();
+    } else {
+      const base = new Date(target.expires_at);
+      const expires = new Date(base > now ? base : now);
+      expires.setMonth(expires.getMonth() + durationMonths);
+      target.duration_months += durationMonths;
+      target.expires_at = expires.toISOString();
+    }
+    target.status = "active";
+    target.expiration_notice_sent_at = null;
 
-    apiKeys = [
-      {
-        id: idNew,
-        status: "active",
-        masked_key: `AS-...${plain.slice(-4)}`,
-        application_date: now.toISOString().slice(0, 10),
-        duration_months: durationMonths,
-        purpose: target.purpose || "",
-        key_alias: ensureUniqueAlias(target.owner_account, target.key_alias),
-        department: target.department,
-        created_at: now.toISOString(),
-        expires_at: expires.toISOString(),
-        expiration_notice_sent_at: null,
-        owner_account: target.owner_account,
-        owner_name: target.owner_name,
-        renewed_to_key_id: null
-      },
-      ...apiKeys
-    ];
-
-    target.renewed_to_key_id = idNew;
     return {
-      id: idNew,
+      id: target.id,
       status: "active",
-      expires_at: expires.toISOString(),
-      renewed_from_key_id: target.id,
-      api_key_plaintext: plain
+      expires_at: target.expires_at
     };
   },
 
