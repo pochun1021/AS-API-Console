@@ -47,11 +47,13 @@
   - `sysid` 必須為純數字（整數語意）
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
   - `duration_months` 僅允許 `1|6|12`
+  - 所有會寫入後端的文字欄位採共用 persisted-text 驗證：允許正常中英文、數字、空白與常見標點，但若包含明顯程式語法片段（至少包含 HTML tag、`<script...>`、`</script>`、`javascript:`、明顯 SQL injection 片段、明顯 JS `function(...)` / `=>` 語法）需阻擋送出
   - 送出申請時的 auth context 驗證、資格檢查、錯誤碼與 provider/SOAP 錯誤語意，以 `POST /main/api/v1/api-keys/applications` 契約為準
   - `admin` 代申請時，`target_identity.account` 必填；目標 `name`、`email`、`department`、`sysid` 由後端目錄查詢補齊
   - `admin` 代申請時，前端於 `target_identity.account` 欄位 `blur` 後需呼叫 `GET /main/api/v1/users?q=...` 查詢目標身份資料並帶入唯讀欄位
   - 若查詢結果多筆，前端需顯示候選清單供 `admin` 明確選擇；未完成選擇前不得送出申請
   - `admin` 代申請時，若帳號查無需顯示「查無帳號」；若查詢服務異常需顯示 `soap service unavailable`，兩者皆以獨立 `error` alert 顯示於上述 info 提示之後
+  - `purpose`、`target_identity.account` 違反 persisted-text 驗證時，前端需先提示並禁止送出；直接打 API 時後端需回 `422 VALIDATION_ERROR`
   - 限制策略由管理者透過模板資源維護；一般使用者申請時不可提交策略細節
 - 成功送出後顯示一次性 key，並提供複製操作；複製成功需有明確視覺回饋（check icon 後恢復）。
 - 一次性明文 key 彈窗僅可透過明示確認按鈕關閉；不得因 backdrop click、`Esc` 或其他一般 `onClose` 事件消失。
@@ -85,6 +87,8 @@
 - 可查詢特殊人員名單與狀態，列表需顯示 `account`、`name`、`email`。
 - 可停用/啟用特殊人員名單條目。
 - 可刪除特殊人員名單條目（實體刪除）。
+- `note` / 備註欄位需支援中英文、數字、空白與常見標點，且不得因前端驗證破壞中文輸入法組字。
+- `note` 違反 persisted-text 驗證時，前端需在儲存前提示並阻止送出；直接打 API 時後端需回 `422 VALIDATION_ERROR`。
 
 ### 5) Admin List Page（管理者名單頁）
 - 僅 `admin` 可使用。
@@ -131,6 +135,7 @@
   - `budget_duration`：重置週期（僅允許 `daily|weekly|monthly`）。
   - `tpm_limit`：每分鐘 Token 數限制。
   - `rpm_limit`：每分鐘請求數限制。
+- 所有會寫入後端的 number 類型欄位僅允許 ASCII `0-9`；不可接受 `-`、`.`、`+`、`e/E`、空白、全形數字或混合字串。
 - `budget_duration` 前端顯示需使用單選，展示文案映射：
   - `daily` => `1天`
   - `weekly` => `7天`
@@ -145,6 +150,12 @@
 - 列表資料以 Data Table 呈現（支援排序與分頁）；僅「操作」欄位不可排序與不可 filter。
 - Login denied（公開頁）：當 OAuth callback 判定 `LOGIN_NOT_ELIGIBLE` 時，前端需停留於 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 顯示「沒有登入權限」訊息，且不得要求已有 session 才能顯示。
 - 前端所有使用者可見 datetime（如 `created_at`、`updated_at`、`issued_at`、`expires_at` 與稽核 log 時間）需固定顯示為 `Asia/Taipei`；後端 API payload 與業務判定口徑仍維持 UTC。
+
+### 7-1) 共用輸入驗證規則
+- 範圍僅限「會寫入後端並持久化」的欄位；純查詢、篩選、搜尋欄位不適用此規則。
+- persisted text fields 採「阻擋明顯程式片段」策略，不採極端字元白名單，以避免誤傷正常中英文內容。
+- 前端需先提示/阻擋，後端需再次驗證；相同違規 payload 直接打 API 時一律回 `422 VALIDATION_ERROR`。
+- persisted numeric fields 若為使用者可輸入值，前端需在輸入/貼上階段阻擋非 ASCII digits，送出前再驗證一次；後端不得接受非 digits payload。
 
 ## 功能需求
 ### Must Have（MVP）
@@ -376,6 +387,7 @@ Base path：`/main/api/v1`
   - `admin` 代申請時，後端需先依 `target_identity.account` 查人員目錄取得唯一身份，再以該身份的 `account(cn)` 查詢 `tCode` 檢查申請資格
   - 若需查詢 `tCode` 且 Persnl SOAP 服務連線逾時或 5xx，本 API 回傳 `503 SOAP_SERVICE_UNAVAILABLE`，不得建立申請資料
   - `purpose` 經 `trim()` 後不得為空字串；若為空字串或全空白，回傳 `422 VALIDATION_ERROR`
+  - `purpose` 與 `target_identity.account` 需通過 persisted-text 驗證；若包含明顯程式語法片段，回傳 `422 VALIDATION_ERROR`
 - Request：
 ```json
 {
@@ -447,6 +459,7 @@ Base path：`/main/api/v1`
 - `GET /main/api/v1/limit-strategy-config` 在資料缺漏時仍需回傳相同預設值，作為相容性保險。
 - `PATCH /main/api/v1/limit-strategy-config` 需採 upsert：若設定不存在則建立，存在則更新。
 - `PATCH /main/api/v1/limit-strategy-config` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
+- `PATCH /main/api/v1/limit-strategy-config` 的 `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm` 僅接受 ASCII `0-9`；若為科學記號、小數、負號、全形數字、空白或混合字串，回 `422 VALIDATION_ERROR`。
 
 ### 2) 查詢 API Key 清單
 - `GET /main/api/v1/api-keys`
@@ -582,6 +595,7 @@ Base path：`/main/api/v1`
 }
 ```
 - 規則：僅 `admin` 可使用；`key_alias` 不可為空字串；若與其他 key alias 重複需回傳 `409 KEY_ALIAS_DUPLICATE`；成功後回傳更新後單筆資料。
+- `key_alias` 需通過 persisted-text 驗證；若包含明顯程式語法片段，回傳 `422 VALIDATION_ERROR`。
 
 ### 4-1) 受控回取 API Key 明文（Reveal）
 - `POST /main/api/v1/api-keys/{id}/reveal`
@@ -606,6 +620,7 @@ Base path：`/main/api/v1`
 - `POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`DELETE /main/api/v1/whitelists/{id}` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
 - `POST /main/api/v1/whitelists` 若 `sysid` 重複需回 `409 WHITELIST_SYSID_DUPLICATED`。
 - 回傳欄位至少包含：`id`、`sysid`、`account`、`name`、`email`、`status`、`note`、`created_at`、`updated_at`。
+- `note` 若存在，需通過 persisted-text 驗證；正常中英文混合內容需可成功儲存。
 
 ### 5-1) 特殊人員名單新增前使用者查詢 API
 - `GET /main/api/v1/users?q={keyword}`
@@ -785,24 +800,25 @@ Base path：`/main/api/v1`
 4. `duration_months` 僅允許 `1|6|12`，`application_date` 需為合法日期且不得晚於申請當日；非法值需回傳對應驗證錯誤。
 5. `admin` 可透過 `target_identity.account` 代他人送出申請；若目錄服務查無帳號、結果不唯一或 Persnl SOAP timeout/5xx，API 需回傳對應 `422 VALIDATION_ERROR` 或 `503 SOAP_SERVICE_UNAVAILABLE`。
 6. 一般申請建立的 application row 需保留申請人快照欄位，`is_proxy_submission=false`、`proxy_operator_account=NULL`；代申請需保留目標申請人快照，`is_proxy_submission=true`，且 `proxy_operator_account` 為實際代送的 admin account。
+7. `purpose`、proxy `target_identity.account` 若包含明顯程式語法，前端需先提示且不得送出；相同 payload 直接打 API 時需回傳 `422 VALIDATION_ERROR`。
 
 ### Key 核發、保存與受控回取
-7. 核發成功的 API Key 格式需為 `AS-` + 30 碼隨機字元（總長 33）；明文 key 預設僅於建立成功當下回傳一次，一般查詢端點不得再次回傳明文。
-8. 資料庫不得儲存 API Key 明文；需保存 `key_hash`，並可保存 `key_ciphertext` / `key_kek_version` 供受控 reveal 與 lifecycle 操作使用。
-9. `POST /main/api/v1/api-keys/{id}/reveal` 僅 `admin` 可使用，回應需包含 `Cache-Control: no-store`；此端點僅供 break-glass，不得成為一般 `renew`、`extend`、`revoke` 流程的依賴。
-10. 一次性明文 key 彈窗（含申請成功與 renew 成功）需提供明文 key 複製功能，點擊後 icon 需切換為成功狀態並可自動恢復，且僅可透過明示確認按鈕關閉；不得因 backdrop click、`Esc` 或其他一般 `onClose` 事件消失。
+8. 核發成功的 API Key 格式需為 `AS-` + 30 碼隨機字元（總長 33）；明文 key 預設僅於建立成功當下回傳一次，一般查詢端點不得再次回傳明文。
+9. 資料庫不得儲存 API Key 明文；需保存 `key_hash`，並可保存 `key_ciphertext` / `key_kek_version` 供受控 reveal 與 lifecycle 操作使用。
+10. `POST /main/api/v1/api-keys/{id}/reveal` 僅 `admin` 可使用，回應需包含 `Cache-Control: no-store`；此端點僅供 break-glass，不得成為一般 `renew`、`extend`、`revoke` 流程的依賴。
+11. 一次性明文 key 彈窗（含申請成功與 renew 成功）需提供明文 key 複製功能，點擊後 icon 需切換為成功狀態並可自動恢復，且僅可透過明示確認按鈕關閉；不得因 backdrop click、`Esc` 或其他一般 `onClose` 事件消失。
 
 ### Provider 與 Lifecycle
-11. API key lifecycle 採 external provider 為主權威；`applications`、`renew`、`extend`、`revoke` 均需先完成 provider 操作，再同步本地資料。
-12. `renew`、`extend`、`revoke` 若需舊明文 key，後端必須從 `key_ciphertext` 解密，且明文只可在服務記憶體中短暫使用；不得出現在 DB、log、audit log、exception message。
-13. 若 provider timeout/5xx、明確拒絕、缺少密文材料、解密失敗或回應不完整，本地不得先改動狀態或有效期限，並需回傳對應錯誤。
-14. 若部署使用 local provider adapter 作為開發/測試替身，仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
-15. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 需送 `null`，且不得送 `models` 或 `budget_limits`。
-16. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`regenerate`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`generate` / `regenerate` 成功時一律自 response `key` 讀取新明文 secret。
-17. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
+12. API key lifecycle 採 external provider 為主權威；`applications`、`renew`、`extend`、`revoke` 均需先完成 provider 操作，再同步本地資料。
+13. `renew`、`extend`、`revoke` 若需舊明文 key，後端必須從 `key_ciphertext` 解密，且明文只可在服務記憶體中短暫使用；不得出現在 DB、log、audit log、exception message。
+14. 若 provider timeout/5xx、明確拒絕、缺少密文材料、解密失敗或回應不完整，本地不得先改動狀態或有效期限，並需回傳對應錯誤。
+15. 若部署使用 local provider adapter 作為開發/測試替身，仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
+16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 需送 `null`，且不得送 `models` 或 `budget_limits`。
+17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`regenerate`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`generate` / `regenerate` 成功時一律自 response `key` 讀取新明文 secret。
+18. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 
 ### Key 查詢、狀態與 Lifecycle 權限
-18. `user` 登入後只能看到自己的全部歷史紀錄；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料，且每筆至少需能辨識 `owner_account`、`owner_name`。
+19. `user` 登入後只能看到自己的全部歷史紀錄；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料，且每筆至少需能辨識 `owner_account`、`owner_name`。
 19. 一般查詢僅能看到 `masked_key`（格式 `AS-...XXXX`），不得看到明文；清單頁不得顯示建立時間，建立時間僅顯示於單筆詳情視窗。
 20. 單筆詳情需顯示 `purpose`、`department`；若無資料需顯示 `-`。
 21. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 的到期口徑需以 `expires_at` 即時計算；原始狀態為 `active` 且已過期者，對外需顯示為 `expired`。
@@ -810,19 +826,22 @@ Base path：`/main/api/v1`
 23. 一般使用者可停用本人 `active` key；停用非本人 key 時需回傳 `KEY_NOT_OWNED_BY_USER` / `403`，停用非 `active` key 時需回傳 `KEY_NOT_ACTIVE`。
 24. 一般使用者僅可續發本人 `revoked` key；續發 `active|expired` key 時需回傳 `KEY_NOT_RENEWABLE`，且同一把舊 key 不得重複續發，重複續發需回傳 `KEY_ALREADY_RENEWED`。
 25. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時需回傳 `KEY_NOT_EXTENDABLE`。`user` 展延 `active` key 前需已寄送本輪任一到期提醒（`expiration_notice_sent_at` 非空），未達條件時需回傳 `KEY_EXTENSION_NOTICE_REQUIRED`；`expired` key 不受此限制。
-26. `renew`、`extend`、`revoke` 的本地同步不得改變既有受保護 API 路徑、角色模型或現有對外 response shape。
+26. `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm` 僅接受 ASCII `0-9`；非數字字元、科學記號、小數、負號、全形數字與混合字串不得通過前端送出，也不得通過後端 API 驗證。
+27. whitelist `note` 需可正常輸入與儲存中英文混合內容，且中文輸入法組字不得被前端驗證破壞；若內容包含明顯程式語法，前後端都需拒絕。
+28. `key_alias` 若包含明顯程式語法，前端需阻擋儲存，後端直接打 API 時需回傳 `422 VALIDATION_ERROR`。
+29. `renew`、`extend`、`revoke` 的本地同步不得改變既有受保護 API 路徑、角色模型或現有對外 response shape。
 
 ### 到期提醒與通知信
-27. 系統需提供背景排程寄送 API Key 到期提醒信；單一排程入口需在同次執行中處理 `30|14|7|3|1` 天全部提醒時段。
-28. 提醒判定條件需以 UTC 日期窗口為準：當 `api_keys.status='active'` 且 `expires_at` 落在 `now(UTC)+N days` 的當日區間時，觸發對應 `N` 天提醒；`N` 僅允許 `30|14|7|3|1`。
-29. 同一把 key 在同一輪 `expires_at`、同一提醒時段最多成功寄送一次，但不同提醒時段可在不同日期成功寄送；若 `extend` 後 `expires_at` 改變，新的到期日需重新啟動完整提醒週期。
-30. 某提醒時段寄送失敗時，不得影響其他 key 或其他提醒時段；只要該時段尚未成功，後續重跑需可再次嘗試。
-31. 本輪首次成功寄出任一提醒後，`api_keys.expiration_notice_sent_at` 需填值；寄送失敗不得填值；後續提醒時段不得覆蓋其既有語意。
-32. `POST /main/api/v1/api-keys/applications` 成功後需以非阻塞方式寄送申請成功通知信給申請者本人；寄信失敗時 API 仍需回 `201`，且不得回滾申請資料或延遲一次性明文 key 回應。
-33. `POST /main/api/v1/api-keys/{id}/renew` 成功後需寄送 renew 成功通知信給申請者本人，且通知信不得包含明文 key。
-34. `applications`、`renew`、`extend`、`revoke` 若遇 provider timeout/5xx（`PROVIDER_UNAVAILABLE`），需寄送通知信給所有 `active` 管理者；若管理者通知信寄送失敗，不得改變原 API 錯誤回應。
-35. 所有業務通知信內容需中英並列（中文在前、英文在後）；到期提醒信僅寄送申請者本人，需包含正確剩餘天數、到期時間與可展延提示，且信內顯示的到期時間需轉為 `Asia/Taipei`，但提醒判定與資料儲存仍維持 UTC。
-36. 通知信模板屬正式契約；主旨、收件者、動態欄位與中英段落順序變更時，需同步更新 `docs/mail.md`。詳細主旨與完整模板內容以 `docs/mail.md` 為準。
+30. 系統需提供背景排程寄送 API Key 到期提醒信；單一排程入口需在同次執行中處理 `30|14|7|3|1` 天全部提醒時段。
+31. 提醒判定條件需以 UTC 日期窗口為準：當 `api_keys.status='active'` 且 `expires_at` 落在 `now(UTC)+N days` 的當日區間時，觸發對應 `N` 天提醒；`N` 僅允許 `30|14|7|3|1`。
+32. 同一把 key 在同一輪 `expires_at`、同一提醒時段最多成功寄送一次，但不同提醒時段可在不同日期成功寄送；若 `extend` 後 `expires_at` 改變，新的到期日需重新啟動完整提醒週期。
+33. 某提醒時段寄送失敗時，不得影響其他 key 或其他提醒時段；只要該時段尚未成功，後續重跑需可再次嘗試。
+34. 本輪首次成功寄出任一提醒後，`api_keys.expiration_notice_sent_at` 需填值；寄送失敗不得填值；後續提醒時段不得覆蓋其既有語意。
+35. `POST /main/api/v1/api-keys/applications` 成功後需以非阻塞方式寄送申請成功通知信給申請者本人；寄信失敗時 API 仍需回 `201`，且不得回滾申請資料或延遲一次性明文 key 回應。
+36. `POST /main/api/v1/api-keys/{id}/renew` 成功後需寄送 renew 成功通知信給申請者本人，且通知信不得包含明文 key。
+37. `applications`、`renew`、`extend`、`revoke` 若遇 provider timeout/5xx（`PROVIDER_UNAVAILABLE`），需寄送通知信給所有 `active` 管理者；若管理者通知信寄送失敗，不得改變原 API 錯誤回應。
+38. 所有業務通知信內容需中英並列（中文在前、英文在後）；到期提醒信僅寄送申請者本人，需包含正確剩餘天數、到期時間與可展延提示，且信內顯示的到期時間需轉為 `Asia/Taipei`，但提醒判定與資料儲存仍維持 UTC。
+39. 通知信模板屬正式契約；主旨、收件者、動態欄位與中英段落順序變更時，需同步更新 `docs/mail.md`。詳細主旨與完整模板內容以 `docs/mail.md` 為準。
 
 ### 管理功能與後台查詢
 37. 非 `admin` 呼叫特殊人員名單、管理者名單、限制策略、統計、稽核與單位同步相關管理 API 時，均需回傳 `403`。

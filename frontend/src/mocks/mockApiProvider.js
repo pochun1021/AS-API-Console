@@ -1,3 +1,5 @@
+import { containsUnsafePersistedText, isAsciiDigits } from "../utils/inputValidation";
+
 const today = new Date().toISOString().slice(0, 10);
 const mockInstitutes = [
   { inst_code: "01", inst_name: "院本部", abb_inst_name: "院本部", einst_name: "Headquarters", division: "1" },
@@ -166,7 +168,7 @@ const initialWhitelists = [
     sysid: 123,
     name: "Jane Doe",
     status: "active",
-    remark: "platform team",
+    note: "platform team",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   },
@@ -177,7 +179,7 @@ const initialWhitelists = [
     sysid: 999,
     name: "Legacy User",
     status: "inactive",
-    remark: "offboarded",
+    note: "offboarded",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   },
@@ -188,7 +190,7 @@ const initialWhitelists = [
     sysid: 654,
     name: "Bob Lin",
     status: "active",
-    remark: "qa team",
+    note: "qa team",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   },
@@ -199,7 +201,7 @@ const initialWhitelists = [
     sysid: 789,
     name: "Sam Chen",
     status: "active",
-    remark: "secops automation",
+    note: "secops automation",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }
@@ -344,6 +346,12 @@ function validateApplication(payload, auth) {
 
   if (!payload.purpose || !payload.purpose.trim()) {
     throw createError("VALIDATION_ERROR", "請填寫用途");
+  }
+  if (containsUnsafePersistedText(payload.purpose)) {
+    throw createError("VALIDATION_ERROR", "purpose contains unsafe syntax", 422);
+  }
+  if (payload.target_identity?.account && containsUnsafePersistedText(payload.target_identity.account)) {
+    throw createError("VALIDATION_ERROR", "target_identity.account contains unsafe syntax", 422);
   }
 
   const activeWhitelist = whitelists.find((item) => item.sysid === auth.sysid && item.status === "active");
@@ -667,6 +675,9 @@ export const mockApiProvider = {
     if (!normalizedAlias) {
       throw createError("VALIDATION_ERROR", "key alias cannot be empty", 422);
     }
+    if (containsUnsafePersistedText(normalizedAlias)) {
+      throw createError("VALIDATION_ERROR", "key_alias contains unsafe syntax", 422);
+    }
     if (apiKeys.some((item) => item.id !== id && normalizeAlias(item) === normalizedAlias)) {
       throw createError("KEY_ALIAS_DUPLICATE", "key_alias already exists", 409);
     }
@@ -948,7 +959,7 @@ export const mockApiProvider = {
       email: payload.email?.trim().toLowerCase() || "",
       account: payload.account || "",
       status: "active",
-      remark: payload.remark?.trim() || "",
+      note: payload.note?.trim() || "",
       sysid,
       name: payload.name || "",
       created_at: now,
@@ -971,12 +982,12 @@ export const mockApiProvider = {
       throw createError("VALIDATION_ERROR", "status 僅允許 active 或 inactive");
     }
 
-    if (typeof payload.remark === "string" && payload.remark.length > 200) {
-      throw createError("VALIDATION_ERROR", "remark 長度不可超過 200 字元");
+    if (typeof payload.note === "string" && containsUnsafePersistedText(payload.note)) {
+      throw createError("VALIDATION_ERROR", "note contains unsafe syntax", 422);
     }
 
     item.status = payload.status || item.status;
-    item.remark = typeof payload.remark === "string" ? payload.remark : item.remark;
+    item.note = typeof payload.note === "string" ? payload.note : item.note;
     item.updated_at = new Date().toISOString();
 
     return { item };
@@ -1003,13 +1014,18 @@ export const mockApiProvider = {
     await delay();
     ensureAdmin(auth);
     if (!String(payload?.budget_max_budget || "").trim() || !String(payload?.budget_duration || "").trim()) {
-      throw createError("MISSING_BUDGET_FIELDS", "budget config is required", 422);
+      throw createError("VALIDATION_ERROR", "budget config is required", 422);
     }
-    const rateLimitTpm = Number(payload?.rate_limit_tpm);
-    const rateLimitRpm = Number(payload?.rate_limit_rpm);
-    if (!Number.isFinite(rateLimitTpm) || !Number.isFinite(rateLimitRpm) || rateLimitTpm < 0 || rateLimitRpm < 0) {
-      throw createError("MISSING_RATE_LIMIT_FIELDS", "rate limit config is required", 422);
+    if (!isAsciiDigits(String(payload?.budget_max_budget || "").trim())) {
+      throw createError("VALIDATION_ERROR", "budget_max_budget must contain only ASCII digits", 422);
     }
+    const rawTpm = payload?.rate_limit_tpm;
+    const rawRpm = payload?.rate_limit_rpm;
+    if (!isAsciiDigits(String(rawTpm)) || !isAsciiDigits(String(rawRpm))) {
+      throw createError("VALIDATION_ERROR", "rate limit config is required", 422);
+    }
+    const rateLimitTpm = Number(rawTpm);
+    const rateLimitRpm = Number(rawRpm);
     limitStrategyConfig = {
       budget_max_budget: String(payload.budget_max_budget).trim(),
       budget_duration: String(payload.budget_duration).trim(),

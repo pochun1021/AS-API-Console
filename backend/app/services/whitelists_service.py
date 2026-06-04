@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
 from app.core.errors import ApiError
+from app.core.input_validation import validate_safe_persisted_text
 from db.repositories import SQLAlchemyWhitelistRepository
 from db.repositories.types import WhitelistCreateInput, WhitelistUpdateInput
 
@@ -19,6 +20,7 @@ class WhitelistsService:
             raise ApiError("VALIDATION_ERROR", "sysid must be positive integer", 422)
         if not account.strip() or not name.strip() or not email.strip():
             raise ApiError("VALIDATION_ERROR", "account, name, email are required", 422)
+        normalized_note = validate_safe_persisted_text(field_name="note", value=note, allow_empty=True)
         if self.repo.get_by_sysid(sysid) is not None:
             raise ApiError("WHITELIST_SYSID_DUPLICATED", "whitelist sysid already exists", 409)
 
@@ -31,7 +33,7 @@ class WhitelistsService:
                     name=name.strip(),
                     email=email.strip().lower(),
                     created_by=current_user.account,
-                    note=note,
+                    note=normalized_note,
                 )
             )
             self.session.commit()
@@ -84,10 +86,11 @@ class WhitelistsService:
     def update(self, current_user: CurrentUser, whitelist_id: str, status: str, note: str | None) -> dict:
         if status not in {"active", "inactive"}:
             raise ApiError("VALIDATION_ERROR", "status must be active or inactive", 422)
+        normalized_note = validate_safe_persisted_text(field_name="note", value=note, allow_empty=True)
 
         item = self.repo.update_status(
             whitelist_id,
-            WhitelistUpdateInput(status=status, updated_by=current_user.account, note=note),
+            WhitelistUpdateInput(status=status, updated_by=current_user.account, note=normalized_note),
         )
         if item is None:
             raise ApiError("VALIDATION_ERROR", "whitelist item not found", 404)

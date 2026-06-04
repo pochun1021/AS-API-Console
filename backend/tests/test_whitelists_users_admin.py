@@ -37,6 +37,33 @@ def test_whitelist_duplicate_sysid(client, admin_headers):
     assert second.json()["error"]["code"] == "WHITELIST_SYSID_DUPLICATED"
 
 
+def test_whitelist_note_accepts_chinese_and_english(client, admin_headers):
+    payload = {
+        "sysid": 7005,
+        "account": "u7005",
+        "name": "User 7005",
+        "email": "u7005@example.com",
+        "note": "平台團隊 API 使用說明 2026",
+    }
+    resp = client.post(api_path("/whitelists"), headers=admin_headers, json=payload)
+    assert resp.status_code == 201
+    assert resp.json()["note"] == payload["note"]
+
+
+def test_whitelist_note_rejects_unsafe_syntax(client, admin_headers):
+    payload = {
+        "sysid": 7006,
+        "account": "u7006",
+        "name": "User 7006",
+        "email": "u7006@example.com",
+        "note": "<script>alert(1)</script>",
+    }
+    resp = client.post(api_path("/whitelists"), headers=admin_headers, json=payload)
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert resp.json()["error"]["message"] == "note contains unsafe syntax"
+
+
 def test_whitelist_delete_admin_only(client, admin_headers, user_headers):
     created = client.post(
         api_path("/whitelists"),

@@ -11,6 +11,11 @@ from sqlalchemy.orm import Session
 from app.core.auth import CurrentUser
 from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.core.input_validation import (
+    parse_ascii_digits,
+    validate_ascii_digits_string,
+    validate_safe_persisted_text,
+)
 from app.services.crypto_service import CryptoService
 from app.services.directory_identity_service import (
     DirectoryIdentityService,
@@ -165,9 +170,7 @@ class ApiKeysService:
             raise ApiError("INVALID_APPLICATION_DATE", "application_date cannot be in the future", 422)
         if duration_months not in {1, 6, 12}:
             raise ApiError("INVALID_DURATION_MONTHS", "duration_months must be one of 1, 6, 12", 422)
-        normalized_purpose = purpose.strip()
-        if not normalized_purpose:
-            raise ApiError("VALIDATION_ERROR", "purpose is required", 422)
+        normalized_purpose = validate_safe_persisted_text(field_name="purpose", value=purpose, required=True)
 
         identity = AuthIdentity(
             account=current_user.account,
@@ -178,9 +181,11 @@ class ApiKeysService:
         )
         is_proxy_submission = False
         if current_user.role == "admin" and target_identity is not None:
-            target_account = str(target_identity.get("account", "")).strip()
-            if not target_account:
-                raise ApiError("VALIDATION_ERROR", "target_identity.account is required for admin proxy submission", 422)
+            target_account = validate_safe_persisted_text(
+                field_name="target_identity.account",
+                value=target_identity.get("account", ""),
+                required=True,
+            )
             if not self.directory_identity.is_configured():
                 raise ApiError("SOAP_SERVICE_UNAVAILABLE", "soap service unavailable", 503)
             try:
@@ -418,17 +423,17 @@ class ApiKeysService:
     def update_limit_strategy_config(self, current_user: CurrentUser, payload: dict) -> dict:
         if current_user.role != "admin":
             raise ApiError("FORBIDDEN", "admin role required", 403)
-        budget_max_budget = str(payload.get("budget_max_budget") or "").strip()
+        budget_max_budget = validate_ascii_digits_string(
+            field_name="budget_max_budget",
+            value=payload.get("budget_max_budget"),
+        )
         budget_duration = str(payload.get("budget_duration") or "").strip()
-        try:
-            rate_limit_tpm = int(payload["rate_limit_tpm"])
-            rate_limit_rpm = int(payload["rate_limit_rpm"])
-        except (KeyError, TypeError, ValueError):
-            raise ApiError("MISSING_RATE_LIMIT_FIELDS", "rate limit config is required", 422) from None
+        rate_limit_tpm = parse_ascii_digits(field_name="rate_limit_tpm", value=payload.get("rate_limit_tpm"))
+        rate_limit_rpm = parse_ascii_digits(field_name="rate_limit_rpm", value=payload.get("rate_limit_rpm"))
         if not budget_max_budget or not budget_duration:
-            raise ApiError("MISSING_BUDGET_FIELDS", "budget config is required", 422)
+            raise ApiError("VALIDATION_ERROR", "budget config is required", 422)
         if rate_limit_tpm < 0 or rate_limit_rpm < 0:
-            raise ApiError("MISSING_RATE_LIMIT_FIELDS", "rate limit config is required", 422)
+            raise ApiError("VALIDATION_ERROR", "rate limit config is required", 422)
         config = self.session.get(LimitStrategyConfig, LIMIT_STRATEGY_CONFIG_ID)
         now = datetime.now(UTC)
         if config is None:
@@ -547,9 +552,7 @@ class ApiKeysService:
         if current_user.role != "admin":
             raise ApiError("FORBIDDEN", "admin role required", 403)
 
-        normalized_alias = key_alias.strip()
-        if not normalized_alias:
-            raise ApiError("VALIDATION_ERROR", "key_alias cannot be empty", 422)
+        normalized_alias = validate_safe_persisted_text(field_name="key_alias", value=key_alias, required=True)
         if self.key_repo.alias_exists(normalized_alias, exclude_key_id=key_id):
             raise ApiError("KEY_ALIAS_DUPLICATE", "key_alias already exists", 409)
 

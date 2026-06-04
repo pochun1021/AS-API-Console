@@ -21,7 +21,7 @@
     "dayjs": "^1.11.20",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.6.0"
+    "react-router-dom": "^7.16.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

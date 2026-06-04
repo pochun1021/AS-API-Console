@@ -31,6 +31,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks"
 import { useLocale } from "../i18n/locale";
 import { formatDateTimeInTaipei } from "../utils/datetime";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
+import { validatePersistedText } from "../utils/inputValidation";
 
 const actionCellSx = {
   display: "flex",
@@ -251,8 +252,14 @@ export default function MyApiKeysPage({ auth }) {
   async function saveAlias(id, keyAlias) {
     setAliasSaving(true);
     setBanner("");
+    const aliasValidation = validatePersistedText(keyAlias, { required: true });
+    if (!aliasValidation.ok) {
+      setAliasSaving(false);
+      setBanner(aliasValidation.reason === "required" ? t("mykeys_alias_required") : t("mykeys_alias_unsafe"));
+      return;
+    }
     try {
-      const response = await apiClient.updateApiKey(id, { key_alias: keyAlias }, auth);
+      const response = await apiClient.updateApiKey(id, { key_alias: aliasValidation.value }, auth);
       setBanner(t("mykeys_alias_update_done"));
       setItems((prev) => prev.map((item) => (item.id === id ? { ...item, key_alias: response.item.key_alias } : item)));
       if (detailItem?.id === id) {

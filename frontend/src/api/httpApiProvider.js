@@ -68,7 +68,7 @@ async function request(path, { method = "GET", auth, body } = {}) {
 function mapWhitelistItem(item) {
   return {
     ...item,
-    remark: item.note || ""
+    note: item.note || ""
   };
 }
 
@@ -209,7 +209,7 @@ export const httpApiProvider = {
         account: payload.account,
         name: payload.name,
         email: payload.email,
-        note: payload.remark || null
+        note: payload.note || null
       }
     }).then(mapWhitelistItem);
   },
@@ -220,7 +220,7 @@ export const httpApiProvider = {
       auth,
       body: {
         status: payload.status || "active",
-        note: payload.remark || null
+        note: payload.note || null
       }
     }).then(mapWhitelistItem);
   },
