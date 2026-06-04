@@ -30,7 +30,7 @@ import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
-import { formatDateTimeInTaipei } from "../utils/datetime";
+import { formatDateTimeInTaipei, isWithinThirtyDaysBeforeExpiration } from "../utils/datetime";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 import { validatePersistedText } from "../utils/inputValidation";
 
@@ -52,9 +52,7 @@ function statusColor(status) {
 
 function formatMaskedKey(value) {
   if (!value) return "-";
-  const text = String(value);
-  const tail = text.slice(-4);
-  return `AS-...${tail}`;
+  return String(value);
 }
 
 async function copyText(text) {
@@ -74,6 +72,12 @@ function handlePersistentDialogClose(reason, closeDialog) {
     return;
   }
   closeDialog();
+}
+
+function canShowExtendAction(item) {
+  if (!item || !["active", "expired"].includes(item.status)) return false;
+  if (item.status === "expired") return true;
+  return isWithinThirtyDaysBeforeExpiration(item.expires_at) && item.extend_eligible === true;
 }
 
 export default function MyApiKeysPage({ auth }) {
@@ -451,9 +455,7 @@ export default function MyApiKeysPage({ auth }) {
             {t("mykeys_renew_key")}
           </MenuItem>
         ) : null}
-        {actionMenuRow && ["active", "expired"].includes(actionMenuRow.status) && (
-          auth.role === "admin" || actionMenuRow.extend_eligible
-        ) ? (
+        {canShowExtendAction(actionMenuRow) ? (
           <MenuItem
             onClick={() => {
               const targetId = actionMenuRow?.id;

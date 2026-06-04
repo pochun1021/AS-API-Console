@@ -23,10 +23,13 @@ https://api.ascs.sinica.edu.tw
 - All endpoints in this document are management APIs.
 - Request and response examples are based on the provided external API specification and project-specific integration rules.
 - This repo currently uses a narrower outbound contract than the broader upstream provider API: generated key requests omit `models` and send `key_type=llm_api`.
-- Use `team_id` on `/key/generate` when the generated key should inherit team-level limits.
+- In this repo, application create and renew both use `POST /key/generate`.
+- In this repo, outbound `/key/generate` requests always include `team_id` from `PROVIDER_TEAM_ID`.
+- `PATCH /main/api/v1/limit-strategy-config` maps to `POST /team/update` with the same `team_id`.
+- Repo-facing key display format is environment-specific: `APP_ENV=prod` uses `sk-` / `sk-...XXXX`; `dev/test` uses `AS-` / `AS-...XXXX`.
 - Sensitive fields such as `key`, `token`, generated API keys, and hashed keys must not be logged in plaintext.
 - Recommended timeout: define explicitly in application code, for example `30s`.
-- Authentication method was not specified in the source file. Confirm whether these management APIs require Bearer Token, API Key, or another authorization mechanism before implementation.
+- This repo uses `Authorization: Bearer {PROVIDER_MASTER_KEY}` for management API calls.
 
 ---
 
@@ -92,7 +95,7 @@ Generate an API key based on the provided data.
 
 - Do not send the `models` field in outbound requests.
 - Always send `key_type` as `llm_api` unless the project requirement changes.
-- Send `team_id` when creating keys for a specific team.
+- In this repo, always send `team_id` from `PROVIDER_TEAM_ID`.
 - Team-level TPM/RPM/budget policies may cap the generated key's effective limits.
 
 ### Request Body Example
@@ -488,6 +491,7 @@ Update team-level budget and rate limits. These limits apply as the maximum allo
 ### Implementation Notes
 
 - Use `/team/update` when the system needs one shared TPM/RPM/budget policy for every key under the same team.
+- In this repo, `PATCH /main/api/v1/limit-strategy-config` must sync to `/team/update` with `team_id`, `tpm_limit`, `rpm_limit`, `max_budget`, and `budget_duration`.
 - Team limits are maximum caps. Individual keys may still have lower limits if set directly on the key.
 - After updating team limits, newly generated keys using the same `team_id` should be treated as constrained by the team policy.
 - Confirm whether existing keys immediately inherit updated team limits or only after key update/new key generation.
@@ -638,7 +642,6 @@ def update_team(payload: dict[str, Any]) -> str:
 - Whether `/key/delete` returns a string or a structured object containing `deleted_keys`.
 - Whether deleted keys can be recovered.
 - Whether blocked keys can be restored.
-- Whether `/team/update` requires `team_id` in the request body, query parameter, or another identifier field.
 - Whether updated team limits apply immediately to existing keys or only to newly generated/updated keys.
 - Team TPM/RPM limit inheritance behavior.
 - Team budget override behavior when key-level limits are also configured.

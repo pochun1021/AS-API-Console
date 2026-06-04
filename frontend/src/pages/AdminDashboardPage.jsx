@@ -40,9 +40,7 @@ function statusColor(status) {
 
 function formatMaskedKey(value) {
   if (!value) return "-";
-  const text = String(value);
-  const tail = text.slice(-4);
-  return `AS-...${tail}`;
+  return String(value);
 }
 
 export default function AdminDashboardPage({ auth }) {

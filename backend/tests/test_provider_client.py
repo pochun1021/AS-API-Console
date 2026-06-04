@@ -132,6 +132,26 @@ def test_generate_key_uses_bearer_auth_and_reads_key_field(monkeypatch: pytest.M
     assert result.operation_id == "op-1"
 
 
+def test_update_team_limits_posts_to_team_update(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _build_client(monkeypatch)
+    fake_client = _FakeClient(_response("ok"))
+    monkeypatch.setattr("app.services.provider_client.build_safe_httpx_client", lambda **kwargs: fake_client)
+
+    result = client.update_team_limits({"team_id": "team-1", "tpm_limit": 10000})
+
+    assert result.success is True
+    assert fake_client.calls == [
+        {
+            "url": "/team/update",
+            "json": {"team_id": "team-1", "tpm_limit": 10000},
+            "headers": {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer secret-token",
+            },
+        }
+    ]
+
+
 def test_update_key_accepts_string_response(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch)
     monkeypatch.setattr(

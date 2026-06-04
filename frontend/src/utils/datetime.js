@@ -1,4 +1,5 @@
 const DISPLAY_TIME_ZONE = "Asia/Taipei";
+const THIRTY_DAYS_IN_MS = 30 * 24 * 60 * 60 * 1000;
 
 function normalizeLocale(locale) {
   return locale === "zh-TW" ? "zh-TW" : "en-US";
@@ -35,6 +36,17 @@ export function formatDateTimeInTaipei(value, { locale = "zh-TW", fallback = "-"
   return showSeconds
     ? `${year}-${month}-${day} ${hour}:${minute}:${second}`
     : `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+export function isWithinThirtyDaysBeforeExpiration(value, now = new Date()) {
+  if (!value) return false;
+
+  const expiresAt = new Date(value);
+  const current = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(expiresAt.getTime()) || Number.isNaN(current.getTime())) return false;
+  if (expiresAt < current) return false;
+
+  return expiresAt.getTime() - current.getTime() <= THIRTY_DAYS_IN_MS;
 }
 
 export { DISPLAY_TIME_ZONE };

@@ -1,6 +1,8 @@
+import { isWithinThirtyDaysBeforeExpiration } from "../utils/datetime";
 import { containsUnsafePersistedText, isAsciiDigits } from "../utils/inputValidation";
 
 const today = new Date().toISOString().slice(0, 10);
+const daysFromNow = (days) => new Date(Date.now() + 1000 * 60 * 60 * 24 * days).toISOString();
 const mockInstitutes = [
   { inst_code: "01", inst_name: "院本部", abb_inst_name: "院本部", einst_name: "Headquarters", division: "1" },
   { inst_code: "02", inst_name: "資訊所", abb_inst_name: "資訊所", einst_name: "Institute of Information Science", division: "2" },
@@ -19,7 +21,7 @@ const initialApiKeys = [
     purpose: "integration test for platform service",
     department: "02",
     created_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString(),
+    expires_at: daysFromNow(14),
     expiration_notice_sent_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     owner_account: "jane.doe",
     owner_name: "Jane Doe",
@@ -122,7 +124,7 @@ const initialApiKeys = [
     purpose: "dev.user local integration test",
     department: "02",
     created_at: "2026-05-01T02:15:00.000Z",
-    expires_at: "2026-11-01T02:15:00.000Z",
+    expires_at: daysFromNow(45),
     expiration_notice_sent_at: null,
     owner_account: "dev.user",
     owner_name: "Dev User",
@@ -153,6 +155,21 @@ const initialApiKeys = [
     department: "02",
     created_at: "2026-02-10T11:00:00.000Z",
     expires_at: "2026-03-10T11:00:00.000Z",
+    expiration_notice_sent_at: null,
+    owner_account: "dev.user",
+    owner_name: "Dev User",
+    renewed_to_key_id: null
+  },
+  {
+    id: "key_011",
+    status: "active",
+    masked_key: "AS-...du04",
+    application_date: today,
+    duration_months: 1,
+    purpose: "dev.user near expiry scenario",
+    department: "02",
+    created_at: new Date().toISOString(),
+    expires_at: daysFromNow(14),
     expiration_notice_sent_at: null,
     owner_account: "dev.user",
     owner_name: "Dev User",
@@ -407,8 +424,7 @@ function ensureUniqueAlias(ownerAccount, preferredAlias) {
 function isExtendEligible(item, auth) {
   if (!["active", "expired"].includes(item.status)) return false;
   if (item.status === "expired") return true;
-  if (auth?.role === "admin") return true;
-  return Boolean(item.expiration_notice_sent_at);
+  return isWithinThirtyDaysBeforeExpiration(item.expires_at);
 }
 
 function findOrCreateUserByAuth(auth) {
@@ -769,8 +785,8 @@ export const mockApiProvider = {
     if (!["active", "expired"].includes(target.status)) {
       throw createError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409);
     }
-    if (auth.role !== "admin" && target.status === "active" && !target.expiration_notice_sent_at) {
-      throw createError("KEY_EXTENSION_NOTICE_REQUIRED", "extension requires expiration notice", 409);
+    if (target.status === "active" && !isWithinThirtyDaysBeforeExpiration(target.expires_at)) {
+      throw createError("KEY_EXTEND_NOT_NEAR_EXPIRY", "active keys can only be extended within 30 days before expiration", 409);
     }
     const durationMonths = Number(payload?.duration_months);
     if (![1, 6, 12].includes(durationMonths)) {
@@ -780,39 +796,27 @@ export const mockApiProvider = {
       throw createError("KEY_ALREADY_RENEWED", "key already renewed", 409);
     }
 
-    const idNew = `key_${String(apiKeys.length + 1).padStart(3, "0")}`;
     const now = new Date();
-    const expires = new Date(now);
-    expires.setMonth(expires.getMonth() + durationMonths);
-    const plain = generatePlainKey();
+    if (target.status === "expired") {
+      const expires = new Date(now);
+      expires.setMonth(expires.getMonth() + durationMonths);
+      target.application_date = now.toISOString().slice(0, 10);
+      target.duration_months = durationMonths;
+      target.expires_at = expires.toISOString();
+    } else {
+      const base = new Date(target.expires_at);
+      const expires = new Date(base > now ? base : now);
+      expires.setMonth(expires.getMonth() + durationMonths);
+      target.duration_months += durationMonths;
+      target.expires_at = expires.toISOString();
+    }
+    target.status = "active";
+    target.expiration_notice_sent_at = null;
 
-    apiKeys = [
-      {
-        id: idNew,
-        status: "active",
-        masked_key: `AS-...${plain.slice(-4)}`,
-        application_date: now.toISOString().slice(0, 10),
-        duration_months: durationMonths,
-        purpose: target.purpose || "",
-        key_alias: ensureUniqueAlias(target.owner_account, target.key_alias),
-        department: target.department,
-        created_at: now.toISOString(),
-        expires_at: expires.toISOString(),
-        expiration_notice_sent_at: null,
-        owner_account: target.owner_account,
-        owner_name: target.owner_name,
-        renewed_to_key_id: null
-      },
-      ...apiKeys
-    ];
-
-    target.renewed_to_key_id = idNew;
     return {
-      id: idNew,
+      id: target.id,
       status: "active",
-      expires_at: expires.toISOString(),
-      renewed_from_key_id: target.id,
-      api_key_plaintext: plain
+      expires_at: target.expires_at
     };
   },
 
