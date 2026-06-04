@@ -401,6 +401,7 @@ def test_login_returns_500_when_dev_login_config_missing(client, monkeypatch):
     resp = client.get("/main/login", follow_redirects=False)
     assert resp.status_code == 500
     assert resp.json()["error"]["code"] == "INTERNAL_ERROR"
+    assert resp.json()["error"]["details"] == "app.api.auth:login"
 
 
 def test_login_returns_500_when_dev_login_role_invalid(client, monkeypatch):
@@ -417,3 +418,4 @@ def test_login_returns_500_when_dev_login_role_invalid(client, monkeypatch):
     resp = client.get("/main/login", follow_redirects=False)
     assert resp.status_code == 500
     assert resp.json()["error"]["code"] == "INTERNAL_ERROR"
+    assert resp.json()["error"]["details"] == "app.api.auth:login"

@@ -25,7 +25,11 @@ from app.schemas.api_keys import (
     RevokeResponse,
 )
 from app.services.api_keys_service import ApiKeysService
-from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
+from app.services.operation_audit_service import (
+    OperationAuditService,
+    extract_request_audit_context,
+    summarize_operation_audit_error,
+)
 from db.session import get_db
 
 router = APIRouter()
@@ -65,6 +69,7 @@ def create_application(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             context=context,
@@ -74,13 +79,14 @@ def create_application(
             },
         )
         raise
-    except Exception:
+    except Exception as exc:
         db.rollback()
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             context=context,
@@ -205,6 +211,7 @@ def revoke_api_key(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=key_id,
@@ -212,13 +219,14 @@ def revoke_api_key(
             metadata={"key_id": key_id},
         )
         raise
-    except Exception:
+    except Exception as exc:
         db.rollback()
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=key_id,
@@ -270,6 +278,7 @@ def renew_api_key(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=key_id,
@@ -277,13 +286,14 @@ def renew_api_key(
             metadata={"key_id": key_id},
         )
         raise
-    except Exception:
+    except Exception as exc:
         db.rollback()
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=key_id,
@@ -336,6 +346,7 @@ def extend_api_key(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=key_id,
@@ -343,13 +354,14 @@ def extend_api_key(
             metadata={"key_id": key_id, "duration_months": payload.duration_months},
         )
         raise
-    except Exception:
+    except Exception as exc:
         db.rollback()
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=key_id,
@@ -447,6 +459,7 @@ def update_limit_strategy_config(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -458,13 +471,14 @@ def update_limit_strategy_config(
             },
         )
         raise
-    except Exception:
+    except Exception as exc:
         db.rollback()
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,

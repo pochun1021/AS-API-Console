@@ -6,7 +6,11 @@ from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.core.security import csrf_protected, enforce_rate_limit
 from app.schemas.common import ErrorResponse
-from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
+from app.services.operation_audit_service import (
+    OperationAuditService,
+    extract_request_audit_context,
+    summarize_operation_audit_error,
+)
 from app.schemas.whitelists import (
     WhitelistCreateRequest,
     WhitelistItemResponse,
@@ -55,6 +59,7 @@ def create_whitelist(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             context=context,
@@ -71,18 +76,20 @@ def create_whitelist(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             context=context,
             metadata={"sysid": payload.sysid},
         )
         raise
-    except Exception:
+    except Exception as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             context=context,
@@ -152,6 +159,7 @@ def update_whitelist(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=whitelist_id,
@@ -169,6 +177,7 @@ def update_whitelist(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=whitelist_id,
@@ -176,12 +185,13 @@ def update_whitelist(
             metadata={"whitelist_id": whitelist_id, "status": payload.status},
         )
         raise
-    except Exception:
+    except Exception as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=whitelist_id,
@@ -231,6 +241,7 @@ def delete_whitelist(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=whitelist_id,
@@ -248,6 +259,7 @@ def delete_whitelist(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=whitelist_id,
@@ -255,12 +267,13 @@ def delete_whitelist(
             metadata={"whitelist_id": whitelist_id},
         )
         raise
-    except Exception:
+    except Exception as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=whitelist_id,

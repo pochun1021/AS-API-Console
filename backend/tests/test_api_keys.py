@@ -1820,6 +1820,8 @@ def test_error_response_shape_consistency(client, admin_headers, user_headers):
         assert "error" in body
         assert "code" in body["error"]
         assert "message" in body["error"]
+        assert "details" in body["error"]
+        assert ":" in body["error"]["details"]
 
 
 def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin_headers):

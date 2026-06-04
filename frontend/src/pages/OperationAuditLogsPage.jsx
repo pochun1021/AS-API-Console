@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
 import { apiClient } from "../api/client";
+import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { formatDateTimeInTaipei } from "../utils/datetime";
@@ -36,6 +37,7 @@ export default function OperationAuditLogsPage({ auth }) {
   const [operationResult, setOperationResult] = useState("");
   const [operationLoading, setOperationLoading] = useState(true);
   const [operationError, setOperationError] = useState("");
+  const [selectedOperationLog, setSelectedOperationLog] = useState(null);
 
   const [loginItems, setLoginItems] = useState([]);
   const [loginTotal, setLoginTotal] = useState(0);
@@ -58,6 +60,21 @@ export default function OperationAuditLogsPage({ auth }) {
       { field: "target_type", headerName: t("auditlogs_col_target_type"), minWidth: 130, flex: 1 },
       { field: "target_id", headerName: t("auditlogs_col_target_id"), minWidth: 160, flex: 1.2 },
       { field: "error_code", headerName: t("auditlogs_col_error_code"), minWidth: 160, flex: 1.2 },
+      {
+        field: "detail_action",
+        headerName: t("auditlogs_col_detail"),
+        minWidth: 140,
+        sortable: false,
+        filterable: false,
+        renderCell: (params) =>
+          params.row.result === "failure" ? (
+            <Button size="small" onClick={() => setSelectedOperationLog(params.row)}>
+              {t("auditlogs_view_detail")}
+            </Button>
+          ) : (
+            t("auditlogs_no_detail")
+          ),
+      },
     ],
     [locale, t]
   );
@@ -101,7 +118,7 @@ export default function OperationAuditLogsPage({ auth }) {
         if (cancelled) return;
         setOperationItems([]);
         setOperationTotal(0);
-        setOperationError(e?.payload?.error?.message || t("auditlogs_load_failed"));
+        setOperationError(normalizeApiError(e, t("auditlogs_load_failed")));
       } finally {
         if (!cancelled) setOperationLoading(false);
       }
@@ -111,6 +128,16 @@ export default function OperationAuditLogsPage({ auth }) {
       cancelled = true;
     };
   }, [auth, operationPage, operationPageSize, operationFromDate, operationToDate, operationEventType, operationResult, t]);
+
+  useEffect(() => {
+    if (!selectedOperationLog) return;
+    const latest = operationItems.find((item) => item.id === selectedOperationLog.id);
+    if (!latest) {
+      setSelectedOperationLog(null);
+    } else if (latest !== selectedOperationLog) {
+      setSelectedOperationLog(latest);
+    }
+  }, [operationItems, selectedOperationLog]);
 
   useEffect(() => {
     if (auth.role !== "admin") return;
@@ -137,7 +164,7 @@ export default function OperationAuditLogsPage({ auth }) {
         if (cancelled) return;
         setLoginItems([]);
         setLoginTotal(0);
-        setLoginError(e?.payload?.error?.message || t("loginlogs_load_failed"));
+        setLoginError(normalizeApiError(e, t("loginlogs_load_failed")));
       } finally {
         if (!cancelled) setLoginLoading(false);
       }
@@ -296,6 +323,28 @@ export default function OperationAuditLogsPage({ auth }) {
           ) : null}
         </>
       ) : null}
+
+      <Dialog open={Boolean(selectedOperationLog)} onClose={() => setSelectedOperationLog(null)} fullWidth maxWidth="sm">
+        <DialogTitle>{t("auditlogs_detail_title")}</DialogTitle>
+        <DialogContent>
+          {selectedOperationLog ? (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <TextField label={t("auditlogs_col_error_code")} value={selectedOperationLog.error_code || ""} InputProps={{ readOnly: true }} />
+              <TextField label={t("auditlogs_detail_request_id")} value={selectedOperationLog.request_id || ""} InputProps={{ readOnly: true }} />
+              <TextField
+                label={t("auditlogs_detail_error_detail")}
+                value={selectedOperationLog.error_detail || ""}
+                InputProps={{ readOnly: true }}
+                multiline
+                minRows={3}
+              />
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSelectedOperationLog(null)}>{t("common_close")}</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

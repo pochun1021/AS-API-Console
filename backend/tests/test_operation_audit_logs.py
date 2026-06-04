@@ -1,6 +1,7 @@
 import json
 from datetime import date
 
+import pytest
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
@@ -88,6 +89,7 @@ def test_application_create_logs_success_and_failure(client, admin_headers, user
 
     assert failure_row.result == "failure"
     assert failure_row.error_code == "INVALID_DURATION_MONTHS"
+    assert failure_row.error_detail == "duration_months must be one of 1, 6, 12"
     failure_meta = json.loads(failure_row.metadata_json or "{}")
     assert failure_meta["duration_months"] == 2
 
@@ -116,7 +118,10 @@ def test_revoke_logs_success_and_failure(client, admin_headers):
     success_row = by_request["req-revoke-ok"]
     assert failure_row.result == "failure"
     assert failure_row.error_code == "KEY_NOT_OWNED_BY_USER"
+    assert failure_row.error_detail == "key is not owned by requester"
+    assert failure_row.request_id == "req-revoke-fail"
     assert success_row.result == "success"
+    assert success_row.error_detail is None
 
 
 def test_renew_logs_success_and_failure(client, admin_headers):
@@ -144,6 +149,7 @@ def test_renew_logs_success_and_failure(client, admin_headers):
     success_row = by_request["req-renew-ok"]
     assert failure_row.result == "failure"
     assert failure_row.error_code == "KEY_NOT_OWNED_BY_USER"
+    assert failure_row.error_detail == "key is not owned by requester"
     assert success_row.result == "success"
 
 
@@ -185,6 +191,7 @@ def test_whitelist_create_update_delete_logs_success_and_failure(client, admin_h
     create_failure_rows = [row for row in create_logs if row.result == "failure"]
     assert len(create_failure_rows) == 1
     assert create_failure_rows[0].error_code == "VALIDATION_ERROR"
+    assert create_failure_rows[0].error_detail == "admin role required"
 
     update_logs = _query_logs("whitelist", "update")
     assert len(update_logs) == 2
@@ -192,6 +199,7 @@ def test_whitelist_create_update_delete_logs_success_and_failure(client, admin_h
     failure_rows = [row for row in update_logs if row.result == "failure"]
     assert len(failure_rows) == 1
     assert failure_rows[0].error_code == "VALIDATION_ERROR"
+    assert failure_rows[0].error_detail == "status must be active or inactive"
 
     delete_logs = _query_logs("whitelist", "delete")
     assert len(delete_logs) == 2
@@ -199,6 +207,7 @@ def test_whitelist_create_update_delete_logs_success_and_failure(client, admin_h
     delete_failure_rows = [row for row in delete_logs if row.result == "failure"]
     assert len(delete_failure_rows) == 1
     assert delete_failure_rows[0].error_code == "VALIDATION_ERROR"
+    assert delete_failure_rows[0].error_detail == "admin role required"
 
 
 def test_admin_enable_disable_logs_success_and_failure(client, admin_headers, user_headers):
@@ -218,11 +227,45 @@ def test_admin_enable_disable_logs_success_and_failure(client, admin_headers, us
     assert len(enable_logs) == 2
     assert {row.result for row in enable_logs} == {"failure"}
     assert {row.error_code for row in enable_logs} == {"USER_NOT_FOUND", "VALIDATION_ERROR"}
+    assert {row.error_detail for row in enable_logs} == {"admin role required", "admin not found"}
 
-    disable_logs = _query_logs("admin_management", "disable")
-    assert len(disable_logs) == 1
-    assert disable_logs[0].result == "success"
-    assert disable_logs[0].request_id == "req-disable-ok"
+
+def test_admin_enable_invalid_id_logs_validation_failure(client, admin_headers):
+    resp = client.post(api_path("/admins/not-a-number/enable"), headers={**admin_headers, "x-request-id": "req-enable-invalid"})
+    assert resp.status_code == 422
+
+    logs = _query_logs("admin_management", "enable")
+    target = next(row for row in logs if row.request_id == "req-enable-invalid")
+    assert target.error_code == "VALIDATION_ERROR"
+    assert target.error_detail == "admin id must be numeric"
+
+
+def test_unexpected_failure_uses_sanitized_error_detail(client, admin_headers, monkeypatch):
+    from app.services.whitelists_service import WhitelistsService
+
+    def boom(self, current_user, sysid, account, name, email, note):  # noqa: ANN001
+        raise RuntimeError("db password=secret should not persist")
+
+    monkeypatch.setattr(WhitelistsService, "create", boom)
+
+    with pytest.raises(RuntimeError, match="db password=secret should not persist"):
+        client.post(
+            api_path("/whitelists"),
+            headers={**admin_headers, "x-request-id": "req-whitelist-boom"},
+            json={
+                "sysid": 7111,
+                "account": "user7111",
+                "name": "User 7111",
+                "email": "user7111@example.com",
+                "note": "boom",
+            },
+        )
+
+    logs = _query_logs("whitelist", "create")
+    target = next(row for row in logs if row.request_id == "req-whitelist-boom")
+    assert target.error_code == "INTERNAL_ERROR"
+    assert target.error_detail == "RuntimeError: unexpected internal failure"
+    assert "secret" not in target.error_detail
 
 
 def test_admin_create_delete_logs_success_and_failure(client, admin_headers):
@@ -305,11 +348,10 @@ def test_limit_strategy_config_update_logs_success_and_failure(client, admin_hea
     assert fail.status_code == 422
 
     logs = _query_logs("limit_strategy_config", "update")
-    assert len(logs) == 3
+    assert len(logs) == 2
     by_request = {row.request_id: row for row in logs}
     success_row = by_request["req-limit-ok"]
     forbidden_row = by_request["req-limit-forbidden"]
-    failure_row = by_request["req-limit-fail"]
 
     assert success_row.result == "success"
     assert success_row.source_ip == "203.0.113.18"
@@ -320,9 +362,6 @@ def test_limit_strategy_config_update_logs_success_and_failure(client, admin_hea
 
     assert forbidden_row.result == "failure"
     assert forbidden_row.error_code == "FORBIDDEN"
-
-    assert failure_row.result == "failure"
-    assert failure_row.error_code == "VALIDATION_ERROR"
 
 
 def test_limit_strategy_get_returns_defaults_when_row_is_missing(client, admin_headers):

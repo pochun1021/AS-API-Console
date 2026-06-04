@@ -16,6 +16,8 @@ class OperationAuditLogItemResponse(BaseModel):
     target_type: str
     target_id: str | None
     error_code: str | None
+    error_detail: str | None
+    request_id: str
 
     @field_serializer("created_at")
     def serialize_created_at(self, value: datetime) -> str:

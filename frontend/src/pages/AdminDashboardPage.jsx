@@ -27,6 +27,7 @@ import { DataGrid } from "@mui/x-data-grid";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
 import { apiClient } from "../api/client";
+import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
@@ -117,7 +118,7 @@ export default function AdminDashboardPage({ auth }) {
       setDetailItems(response.items || []);
     } catch (e) {
       setDetailItems([]);
-      setDetailError(e?.payload?.error?.message || t("dashboard_detail_load_failed"));
+      setDetailError(normalizeApiError(e, t("dashboard_detail_load_failed")));
     } finally {
       setDetailLoading(false);
     }
@@ -216,7 +217,7 @@ export default function AdminDashboardPage({ auth }) {
         setBanner("");
       }
     } catch (e) {
-      setError(e?.payload?.error?.message || t("dashboard_load_failed"));
+      setError(normalizeApiError(e, t("dashboard_load_failed")));
       setBanner("");
     } finally {
       setLoading(false);

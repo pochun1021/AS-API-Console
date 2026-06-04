@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from fastapi import Request
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
+from app.core.errors import ApiError
 from db.models.operation_audit_logs import OperationAuditLog
 
 ALLOWED_METADATA_KEYS = {
@@ -51,6 +53,14 @@ def extract_request_audit_context(request: Request) -> RequestAuditContext:
     return RequestAuditContext(request_id=request_id, source_ip=source_ip, user_agent=user_agent)
 
 
+def summarize_operation_audit_error(exc: Exception) -> str:
+    if isinstance(exc, ApiError):
+        return exc.message
+    if isinstance(exc, HTTPException):
+        return str(exc.detail)
+    return f"{type(exc).__name__}: unexpected internal failure"
+
+
 class OperationAuditService:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -75,6 +85,7 @@ class OperationAuditService:
         context: RequestAuditContext,
         actor: CurrentUser | None = None,
         error_code: str | None = None,
+        error_detail: str | None = None,
         target_id: str | None = None,
         metadata: dict | None = None,
     ) -> None:
@@ -85,6 +96,7 @@ class OperationAuditService:
             action=action,
             result=result,
             error_code=error_code,
+            error_detail=error_detail,
             actor_sysid=actor.sysid if actor else None,
             actor_account=actor.account if actor else None,
             actor_role=actor.role if actor else None,

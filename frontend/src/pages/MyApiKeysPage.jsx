@@ -27,6 +27,7 @@ import {
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { apiClient } from "../api/client";
+import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { formatDateTimeInTaipei } from "../utils/datetime";
@@ -126,7 +127,7 @@ export default function MyApiKeysPage({ auth }) {
       setItems(response.items || []);
       setTotal(response.total || 0);
     } catch (e) {
-      setError(e?.payload?.error?.message || t("mykeys_load_failed"));
+      setError(normalizeApiError(e, t("mykeys_load_failed")));
       setItems([]);
       setTotal(0);
     } finally {
@@ -229,7 +230,7 @@ export default function MyApiKeysPage({ auth }) {
     } catch (e) {
       setDetailItem(null);
       setDetailAliasValue("");
-      setDetailError(e?.payload?.error?.message || t("mykeys_detail_failed"));
+      setDetailError(normalizeApiError(e, t("mykeys_detail_failed")));
     } finally {
       setDetailLoading(false);
     }

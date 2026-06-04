@@ -6,7 +6,11 @@ from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.core.security import csrf_protected, enforce_rate_limit, ensure_csrf_token, validate_search_keyword
 from app.schemas.common import ErrorResponse
-from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
+from app.services.operation_audit_service import (
+    OperationAuditService,
+    extract_request_audit_context,
+    summarize_operation_audit_error,
+)
 from app.schemas.users import (
     AdminCreateRequest,
     CurrentUserResponse,
@@ -115,15 +119,16 @@ def enable_admin(
     action = "enable"
     target_type = "admin"
     target_id = user_id
-    parsed_admin_id = _parse_admin_id(user_id)
     try:
         _require_admin(current_user)
+        parsed_admin_id = _parse_admin_id(user_id)
     except ApiError as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -141,6 +146,7 @@ def enable_admin(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -148,12 +154,13 @@ def enable_admin(
             metadata={"target_admin_id": user_id},
         )
         raise
-    except Exception:
+    except Exception as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -199,15 +206,16 @@ def create_admin(
     action = "create"
     target_type = "admin"
     target_id = user_id
-    parsed_admin_id = _parse_admin_id(user_id)
     try:
         _require_admin(current_user)
+        parsed_admin_id = _parse_admin_id(user_id)
     except ApiError as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -232,6 +240,7 @@ def create_admin(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -239,12 +248,13 @@ def create_admin(
             metadata={"target_admin_id": user_id},
         )
         raise
-    except Exception:
+    except Exception as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -283,15 +293,16 @@ def disable_admin(
     action = "disable"
     target_type = "admin"
     target_id = user_id
-    parsed_admin_id = _parse_admin_id(user_id)
     try:
         _require_admin(current_user)
+        parsed_admin_id = _parse_admin_id(user_id)
     except ApiError as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -309,6 +320,7 @@ def disable_admin(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -316,12 +328,13 @@ def disable_admin(
             metadata={"target_admin_id": user_id},
         )
         raise
-    except Exception:
+    except Exception as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -365,15 +378,16 @@ def delete_admin(
     action = "delete"
     target_type = "admin"
     target_id = user_id
-    parsed_admin_id = _parse_admin_id(user_id)
     try:
         _require_admin(current_user)
+        parsed_admin_id = _parse_admin_id(user_id)
     except ApiError as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -391,6 +405,7 @@ def delete_admin(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,
@@ -398,12 +413,13 @@ def delete_admin(
             metadata={"target_admin_id": user_id},
         )
         raise
-    except Exception:
+    except Exception as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             target_id=target_id,

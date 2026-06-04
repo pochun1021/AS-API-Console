@@ -302,6 +302,7 @@
 - `action` (string, required)
 - `result` (enum: `success` | `failure`)
 - `error_code` (string, nullable)
+- `error_detail` (string, nullable；僅供管理者除錯的安全摘要，僅允許白名單內容)
 - `actor_sysid` (integer, nullable)
 - `actor_account` (string, nullable)
 - `actor_role` (string, nullable)
@@ -313,6 +314,7 @@
 - `metadata_json` (string, nullable；僅允許白名單欄位，不得包含敏感值)
 - `created_at` (datetime)
 - 目的：記錄關鍵操作稽核（v1），成功與失敗事件皆需落地。
+- `error_detail` 僅允許例外類型、受控錯誤訊息摘要與必要業務上下文；不得包含 stack trace、SQL、完整第三方 payload。
 - 不得記錄 API key 明文、token、password、client secret 等敏感憑證。
 
 ## 權限規則（MVP）
@@ -417,7 +419,8 @@ Base path：`/main/api/v1`
 {
   "error": {
     "code": "PROVIDER_UNAVAILABLE",
-    "message": "provider unavailable"
+    "message": "provider unavailable",
+    "details": "app.api.v1.api_keys:create_application"
   }
 }
 ```
@@ -724,6 +727,7 @@ Base path：`/main/api/v1`
 - 稽核欄位至少需可辨識：事件類型、動作、成功/失敗、操作者（`sysid/account/role`）、目標資源類型與 ID、`request_id`、時間、來源 IP、user-agent。
 - 成功與失敗都需記錄（含權限不足、驗證失敗、資源不存在等）。
 - metadata 採白名單策略，僅記錄必要且非敏感欄位；若 provider 提供 request id / operation id，可納入白名單欄位。
+- failure 事件需額外記錄 `error_detail`，供管理者以 `request_id` 搭配稽核頁快速除錯；內容須為安全摘要，不得包含敏感資訊或 stack trace。
 - 若 audit 寫入失敗，不得改變原本 API 成功/失敗語意（主流程優先）。
 
 ### 6-2) 操作稽核熱資料查詢（v1）
@@ -732,7 +736,8 @@ Base path：`/main/api/v1`
 - 查詢參數：`page`、`page_size`、`from`、`to`、`event_type`、`result(success|failure)`。
 - 預設熱資料窗：若未提供 `from/to`，回傳最近 7 天資料。
 - 排序：`created_at desc`（最新優先）。
-- 回傳欄位（精簡）：`created_at`、`event_type`、`action`、`result`、`actor_account`、`target_type`、`target_id`、`error_code`。
+- 回傳欄位（精簡 + 失敗詳情）：`created_at`、`event_type`、`action`、`result`、`actor_account`、`target_type`、`target_id`、`error_code`、`request_id`、`error_detail`。
+- `error_detail` 僅在 `failure` 事件提供除錯摘要；`success` 事件回傳 `null`。
 
 ### 6-3) 登入稽核熱資料查詢（v1）
 - `GET /main/api/v1/auth-audit-logs`
@@ -763,10 +768,13 @@ Base path：`/main/api/v1`
 {
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "..."
+    "message": "...",
+    "details": "app.api.v1.whitelists:create_whitelist"
   }
 }
 ```
+- `error.details` 為 optional string，用於提供受控白名單格式的錯誤來源摘要（例如 `module:function`）。
+- `error.details` 僅允許揭露固定來源標籤；不得包含程式碼片段、stack trace、SQL、完整第三方 payload、secret、token 或 API key 明文。
 
 建議錯誤碼：
 - `VALIDATION_ERROR`
@@ -865,11 +873,11 @@ Base path：`/main/api/v1`
 53. `GET /main/api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 僅允許 `zh-TW|en`，成功後可立即由 `GET` 讀回。手動切換語言後，重新登入需沿用 DB 偏好，且導覽列、頁標題、按鈕、錯誤/提示訊息與 DataGrid locale 文案需隨語言切換更新。
 
 ### 稽核、查詢限制與安全邊界
-54. `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`limit-strategy-config`、`institutes/sync` 等關鍵異動 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`。
-55. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證；`metadata_json` 僅允許白名單欄位。若 audit 寫入失敗，不得改變主流程成功或失敗語意。
+54. `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`limit-strategy-config`、`institutes/sync` 等關鍵異動 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`；failure 事件另需提供可供管理者除錯的 `error_detail` 與 `request_id`。
+55. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證；`metadata_json` 與 `error_detail` 僅允許白名單安全內容，不得包含 stack trace、SQL、完整第三方 payload。若 audit 寫入失敗，不得改變主流程成功或失敗語意。
 56. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 僅 `admin` 可使用；未提供 `from/to` 時預設回傳最近 7 天熱資料，結果依 `created_at desc` 排序，並支援分頁與既定篩選條件。
 57. `GET /main/api/v1/api-keys/statistics/users`、`GET /main/api/v1/operation-audit-logs`、`GET /main/api/v1/auth-audit-logs` 的 `from/to` 查詢區間不得超過 `31` 天；`GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
-58. 關鍵操作稽核功能、申請人識別欄位調整、統計與 lifecycle 擴充，均不得改動既有受保護 API 路徑、角色模型（`user|admin`）與既有對外 response shape。
+58. 關鍵操作稽核功能、申請人識別欄位調整、統計與 lifecycle 擴充，均不得改動既有受保護 API 路徑與角色模型（`user|admin`）；若需擴充對外 error response，僅允許增加相容性的 optional 欄位（如 `error.details`），不得破壞既有 `error.code` / `error.message` 契約或既有 success response shape。
 
 ## Roadmap
 ### Phase 1：Foundation

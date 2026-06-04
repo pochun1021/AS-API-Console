@@ -71,6 +71,8 @@ class OperationAuditQueryService:
                     "target_type": row.target_type,
                     "target_id": row.target_id,
                     "error_code": row.error_code,
+                    "error_detail": row.error_detail,
+                    "request_id": row.request_id,
                 }
                 for row in rows
             ],

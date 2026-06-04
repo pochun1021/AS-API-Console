@@ -23,6 +23,7 @@ import {
 import { DataGrid } from "@mui/x-data-grid";
 import { useTheme } from "@mui/material/styles";
 import { apiClient } from "../api/client";
+import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 
@@ -67,7 +68,7 @@ export default function AdminPage({ auth }) {
       const response = await apiClient.listAdmins(auth);
       setItems(response.items);
     } catch (e) {
-      setError(e?.payload?.error?.message || t("admin_load_failed"));
+      setError(normalizeApiError(e, t("admin_load_failed")));
     } finally {
       setLoading(false);
     }

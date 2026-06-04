@@ -12,6 +12,7 @@ import {
   Typography
 } from "@mui/material";
 import { apiClient } from "../api/client";
+import { normalizeApiError } from "../api/errors";
 import { ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { isAsciiDigits, shouldAllowDigitsInput, shouldAllowDigitsPaste } from "../utils/inputValidation";
@@ -52,7 +53,7 @@ export default function LimitStrategiesPage({ auth }) {
         rate_limit_rpm: String(result.rate_limit_rpm ?? "")
       });
     } catch (e) {
-      setError(e?.payload?.error?.message || t("limit_strategy_load_failed"));
+      setError(normalizeApiError(e, t("limit_strategy_load_failed")));
     } finally {
       setLoading(false);
     }

@@ -15,6 +15,7 @@ class OperationAuditLog(Base):
     action: Mapped[str] = mapped_column(String(50), nullable=False)
     result: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     actor_sysid: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     actor_account: Mapped[str | None] = mapped_column(String(100), nullable=True)
     actor_role: Mapped[str | None] = mapped_column(String(20), nullable=True)

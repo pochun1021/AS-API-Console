@@ -26,6 +26,7 @@ import {
 import { DataGrid } from "@mui/x-data-grid";
 import { useTheme } from "@mui/material/styles";
 import { apiClient } from "../api/client";
+import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { formatDateTimeInTaipei } from "../utils/datetime";
@@ -118,7 +119,7 @@ export default function WhitelistAdminPage({ auth }) {
       setItems(response.items);
       editingRemarkRef.current = {};
     } catch (e) {
-      setError(e?.payload?.error?.message || t("whitelist_load_failed"));
+      setError(normalizeApiError(e, t("whitelist_load_failed")));
     } finally {
       setLoading(false);
     }

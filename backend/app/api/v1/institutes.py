@@ -9,7 +9,11 @@ from app.schemas.common import ErrorResponse
 from app.schemas.institutes import InstituteListResponse, InstituteSyncResponse
 from app.services.institute_sync_service import InstituteSyncService
 from app.services.institutes_service import InstitutesService
-from app.services.operation_audit_service import OperationAuditService, extract_request_audit_context
+from app.services.operation_audit_service import (
+    OperationAuditService,
+    extract_request_audit_context,
+    summarize_operation_audit_error,
+)
 from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.session import get_db
 
@@ -61,6 +65,7 @@ def sync_institutes(
             action=action,
             result="failure",
             error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             context=context,
@@ -72,17 +77,19 @@ def sync_institutes(
             action=action,
             result="failure",
             error_code="SOAP_SERVICE_UNAVAILABLE",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             context=context,
         )
         raise ApiError("SOAP_SERVICE_UNAVAILABLE", "soap service unavailable", 503) from exc
-    except Exception:
+    except Exception as exc:
         audit.log(
             event_type=event_type,
             action=action,
             result="failure",
             error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
             actor=current_user,
             target_type=target_type,
             context=context,

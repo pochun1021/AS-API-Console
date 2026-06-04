@@ -39,18 +39,20 @@ def _insert_auth_log(created_at: datetime, provider: str, result: str) -> None:
 
 def _insert_operation_log(created_at: datetime, event_type: str, result: str) -> None:
     with Session(_engine()) as session:
+        request_id = f"req-{uuid4()}"
         row = OperationAuditLog(
             id=str(uuid4()),
             event_type=event_type,
             action="test",
             result=result,
             error_code=None if result == "success" else "TEST_FAIL",
+            error_detail=None if result == "success" else "validation failed for test payload",
             actor_sysid=1001,
             actor_account="admin",
             actor_role="admin",
             target_type="test_target",
             target_id="t1",
-            request_id=f"req-{uuid4()}",
+            request_id=request_id,
             source_ip="127.0.0.1",
             user_agent="pytest",
             metadata_json=None,
@@ -125,3 +127,6 @@ def test_audit_logs_default_hot_window_and_filters(client, admin_headers):
         assert filtered_body["total"] == 1
         assert filtered_body["items"][0][case["filter_field"]] == case["filter_value"]
         assert filtered_body["items"][0]["result"] == "failure"
+        if case["name"] == "operation audit logs":
+            assert filtered_body["items"][0]["request_id"].startswith("req-")
+            assert filtered_body["items"][0]["error_detail"] == "validation failed for test payload"

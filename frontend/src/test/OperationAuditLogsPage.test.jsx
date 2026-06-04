@@ -43,6 +43,20 @@ test("admin can switch to login logs tab and view login entries", async () => {
   expect(screen.getByRole("columnheader", { name: "Provider" })).toBeInTheDocument();
 });
 
+test("admin can open failure detail dialog for operation audit logs", async () => {
+  const user = userEvent.setup();
+  renderPage(<OperationAuditLogsPage auth={adminAuth} />);
+
+  expect(await screen.findByText("操作稽核 Log")).toBeInTheDocument();
+  expect(await screen.findByText("VALIDATION_ERROR")).toBeInTheDocument();
+  await user.click(screen.getByText("查看詳情"));
+
+  expect(await screen.findByRole("dialog", { name: "操作稽核詳情" })).toBeInTheDocument();
+  expect(screen.getByDisplayValue("VALIDATION_ERROR")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("req-op-002")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("status must be active or inactive")).toBeInTheDocument();
+});
+
 test("non-admin user is blocked", async () => {
   renderPage(<OperationAuditLogsPage auth={userAuth} />);
   expect(await screen.findByText("僅管理者可查看操作稽核 Log。")).toBeInTheDocument();

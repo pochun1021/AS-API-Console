@@ -279,7 +279,9 @@ let operationAuditLogs = [
     actor_account: "john.admin",
     target_type: "api_key",
     target_id: "key_003",
-    error_code: null
+    error_code: null,
+    error_detail: null,
+    request_id: "req-op-001"
   },
   {
     id: "oplog_002",
@@ -290,7 +292,9 @@ let operationAuditLogs = [
     actor_account: "john.admin",
     target_type: "whitelist",
     target_id: "wl_001",
-    error_code: "VALIDATION_ERROR"
+    error_code: "VALIDATION_ERROR",
+    error_detail: "status must be active or inactive",
+    request_id: "req-op-002"
   }
 ];
 let authAuditLogs = [
@@ -1081,7 +1085,9 @@ export const mockApiProvider = {
         actor_account: "john.admin",
         target_type: "api_key",
         target_id: "key_003",
-        error_code: null
+        error_code: null,
+        error_detail: null,
+        request_id: "req-op-001"
       },
       {
         id: "oplog_002",
@@ -1092,7 +1098,9 @@ export const mockApiProvider = {
         actor_account: "john.admin",
         target_type: "whitelist",
         target_id: "wl_001",
-        error_code: "VALIDATION_ERROR"
+        error_code: "VALIDATION_ERROR",
+        error_detail: "status must be active or inactive",
+        request_id: "req-op-002"
       }
     ];
     authAuditLogs = [
