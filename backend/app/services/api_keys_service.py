@@ -785,13 +785,20 @@ class ApiKeysService:
                 "active keys can only be extended within 30 days before expiration",
                 409,
             )
-        base_time = source_app.expires_at
-        if base_time.tzinfo is None:
-            base_time = base_time.replace(tzinfo=UTC)
         now = datetime.now(UTC)
-        if base_time < now:
-            base_time = now
-        next_expires_at = _calc_expiration(base_time, duration_months)
+        if source_effective_status == "expired":
+            next_application_date = now.date()
+            next_duration_months = duration_months
+            next_expires_at = _calc_expiration(now, duration_months)
+        else:
+            base_time = source_app.expires_at
+            if base_time.tzinfo is None:
+                base_time = base_time.replace(tzinfo=UTC)
+            if base_time < now:
+                base_time = now
+            next_application_date = source_app.application_date
+            next_duration_months = source_app.duration_months + duration_months
+            next_expires_at = _calc_expiration(base_time, duration_months)
 
         provider_metadata: dict = {}
         config = self._get_limit_strategy_values()
@@ -828,8 +835,9 @@ class ApiKeysService:
             )
             raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
 
+        source_app.application_date = next_application_date
+        source_app.duration_months = next_duration_months
         source_app.expires_at = next_expires_at
-        source_app.duration_months = duration_months
         source_app.status = "active"
         source_key.status = "active"
         source_key.key_alias = key_alias

@@ -9,7 +9,7 @@ from db.base import Base
 class ApiKeyApplication(Base):
     __tablename__ = "api_key_applications"
     __table_args__ = (
-        CheckConstraint("duration_months in (1, 6, 12)", name="ck_applications_duration_months"),
+        CheckConstraint("duration_months > 0", name="ck_applications_duration_months"),
         CheckConstraint("status in ('active', 'revoked', 'expired')", name="ck_applications_status"),
     )
 
