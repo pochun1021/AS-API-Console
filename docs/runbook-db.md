@@ -45,6 +45,9 @@
   - `status in ('active', 'revoked', 'expired')`
 - 欄位語意：
   - application ownership 以 applicant snapshot（`account`, `name`, `email`, `department`, `sysid`）為準
+  - `application_date` 保留原始申請日，不因 extend 改寫
+  - `duration_months` 為目前累計有效月數；每次 extend 成功後需加上該次展延月數
+  - `expires_at` 為目前有效到期時間；若 key 已過期才 extend，新的到期計算基準為 extend 成功當下
   - `is_proxy_submission = false` 時，`proxy_operator_account = NULL`
   - `is_proxy_submission = true` 時，`proxy_operator_account` 記錄實際代送的 `admin account`
 
