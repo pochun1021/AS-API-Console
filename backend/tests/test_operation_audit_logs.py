@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine, select, text
@@ -405,6 +406,75 @@ def test_limit_strategy_patch_accepts_zero_rate_limits(client, admin_headers):
     resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
     assert resp.status_code == 200
     assert resp.json() == payload
+
+
+def test_limit_strategy_patch_syncs_provider_team_update(client, admin_headers, monkeypatch):
+    payload = {
+        "budget_max_budget": "3000",
+        "budget_duration": "weekly",
+        "rate_limit_tpm": 13000,
+        "rate_limit_rpm": 700,
+    }
+    captured_payload: dict = {}
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+
+    def _capture_team_update(self, provider_payload):
+        captured_payload.update(provider_payload)
+        return SimpleNamespace(request_id="req-team", operation_id="op-team")
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.update_team_limits", _capture_team_update)
+
+    try:
+        resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
+        assert resp.status_code == 200
+        assert captured_payload == {
+            "team_id": "team-001",
+            "max_budget": 3000.0,
+            "budget_duration": "7d",
+            "tpm_limit": 13000,
+            "rpm_limit": 700,
+        }
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
+
+
+def test_limit_strategy_patch_requires_team_id_before_provider_call(client, admin_headers, monkeypatch):
+    payload = {
+        "budget_max_budget": "3000",
+        "budget_duration": "weekly",
+        "rate_limit_tpm": 13000,
+        "rate_limit_rpm": 700,
+    }
+    _delete_limit_strategy_config()
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+
+    provider_called = {"count": 0}
+
+    def _should_not_call_provider(self, provider_payload):
+        provider_called["count"] += 1
+        raise AssertionError("provider should not be called when PROVIDER_TEAM_ID is missing")
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.update_team_limits", _should_not_call_provider)
+
+    try:
+        resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
+        assert resp.status_code == 503
+        assert resp.json()["error"]["code"] == "PROVIDER_TEAM_ID_REQUIRED"
+        assert provider_called["count"] == 0
+        assert _count_limit_strategy_config() == 0
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        get_settings.cache_clear()
 
 
 def test_limit_strategy_patch_rejects_non_ascii_digits_payload(client, admin_headers):

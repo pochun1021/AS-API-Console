@@ -61,8 +61,12 @@ def _hash_key(plaintext: str) -> str:
     return hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
 
 
+def _key_prefix_for_env(app_env: str) -> str:
+    return "sk-" if app_env.strip().lower() == "prod" else "AS-"
+
+
 def _mask_key(plaintext: str) -> str:
-    return f"AS-...{plaintext[-4:]}"
+    return f"{_key_prefix_for_env(get_settings().app_env)}...{plaintext[-4:]}"
 
 
 def _calc_expiration(issued_at: datetime, duration_months: int) -> datetime:
@@ -107,12 +111,9 @@ def _to_provider_budget_duration(duration: str) -> str:
 
 
 def _to_provider_duration(duration_months: int) -> str:
-    mapping = {
-        1: "30d",
-        6: "180d",
-        12: "360d",
-    }
-    return mapping[duration_months]
+    if duration_months <= 0:
+        raise ValueError("duration_months must be positive")
+    return f"{duration_months * 30}d"
 
 
 def _to_provider_rate_limit(limit: int) -> int | None:
@@ -310,7 +311,6 @@ class ApiKeysService:
     def _build_provider_payload(
         self,
         *,
-        owner_account: str,
         duration_months: int,
         config: IssuanceConfigValues,
         key_alias: str,
@@ -321,9 +321,38 @@ class ApiKeysService:
             "duration": _to_provider_duration(duration_months),
             "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
             "rpm_limit": _to_provider_rate_limit(config.rpm_limit),
+            "team_id": self._require_provider_team_id(),
             "key_alias": key_alias,
             "key_type": "llm_api",
         }
+
+    def _build_provider_update_payload(
+        self,
+        *,
+        plaintext: str,
+        duration_months: int,
+        config: IssuanceConfigValues,
+        key_alias: str | None = None,
+    ) -> dict:
+        payload = {
+            "key": plaintext,
+            "max_budget": float(config.max_budget),
+            "budget_duration": _to_provider_budget_duration(config.budget_duration),
+            "duration": _to_provider_duration(duration_months),
+            "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
+            "rpm_limit": _to_provider_rate_limit(config.rpm_limit),
+            "team_id": self._require_provider_team_id(),
+            "key_type": "llm_api",
+        }
+        if key_alias is not None:
+            payload["key_alias"] = key_alias
+        return payload
+
+    def _require_provider_team_id(self) -> str:
+        team_id = (self.settings.provider_team_id or "").strip()
+        if not team_id:
+            raise ApiError("PROVIDER_TEAM_ID_REQUIRED", "provider team id is required", 503)
+        return team_id
 
     def _provider_operates_remotely(self) -> bool:
         provider_mode = (self.settings.issuance_provider_mode or "external").strip().lower()
@@ -372,7 +401,6 @@ class ApiKeysService:
                 return (
                     operation(
                         self._build_provider_payload(
-                            owner_account=owner_account,
                             duration_months=duration_months,
                             config=config,
                             key_alias=candidate_alias,
@@ -386,10 +414,12 @@ class ApiKeysService:
         raise last_error
 
     def _create_key_record(self, *, application_id: str, plaintext: str, key_alias: str | None) -> ApiKey:
+        key_prefix = _key_prefix_for_env(self.settings.app_env)
         return self.key_repo.create_key(
             ApiKeyCreateInput(
                 application_id=application_id,
                 key_hash=_hash_key(plaintext),
+                key_prefix=key_prefix,
                 masked_key=_mask_key(plaintext),
                 key_alias=key_alias,
                 key_ciphertext=self.crypto.encrypt(plaintext),
@@ -456,6 +486,21 @@ class ApiKeysService:
         config.rate_limit_tpm = rate_limit_tpm
         config.rate_limit_rpm = rate_limit_rpm
         config.updated_at = now
+        if self._provider_operates_remotely():
+            try:
+                self.provider_client.update_team_limits(
+                    {
+                        "team_id": self._require_provider_team_id(),
+                        "max_budget": float(config.budget_max_budget),
+                        "budget_duration": _to_provider_budget_duration(config.budget_duration),
+                        "tpm_limit": _to_provider_rate_limit(config.rate_limit_tpm),
+                        "rpm_limit": _to_provider_rate_limit(config.rate_limit_rpm),
+                    }
+                )
+            except ProviderBadRequestError as exc:
+                raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
+            except ProviderUnavailableError as exc:
+                raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
         self.session.add(config)
         self.session.commit()
         return {
@@ -563,6 +608,24 @@ class ApiKeysService:
         if exists is None:
             raise ApiError("VALIDATION_ERROR", "key not found", 404)
 
+        key, application = self._load_key_with_application(key_id)
+        if self._provider_operates_remotely():
+            plaintext = self._decrypt_key_for_provider(key)
+            config = self._get_provider_update_config_for_application(application)
+            try:
+                self.provider_client.update_key(
+                    self._build_provider_update_payload(
+                        plaintext=plaintext,
+                        duration_months=application.duration_months,
+                        config=config,
+                        key_alias=normalized_alias,
+                    )
+                )
+            except ProviderBadRequestError as exc:
+                raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
+            except ProviderUnavailableError as exc:
+                raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
+
         updated = self.key_repo.update_key_alias(
             key_id,
             current_user.role,
@@ -612,6 +675,21 @@ class ApiKeysService:
             "provider_request_id": request_id,
             "provider_operation_id": operation_id,
         }
+
+    def _get_provider_update_config_for_application(self, application: ApiKeyApplication) -> IssuanceConfigValues:
+        if (
+            application.max_budget is not None
+            and application.budget_duration is not None
+            and application.tpm_limit is not None
+            and application.rpm_limit is not None
+        ):
+            return IssuanceConfigValues(
+                max_budget=str(application.max_budget),
+                budget_duration=str(application.budget_duration),
+                tpm_limit=int(application.tpm_limit),
+                rpm_limit=int(application.rpm_limit),
+            )
+        return self._get_limit_strategy_values()
 
     def revoke_key(self, current_user: CurrentUser, key_id: str) -> dict:
         exists = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
@@ -674,19 +752,13 @@ class ApiKeysService:
 
         config = self._get_limit_strategy_values()
         try:
-            source_plaintext = self._decrypt_key_for_provider(source_key)
             if self._provider_operates_remotely():
                 provider_result, key_alias = self._retry_provider_alias_operation(
                     owner_account=source_app.account,
                     duration_months=source_app.duration_months,
                     config=config,
                     current_alias=source_key.key_alias,
-                    operation=lambda payload: self.provider_client.regenerate_key(
-                        {
-                            "key": source_plaintext,
-                            **payload,
-                        }
-                    ),
+                    operation=lambda payload: self.provider_client.generate_key(payload),
                 )
                 plaintext = provider_result.key_plaintext
                 provider_metadata = self._provider_metadata(
@@ -805,24 +877,18 @@ class ApiKeysService:
         try:
             plaintext = self._decrypt_key_for_provider(source_key)
             if self._provider_operates_remotely():
-                provider_result, key_alias = self._retry_provider_alias_operation(
-                    owner_account=source_app.account,
-                    duration_months=duration_months,
-                    config=config,
-                    current_alias=source_key.key_alias,
-                    operation=lambda payload: self.provider_client.update_key(
-                        {
-                            "key": plaintext,
-                            **payload,
-                        }
-                    ),
+                provider_result = self.provider_client.update_key(
+                    self._build_provider_update_payload(
+                        plaintext=plaintext,
+                        duration_months=duration_months,
+                        config=config,
+                        key_alias=source_key.key_alias or _default_alias(source_app.account),
+                    )
                 )
                 provider_metadata = self._provider_metadata(
                     request_id=provider_result.request_id,
                     operation_id=provider_result.operation_id,
                 )
-            else:
-                key_alias = source_key.key_alias or _default_alias(source_app.account)
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError as exc:
@@ -840,7 +906,6 @@ class ApiKeysService:
         source_app.expires_at = next_expires_at
         source_app.status = "active"
         source_key.status = "active"
-        source_key.key_alias = key_alias
         source_key.expiration_notice_sent_at = None
         source_app.updated_at = now
         self.session.add(source_key)
@@ -973,4 +1038,4 @@ class ApiKeysService:
 def _generate_api_key() -> str:
     alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     suffix = "".join(secrets.choice(alphabet) for _ in range(30))
-    return f"AS-{suffix}"
+    return f"{_key_prefix_for_env(get_settings().app_env)}{suffix}"

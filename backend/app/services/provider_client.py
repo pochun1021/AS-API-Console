@@ -198,13 +198,11 @@ class ProviderClient:
         assert isinstance(result, ProviderGenerateResult)
         return result
 
-    def regenerate_key(self, payload: dict) -> ProviderGenerateResult:
-        result = self._perform_request(path="/key/regenerate", payload=payload, require_plaintext=True)
-        assert isinstance(result, ProviderGenerateResult)
-        return result
-
     def update_key(self, payload: dict) -> ProviderMutationResult:
         return self._perform_request(path="/key/update", payload=payload)
 
     def block_key(self, payload: dict) -> ProviderMutationResult:
         return self._perform_request(path="/key/block", payload=payload)
+
+    def update_team_limits(self, payload: dict) -> ProviderMutationResult:
+        return self._perform_request(path="/team/update", payload=payload)

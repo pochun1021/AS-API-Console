@@ -31,6 +31,7 @@ class ApplicationCreateInput:
 class ApiKeyCreateInput:
     application_id: str
     key_hash: str
+    key_prefix: str
     masked_key: str
     key_alias: str | None
     key_ciphertext: str
