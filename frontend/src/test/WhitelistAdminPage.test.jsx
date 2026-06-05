@@ -74,12 +74,12 @@ test("admin can save chinese and english mixed note", async () => {
 
   const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];
   await user.clear(remarkInput);
-  await user.type(remarkInput, "平台 team 備註 2026");
+  await user.type(remarkInput, "平台 team_備註-2026");
   await user.click((await screen.findAllByRole("button", { name: "儲存備註" }))[0]);
 
   expect(await screen.findByText("特殊人員名單已更新。")).toBeInTheDocument();
   const { items } = await mockApiProvider.listWhitelists(adminAuth);
-  expect(items.find((item) => item.account === "jane.doe")?.note).toBe("平台 team 備註 2026");
+  expect(items.find((item) => item.account === "jane.doe")?.note).toBe("平台 team_備註-2026");
 });
 
 test("whitelist note keeps chinese draft during ime composition", async () => {
@@ -114,6 +114,18 @@ test("admin cannot save unsafe whitelist note", async () => {
   await user.click((await screen.findAllByRole("button", { name: "儲存備註" }))[0]);
 
   expect(await screen.findByText("備註不可包含明顯程式語法。")).toBeInTheDocument();
+});
+
+test("admin cannot save whitelist note with invalid characters", async () => {
+  const user = userEvent.setup();
+  render(<WhitelistAdminPage auth={adminAuth} />);
+
+  const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];
+  await user.clear(remarkInput);
+  await user.type(remarkInput, "平台備註.2026");
+  await user.click((await screen.findAllByRole("button", { name: "儲存備註" }))[0]);
+
+  expect(await screen.findByText("備註僅允許中英文、數字、空白、底線與連字號。")).toBeInTheDocument();
 });
 
 test.each([

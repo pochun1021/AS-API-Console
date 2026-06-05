@@ -257,10 +257,16 @@ export default function MyApiKeysPage({ auth }) {
   async function saveAlias(id, keyAlias) {
     setAliasSaving(true);
     setBanner("");
-    const aliasValidation = validatePersistedText(keyAlias, { required: true });
+    const aliasValidation = validatePersistedText(keyAlias, { required: true, restrictSpecialChars: true, allowSpaces: false });
     if (!aliasValidation.ok) {
       setAliasSaving(false);
-      setBanner(aliasValidation.reason === "required" ? t("mykeys_alias_required") : t("mykeys_alias_unsafe"));
+      setBanner(
+        aliasValidation.reason === "required"
+          ? t("mykeys_alias_required")
+          : aliasValidation.reason === "invalid_chars"
+            ? t("mykeys_alias_invalid_chars")
+            : t("mykeys_alias_unsafe")
+      );
       return;
     }
     try {

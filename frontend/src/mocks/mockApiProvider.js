@@ -1,5 +1,5 @@
 import { isWithinThirtyDaysBeforeExpiration } from "../utils/datetime";
-import { containsUnsafePersistedText, isAsciiDigits } from "../utils/inputValidation";
+import { containsOnlyAllowedPersistedTextCharacters, containsUnsafePersistedText, isAsciiDigits } from "../utils/inputValidation";
 
 const today = new Date().toISOString().slice(0, 10);
 const daysFromNow = (days) => new Date(Date.now() + 1000 * 60 * 60 * 24 * days).toISOString();
@@ -31,6 +31,7 @@ const initialApiKeys = [
     id: "key_002",
     status: "revoked",
     masked_key: "AS-...mn56",
+    key_alias: "shared_alias",
     application_date: today,
     duration_months: 1,
     purpose: "legacy integration",
@@ -698,6 +699,9 @@ export const mockApiProvider = {
     if (containsUnsafePersistedText(normalizedAlias)) {
       throw createError("VALIDATION_ERROR", "key_alias contains unsafe syntax", 422);
     }
+    if (!containsOnlyAllowedPersistedTextCharacters(normalizedAlias, { allowSpaces: false })) {
+      throw createError("VALIDATION_ERROR", "key_alias contains invalid characters", 422);
+    }
     if (apiKeys.some((item) => item.id !== id && normalizeAlias(item) === normalizedAlias)) {
       throw createError("KEY_ALIAS_DUPLICATE", "key_alias already exists", 409);
     }
@@ -992,6 +996,9 @@ export const mockApiProvider = {
 
     if (typeof payload.note === "string" && containsUnsafePersistedText(payload.note)) {
       throw createError("VALIDATION_ERROR", "note contains unsafe syntax", 422);
+    }
+    if (typeof payload.note === "string" && payload.note.trim() && !containsOnlyAllowedPersistedTextCharacters(payload.note.trim(), { allowSpaces: true })) {
+      throw createError("VALIDATION_ERROR", "note contains invalid characters", 422);
     }
 
     item.status = payload.status || item.status;

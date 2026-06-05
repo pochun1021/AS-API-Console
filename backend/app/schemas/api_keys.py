@@ -138,7 +138,13 @@ class ApiKeyAliasUpdateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_inputs(self) -> "ApiKeyAliasUpdateRequest":
-        self.key_alias = validate_safe_persisted_text(field_name="key_alias", value=self.key_alias, required=True)
+        self.key_alias = validate_safe_persisted_text(
+            field_name="key_alias",
+            value=self.key_alias,
+            required=True,
+            restrict_special_chars=True,
+            allow_spaces=False,
+        )
         return self
 
 

@@ -16,7 +16,13 @@ class WhitelistCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_inputs(self) -> "WhitelistCreateRequest":
-        self.note = validate_safe_persisted_text(field_name="note", value=self.note, allow_empty=True)
+        self.note = validate_safe_persisted_text(
+            field_name="note",
+            value=self.note,
+            allow_empty=True,
+            restrict_special_chars=True,
+            allow_spaces=True,
+        )
         return self
 
 
@@ -51,5 +57,11 @@ class WhitelistUpdateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_inputs(self) -> "WhitelistUpdateRequest":
-        self.note = validate_safe_persisted_text(field_name="note", value=self.note, allow_empty=True)
+        self.note = validate_safe_persisted_text(
+            field_name="note",
+            value=self.note,
+            allow_empty=True,
+            restrict_special_chars=True,
+            allow_spaces=True,
+        )
         return self

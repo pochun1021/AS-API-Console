@@ -228,6 +228,7 @@ export const messages = {
     whitelist_deleted_failed: "刪除特殊人員名單失敗",
     whitelist_col_remark: "備註",
     whitelist_note_unsafe: "備註不可包含明顯程式語法。",
+    whitelist_note_invalid_chars: "備註僅允許中英文、數字、空白、_、-。",
     whitelist_dialog_status_title: "確認變更狀態",
     whitelist_dialog_status_body: "確認將此特殊人員名單設為 {status}？",
     whitelist_dialog_delete_title: "確認刪除",
@@ -306,6 +307,7 @@ export const messages = {
     mykeys_alias_update_failed: "更新 Key Alias 失敗",
     mykeys_alias_required: "請填寫 Key Alias。",
     mykeys_alias_unsafe: "Key Alias 不可包含明顯程式語法。",
+    mykeys_alias_invalid_chars: "Key Alias 僅允許中英文、數字、_、-。",
   },
   en: {
     nav_apply: "Apply",
@@ -537,6 +539,7 @@ export const messages = {
     whitelist_deleted_failed: "Failed to delete whitelist entry",
     whitelist_col_remark: "Remark",
     whitelist_note_unsafe: "Remark cannot contain obvious code syntax.",
+    whitelist_note_invalid_chars: "Remark may contain only Chinese or English letters, digits, spaces, `_`, and `-`.",
     whitelist_dialog_status_title: "Confirm Status Change",
     whitelist_dialog_status_body: "Set this whitelist entry to {status}?",
     whitelist_dialog_delete_title: "Confirm Delete",
@@ -616,5 +619,6 @@ export const messages = {
     mykeys_alias_update_failed: "Failed to update key alias",
     mykeys_alias_required: "Please provide key alias.",
     mykeys_alias_unsafe: "Key alias cannot contain obvious code syntax.",
+    mykeys_alias_invalid_chars: "Key alias may contain only Chinese or English letters, digits, `_`, and `-`.",
   },
 };

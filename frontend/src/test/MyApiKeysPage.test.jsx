@@ -128,7 +128,7 @@ test("admin sees duplicate prompt when key alias already exists", async () => {
   await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
   const aliasInput = await screen.findByLabelText("Key Alias");
   await user.clear(aliasInput);
-  await user.type(aliasInput, "for_john.admin");
+  await user.type(aliasInput, "shared_alias");
   await user.click(screen.getByRole("button", { name: "儲存" }));
   expect(await screen.findByText("Key Alias 重複，請改用其他名稱。")).toBeInTheDocument();
 });
@@ -148,6 +148,23 @@ test("admin cannot save unsafe key alias", async () => {
   await user.click(screen.getByRole("button", { name: "儲存" }));
 
   expect(await screen.findByText("Key Alias 不可包含明顯程式語法。")).toBeInTheDocument();
+});
+
+test("admin cannot save key alias with invalid characters", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={adminAuth} />
+    </MemoryRouter>
+  );
+
+  await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
+  const aliasInput = await screen.findByLabelText("Key Alias");
+  await user.clear(aliasInput);
+  await user.type(aliasInput, "for_john.admin");
+  await user.click(screen.getByRole("button", { name: "儲存" }));
+
+  expect(await screen.findByText("Key Alias 僅允許中英文、數字、底線與連字號。")).toBeInTheDocument();
 });
 
 test("user renew hides old key from list", async () => {

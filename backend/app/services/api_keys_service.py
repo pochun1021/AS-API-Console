@@ -599,7 +599,13 @@ class ApiKeysService:
         if current_user.role != "admin":
             raise ApiError("FORBIDDEN", "admin role required", 403)
 
-        normalized_alias = validate_safe_persisted_text(field_name="key_alias", value=key_alias, required=True)
+        normalized_alias = validate_safe_persisted_text(
+            field_name="key_alias",
+            value=key_alias,
+            required=True,
+            restrict_special_chars=True,
+            allow_spaces=False,
+        )
         if self.key_repo.alias_exists(normalized_alias, exclude_key_id=key_id):
             raise ApiError("KEY_ALIAS_DUPLICATE", "key_alias already exists", 409)
 

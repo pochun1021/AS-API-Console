@@ -14,6 +14,8 @@ _UNSAFE_JS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _ASCII_DIGITS_PATTERN = re.compile(r"^[0-9]+$")
+_ALIAS_SAFE_TEXT_PATTERN = re.compile(r"^[A-Za-z0-9_\-\u3400-\u9FFF]+$")
+_NOTE_SAFE_TEXT_PATTERN = re.compile(r"^[A-Za-z0-9_\-\u3400-\u9FFF ]+$")
 
 
 def contains_unsafe_persisted_text(value: str) -> bool:
@@ -29,12 +31,19 @@ def contains_unsafe_persisted_text(value: str) -> bool:
     )
 
 
+def contains_only_allowed_persisted_text_characters(value: str, *, allow_spaces: bool) -> bool:
+    pattern = _NOTE_SAFE_TEXT_PATTERN if allow_spaces else _ALIAS_SAFE_TEXT_PATTERN
+    return bool(pattern.fullmatch(value))
+
+
 def validate_safe_persisted_text(
     *,
     field_name: str,
     value: str | None,
     required: bool = False,
     allow_empty: bool = True,
+    restrict_special_chars: bool = False,
+    allow_spaces: bool = True,
 ) -> str | None:
     if value is None:
         if required:
@@ -49,6 +58,9 @@ def validate_safe_persisted_text(
 
     if contains_unsafe_persisted_text(normalized):
         raise ApiError("VALIDATION_ERROR", f"{field_name} contains unsafe syntax", 422)
+
+    if restrict_special_chars and not contains_only_allowed_persisted_text_characters(normalized, allow_spaces=allow_spaces):
+        raise ApiError("VALIDATION_ERROR", f"{field_name} contains invalid characters", 422)
 
     return normalized
 

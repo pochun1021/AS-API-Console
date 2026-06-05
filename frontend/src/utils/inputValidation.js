@@ -5,6 +5,8 @@ const unsafeSqlPattern = /(?:\bunion\b\s+\bselect\b|\bdrop\b\s+\btable\b|\binser
 const unsafeJsPattern = /(?:\bfunction\b\s*\(|=>|\balert\s*\(|\bconsole\.[a-zA-Z_]+\s*\()/i;
 const asciiDigitsPattern = /^[0-9]+$/;
 const asciiDigitsPartialPattern = /^[0-9]*$/;
+const aliasSafeTextPattern = /^[A-Za-z0-9_\-\u3400-\u9FFF]+$/;
+const noteSafeTextPattern = /^[A-Za-z0-9_\-\u3400-\u9FFF ]+$/;
 
 export function containsUnsafePersistedText(value) {
   const text = String(value || "");
@@ -17,7 +19,12 @@ export function containsUnsafePersistedText(value) {
   ].some((pattern) => pattern.test(text));
 }
 
-export function validatePersistedText(value, { required = false } = {}) {
+export function containsOnlyAllowedPersistedTextCharacters(value, { allowSpaces = true } = {}) {
+  const text = String(value || "");
+  return (allowSpaces ? noteSafeTextPattern : aliasSafeTextPattern).test(text);
+}
+
+export function validatePersistedText(value, { required = false, restrictSpecialChars = false, allowSpaces = true } = {}) {
   const normalized = String(value || "").trim();
   if (!normalized) {
     return required
@@ -26,6 +33,9 @@ export function validatePersistedText(value, { required = false } = {}) {
   }
   if (containsUnsafePersistedText(normalized)) {
     return { ok: false, reason: "unsafe", value: normalized };
+  }
+  if (restrictSpecialChars && !containsOnlyAllowedPersistedTextCharacters(normalized, { allowSpaces })) {
+    return { ok: false, reason: "invalid_chars", value: normalized };
   }
   return { ok: true, reason: "", value: normalized };
 }

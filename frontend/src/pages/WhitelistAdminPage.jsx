@@ -163,9 +163,9 @@ export default function WhitelistAdminPage({ auth }) {
 
   async function updateItem(id, payload) {
     setBanner("");
-    const noteValidation = validatePersistedText(payload.note, { required: false });
+    const noteValidation = validatePersistedText(payload.note, { required: false, restrictSpecialChars: true, allowSpaces: true });
     if (!noteValidation.ok) {
-      setBanner(t("whitelist_note_unsafe"));
+      setBanner(noteValidation.reason === "invalid_chars" ? t("whitelist_note_invalid_chars") : t("whitelist_note_unsafe"));
       return;
     }
     try {

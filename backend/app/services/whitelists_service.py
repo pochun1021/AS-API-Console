@@ -20,7 +20,13 @@ class WhitelistsService:
             raise ApiError("VALIDATION_ERROR", "sysid must be positive integer", 422)
         if not account.strip() or not name.strip() or not email.strip():
             raise ApiError("VALIDATION_ERROR", "account, name, email are required", 422)
-        normalized_note = validate_safe_persisted_text(field_name="note", value=note, allow_empty=True)
+        normalized_note = validate_safe_persisted_text(
+            field_name="note",
+            value=note,
+            allow_empty=True,
+            restrict_special_chars=True,
+            allow_spaces=True,
+        )
         if self.repo.get_by_sysid(sysid) is not None:
             raise ApiError("WHITELIST_SYSID_DUPLICATED", "whitelist sysid already exists", 409)
 
@@ -86,7 +92,13 @@ class WhitelistsService:
     def update(self, current_user: CurrentUser, whitelist_id: str, status: str, note: str | None) -> dict:
         if status not in {"active", "inactive"}:
             raise ApiError("VALIDATION_ERROR", "status must be active or inactive", 422)
-        normalized_note = validate_safe_persisted_text(field_name="note", value=note, allow_empty=True)
+        normalized_note = validate_safe_persisted_text(
+            field_name="note",
+            value=note,
+            allow_empty=True,
+            restrict_special_chars=True,
+            allow_spaces=True,
+        )
 
         item = self.repo.update_status(
             whitelist_id,
