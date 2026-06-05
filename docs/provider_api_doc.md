@@ -1,15 +1,15 @@
 # External API Integration Document
 
 > Source domain: `api.ascs.sinica.edu.tw`  
-> Purpose: API key and team limit management for AI API service  
-> Repo integration contract: no `models` field in outbound `/key/generate` requests  
+> Purpose: API key management, model listing, spend log query, and team key bulk update for AI API service  
+> Repo integration contract: no `/team/update`; team quota management is handled through `/team/key/bulk_update`  
 > Repo key type: `llm_api`
 
 ---
 
 ## 1. Overview
 
-This document describes the external API endpoints used for API key lifecycle management and team-level budget/rate-limit management.
+This document describes the external API endpoints used by this project.
 It is intended for project maintenance, API integration review, and Codex-assisted development.
 
 ### Base URL
@@ -20,16 +20,12 @@ https://api.ascs.sinica.edu.tw
 
 ### Common Notes
 
-- All endpoints in this document are management APIs.
-- Request and response examples are based on the provided external API specification and project-specific integration rules.
-- This repo currently uses a narrower outbound contract than the broader upstream provider API: generated key requests omit `models` and send `key_type=llm_api`.
-- In this repo, application create and renew both use `POST /key/generate`.
-- In this repo, outbound `/key/generate` requests always include `team_id` from `PROVIDER_TEAM_ID`.
-- `PATCH /main/api/v1/limit-strategy-config` maps to `POST /team/update` with the same `team_id`.
-- Repo-facing key display format is environment-specific: `APP_ENV=prod` uses `sk-` / `sk-...XXXX`; `dev/test` uses `AS-` / `AS-...XXXX`.
-- Sensitive fields such as `key`, `token`, generated API keys, and hashed keys must not be logged in plaintext.
+- All management APIs should be called from backend services only.
+- Sensitive fields such as `key`, `token`, generated API keys, and API key hashes must not be logged in plaintext.
 - Recommended timeout: define explicitly in application code, for example `30s`.
-- This repo uses `Authorization: Bearer {PROVIDER_MASTER_KEY}` for management API calls.
+- Authentication method was not specified in the source material. Confirm whether these management APIs require Bearer Token, API Key, or another authorization mechanism before implementation.
+- This project does not use `/team/update`.
+- Team-level key management is performed through `/team/key/bulk_update`.
 
 ---
 
@@ -37,11 +33,13 @@ https://api.ascs.sinica.edu.tw
 
 | Endpoint | Method | Purpose |
 |---|---:|---|
+| `/models` | `GET` | List available models. Compatible with OpenAI-style projects such as Aider. |
+| `/spend/logs/v2` | `GET` | Retrieve paginated spend logs with filtering and sorting support. |
 | `/key/generate` | `POST` | Generate a new API key based on provided configuration. |
 | `/key/update` | `POST` | Update parameters of an existing API key. |
 | `/key/block` | `POST` | Block a virtual key from making further requests. |
-| `/key/delete` | `POST` | Delete one or more keys from the key management system. |
-| `/team/update` | `POST` | Update team budget and rate limits that apply to keys associated with the team. |
+| `/key/delete` | `POST` | Delete one or more API keys from the key management system. |
+| `/team/key/bulk_update` | `POST` | Apply one update payload to multiple keys within a team. |
 
 ---
 
@@ -66,7 +64,198 @@ Supported examples:
 
 ## 4. API Details
 
-## 4.1 Generate API Key
+## 4.1 List Models
+
+### Endpoint
+
+```http
+GET /models
+```
+
+### Description
+
+List available models.
+
+This endpoint exists for compatibility with OpenAI-style projects such as Aider.
+
+### Query Parameters
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---:|---|---|
+| `return_wildcard_routes` | `boolean` | No | `false` | Whether to return wildcard routes. |
+| `team_id` | `string` | No | `null` | Filter or resolve available models for a specific team. |
+| `include_model_access_groups` | `boolean` | No | `false` | Include model access group information. |
+| `only_model_access_groups` | `boolean` | No | `false` | Return only model access group data. |
+| `include_metadata` | `boolean` | No | `false` | Include additional metadata in the response with fallback information. |
+| `fallback_type` | `string` | No | `general` when `include_metadata=true` | Type of fallback metadata to include. Options include `general`, `context_window`, `content_policy`. |
+| `scope` | `string` | No | `null` | Optional scope parameter. Currently accepts `expand`. When `scope=expand`, proxy admins, team admins, and org admins receive all proxy models as if they are proxy admins. |
+
+### Example Request
+
+```http
+GET /models
+```
+
+### Example Request With Metadata
+
+```http
+GET /models?include_metadata=true&fallback_type=general
+```
+
+### Success Response
+
+#### HTTP 200
+
+```json
+"string"
+```
+
+### Validation Error Response
+
+#### HTTP 422
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["string", 0],
+      "msg": "string",
+      "type": "string"
+    }
+  ]
+}
+```
+
+### Implementation Notes
+
+- Use this endpoint to populate model dropdowns or verify available models.
+- For Aider/OpenAI-compatible tooling, this endpoint should be treated as the model discovery endpoint.
+- When team-specific visibility matters, pass `team_id`.
+- Avoid hardcoding model lists when this endpoint is available.
+
+---
+
+## 4.2 Get Spend Logs
+
+### Endpoint
+
+```http
+GET /spend/logs/v2
+```
+
+### Description
+
+Returns paginated spend log records with filtering, sorting, and pagination support.
+
+The response contains:
+
+- `data`
+- `total`
+- `page`
+- `page_size`
+- `total_pages`
+
+Useful for:
+
+- API usage monitoring
+- Cost analysis
+- User usage tracking
+- Team usage tracking
+- Error investigation
+- Model usage statistics
+
+### Query Parameters
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---:|---|---|
+| `api_key` | `string` | No | `null` | Get spend logs based on API key. |
+| `user_id` | `string` | No | `null` | Get spend logs based on user ID. |
+| `request_id` | `string` | No | `null` | Get spend logs for a specific request ID. |
+| `team_id` | `string` | No | `null` | Filter spend logs by team ID. |
+| `min_spend` | `number` | No | `null` | Filter logs with spend greater than or equal to this value. |
+| `max_spend` | `number` | No | `null` | Filter logs with spend less than or equal to this value. |
+| `start_date` | `string` | No | `null` | Time from which to start viewing key spend. |
+| `end_date` | `string` | No | `null` | Time until which to view key spend. |
+| `page` | `integer` | No | `1` | Page number for pagination. Minimum: `1`. |
+| `page_size` | `integer` | No | `50` | Number of items per page. Minimum: `1`, maximum: `100`. |
+| `status_filter` | `string` | No | `null` | Filter logs by status, for example `success` or `failure`. |
+| `model` | `string` | No | `null` | Filter logs by model. |
+| `model_id` | `string` | No | `null` | Filter logs by model ID, also known as LiteLLM model deployment ID. |
+| `key_alias` | `string` | No | `null` | Filter logs by key alias. |
+| `end_user` | `string` | No | `null` | Filter logs by end user. |
+| `error_code` | `string` | No | `null` | Filter logs by error code, for example `404` or `500`. |
+| `error_message` | `string` | No | `null` | Filter logs by error message using partial string match. |
+| `sort_by` | `string` | No | `startTime` | Sort field. Options: `spend`, `total_tokens`, `startTime`, `endTime`, `request_duration_ms`, `model`, `ttft_ms`. |
+| `sort_order` | `string` | No | `desc` | Sort order. Options: `asc`, `desc`. |
+
+### Example Request
+
+```http
+GET /spend/logs/v2?team_id=team_123&page=1&page_size=50
+```
+
+### Example Request By Key Alias
+
+```http
+GET /spend/logs/v2?key_alias=test-key&start_date=2026-06-01&end_date=2026-06-30
+```
+
+### Success Response
+
+#### HTTP 200
+
+```json
+{
+  "data": [],
+  "total": 0,
+  "page": 1,
+  "page_size": 50,
+  "total_pages": 0
+}
+```
+
+### Response Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `data` | `array` | Spend log records. |
+| `total` | `integer` | Total record count. |
+| `page` | `integer` | Current page number. |
+| `page_size` | `integer` | Number of records per page. |
+| `total_pages` | `integer` | Total number of pages. |
+
+### Validation Error Response
+
+#### HTTP 422
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["string", 0],
+      "msg": "string",
+      "type": "string"
+    }
+  ]
+}
+```
+
+### Implementation Notes
+
+- Use pagination when displaying usage history.
+- Team administrators should filter using `team_id`.
+- Key-level usage can be queried using `api_key` or `key_alias`.
+- Support cost reporting by combining `start_date`, `end_date`, and `team_id`.
+- Recommended default sorting:
+
+```text
+sort_by=startTime
+sort_order=desc
+```
+
+---
+
+## 4.3 Generate API Key
 
 ### Endpoint
 
@@ -82,33 +271,28 @@ Generate an API key based on the provided data.
 
 | Field | Type | Required | Description |
 |---|---|---:|---|
-| `team_id` | `string` | No | Team ID to associate with the generated API key. All keys with this `team_id` are constrained by team-level limits. |
+| `team_id` | `string` | No | Team ID to associate with the generated API key. |
 | `duration` | `string` | No | Token validity duration. Example: `30s`, `30m`, `30h`, `30d`. |
 | `key_alias` | `string` | No | User-defined key alias. |
 | `max_budget` | `float` | No | Maximum budget for the generated key. |
 | `rpm_limit` | `integer` | No | Requests per minute limit. |
 | `tpm_limit` | `integer` | No | Tokens per minute limit. |
+| `max_parallel_requests` | `integer` | No | Rate limit a user based on the number of parallel requests. Raises HTTP `429` if the user's parallel requests exceed this value. |
 | `budget_duration` | `string` | No | Budget reset duration. If not set, budget is never reset. |
-| `key_type` | `string` | No | Key type that determines default allowed routes. Options: `llm_api`, `management`, `read_only`, `default`. Defaults to `default`. |
-
-### Repo-specific Generate Key Rules
-
-- Do not send the `models` field in outbound requests.
-- Always send `key_type` as `llm_api` unless the project requirement changes.
-- In this repo, always send `team_id` from `PROVIDER_TEAM_ID`.
-- Team-level TPM/RPM/budget policies may cap the generated key's effective limits.
+| `key_type` | `string` | No | Key type that determines default allowed routes. Options: `llm_api`, `management`, `read_only`, `default`. Defaults to `default`. This repo sends `llm_api`. |
 
 ### Request Body Example
 
 ```json
 {
-  "team_id": "string",
-  "key_alias": "string",
-  "duration": "string",
-  "max_budget": 0,
-  "tpm_limit": 0,
-  "rpm_limit": 0,
-  "budget_duration": "string",
+  "team_id": "team_123",
+  "key_alias": "my-api-key",
+  "duration": "30d",
+  "max_budget": 100,
+  "tpm_limit": 50000,
+  "rpm_limit": 500,
+  "max_parallel_requests": 10,
+  "budget_duration": "30d",
   "key_type": "llm_api"
 }
 ```
@@ -176,11 +360,14 @@ Generate an API key based on the provided data.
 - Treat `key` and `token` as secrets.
 - Store generated keys securely.
 - Do not expose generated keys to frontend logs, browser console, or client-side storage unless explicitly required and reviewed.
-- Use `team_id` when generated keys should inherit team-level TPM/RPM/budget policies.
+- This repo does not send the `models` field when generating keys.
+- This repo sends `key_type=llm_api`.
+- `team_id` should be supplied when creating team-owned keys.
+- `max_parallel_requests` controls concurrent request limits and is separate from RPM and TPM.
 
 ---
 
-## 4.2 Update API Key
+## 4.4 Update API Key
 
 ### Endpoint
 
@@ -250,7 +437,7 @@ Update an existing API key's parameters.
 
 ---
 
-## 4.3 Block API Key
+## 4.5 Block API Key
 
 ### Endpoint
 
@@ -340,13 +527,13 @@ Block a virtual key from making any requests.
 
 ### Implementation Notes
 
-- Use this endpoint when a key is compromised, retired, or temporarily disabled.
-- Confirm whether blocked keys can be unblocked through another endpoint.
+- Use this endpoint when a key is compromised, retired, or no longer authorized.
+- Confirm whether blocked keys can be restored through another endpoint.
 - Log only masked key identifiers.
 
 ---
 
-## 4.4 Delete API Key
+## 4.6 Delete API Key
 
 ### Endpoint
 
@@ -358,26 +545,60 @@ POST /key/delete
 
 Delete one or more keys from the key management system.
 
+Keys can be deleted by raw key, hashed key, or key alias.
+
 ### Request Parameters
 
 | Field | Type | Required | Description |
 |---|---|---:|---|
-| `keys` | `array[string]` | Conditional | List of keys or hashed keys to delete. Can be passed instead of `key_aliases`. |
-| `key_aliases` | `array[string]` | Conditional | List of key aliases to delete. Can be passed instead of `keys`. |
+| `keys` | `array[string]` | No | List of keys or hashed keys to delete. |
+| `key_aliases` | `array[string]` | No | List of key aliases to delete. Can be passed instead of `keys`. |
 
-At least one of `keys` or `key_aliases` should be provided.
+### Rules
 
-### Request Body Example
+At least one of the following should be provided:
+
+```text
+keys
+```
+
+or
+
+```text
+key_aliases
+```
+
+### Request Body Example By Keys
 
 ```json
 {
   "keys": [
     "sk-QWrxEynunsNpV1zT48HIrw",
     "837e17519f44683334df5291321d97b8bf1098cd490e49e215f6fea935aa28be"
-  ],
+  ]
+}
+```
+
+### Request Body Example By Aliases
+
+```json
+{
   "key_aliases": [
     "alias1",
     "alias2"
+  ]
+}
+```
+
+### Request Body Schema
+
+```json
+{
+  "keys": [
+    "string"
+  ],
+  "key_aliases": [
+    "string"
   ]
 }
 ```
@@ -386,9 +607,13 @@ At least one of `keys` or `key_aliases` should be provided.
 
 #### HTTP 200
 
-The provided API note describes the returned data as `deleted_keys`, but the response schema also shows `code 200` as a string. Confirm the actual production response shape before implementation.
+```json
+"string"
+```
 
-Expected logical return shape:
+### Documented Return Shape
+
+The API may return deleted key information in the following shape:
 
 ```json
 {
@@ -399,12 +624,6 @@ Expected logical return shape:
 }
 ```
 
-Documented response shape:
-
-```json
-"string"
-```
-
 ### Validation Error Response
 
 #### HTTP 422
@@ -423,44 +642,123 @@ Documented response shape:
 
 ### Implementation Notes
 
-- Delete is a destructive operation. Require confirmation at the application layer before calling this endpoint.
-- Prefer deletion by hashed key or alias when possible to avoid handling plaintext secrets.
-- Mask values in `keys` and `key_aliases` in logs.
-- Confirm whether deleted keys can be recovered.
+- Deleting a key is more destructive than blocking a key.
+- Prefer `/key/block` when temporary deactivation is enough.
+- Use `/key/delete` when a key should be removed from the key management system.
+- Confirm whether deleted keys can be recovered before exposing this operation to administrators.
+- Mask keys in logs.
 
 ---
 
-## 4.5 Update Team Budget and Rate Limits
+## 4.7 Bulk Update Team Keys
 
 ### Endpoint
 
 ```http
-POST /team/update
+POST /team/key/bulk_update
 ```
 
 ### Description
 
-Update team-level budget and rate limits. These limits apply as the maximum allowed limits for all keys associated with the specified `team_id`.
+Apply one update payload to many keys inside a single team.
+
+Pass `team_id` plus either `key_ids` or `all_keys_in_team=true`.
+The `update_fields` payload is broadcast to every selected key.
+Per-key failures are returned in `failed_updates` rather than aborting the batch.
+
+This endpoint is useful when:
+
+- Updating TPM/RPM limits for all team keys
+- Applying budget changes across a team
+- Enforcing new concurrency limits
+- Managing large numbers of keys without updating them individually
+
+### Permissions
+
+Callable by:
+
+- Proxy admins
+- Team admins with `KEY_UPDATE` permission
 
 ### Request Parameters
 
 | Field | Type | Required | Description |
 |---|---|---:|---|
-| `team_id` | `string` | Yes | Team ID to update. This field is required by the integration so the backend can identify which team should receive the new limits. |
-| `tpm_limit` | `integer` | No | Team TPM limit. All keys with this `team_id` will have at most this tokens-per-minute limit. |
-| `rpm_limit` | `integer` | No | Team RPM limit. All keys associated with this `team_id` will have at most this requests-per-minute limit. |
-| `max_budget` | `float` | No | Maximum budget allocated to the team. All keys for this `team_id` will have at most this budget. |
-| `budget_duration` | `string` | No | Duration of the budget for the team. Example: `30d`, `1h`. |
+| `team_id` | `string` | Yes | Team ID containing the target keys. |
+| `all_keys_in_team` | `boolean` | No | Apply updates to all keys in the team. |
+| `key_ids` | `array[string]` | No | Specific key IDs to update. |
+| `update_fields` | `object` | Yes | Configuration to apply to all selected keys. |
+
+### Rules
+
+One of the following must be provided:
+
+```text
+team_id + key_ids
+```
+
+or
+
+```text
+team_id + all_keys_in_team=true
+```
+
+### Update Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `max_budget` | `float` | Maximum budget allowed for each selected key. |
+| `budget_duration` | `string` | Budget reset interval. |
+| `tpm_limit` | `integer` | Tokens per minute limit. |
+| `rpm_limit` | `integer` | Requests per minute limit. |
+| `max_parallel_requests` | `integer` | Maximum concurrent requests allowed. |
 
 ### Request Body Example
 
 ```json
 {
   "team_id": "string",
-  "tpm_limit": 0,
-  "rpm_limit": 0,
-  "max_budget": 0,
-  "budget_duration": "string"
+  "all_keys_in_team": false,
+  "update_fields": {
+    "max_budget": 0,
+    "budget_duration": "string",
+    "tpm_limit": 0,
+    "rpm_limit": 0,
+    "max_parallel_requests": 0
+  }
+}
+```
+
+### Request Body Example: Update All Keys
+
+```json
+{
+  "team_id": "team_123",
+  "all_keys_in_team": true,
+  "update_fields": {
+    "max_budget": 100,
+    "budget_duration": "30d",
+    "tpm_limit": 50000,
+    "rpm_limit": 500,
+    "max_parallel_requests": 10
+  }
+}
+```
+
+### Request Body Example: Selected Keys
+
+```json
+{
+  "team_id": "team_123",
+  "key_ids": [
+    "key_001",
+    "key_002"
+  ],
+  "update_fields": {
+    "tpm_limit": 10000,
+    "rpm_limit": 100,
+    "max_parallel_requests": 5
+  }
 }
 ```
 
@@ -469,8 +767,36 @@ Update team-level budget and rate limits. These limits apply as the maximum allo
 #### HTTP 200
 
 ```json
-"string"
+{
+  "total_requested": 0,
+  "successful_updates": [
+    {
+      "key": "string",
+      "key_info": {
+        "additionalProp1": {}
+      }
+    }
+  ],
+  "failed_updates": [
+    {
+      "key": "string",
+      "key_info": {
+        "additionalProp1": {}
+      },
+      "failed_reason": "string"
+    }
+  ]
+}
 ```
+
+### Response Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `total_requested` | `integer` | Total number of keys requested for update. |
+| `successful_updates` | `array` | Keys successfully updated. |
+| `failed_updates` | `array` | Keys that failed update. |
+| `failed_reason` | `string` | Failure reason for a specific key. |
 
 ### Validation Error Response
 
@@ -490,22 +816,55 @@ Update team-level budget and rate limits. These limits apply as the maximum allo
 
 ### Implementation Notes
 
-- Use `/team/update` when the system needs one shared TPM/RPM/budget policy for every key under the same team.
-- In this repo, `PATCH /main/api/v1/limit-strategy-config` must sync to `/team/update` with `team_id`, `tpm_limit`, `rpm_limit`, `max_budget`, and `budget_duration`.
-- Team limits are maximum caps. Individual keys may still have lower limits if set directly on the key.
-- After updating team limits, newly generated keys using the same `team_id` should be treated as constrained by the team policy.
-- Confirm whether existing keys immediately inherit updated team limits or only after key update/new key generation.
+- Partial success is supported.
+- A failure on one key does not stop updates to other keys.
+- Always inspect `failed_updates` after execution.
+- Use this endpoint for team-wide quota enforcement.
+- Recommended for bulk administrative operations instead of multiple `/key/update` calls.
+- This project uses this endpoint instead of `/team/update`.
 
 ---
 
-## 5. Error Handling
+## 5. API Grouping
+
+### Model APIs
+
+| Endpoint | Purpose |
+|---|---|
+| `/models` | Get available models. |
+
+### Spend Management APIs
+
+| Endpoint | Purpose |
+|---|---|
+| `/spend/logs/v2` | Query usage and spend history. |
+
+### Key Management APIs
+
+| Endpoint | Purpose |
+|---|---|
+| `/key/generate` | Create a new key. |
+| `/key/update` | Update a single key. |
+| `/key/block` | Disable a key from making requests. |
+| `/key/delete` | Delete one or more keys. |
+
+### Team Key Management APIs
+
+| Endpoint | Purpose |
+|---|---|
+| `/team/key/bulk_update` | Update TPM/RPM/Budget/Concurrency settings for multiple keys within a team. |
+
+---
+
+## 6. Error Handling
 
 | HTTP Status | Meaning | Recommended Handling |
 |---:|---|---|
 | `200` | Success | Parse response body and update local state. |
-| `422` | Validation error | Check request body fields, types, and required values. Surface a clear error message to backend logs. |
+| `422` | Validation error | Check request body fields, query parameters, types, and required values. Surface a clear error message to backend logs. |
+| `429` | Rate limit exceeded | Can occur when RPM/TPM/concurrency limits are exceeded. Display a rate limit message and retry later if appropriate. |
 
-### Standard Error Shape
+### Standard Validation Error Shape
 
 ```json
 {
@@ -521,20 +880,21 @@ Update team-level budget and rate limits. These limits apply as the maximum allo
 
 ---
 
-## 6. Security Checklist
+## 7. Security Checklist
 
-- Do not commit API keys, tokens, generated secrets, or hashed keys to Git.
+- Do not commit API keys, tokens, or generated secrets to Git.
 - Use environment variables or a secret manager.
 - Mask secrets in application logs.
 - Avoid returning management API secrets to frontend unless absolutely necessary.
 - Restrict access to management endpoints in backend services.
 - Define timeout, retry, and failure handling explicitly.
-- Add audit logs for key generation, update, block, delete, and team limit update events.
-- Require explicit confirmation for destructive operations such as `/key/delete`.
+- Add audit logs for key generation, update, blocking, deletion, and bulk update events.
+- Treat `/key/delete` as a destructive operation.
+- Inspect `failed_updates` after `/team/key/bulk_update`.
 
 ---
 
-## 7. Suggested Backend Environment Variables
+## 8. Suggested Backend Environment Variables
 
 ```env
 ASCS_API_BASE_URL=https://api.ascs.sinica.edu.tw
@@ -544,7 +904,7 @@ ASCS_API_AUTH_TOKEN=<set-in-secret-manager>
 
 ---
 
-## 8. Suggested Python Client Skeleton
+## 9. Suggested Python Client Skeleton
 
 ```python
 import os
@@ -562,6 +922,28 @@ def _headers() -> dict[str, str]:
     if ASCS_API_AUTH_TOKEN:
         headers["Authorization"] = f"Bearer {ASCS_API_AUTH_TOKEN}"
     return headers
+
+
+def list_models(params: dict[str, Any] | None = None) -> Any:
+    response = requests.get(
+        f"{ASCS_API_BASE_URL}/models",
+        params=params,
+        headers=_headers(),
+        timeout=ASCS_API_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_spend_logs_v2(params: dict[str, Any] | None = None) -> dict[str, Any]:
+    response = requests.get(
+        f"{ASCS_API_BASE_URL}/spend/logs/v2",
+        params=params,
+        headers=_headers(),
+        timeout=ASCS_API_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def generate_key(payload: dict[str, Any]) -> dict[str, Any]:
@@ -601,10 +983,8 @@ def delete_keys(
     keys: list[str] | None = None,
     key_aliases: list[str] | None = None,
 ) -> Any:
-    if not keys and not key_aliases:
-        raise ValueError("Either keys or key_aliases must be provided.")
+    payload: dict[str, Any] = {}
 
-    payload: dict[str, list[str]] = {}
     if keys:
         payload["keys"] = keys
     if key_aliases:
@@ -620,9 +1000,9 @@ def delete_keys(
     return response.json()
 
 
-def update_team(payload: dict[str, Any]) -> str:
+def bulk_update_team_keys(payload: dict[str, Any]) -> dict[str, Any]:
     response = requests.post(
-        f"{ASCS_API_BASE_URL}/team/update",
+        f"{ASCS_API_BASE_URL}/team/key/bulk_update",
         json=payload,
         headers=_headers(),
         timeout=ASCS_API_TIMEOUT_SECONDS,
@@ -633,17 +1013,16 @@ def update_team(payload: dict[str, Any]) -> str:
 
 ---
 
-## 9. Items To Confirm Before Production Use
+## 10. Items To Confirm Before Production Use
 
 - Required authentication method.
-- Whether `POST` is the correct method for all endpoints.
+- Whether `POST` is the correct method for all key and team-key endpoints.
 - Whether generated `token` and `key` fields differ in usage.
 - Whether `/key/update` returns only a string or a structured object in all cases.
-- Whether `/key/delete` returns a string or a structured object containing `deleted_keys`.
 - Whether deleted keys can be recovered.
 - Whether blocked keys can be restored.
-- Whether updated team limits apply immediately to existing keys or only to newly generated/updated keys.
-- Team TPM/RPM limit inheritance behavior.
-- Team budget override behavior when key-level limits are also configured.
 - Actual model list available in production.
 - Rate limit and budget semantics.
+- Whether `max_parallel_requests` applies per key, per user, or per key-user pair.
+- Whether `/key/delete` returns a string or the documented `deleted_keys` object in production.
+- Whether `/team/key/bulk_update` requires `key_ids`, `all_keys_in_team=true`, or supports both exactly as documented.
