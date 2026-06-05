@@ -147,7 +147,14 @@ export const httpApiProvider = {
     if (params?.from) query.set("from", params.from);
     if (params?.to) query.set("to", params.to);
     if (params?.event_type) query.set("event_type", params.event_type);
+    if (params?.action) query.set("action", params.action);
     if (params?.result) query.set("result", params.result);
+    if (params?.actor_account) query.set("actor_account", params.actor_account);
+    if (params?.target_type) query.set("target_type", params.target_type);
+    if (params?.target_id) query.set("target_id", params.target_id);
+    if (params?.error_code) query.set("error_code", params.error_code);
+    if (params?.sort_by) query.set("sort_by", params.sort_by);
+    if (params?.sort_dir) query.set("sort_dir", params.sort_dir);
     return request(`${apiPath("/operation-audit-logs")}?${query.toString()}`, { auth });
   },
 
@@ -159,6 +166,13 @@ export const httpApiProvider = {
     if (params?.to) query.set("to", params.to);
     if (params?.provider) query.set("provider", params.provider);
     if (params?.result) query.set("result", params.result);
+    if (params?.account) query.set("account", params.account);
+    if (params?.sysid != null) query.set("sysid", String(params.sysid));
+    if (params?.role) query.set("role", params.role);
+    if (params?.error_code) query.set("error_code", params.error_code);
+    if (params?.request_id) query.set("request_id", params.request_id);
+    if (params?.sort_by) query.set("sort_by", params.sort_by);
+    if (params?.sort_dir) query.set("sort_dir", params.sort_dir);
     return request(`${apiPath("/auth-audit-logs")}?${query.toString()}`, { auth });
   },
 

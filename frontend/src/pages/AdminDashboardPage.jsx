@@ -23,15 +23,15 @@ import {
   Typography
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
-import { DataGrid, getGridStringOperators } from "@mui/x-data-grid";
+import { DataGrid } from "@mui/x-data-grid";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { COMPACT_MAIN_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
-import { getContainsFilterValue } from "../utils/serverDataGrid";
 
 function statusColor(status) {
   if (status === "active") return "success";
@@ -43,8 +43,6 @@ function formatMaskedKey(value) {
   if (!value) return "-";
   return String(value);
 }
-
-const containsFilterOperators = getGridStringOperators().filter((operator) => operator.value === "contains");
 
 export default function AdminDashboardPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
@@ -74,14 +72,17 @@ export default function AdminDashboardPage({ auth }) {
   ]);
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [scope, setScope] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [q, setQ] = useState("");
   const [sortModel, setSortModel] = useState([{ field: "total_applications", sort: "desc" }]);
-  const [filterModel, setFilterModel] = useState({ items: [] });
+  const [ownerAccountFilter, setOwnerAccountFilter] = useState("");
+  const [ownerNameFilter, setOwnerNameFilter] = useState("");
+  const [ownerEmailFilter, setOwnerEmailFilter] = useState("");
+  const [ownerDepartmentFilter, setOwnerDepartmentFilter] = useState("");
   const [view, setView] = useState("table");
   const [topN, setTopN] = useState(10);
   const [xAxisField, setXAxisField] = useState("account");
@@ -140,28 +141,28 @@ export default function AdminDashboardPage({ auth }) {
         headerName: t("dashboard_col_owner_account"),
         flex: 1,
         minWidth: 140,
-        filterOperators: containsFilterOperators
+        filterable: false
       },
       {
         field: "owner_name",
         headerName: t("dashboard_col_owner_name"),
         flex: 1,
         minWidth: 140,
-        filterOperators: containsFilterOperators
+        filterable: false
       },
       {
         field: "owner_email",
         headerName: t("dashboard_col_owner_email"),
         flex: 1.6,
         minWidth: 220,
-        filterOperators: containsFilterOperators
+        filterable: false
       },
       {
         field: "owner_department",
         headerName: t("dashboard_col_owner_department"),
         flex: 1,
         minWidth: 140,
-        filterOperators: containsFilterOperators,
+        filterable: false,
         renderCell: (params) => formatDepartment(params.row.owner_department, locale)
       },
       {
@@ -225,10 +226,10 @@ export default function AdminDashboardPage({ auth }) {
           q: q.trim(),
           from: fromDate || undefined,
           to: toDate || undefined,
-          owner_account: getContainsFilterValue(filterModel, "owner_account") || undefined,
-          owner_name: getContainsFilterValue(filterModel, "owner_name") || undefined,
-          owner_email: getContainsFilterValue(filterModel, "owner_email") || undefined,
-          owner_department: getContainsFilterValue(filterModel, "owner_department") || undefined,
+          owner_account: ownerAccountFilter.trim() || undefined,
+          owner_name: ownerNameFilter.trim() || undefined,
+          owner_email: ownerEmailFilter.trim() || undefined,
+          owner_department: ownerDepartmentFilter.trim() || undefined,
           sort_by: sort.field,
           sort_dir: sort.sort || "desc"
         },
@@ -251,7 +252,7 @@ export default function AdminDashboardPage({ auth }) {
 
   useEffect(() => {
     load();
-  }, [filterModel, fromDate, page, pageSize, q, scope, sortModel, toDate]);
+  }, [fromDate, ownerAccountFilter, ownerDepartmentFilter, ownerEmailFilter, ownerNameFilter, page, pageSize, q, scope, sortModel, toDate]);
 
   if (auth.role !== "admin") {
     return (
@@ -263,7 +264,7 @@ export default function AdminDashboardPage({ auth }) {
   }
 
   return (
-    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
+    <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Typography variant="h4">{t("dashboard_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
@@ -272,7 +273,7 @@ export default function AdminDashboardPage({ auth }) {
         <Tab value="chart" label={t("dashboard_tab_chart")} />
       </Tabs>
 
-      <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
         <TextField
           select
           label={t("dashboard_scope")}
@@ -317,6 +318,42 @@ export default function AdminDashboardPage({ auth }) {
           placeholder={t("dashboard_keyword_placeholder")}
           sx={{ minWidth: 260 }}
         />
+        <TextField
+          label={t("dashboard_col_owner_account")}
+          value={ownerAccountFilter}
+          onChange={(event) => {
+            setOwnerAccountFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label={t("dashboard_col_owner_name")}
+          value={ownerNameFilter}
+          onChange={(event) => {
+            setOwnerNameFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label={t("dashboard_col_owner_email")}
+          value={ownerEmailFilter}
+          onChange={(event) => {
+            setOwnerEmailFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 220 }}
+        />
+        <TextField
+          label={t("dashboard_col_owner_department")}
+          value={ownerDepartmentFilter}
+          onChange={(event) => {
+            setOwnerDepartmentFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 180 }}
+        />
       </Stack>
 
       {loading ? <LoadingBlock text={t("dashboard_loading")} /> : null}
@@ -324,15 +361,14 @@ export default function AdminDashboardPage({ auth }) {
       {!loading && !error && items.length === 0 ? <EmptyBlock text={t("dashboard_no_data")} /> : null}
 
       {!loading && !error && items.length > 0 && view === "table" ? (
-        <Box sx={{ width: "100%", backgroundColor: "white", borderRadius: 2, p: 1, flex: 1, minHeight: 320 }}>
+        <Box sx={{ width: "100%", borderRadius: 2, p: 0.5, flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "white" }}>
           <DataGrid
-            sx={{ height: "100%" }}
+            sx={compactGridSx}
             rows={items}
             columns={columns}
-            pageSizeOptions={[10, 20, 50]}
+            pageSizeOptions={COMPACT_MAIN_PAGE_SIZE_OPTIONS}
             paginationMode="server"
             sortingMode="server"
-            filterMode="server"
             rowCount={total}
             paginationModel={{ page, pageSize }}
             onPaginationModelChange={(model) => {
@@ -348,12 +384,8 @@ export default function AdminDashboardPage({ auth }) {
               setSortModel(model);
               setPage(0);
             }}
-            filterModel={filterModel}
-            onFilterModelChange={(model) => {
-              setFilterModel(model);
-              setPage(0);
-            }}
             disableRowSelectionOnClick
+            {...compactGridProps}
             localeText={gridLocaleText}
           />
         </Box>

@@ -23,9 +23,12 @@ import {
   Typography,
   Button,
   Menu,
-  MenuItem
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Select
 } from "@mui/material";
-import { DataGrid, getGridDateOperators, getGridSingleSelectOperators, getGridStringOperators } from "@mui/x-data-grid";
+import { DataGrid } from "@mui/x-data-grid";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
@@ -34,12 +37,11 @@ import { formatDateTimeInTaipei, isWithinThirtyDaysBeforeExpiration } from "../u
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 import { validatePersistedText } from "../utils/inputValidation";
 import {
-  getContainsFilterValue,
-  getDateRangeFilterValues,
+  buildDateRange,
   getServerSort,
-  getSingleSelectFilterValue,
-  getTaipeiDateTimeRangeFilterValues,
+  buildTaipeiDateTimeRange,
 } from "../utils/serverDataGrid";
+import { compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 
 const actionCellSx = {
   display: "flex",
@@ -87,12 +89,6 @@ function canShowExtendAction(item) {
   return isWithinThirtyDaysBeforeExpiration(item.expires_at) && item.extend_eligible === true;
 }
 
-const containsFilterOperators = getGridStringOperators().filter((operator) => operator.value === "contains");
-const singleSelectFilterOperators = getGridSingleSelectOperators().filter((operator) => operator.value === "is");
-const dateFilterOperators = getGridDateOperators().filter((operator) =>
-  ["is", "onOrAfter", "onOrBefore"].includes(operator.value)
-);
-
 export default function MyApiKeysPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const { formatDepartment } = useDepartmentDisplay(auth);
@@ -101,7 +97,14 @@ export default function MyApiKeysPage({ auth }) {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [sortModel, setSortModel] = useState([]);
-  const [filterModel, setFilterModel] = useState({ items: [] });
+  const [statusFilter, setStatusFilter] = useState("");
+  const [applicationDateFrom, setApplicationDateFrom] = useState("");
+  const [applicationDateTo, setApplicationDateTo] = useState("");
+  const [expiresDateFrom, setExpiresDateFrom] = useState("");
+  const [expiresDateTo, setExpiresDateTo] = useState("");
+  const [ownerAccountFilter, setOwnerAccountFilter] = useState("");
+  const [ownerNameFilter, setOwnerNameFilter] = useState("");
+  const [keyAliasFilter, setKeyAliasFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
@@ -140,16 +143,16 @@ export default function MyApiKeysPage({ auth }) {
     setError("");
     try {
       const sort = getServerSort(sortModel, { field: "created_at", sort: "desc" });
-      const applicationDateRange = getDateRangeFilterValues(filterModel, "application_date");
-      const expiresAtRange = getTaipeiDateTimeRangeFilterValues(filterModel, "expires_at");
+      const applicationDateRange = buildDateRange(applicationDateFrom, applicationDateTo);
+      const expiresAtRange = buildTaipeiDateTimeRange(expiresDateFrom, expiresDateTo);
       const response = await apiClient.listApiKeys(
         {
           page: page + 1,
           page_size: pageSize,
-          status: getSingleSelectFilterValue(filterModel, "status") || undefined,
-          owner_account: auth.role === "admin" ? getContainsFilterValue(filterModel, "owner_account") || undefined : undefined,
-          owner_name: auth.role === "admin" ? getContainsFilterValue(filterModel, "owner_name") || undefined : undefined,
-          key_alias: auth.role === "admin" ? getContainsFilterValue(filterModel, "key_alias") || undefined : undefined,
+          status: statusFilter || undefined,
+          owner_account: auth.role === "admin" ? ownerAccountFilter.trim() || undefined : undefined,
+          owner_name: auth.role === "admin" ? ownerNameFilter.trim() || undefined : undefined,
+          key_alias: auth.role === "admin" ? keyAliasFilter.trim() || undefined : undefined,
           application_date_from: applicationDateRange.from || undefined,
           application_date_to: applicationDateRange.to || undefined,
           expires_from: expiresAtRange.from || undefined,
@@ -321,7 +324,20 @@ export default function MyApiKeysPage({ auth }) {
 
   useEffect(() => {
     load();
-  }, [auth.role, filterModel, page, pageSize, sortModel]);
+  }, [
+    applicationDateFrom,
+    applicationDateTo,
+    auth.role,
+    expiresDateFrom,
+    expiresDateTo,
+    keyAliasFilter,
+    ownerAccountFilter,
+    ownerNameFilter,
+    page,
+    pageSize,
+    sortModel,
+    statusFilter,
+  ]);
 
   useEffect(() => () => {
     if (renewCopyResetTimerRef.current) clearTimeout(renewCopyResetTimerRef.current);
@@ -336,7 +352,7 @@ export default function MyApiKeysPage({ auth }) {
           type: "date",
           flex: 1,
           minWidth: 120,
-          filterOperators: dateFilterOperators,
+          filterable: false,
           valueGetter: (value) => (value ? new Date(`${value}T00:00:00`) : null),
           renderCell: (params) => params.row.application_date || "-"
         },
@@ -355,7 +371,7 @@ export default function MyApiKeysPage({ auth }) {
           valueOptions: ["active", "revoked", "expired"],
           flex: 1,
           minWidth: 120,
-          filterOperators: singleSelectFilterOperators,
+          filterable: false,
           renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
         },
         {
@@ -364,7 +380,7 @@ export default function MyApiKeysPage({ auth }) {
           type: "dateTime",
           flex: 1.5,
           minWidth: 180,
-          filterOperators: dateFilterOperators,
+          filterable: false,
           valueGetter: (value) => (value ? new Date(value) : null),
           renderCell: (params) => formatDateTimeInTaipei(params.row.expires_at, { locale })
         },
@@ -385,21 +401,21 @@ export default function MyApiKeysPage({ auth }) {
           headerName: t("dashboard_col_owner_account"),
           flex: 1.2,
           minWidth: 150,
-          filterOperators: containsFilterOperators
+          filterable: false
         });
         baseColumns.push({
           field: "owner_name",
           headerName: t("dashboard_col_owner_name"),
           flex: 1.2,
           minWidth: 150,
-          filterOperators: containsFilterOperators
+          filterable: false
         });
         baseColumns.push({
           field: "key_alias",
           headerName: t("mykeys_col_key_alias"),
           flex: 1.4,
           minWidth: 180,
-          filterOperators: containsFilterOperators
+          filterable: false
         });
       }
 
@@ -454,24 +470,119 @@ export default function MyApiKeysPage({ auth }) {
   );
 
   return (
-    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
+    <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Typography variant="h4">{t("mykeys_title")}</Typography>
       {banner && <Alert severity="info">{banner}</Alert>}
-      <Card sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-        <CardContent sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
+        <FormControl sx={{ minWidth: 180 }}>
+          <InputLabel id="mykeys-status-filter-label">{t("common_status")}</InputLabel>
+          <Select
+            labelId="mykeys-status-filter-label"
+            label={t("common_status")}
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value);
+              setPage(0);
+            }}
+          >
+            <MenuItem value="">{t("mykeys_filter_all_statuses")}</MenuItem>
+            <MenuItem value="active">active</MenuItem>
+            <MenuItem value="revoked">revoked</MenuItem>
+            <MenuItem value="expired">expired</MenuItem>
+          </Select>
+        </FormControl>
+        <TextField
+          label={t("mykeys_filter_application_from")}
+          type="date"
+          value={applicationDateFrom}
+          onChange={(event) => {
+            setApplicationDateFrom(event.target.value);
+            setPage(0);
+          }}
+          slotProps={{ inputLabel: { shrink: true } }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label={t("mykeys_filter_application_to")}
+          type="date"
+          value={applicationDateTo}
+          onChange={(event) => {
+            setApplicationDateTo(event.target.value);
+            setPage(0);
+          }}
+          slotProps={{ inputLabel: { shrink: true } }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label={t("mykeys_filter_expires_from")}
+          type="date"
+          value={expiresDateFrom}
+          onChange={(event) => {
+            setExpiresDateFrom(event.target.value);
+            setPage(0);
+          }}
+          slotProps={{ inputLabel: { shrink: true } }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label={t("mykeys_filter_expires_to")}
+          type="date"
+          value={expiresDateTo}
+          onChange={(event) => {
+            setExpiresDateTo(event.target.value);
+            setPage(0);
+          }}
+          slotProps={{ inputLabel: { shrink: true } }}
+          sx={{ minWidth: 180 }}
+        />
+        {auth.role === "admin" ? (
+          <TextField
+            label={t("dashboard_col_owner_account")}
+            value={ownerAccountFilter}
+            onChange={(event) => {
+              setOwnerAccountFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          />
+        ) : null}
+        {auth.role === "admin" ? (
+          <TextField
+            label={t("dashboard_col_owner_name")}
+            value={ownerNameFilter}
+            onChange={(event) => {
+              setOwnerNameFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          />
+        ) : null}
+        {auth.role === "admin" ? (
+          <TextField
+            label={t("mykeys_col_key_alias")}
+            value={keyAliasFilter}
+            onChange={(event) => {
+              setKeyAliasFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          />
+        ) : null}
+      </Stack>
+      <Card sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <CardContent sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, p: 1.5, "&:last-child": { pb: 1.5 } }}>
           {loading ? <LoadingBlock text={t("mykeys_loading_list")} /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && items.length === 0 ? <EmptyBlock text={t("mykeys_empty")} /> : null}
           {!loading && !error && items.length > 0 ? (
-            <Box sx={{ flex: 1, minHeight: 320 }}>
+            <Box sx={{ flex: 1, minHeight: 0 }}>
               <DataGrid
-                sx={{ height: "100%" }}
+                sx={compactGridSx}
                 rows={items}
                 columns={columns}
                 getRowId={(row) => row.id}
                 paginationMode="server"
                 sortingMode="server"
-                filterMode="server"
                 rowCount={total}
                 paginationModel={{ page, pageSize }}
                 onPaginationModelChange={(model) => {
@@ -483,14 +594,9 @@ export default function MyApiKeysPage({ auth }) {
                   setSortModel(model);
                   setPage(0);
                 }}
-                filterModel={filterModel}
-                onFilterModelChange={(model) => {
-                  setFilterModel(model);
-                  setPage(0);
-                }}
                 pageSizeOptions={[10, 20, 50]}
                 disableRowSelectionOnClick
-                rowHeight={56}
+                {...compactGridProps}
                 localeText={gridLocaleText}
               />
             </Box>

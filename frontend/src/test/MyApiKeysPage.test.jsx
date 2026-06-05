@@ -371,3 +371,40 @@ test("admin list sends server sort params when sorting columns", async () => {
     );
   });
 });
+
+test("admin list sends custom filter params without DataGrid filter model", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeys");
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={adminAuth} />
+    </MemoryRouter>
+  );
+
+  expect(await screen.findByText("API Keys")).toBeInTheDocument();
+  await user.type(screen.getByLabelText("帳號"), "ktu");
+  await user.type(screen.getByLabelText("姓名"), "尤");
+  await user.type(screen.getByLabelText("Key Alias"), "for_ktu");
+  await user.click(screen.getByLabelText("狀態"));
+  await user.click(screen.getByRole("option", { name: "active" }));
+  fireEvent.change(screen.getByLabelText("起算日期（起）"), { target: { value: "2026-04-01" } });
+  fireEvent.change(screen.getByLabelText("起算日期（迄）"), { target: { value: "2026-04-30" } });
+  fireEvent.change(screen.getByLabelText("到期日期（起）"), { target: { value: "2026-10-01" } });
+  fireEvent.change(screen.getByLabelText("到期日期（迄）"), { target: { value: "2026-10-31" } });
+
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        owner_account: "ktu",
+        owner_name: "尤",
+        key_alias: "for_ktu",
+        status: "active",
+        application_date_from: "2026-04-01",
+        application_date_to: "2026-04-30",
+        expires_from: "2026-09-30T16:00:00.000Z",
+        expires_to: "2026-10-31T15:59:59.999Z",
+      }),
+      adminAuth
+    );
+  });
+});

@@ -5,6 +5,7 @@ import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorAlert, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { COMPACT_LOCAL_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 
 export default function InstituteViewPage({ auth }) {
   const { gridLocaleText, t } = useLocale();
@@ -81,7 +82,7 @@ export default function InstituteViewPage({ auth }) {
   }
 
   return (
-    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
+    <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Typography variant="h4">{t("institute_view_title")}</Typography>
       <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
         <Button variant="contained" onClick={syncNow} disabled={syncing || loading}>
@@ -100,15 +101,16 @@ export default function InstituteViewPage({ auth }) {
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && items.length === 0 ? <EmptyBlock text={t("institute_view_empty")} /> : null}
           {!loading && !error && items.length > 0 ? (
-            <Box sx={{ flex: 1, minHeight: 320 }}>
+            <Box sx={{ flex: 1, minHeight: 0 }}>
               <DataGrid
-                sx={{ height: "100%" }}
+                sx={compactGridSx}
                 rows={items}
                 columns={columns}
                 getRowId={(row) => row.inst_code}
-                pageSizeOptions={[10, 20, 50]}
+                pageSizeOptions={COMPACT_LOCAL_PAGE_SIZE_OPTIONS}
                 initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
                 disableRowSelectionOnClick
+                {...compactGridProps}
                 localeText={gridLocaleText}
               />
             </Box>

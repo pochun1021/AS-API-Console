@@ -26,6 +26,7 @@ import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { COMPACT_DIALOG_PAGE_SIZE_OPTIONS, COMPACT_LOCAL_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 
 const actionCellSx = {
   display: "flex",
@@ -290,7 +291,7 @@ export default function AdminPage({ auth }) {
   }
 
   return (
-    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
+    <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Typography variant="h4">{t("admin_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
@@ -312,16 +313,16 @@ export default function AdminPage({ auth }) {
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && adminItems.length === 0 ? <EmptyBlock text={t("admin_empty")} /> : null}
           {!loading && !error && adminItems.length > 0 ? (
-            <Box sx={{ flex: 1, minHeight: 320 }}>
+            <Box sx={{ flex: 1, minHeight: 0 }}>
               <DataGrid
-                sx={{ height: "100%" }}
+                sx={compactGridSx}
                 rows={adminItems}
                 columns={adminColumns}
                 getRowId={(row) => row.id}
-                pageSizeOptions={[10, 20, 50]}
+                pageSizeOptions={COMPACT_LOCAL_PAGE_SIZE_OPTIONS}
                 initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
                 disableRowSelectionOnClick
-                rowHeight={56}
+                {...compactGridProps}
                 localeText={gridLocaleText}
               />
             </Box>
@@ -402,13 +403,14 @@ export default function AdminPage({ auth }) {
             {searchResults.length > 0 ? (
               <Box sx={{ height: 420 }}>
                 <DataGrid
+                  sx={compactGridSx}
                   rows={searchResults}
                   columns={searchColumns}
                   getRowId={(row) => row.id}
-                  pageSizeOptions={[5, 10, 20]}
-                  initialState={{ pagination: { paginationModel: { pageSize: 5, page: 0 } } }}
+                  pageSizeOptions={COMPACT_DIALOG_PAGE_SIZE_OPTIONS}
+                  initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
                   disableRowSelectionOnClick
-                  rowHeight={56}
+                  {...compactGridProps}
                   localeText={gridLocaleText}
                 />
               </Box>

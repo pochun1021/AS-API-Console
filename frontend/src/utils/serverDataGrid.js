@@ -13,44 +13,15 @@ function normalizeDateValue(value) {
   return `${year}-${month}-${day}`;
 }
 
-function getActiveFilterItems(filterModel, field) {
-  const items = Array.isArray(filterModel?.items) ? filterModel.items : [];
-  return items.filter((item) => item?.field === field && item?.operator && item?.value != null && String(item.value).trim() !== "");
+export function buildDateRange(fromValue, toValue) {
+  return {
+    from: normalizeDateValue(fromValue),
+    to: normalizeDateValue(toValue),
+  };
 }
 
-export function getContainsFilterValue(filterModel, field) {
-  const item = getActiveFilterItems(filterModel, field).find((candidate) => candidate.operator === "contains");
-  return item ? String(item.value).trim() : "";
-}
-
-export function getSingleSelectFilterValue(filterModel, field) {
-  const item = getActiveFilterItems(filterModel, field).find((candidate) => candidate.operator === "is");
-  return item ? String(item.value).trim() : "";
-}
-
-export function getDateRangeFilterValues(filterModel, field) {
-  const result = { from: "", to: "" };
-  const items = getActiveFilterItems(filterModel, field);
-
-  for (const item of items) {
-    const value = normalizeDateValue(item.value);
-    if (!value) continue;
-
-    if (item.operator === "is") {
-      result.from = value;
-      result.to = value;
-    } else if (item.operator === "onOrAfter") {
-      result.from = value;
-    } else if (item.operator === "onOrBefore") {
-      result.to = value;
-    }
-  }
-
-  return result;
-}
-
-export function getTaipeiDateTimeRangeFilterValues(filterModel, field) {
-  const dateRange = getDateRangeFilterValues(filterModel, field);
+export function buildTaipeiDateTimeRange(fromValue, toValue) {
+  const dateRange = buildDateRange(fromValue, toValue);
   return {
     from: dateRange.from ? new Date(`${dateRange.from}T00:00:00+08:00`).toISOString() : "",
     to: dateRange.to ? new Date(`${dateRange.to}T23:59:59.999+08:00`).toISOString() : "",

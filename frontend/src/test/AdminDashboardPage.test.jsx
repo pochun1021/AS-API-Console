@@ -73,6 +73,30 @@ test("admin dashboard sends server sort params when sorting columns", async () =
   });
 });
 
+test("admin dashboard sends custom owner filters without DataGrid filter model", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeyUserStatistics");
+  renderPage(<AdminDashboardPage auth={adminAuth} />);
+
+  expect(await screen.findByText("管理者統計")).toBeInTheDocument();
+  await user.type(screen.getAllByLabelText("帳號")[0], "ktu");
+  await user.type(screen.getAllByLabelText("姓名")[0], "尤");
+  await user.type(screen.getByLabelText("Email"), "ktu@example.com");
+  await user.type(screen.getByLabelText("單位"), "資訊");
+
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        owner_account: "ktu",
+        owner_name: "尤",
+        owner_email: "ktu@example.com",
+        owner_department: "資訊",
+      }),
+      adminAuth
+    );
+  });
+});
+
 test("admin can switch to chart view and change axes", async () => {
   const user = userEvent.setup();
   const { container } = renderPage(<AdminDashboardPage auth={adminAuth} />);

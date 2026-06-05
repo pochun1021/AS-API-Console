@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
@@ -7,6 +7,7 @@ import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { COMPACT_MAIN_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 import { formatDateTimeInTaipei } from "../utils/datetime";
 
 function formatTs(value, locale) {
@@ -22,6 +23,29 @@ function defaultHotRange() {
 const TAB_OPERATION = "operation";
 const TAB_LOGIN = "login";
 
+const operationSortFields = new Set([
+  "created_at",
+  "event_type",
+  "action",
+  "result",
+  "actor_account",
+  "target_type",
+  "target_id",
+  "error_code",
+  "request_id",
+]);
+
+const loginSortFields = new Set([
+  "created_at",
+  "provider",
+  "result",
+  "account",
+  "sysid",
+  "role",
+  "error_code",
+  "request_id",
+]);
+
 export default function OperationAuditLogsPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const hot = useMemo(defaultHotRange, []);
@@ -30,11 +54,17 @@ export default function OperationAuditLogsPage({ auth }) {
   const [operationItems, setOperationItems] = useState([]);
   const [operationTotal, setOperationTotal] = useState(0);
   const [operationPage, setOperationPage] = useState(0);
-  const [operationPageSize, setOperationPageSize] = useState(20);
+  const [operationPageSize, setOperationPageSize] = useState(10);
   const [operationFromDate, setOperationFromDate] = useState(hot.from);
   const [operationToDate, setOperationToDate] = useState(hot.to);
   const [operationEventType, setOperationEventType] = useState("");
+  const [operationAction, setOperationAction] = useState("");
   const [operationResult, setOperationResult] = useState("");
+  const [operationActorAccount, setOperationActorAccount] = useState("");
+  const [operationTargetType, setOperationTargetType] = useState("");
+  const [operationTargetId, setOperationTargetId] = useState("");
+  const [operationErrorCode, setOperationErrorCode] = useState("");
+  const [operationSortModel, setOperationSortModel] = useState([{ field: "created_at", sort: "desc" }]);
   const [operationLoading, setOperationLoading] = useState(true);
   const [operationError, setOperationError] = useState("");
   const [selectedOperationLog, setSelectedOperationLog] = useState(null);
@@ -42,24 +72,30 @@ export default function OperationAuditLogsPage({ auth }) {
   const [loginItems, setLoginItems] = useState([]);
   const [loginTotal, setLoginTotal] = useState(0);
   const [loginPage, setLoginPage] = useState(0);
-  const [loginPageSize, setLoginPageSize] = useState(20);
+  const [loginPageSize, setLoginPageSize] = useState(10);
   const [loginFromDate, setLoginFromDate] = useState(hot.from);
   const [loginToDate, setLoginToDate] = useState(hot.to);
   const [loginProvider, setLoginProvider] = useState("");
   const [loginResult, setLoginResult] = useState("");
+  const [loginAccount, setLoginAccount] = useState("");
+  const [loginSysid, setLoginSysid] = useState("");
+  const [loginRole, setLoginRole] = useState("");
+  const [loginErrorCode, setLoginErrorCode] = useState("");
+  const [loginRequestId, setLoginRequestId] = useState("");
+  const [loginSortModel, setLoginSortModel] = useState([{ field: "created_at", sort: "desc" }]);
   const [loginLoading, setLoginLoading] = useState(true);
   const [loginError, setLoginError] = useState("");
 
   const operationColumns = useMemo(
     () => [
-      { field: "created_at", headerName: t("auditlogs_col_created_at"), minWidth: 190, flex: 1.2, valueFormatter: (v) => formatTs(v, locale) },
-      { field: "event_type", headerName: t("auditlogs_col_event_type"), minWidth: 150, flex: 1 },
-      { field: "action", headerName: t("auditlogs_col_action"), minWidth: 120, flex: 0.9 },
-      { field: "result", headerName: t("auditlogs_col_result"), minWidth: 110, flex: 0.8 },
-      { field: "actor_account", headerName: t("auditlogs_col_actor_account"), minWidth: 130, flex: 1 },
-      { field: "target_type", headerName: t("auditlogs_col_target_type"), minWidth: 130, flex: 1 },
-      { field: "target_id", headerName: t("auditlogs_col_target_id"), minWidth: 160, flex: 1.2 },
-      { field: "error_code", headerName: t("auditlogs_col_error_code"), minWidth: 160, flex: 1.2 },
+      { field: "created_at", headerName: t("auditlogs_col_created_at"), minWidth: 190, flex: 1.2, valueFormatter: (v) => formatTs(v, locale), filterable: false },
+      { field: "event_type", headerName: t("auditlogs_col_event_type"), minWidth: 150, flex: 1, filterable: false },
+      { field: "action", headerName: t("auditlogs_col_action"), minWidth: 120, flex: 0.9, filterable: false },
+      { field: "result", headerName: t("auditlogs_col_result"), minWidth: 110, flex: 0.8, filterable: false },
+      { field: "actor_account", headerName: t("auditlogs_col_actor_account"), minWidth: 130, flex: 1, filterable: false },
+      { field: "target_type", headerName: t("auditlogs_col_target_type"), minWidth: 130, flex: 1, filterable: false },
+      { field: "target_id", headerName: t("auditlogs_col_target_id"), minWidth: 160, flex: 1.2, filterable: false },
+      { field: "error_code", headerName: t("auditlogs_col_error_code"), minWidth: 160, flex: 1.2, filterable: false },
       {
         field: "detail_action",
         headerName: t("auditlogs_col_detail"),
@@ -81,14 +117,14 @@ export default function OperationAuditLogsPage({ auth }) {
 
   const loginColumns = useMemo(
     () => [
-      { field: "created_at", headerName: t("auditlogs_col_created_at"), minWidth: 190, flex: 1.2, valueFormatter: (v) => formatTs(v, locale) },
-      { field: "provider", headerName: t("loginlogs_col_provider"), minWidth: 130, flex: 1 },
-      { field: "result", headerName: t("auditlogs_col_result"), minWidth: 110, flex: 0.8 },
-      { field: "account", headerName: t("loginlogs_col_account"), minWidth: 140, flex: 1 },
-      { field: "sysid", headerName: t("loginlogs_col_sysid"), minWidth: 110, flex: 0.8 },
-      { field: "role", headerName: t("loginlogs_col_role"), minWidth: 110, flex: 0.8 },
-      { field: "error_code", headerName: t("auditlogs_col_error_code"), minWidth: 160, flex: 1.2 },
-      { field: "request_id", headerName: t("loginlogs_col_request_id"), minWidth: 220, flex: 1.4 },
+      { field: "created_at", headerName: t("auditlogs_col_created_at"), minWidth: 190, flex: 1.2, valueFormatter: (v) => formatTs(v, locale), filterable: false },
+      { field: "provider", headerName: t("loginlogs_col_provider"), minWidth: 130, flex: 1, filterable: false },
+      { field: "result", headerName: t("auditlogs_col_result"), minWidth: 110, flex: 0.8, filterable: false },
+      { field: "account", headerName: t("loginlogs_col_account"), minWidth: 140, flex: 1, filterable: false },
+      { field: "sysid", headerName: t("loginlogs_col_sysid"), minWidth: 110, flex: 0.8, filterable: false },
+      { field: "role", headerName: t("loginlogs_col_role"), minWidth: 110, flex: 0.8, filterable: false },
+      { field: "error_code", headerName: t("auditlogs_col_error_code"), minWidth: 160, flex: 1.2, filterable: false },
+      { field: "request_id", headerName: t("loginlogs_col_request_id"), minWidth: 220, flex: 1.4, filterable: false },
     ],
     [locale, t]
   );
@@ -107,7 +143,14 @@ export default function OperationAuditLogsPage({ auth }) {
             from: operationFromDate || undefined,
             to: operationToDate || undefined,
             event_type: operationEventType || undefined,
+            action: operationAction || undefined,
             result: operationResult || undefined,
+            actor_account: operationActorAccount || undefined,
+            target_type: operationTargetType || undefined,
+            target_id: operationTargetId || undefined,
+            error_code: operationErrorCode || undefined,
+            sort_by: operationSortFields.has(operationSortModel[0]?.field) ? operationSortModel[0].field : "created_at",
+            sort_dir: operationSortModel[0]?.sort === "asc" ? "asc" : "desc",
           },
           auth
         );
@@ -127,7 +170,22 @@ export default function OperationAuditLogsPage({ auth }) {
     return () => {
       cancelled = true;
     };
-  }, [auth, operationPage, operationPageSize, operationFromDate, operationToDate, operationEventType, operationResult, t]);
+  }, [
+    auth,
+    operationAction,
+    operationActorAccount,
+    operationErrorCode,
+    operationEventType,
+    operationFromDate,
+    operationPage,
+    operationPageSize,
+    operationResult,
+    operationSortModel,
+    operationTargetId,
+    operationTargetType,
+    operationToDate,
+    t
+  ]);
 
   useEffect(() => {
     if (!selectedOperationLog) return;
@@ -154,6 +212,13 @@ export default function OperationAuditLogsPage({ auth }) {
             to: loginToDate || undefined,
             provider: loginProvider || undefined,
             result: loginResult || undefined,
+            account: loginAccount || undefined,
+            sysid: loginSysid.trim() ? loginSysid.trim() : undefined,
+            role: loginRole || undefined,
+            error_code: loginErrorCode || undefined,
+            request_id: loginRequestId || undefined,
+            sort_by: loginSortFields.has(loginSortModel[0]?.field) ? loginSortModel[0].field : "created_at",
+            sort_dir: loginSortModel[0]?.sort === "asc" ? "asc" : "desc",
           },
           auth
         );
@@ -173,7 +238,22 @@ export default function OperationAuditLogsPage({ auth }) {
     return () => {
       cancelled = true;
     };
-  }, [auth, loginPage, loginPageSize, loginFromDate, loginToDate, loginProvider, loginResult, t]);
+  }, [
+    auth,
+    loginAccount,
+    loginErrorCode,
+    loginFromDate,
+    loginPage,
+    loginPageSize,
+    loginProvider,
+    loginRequestId,
+    loginResult,
+    loginRole,
+    loginSortModel,
+    loginSysid,
+    loginToDate,
+    t
+  ]);
 
   if (auth.role !== "admin") {
     return (
@@ -185,7 +265,7 @@ export default function OperationAuditLogsPage({ auth }) {
   }
 
   return (
-    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
+    <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Typography variant="h4">{t("auditlogs_title")}</Typography>
       <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value)} aria-label={t("auditlogs_tabs_aria")}>
         <Tab value={TAB_OPERATION} label={t("auditlogs_tab_operation")} />
@@ -194,7 +274,7 @@ export default function OperationAuditLogsPage({ auth }) {
 
       {activeTab === TAB_OPERATION ? (
         <>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
             <DatePicker
               label={t("auditlogs_from")}
               value={operationFromDate ? dayjs(operationFromDate) : null}
@@ -220,6 +300,14 @@ export default function OperationAuditLogsPage({ auth }) {
               }}
             />
             <TextField
+              label={t("auditlogs_action")}
+              value={operationAction}
+              onChange={(e) => {
+                setOperationAction(e.target.value);
+                setOperationPage(0);
+              }}
+            />
+            <TextField
               select
               label={t("auditlogs_result")}
               value={operationResult}
@@ -233,34 +321,75 @@ export default function OperationAuditLogsPage({ auth }) {
               <MenuItem value="success">success</MenuItem>
               <MenuItem value="failure">failure</MenuItem>
             </TextField>
+            <TextField
+              label={t("auditlogs_actor_account")}
+              value={operationActorAccount}
+              onChange={(e) => {
+                setOperationActorAccount(e.target.value);
+                setOperationPage(0);
+              }}
+            />
+            <TextField
+              label={t("auditlogs_target_type")}
+              value={operationTargetType}
+              onChange={(e) => {
+                setOperationTargetType(e.target.value);
+                setOperationPage(0);
+              }}
+            />
+            <TextField
+              label={t("auditlogs_target_id")}
+              value={operationTargetId}
+              onChange={(e) => {
+                setOperationTargetId(e.target.value);
+                setOperationPage(0);
+              }}
+            />
+            <TextField
+              label={t("auditlogs_error_code")}
+              value={operationErrorCode}
+              onChange={(e) => {
+                setOperationErrorCode(e.target.value);
+                setOperationPage(0);
+              }}
+            />
           </Stack>
 
           {operationLoading ? <LoadingBlock text={t("auditlogs_loading")} /> : null}
           {!operationLoading && operationError ? <ErrorBlock message={operationError} /> : null}
           {!operationLoading && !operationError && operationItems.length === 0 ? <EmptyBlock text={t("auditlogs_empty")} /> : null}
           {!operationLoading && !operationError && operationItems.length > 0 ? (
-            <DataGrid
-              sx={{ flex: 1, minHeight: 480 }}
-              rows={operationItems}
-              columns={operationColumns}
-              paginationMode="server"
-              rowCount={operationTotal}
-              paginationModel={{ page: operationPage, pageSize: operationPageSize }}
-              onPaginationModelChange={(model) => {
-                setOperationPage(model.page);
-                setOperationPageSize(model.pageSize);
-              }}
-              pageSizeOptions={[20, 50, 100]}
-              disableRowSelectionOnClick
-              localeText={gridLocaleText}
-            />
+            <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "white", borderRadius: 2, p: 0.5 }}>
+              <DataGrid
+                sx={compactGridSx}
+                rows={operationItems}
+                columns={operationColumns}
+                paginationMode="server"
+                sortingMode="server"
+                rowCount={operationTotal}
+                paginationModel={{ page: operationPage, pageSize: operationPageSize }}
+                sortModel={operationSortModel}
+                onPaginationModelChange={(model) => {
+                  setOperationPage(model.page);
+                  setOperationPageSize(model.pageSize);
+                }}
+                onSortModelChange={(model) => {
+                  setOperationSortModel(model);
+                  setOperationPage(0);
+                }}
+                pageSizeOptions={COMPACT_MAIN_PAGE_SIZE_OPTIONS}
+                disableRowSelectionOnClick
+                {...compactGridProps}
+                localeText={gridLocaleText}
+              />
+            </Box>
           ) : null}
         </>
       ) : null}
 
       {activeTab === TAB_LOGIN ? (
         <>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
             <DatePicker
               label={t("auditlogs_from")}
               value={loginFromDate ? dayjs(loginFromDate) : null}
@@ -286,6 +415,30 @@ export default function OperationAuditLogsPage({ auth }) {
               }}
             />
             <TextField
+              label={t("loginlogs_account")}
+              value={loginAccount}
+              onChange={(e) => {
+                setLoginAccount(e.target.value);
+                setLoginPage(0);
+              }}
+            />
+            <TextField
+              label={t("loginlogs_sysid")}
+              value={loginSysid}
+              onChange={(e) => {
+                setLoginSysid(e.target.value.replace(/\D+/g, ""));
+                setLoginPage(0);
+              }}
+            />
+            <TextField
+              label={t("loginlogs_role")}
+              value={loginRole}
+              onChange={(e) => {
+                setLoginRole(e.target.value);
+                setLoginPage(0);
+              }}
+            />
+            <TextField
               select
               label={t("auditlogs_result")}
               value={loginResult}
@@ -299,27 +452,52 @@ export default function OperationAuditLogsPage({ auth }) {
               <MenuItem value="success">success</MenuItem>
               <MenuItem value="failure">failure</MenuItem>
             </TextField>
+            <TextField
+              label={t("loginlogs_error_code")}
+              value={loginErrorCode}
+              onChange={(e) => {
+                setLoginErrorCode(e.target.value);
+                setLoginPage(0);
+              }}
+            />
+            <TextField
+              label={t("loginlogs_request_id")}
+              value={loginRequestId}
+              onChange={(e) => {
+                setLoginRequestId(e.target.value);
+                setLoginPage(0);
+              }}
+            />
           </Stack>
 
           {loginLoading ? <LoadingBlock text={t("loginlogs_loading")} /> : null}
           {!loginLoading && loginError ? <ErrorBlock message={loginError} /> : null}
           {!loginLoading && !loginError && loginItems.length === 0 ? <EmptyBlock text={t("loginlogs_empty")} /> : null}
           {!loginLoading && !loginError && loginItems.length > 0 ? (
-            <DataGrid
-              sx={{ flex: 1, minHeight: 480 }}
-              rows={loginItems}
-              columns={loginColumns}
-              paginationMode="server"
-              rowCount={loginTotal}
-              paginationModel={{ page: loginPage, pageSize: loginPageSize }}
-              onPaginationModelChange={(model) => {
-                setLoginPage(model.page);
-                setLoginPageSize(model.pageSize);
-              }}
-              pageSizeOptions={[20, 50, 100]}
-              disableRowSelectionOnClick
-              localeText={gridLocaleText}
-            />
+            <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "white", borderRadius: 2, p: 0.5 }}>
+              <DataGrid
+                sx={compactGridSx}
+                rows={loginItems}
+                columns={loginColumns}
+                paginationMode="server"
+                sortingMode="server"
+                rowCount={loginTotal}
+                paginationModel={{ page: loginPage, pageSize: loginPageSize }}
+                sortModel={loginSortModel}
+                onPaginationModelChange={(model) => {
+                  setLoginPage(model.page);
+                  setLoginPageSize(model.pageSize);
+                }}
+                onSortModelChange={(model) => {
+                  setLoginSortModel(model);
+                  setLoginPage(0);
+                }}
+                pageSizeOptions={COMPACT_MAIN_PAGE_SIZE_OPTIONS}
+                disableRowSelectionOnClick
+                {...compactGridProps}
+                localeText={gridLocaleText}
+              />
+            </Box>
           ) : null}
         </>
       ) : null}
