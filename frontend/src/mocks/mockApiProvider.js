@@ -830,13 +830,20 @@ export const mockApiProvider = {
     return { items: whitelists, page: 1, page_size: 20, total: whitelists.length };
   },
 
-  async searchUsers(keyword, auth) {
+  async searchUsers(keyword, auth, options = {}) {
     await delay();
     ensureAdmin(auth);
 
     const q = keyword?.trim().toLowerCase();
     if (!q) {
       throw createError("VALIDATION_ERROR", "請輸入查詢關鍵字");
+    }
+    if (!["proxy_application", "admin_create", "whitelist_create"].includes(options.lookup_context || "")) {
+      throw createError(
+        "VALIDATION_ERROR",
+        "lookup_context must be one of: proxy_application, admin_create, whitelist_create",
+        422
+      );
     }
 
     const items = users.filter((item) =>

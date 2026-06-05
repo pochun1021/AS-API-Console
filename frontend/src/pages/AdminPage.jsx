@@ -83,7 +83,7 @@ export default function AdminPage({ auth }) {
         setSearchMessage(t("admin_search_required"));
         return;
       }
-      const response = await apiClient.searchUsers(searchKeyword, auth);
+      const response = await apiClient.searchUsers(searchKeyword, auth, { lookup_context: "admin_create" });
       setSearchResults(response.items);
       if (response.items.length === 0) {
         setSearchMessage(t("admin_search_empty"));

@@ -175,7 +175,7 @@ export default function ApplyPage({ auth }) {
 
     setLookupLoading(true);
     try {
-      const response = await apiClient.searchUsers(keyword, auth);
+      const response = await apiClient.searchUsers(keyword, auth, { lookup_context: "proxy_application" });
       const items = Array.isArray(response?.items) ? response.items : [];
       const exactMatches = items.filter((item) => String(item?.account || "").trim() === keyword);
       if (exactMatches.length === 1) {

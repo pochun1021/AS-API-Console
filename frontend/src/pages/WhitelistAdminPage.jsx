@@ -134,7 +134,7 @@ export default function WhitelistAdminPage({ auth }) {
         setSearchMessage(t("whitelist_search_required"));
         return;
       }
-      const response = await apiClient.searchUsers(keyword, auth);
+      const response = await apiClient.searchUsers(keyword, auth, { lookup_context: "whitelist_create" });
       setCandidates(response.items);
       if (response.items.length === 0) {
         setSearchMessage(t("whitelist_search_empty"));

@@ -162,9 +162,11 @@ export const httpApiProvider = {
     return request(apiPath("/institutes/sync"), { method: "POST", auth });
   },
 
-  searchUsers(keyword, auth) {
-    const q = encodeURIComponent(keyword || "");
-    return request(`${apiPath("/users")}?q=${q}`, { auth });
+  searchUsers(keyword, auth, options = {}) {
+    const query = new URLSearchParams();
+    query.set("q", String(keyword || ""));
+    if (options.lookup_context) query.set("lookup_context", options.lookup_context);
+    return request(`${apiPath("/users")}?${query.toString()}`, { auth });
   },
 
   enableAdmin(id, auth) {

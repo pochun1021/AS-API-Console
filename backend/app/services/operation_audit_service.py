@@ -29,6 +29,8 @@ ALLOWED_METADATA_KEYS = {
     "is_proxy_submission",
     "provider_request_id",
     "provider_operation_id",
+    "lookup_context",
+    "matched_count",
     "unchanged_count",
     "updated_count",
 }

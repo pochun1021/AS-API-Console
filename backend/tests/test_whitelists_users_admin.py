@@ -1,10 +1,12 @@
 
 from datetime import datetime
+import json
 
 from tests.conftest import api_path, build_headers
 from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.session import get_db
 from db.models.institute import Institute
+from db.models.operation_audit_logs import OperationAuditLog
 
 
 def test_whitelist_admin_only(client, admin_headers, user_headers):
@@ -113,7 +115,7 @@ def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
         fake_search_by_keyword,
     )
 
-    users = client.get(api_path("/users?q=u1"), headers=admin_headers)
+    users = client.get(api_path("/users?q=u1&lookup_context=admin_create"), headers=admin_headers)
     assert users.status_code == 200
     assert users.json()["total"] >= 1
     user_item = users.json()["items"][0]
@@ -188,7 +190,7 @@ def test_users_returns_503_when_persnl_unavailable(client, admin_headers, monkey
         fake_search_by_keyword,
     )
 
-    users = client.get(api_path("/users?q=u1"), headers=admin_headers)
+    users = client.get(api_path("/users?q=u1&lookup_context=whitelist_create"), headers=admin_headers)
     assert users.status_code == 503
     assert users.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
 
@@ -196,6 +198,75 @@ def test_users_returns_503_when_persnl_unavailable(client, admin_headers, monkey
 def test_users_requires_query(client, admin_headers):
     users = client.get(api_path("/users"), headers=admin_headers)
     assert users.status_code == 422
+
+
+def test_users_lookup_context_is_required(client, admin_headers):
+    users = client.get(api_path("/users?q=u1"), headers=admin_headers)
+    assert users.status_code == 422
+
+
+def test_users_invalid_lookup_context_is_rejected(client, admin_headers):
+    users = client.get(api_path("/users?q=u1&lookup_context=bad"), headers=admin_headers)
+    assert users.status_code == 422
+
+
+def test_users_lookup_writes_audit_log(client, admin_headers, monkeypatch):
+    target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
+    bootstrap = client.get(api_path("/api-keys"), headers=target_admin_headers)
+    assert bootstrap.status_code == 200
+
+    def fake_search_by_keyword(self, keyword, limit=20):
+        assert keyword == "u1"
+        return [{"sysId": "7003", "cn": "u1", "chName": "User One", "email": "u1@example.com", "instCode": "01", "tCode": "A01"}]
+
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.search_by_keyword",
+        fake_search_by_keyword,
+    )
+
+    resp = client.get(
+        api_path("/users?q=u1&lookup_context=proxy_application"),
+        headers={**target_admin_headers, "x-request-id": "req-user-lookup-ok"},
+    )
+    assert resp.status_code == 200
+
+    db = next(client.app.dependency_overrides[get_db]())
+    try:
+        row = db.query(OperationAuditLog).filter(OperationAuditLog.request_id == "req-user-lookup-ok").one()
+    finally:
+        db.close()
+    assert row.event_type == "user_lookup"
+    assert row.action == "proxy_application"
+    assert row.result == "success"
+    assert row.actor_account == target_admin_headers["x-account"]
+    assert row.target_type == "user_search"
+    assert row.target_id == "u1"
+    metadata = json.loads(row.metadata_json or "{}")
+    assert metadata["lookup_context"] == "proxy_application"
+    assert metadata["matched_count"] == 1
+
+
+def test_users_lookup_failure_writes_audit_log(client, admin_headers):
+    target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
+    bootstrap = client.get(api_path("/api-keys"), headers=target_admin_headers)
+    assert bootstrap.status_code == 200
+
+    resp = client.get(
+        api_path("/users?q=u1&lookup_context=bad"),
+        headers={**target_admin_headers, "x-request-id": "req-user-lookup-fail"},
+    )
+    assert resp.status_code == 422
+
+    db = next(client.app.dependency_overrides[get_db]())
+    try:
+        row = db.query(OperationAuditLog).filter(OperationAuditLog.request_id == "req-user-lookup-fail").one()
+    finally:
+        db.close()
+    assert row.event_type == "user_lookup"
+    assert row.action == "bad"
+    assert row.result == "failure"
+    assert row.error_code == "VALIDATION_ERROR"
+    assert row.error_detail == "lookup_context must be one of: proxy_application, admin_create, whitelist_create"
 
 
 def test_admins_list_reads_db_when_persnl_unavailable(client, admin_headers, monkeypatch):

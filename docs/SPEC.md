@@ -50,7 +50,7 @@
   - 所有會寫入後端的文字欄位採共用 persisted-text 驗證：允許正常中英文、數字、空白與常見標點，但若包含明顯程式語法片段（至少包含 HTML tag、`<script...>`、`</script>`、`javascript:`、明顯 SQL injection 片段、明顯 JS `function(...)` / `=>` 語法）需阻擋送出
   - 送出申請時的 auth context 驗證、資格檢查、錯誤碼與 provider/SOAP 錯誤語意，以 `POST /main/api/v1/api-keys/applications` 契約為準
   - `admin` 代申請時，`target_identity.account` 必填；目標 `name`、`email`、`department`、`sysid` 由後端目錄查詢補齊
-  - `admin` 代申請時，前端於 `target_identity.account` 欄位 `blur` 後需呼叫 `GET /main/api/v1/users?q=...` 查詢目標身份資料並帶入唯讀欄位
+- `admin` 代申請時，前端於 `target_identity.account` 欄位 `blur` 後需呼叫 `GET /main/api/v1/users?q=...&lookup_context=proxy_application` 查詢目標身份資料並帶入唯讀欄位
   - 若查詢結果多筆，前端需顯示候選清單供 `admin` 明確選擇；未完成選擇前不得送出申請
   - `admin` 代申請時，若帳號查無需顯示「查無帳號」；若查詢服務異常需顯示 `soap service unavailable`，兩者皆以獨立 `error` alert 顯示於上述 info 提示之後
   - `purpose`、`target_identity.account` 違反 persisted-text 驗證時，前端需先提示並禁止送出；直接打 API 時後端需回 `422 VALIDATION_ERROR`
@@ -325,6 +325,7 @@
 - `metadata_json` (string, nullable；僅允許白名單欄位，不得包含敏感值)
 - `created_at` (datetime)
 - 目的：記錄關鍵操作稽核（v1），成功與失敗事件皆需落地。
+- `user_lookup` 類型事件中，`action` 需記錄查詢用途（`proxy_application|admin_create|whitelist_create`），`target_type` 固定為 `user_search`，`target_id` 記錄 trim 後查詢關鍵字。
 - `error_detail` 僅允許例外類型、受控錯誤訊息摘要與必要業務上下文；不得包含 stack trace、SQL、完整第三方 payload。
 - 不得記錄 API key 明文、token、password、client secret 等敏感憑證。
 
@@ -659,13 +660,16 @@ Base path：`/main/api/v1`
 - 規則：
   - 僅 `admin` 可使用。
   - `q` 為必填，且僅用於 `account`、`name` 查詢。
+  - `lookup_context` 為必填，且僅允許 `proxy_application`、`admin_create`、`whitelist_create`，用於稽核查詢用途。
   - `q` 未提供、空字串或空白字串時，回傳 `422 VALIDATION_ERROR`。
   - 不論 `q` 值內容為何，資料來源皆為 Persnl SOAP（`PERSNL_SOAP_URL`）。
   - 回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`（對應單位代碼 `instCode`）、`status`。
+  - 成功與失敗皆需寫入 `operation_audit_logs`；`event_type=user_lookup`、`action=lookup_context`、`target_type=user_search`、`target_id` 為 trim 後查詢關鍵字。
 - 單位主檔同步：`Persnl.getInstitutes` 僅供背景同步作業使用（首次入庫 + 後續排程差異同步），不得放在此 API 請求路徑中每次即時呼叫。
 - 錯誤回應：
   - `403 FORBIDDEN`：非 `admin`
   - `422 VALIDATION_ERROR`：`q` 不合法
+  - `422 VALIDATION_ERROR`：`lookup_context` 不合法
   - `503 SOAP_SERVICE_UNAVAILABLE`：Persnl SOAP timeout/5xx
 
 ### 5-4) 管理者名單查詢 API
@@ -741,6 +745,7 @@ Base path：`/main/api/v1`
 ### 6-1) 關鍵操作稽核 log（v1）
 - 儲存方式：寫入 `operation_audit_logs`（DB 落地）。
 - 範圍（v1）：
+  - `GET /main/api/v1/users`
   - `POST /main/api/v1/api-keys/applications`
   - `POST /main/api/v1/api-keys/{id}/revoke`
   - `POST /main/api/v1/whitelists`
@@ -904,7 +909,7 @@ Base path：`/main/api/v1`
 53. `GET /main/api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 僅允許 `zh-TW|en`，成功後可立即由 `GET` 讀回。手動切換語言後，重新登入需沿用 DB 偏好，且導覽列、頁標題、按鈕、錯誤/提示訊息與 DataGrid locale 文案需隨語言切換更新。
 
 ### 稽核、查詢限制與安全邊界
-54. `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`limit-strategy-config`、`institutes/sync` 等關鍵異動 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`；failure 事件另需提供可供管理者除錯的 `error_detail` 與 `request_id`。
+54. `GET /main/api/v1/users` 與 `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`limit-strategy-config`、`institutes/sync` 等關鍵操作 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`；failure 事件另需提供可供管理者除錯的 `error_detail` 與 `request_id`。其中 `GET /main/api/v1/users` 需以 `lookup_context` 區分 `proxy_application|admin_create|whitelist_create` 用途。
 55. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證；`metadata_json` 與 `error_detail` 僅允許白名單安全內容，不得包含 stack trace、SQL、完整第三方 payload。若 audit 寫入失敗，不得改變主流程成功或失敗語意。
 56. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 僅 `admin` 可使用；未提供 `from/to` 時預設回傳最近 7 天熱資料，結果依 `created_at desc` 排序，並支援分頁與既定篩選條件。
 57. `GET /main/api/v1/api-keys/statistics/users`、`GET /main/api/v1/operation-audit-logs`、`GET /main/api/v1/auth-audit-logs` 的 `from/to` 查詢區間不得超過 `31` 天；`GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。

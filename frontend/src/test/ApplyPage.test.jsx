@@ -260,6 +260,7 @@ test("proxy account blur auto-fills identity fields", async () => {
 
   expect(await screen.findByDisplayValue("Target User")).toBeInTheDocument();
   expect(screen.getByDisplayValue("target.user@company.com")).toBeInTheDocument();
+  expect(searchUsers).toHaveBeenCalledWith("target.user", adminAuth, { lookup_context: "proxy_application" });
 });
 
 test("blocks unsafe proxy account before lookup", async () => {

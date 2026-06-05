@@ -24,6 +24,7 @@ from db.session import get_db
 
 router = APIRouter()
 settings = get_settings()
+ALLOWED_USER_LOOKUP_CONTEXTS = {"proxy_application", "admin_create", "whitelist_create"}
 
 
 def _require_admin(current_user: CurrentUser) -> None:
@@ -93,13 +94,81 @@ def list_admins(
 def list_users(
     request: Request,
     q: str = Query(...),
+    lookup_context: str = Query(...),
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    _require_admin(current_user)
-    validate_search_keyword(q)
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "user_lookup"
+    action = lookup_context
+    target_type = "user_search"
+    target_id = q.strip()
+    try:
+        if lookup_context not in ALLOWED_USER_LOOKUP_CONTEXTS:
+            raise ApiError(
+                "VALIDATION_ERROR",
+                "lookup_context must be one of: proxy_application, admin_create, whitelist_create",
+                422,
+            )
+        _require_admin(current_user)
+        validate_search_keyword(q)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"lookup_context": lookup_context},
+        )
+        raise
     service = UsersService(db, persnl_service=request.app.state.persnl_soap_service)
-    return service.search(q=q)
+    try:
+        result = service.search(q=q)
+    except ApiError as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"lookup_context": lookup_context},
+        )
+        raise
+    except Exception as exc:
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
+            actor=current_user,
+            target_type=target_type,
+            target_id=target_id,
+            context=context,
+            metadata={"lookup_context": lookup_context},
+        )
+        raise
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=target_id,
+        context=context,
+        metadata={"lookup_context": lookup_context, "matched_count": result["total"]},
+    )
+    return result
 
 
 @router.post(

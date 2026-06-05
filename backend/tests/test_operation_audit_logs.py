@@ -408,6 +408,47 @@ def test_limit_strategy_patch_accepts_zero_rate_limits(client, admin_headers):
     assert resp.json() == payload
 
 
+def test_user_lookup_logs_success_and_failure(client, admin_headers, monkeypatch):
+    target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)
+    bootstrap = client.get(api_path("/api-keys"), headers=target_admin_headers)
+    assert bootstrap.status_code == 200
+
+    def fake_search_by_keyword(self, keyword, limit=20):
+        assert keyword == "u1"
+        return [{"sysId": "7003", "cn": "u1", "chName": "User One", "email": "u1@example.com", "instCode": "01", "tCode": "A01"}]
+
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.search_by_keyword",
+        fake_search_by_keyword,
+    )
+
+    ok = client.get(
+        api_path("/users?q=u1&lookup_context=proxy_application"),
+        headers={**target_admin_headers, "x-request-id": "req-user-lookup-success", "x-forwarded-for": "198.51.100.44"},
+    )
+    assert ok.status_code == 200
+
+    bad = client.get(
+        api_path("/users?q=u1&lookup_context=wrong"),
+        headers={**target_admin_headers, "x-request-id": "req-user-lookup-invalid"},
+    )
+    assert bad.status_code == 422
+
+    logs = _query_logs("user_lookup", "proxy_application")
+    assert len(logs) == 1
+    success_row = logs[0]
+    assert success_row.result == "success"
+    assert success_row.source_ip == "198.51.100.44"
+    success_meta = json.loads(success_row.metadata_json or "{}")
+    assert success_meta["lookup_context"] == "proxy_application"
+    assert success_meta["matched_count"] == 1
+
+    invalid_logs = _query_logs("user_lookup", "wrong")
+    assert len(invalid_logs) == 1
+    assert invalid_logs[0].result == "failure"
+    assert invalid_logs[0].error_code == "VALIDATION_ERROR"
+
+
 def test_limit_strategy_patch_syncs_provider_team_update(client, admin_headers, monkeypatch):
     payload = {
         "budget_max_budget": "3000",
