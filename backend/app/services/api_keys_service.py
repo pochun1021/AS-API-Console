@@ -2,7 +2,6 @@ import hashlib
 import logging
 import re
 import secrets
-from asyncio import run as run_async
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
@@ -809,17 +808,14 @@ class ApiKeysService:
         issued_key = self._create_key_record(application_id=application.id, plaintext=plaintext, key_alias=key_alias)
         email_warning: str | None = None
 
-        try:
-            run_async(
-                self.mail_service.send_key_renewed_notification(
-                    to_email=source_app.email,
-                    owner_name=source_app.name,
-                    app_domain=self.settings.app_domain,
-                )
-            )
-        except Exception:  # noqa: BLE001
-            logging.exception("failed to send key renewed email to applicant")
-            email_warning = "key_renewed_email_failed"
+        self.mail_service.dispatch_background(
+            lambda: self.mail_service.send_key_renewed_notification(
+                to_email=source_app.email,
+                owner_name=source_app.name,
+                app_domain=self.settings.app_domain,
+            ),
+            error_message="failed to send key renewed email to applicant",
+        )
         source_key.renewed_to_key_id = issued_key.id
         source_app.updated_at = datetime.now(UTC)
         self.session.add(source_key)
@@ -930,19 +926,17 @@ class ApiKeysService:
         recipients = sorted({email.strip().lower() for email in self.admin_repo.list_active_emails() if email and email.strip()})
         if not recipients:
             return
-        try:
-            run_async(
-                self.mail_service.send_provider_issuance_failed_to_admins(
-                    to_emails=recipients,
-                    operation=operation,
-                    actor_account=actor_account,
-                    actor_role=actor_role,
-                    target_account=target_account,
-                    error_code=error_code,
-                )
-            )
-        except Exception:  # noqa: BLE001
-            logging.exception("failed to send provider issuance failure email to admins")
+        self.mail_service.dispatch_background(
+            lambda: self.mail_service.send_provider_issuance_failed_to_admins(
+                to_emails=recipients,
+                operation=operation,
+                actor_account=actor_account,
+                actor_role=actor_role,
+                target_account=target_account,
+                error_code=error_code,
+            ),
+            error_message="failed to send provider issuance failure email to admins",
+        )
 
     def reveal_key_plaintext(self, current_user: CurrentUser, key_id: str) -> dict:
         if current_user.role != "admin":

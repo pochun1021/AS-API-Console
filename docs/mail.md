@@ -109,7 +109,7 @@ Academia Sinica IT Service Desk
 
 ### 5.2 Renew 成功通知信
 
-- 觸發時機：`POST /main/api/v1/api-keys/{id}/renew` 成功後寄送
+- 觸發時機：`POST /main/api/v1/api-keys/{id}/renew` 成功後背景寄送；寄信失敗不得延遲或改變 API 成功回應
 - 收件者：申請者本人
 - 主旨：
   - `[AS API Console] API Key 已更新 / API key renew`
@@ -140,7 +140,7 @@ Academia Sinica IT Service Desk
 
 ### 5.3 Provider 配發失敗通知信
 
-- 觸發時機：`applications`、`renew`、`extend`、`revoke` 任一 provider timeout/5xx
+- 觸發時機：`applications`、`renew`、`extend`、`revoke` 任一 provider timeout/5xx 後背景寄送；寄信失敗不得延遲或改變原 API 錯誤回應
 - 收件者：所有 `active` 管理者
 - 主旨：
   - `[AS API Console] API Key 配發失敗通知 / API key issuance failure`

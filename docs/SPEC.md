@@ -590,7 +590,7 @@ Base path：`/main/api/v1`
   - provider 成功但本地同步失敗時，需保留可追蹤資訊並支援 retry / reconciliation，避免 provider 與本地資料不一致。
 - renew 成功時，回傳一次性 `api_key_plaintext`。
   - renew 的新明文需自 provider response `key` 讀取。
-  - renew 成功後需寄送 Email 通知申請者「已更新金鑰」；通知信不得包含明文 key。
+  - renew 成功後需以非阻塞方式寄送 Email 通知申請者「已更新金鑰」；通知信不得包含明文 key，且寄信失敗不得延遲或改變 API 成功回應。
   - 續發成功後，來源 key 對 `user` 列表需隱藏；`admin` 列表仍需可見完整歷史。
 
 ### 4-3) 展延（Extend）API Key
@@ -877,8 +877,8 @@ Base path：`/main/api/v1`
 33. 某提醒時段寄送失敗時，不得影響其他 key 或其他提醒時段；只要該時段尚未成功，後續重跑需可再次嘗試。
 34. 本輪首次成功寄出任一提醒後，`api_keys.expiration_notice_sent_at` 需填值；寄送失敗不得填值；後續提醒時段不得覆蓋其既有語意。
 35. `POST /main/api/v1/api-keys/applications` 成功後需以非阻塞方式寄送申請成功通知信給申請者本人；寄信失敗時 API 仍需回 `201`，且不得回滾申請資料或延遲一次性明文 key 回應。
-36. `POST /main/api/v1/api-keys/{id}/renew` 成功後需寄送 renew 成功通知信給申請者本人，且通知信不得包含明文 key。
-37. `applications`、`renew`、`extend`、`revoke` 若遇 provider timeout/5xx（`PROVIDER_UNAVAILABLE`），需寄送通知信給所有 `active` 管理者；若管理者通知信寄送失敗，不得改變原 API 錯誤回應。
+36. `POST /main/api/v1/api-keys/{id}/renew` 成功後需以非阻塞方式寄送 renew 成功通知信給申請者本人，且通知信不得包含明文 key；寄信失敗不得延遲或改變 API 成功回應。
+37. `applications`、`renew`、`extend`、`revoke` 若遇 provider timeout/5xx（`PROVIDER_UNAVAILABLE`），需以非阻塞方式寄送通知信給所有 `active` 管理者；若管理者通知信寄送失敗，不得延遲或改變原 API 錯誤回應。
 38. 所有業務通知信內容需中英並列（中文在前、英文在後）；到期提醒信僅寄送申請者本人，需包含正確剩餘天數、到期時間與可展延提示，且信內顯示的到期時間需轉為 `Asia/Taipei`，但提醒判定與資料儲存仍維持 UTC。
 39. 通知信模板屬正式契約；主旨、收件者、動態欄位與中英段落順序變更時，需同步更新 `docs/mail.md`。詳細主旨與完整模板內容以 `docs/mail.md` 為準。
 
