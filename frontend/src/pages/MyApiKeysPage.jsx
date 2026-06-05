@@ -25,7 +25,7 @@ import {
   Menu,
   MenuItem
 } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid, getGridDateOperators, getGridSingleSelectOperators, getGridStringOperators } from "@mui/x-data-grid";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
@@ -33,6 +33,13 @@ import { useLocale } from "../i18n/locale";
 import { formatDateTimeInTaipei, isWithinThirtyDaysBeforeExpiration } from "../utils/datetime";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 import { validatePersistedText } from "../utils/inputValidation";
+import {
+  getContainsFilterValue,
+  getDateRangeFilterValues,
+  getServerSort,
+  getSingleSelectFilterValue,
+  getTaipeiDateTimeRangeFilterValues,
+} from "../utils/serverDataGrid";
 
 const actionCellSx = {
   display: "flex",
@@ -80,6 +87,12 @@ function canShowExtendAction(item) {
   return isWithinThirtyDaysBeforeExpiration(item.expires_at) && item.extend_eligible === true;
 }
 
+const containsFilterOperators = getGridStringOperators().filter((operator) => operator.value === "contains");
+const singleSelectFilterOperators = getGridSingleSelectOperators().filter((operator) => operator.value === "is");
+const dateFilterOperators = getGridDateOperators().filter((operator) =>
+  ["is", "onOrAfter", "onOrBefore"].includes(operator.value)
+);
+
 export default function MyApiKeysPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const { formatDepartment } = useDepartmentDisplay(auth);
@@ -87,6 +100,8 @@ export default function MyApiKeysPage({ auth }) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
+  const [sortModel, setSortModel] = useState([]);
+  const [filterModel, setFilterModel] = useState({ items: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
@@ -124,8 +139,24 @@ export default function MyApiKeysPage({ auth }) {
     setLoading(true);
     setError("");
     try {
+      const sort = getServerSort(sortModel, { field: "created_at", sort: "desc" });
+      const applicationDateRange = getDateRangeFilterValues(filterModel, "application_date");
+      const expiresAtRange = getTaipeiDateTimeRangeFilterValues(filterModel, "expires_at");
       const response = await apiClient.listApiKeys(
-        { page: page + 1, page_size: pageSize },
+        {
+          page: page + 1,
+          page_size: pageSize,
+          status: getSingleSelectFilterValue(filterModel, "status") || undefined,
+          owner_account: auth.role === "admin" ? getContainsFilterValue(filterModel, "owner_account") || undefined : undefined,
+          owner_name: auth.role === "admin" ? getContainsFilterValue(filterModel, "owner_name") || undefined : undefined,
+          key_alias: auth.role === "admin" ? getContainsFilterValue(filterModel, "key_alias") || undefined : undefined,
+          application_date_from: applicationDateRange.from || undefined,
+          application_date_to: applicationDateRange.to || undefined,
+          expires_from: expiresAtRange.from || undefined,
+          expires_to: expiresAtRange.to || undefined,
+          sort_by: sort.field,
+          sort_dir: sort.sort,
+        },
         auth
       );
       setItems(response.items || []);
@@ -290,7 +321,7 @@ export default function MyApiKeysPage({ auth }) {
 
   useEffect(() => {
     load();
-  }, [page, pageSize]);
+  }, [auth.role, filterModel, page, pageSize, sortModel]);
 
   useEffect(() => () => {
     if (renewCopyResetTimerRef.current) clearTimeout(renewCopyResetTimerRef.current);
@@ -299,50 +330,76 @@ export default function MyApiKeysPage({ auth }) {
   const columns = useMemo(
     () => {
       const baseColumns = [
-        { field: "application_date", headerName: t("mykeys_col_application_date"), flex: 1, minWidth: 120 },
+        {
+          field: "application_date",
+          headerName: t("mykeys_col_application_date"),
+          type: "date",
+          flex: 1,
+          minWidth: 120,
+          filterOperators: dateFilterOperators,
+          valueGetter: (value) => (value ? new Date(`${value}T00:00:00`) : null),
+          renderCell: (params) => params.row.application_date || "-"
+        },
         {
           field: "duration_months",
           headerName: t("mykeys_col_duration_months"),
           flex: 1,
           minWidth: 120,
-          valueFormatter: (value) => `${value} ${t("mykeys_duration_suffix")}`
+          valueFormatter: (value) => `${value} ${t("mykeys_duration_suffix")}`,
+          filterable: false
         },
         {
           field: "status",
           headerName: t("common_status"),
+          type: "singleSelect",
+          valueOptions: ["active", "revoked", "expired"],
           flex: 1,
           minWidth: 120,
+          filterOperators: singleSelectFilterOperators,
           renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
         },
         {
           field: "expires_at",
           headerName: t("mykeys_col_expires_at"),
+          type: "dateTime",
           flex: 1.5,
           minWidth: 180,
-          valueFormatter: (value) => formatDateTimeInTaipei(value, { locale })
+          filterOperators: dateFilterOperators,
+          valueGetter: (value) => (value ? new Date(value) : null),
+          renderCell: (params) => formatDateTimeInTaipei(params.row.expires_at, { locale })
         },
         {
           field: "masked_key",
           headerName: t("mykeys_col_masked_key"),
           flex: 1.5,
           minWidth: 180,
-          valueFormatter: (value) => formatMaskedKey(value)
+          valueFormatter: (value) => formatMaskedKey(value),
+          sortable: false,
+          filterable: false
         }
       ];
 
       if (auth.role === "admin") {
         baseColumns.push({
+          field: "owner_account",
+          headerName: t("dashboard_col_owner_account"),
+          flex: 1.2,
+          minWidth: 150,
+          filterOperators: containsFilterOperators
+        });
+        baseColumns.push({
+          field: "owner_name",
+          headerName: t("dashboard_col_owner_name"),
+          flex: 1.2,
+          minWidth: 150,
+          filterOperators: containsFilterOperators
+        });
+        baseColumns.push({
           field: "key_alias",
           headerName: t("mykeys_col_key_alias"),
           flex: 1.4,
-          minWidth: 180
-        });
-        baseColumns.push({
-          field: "owner",
-          headerName: t("mykeys_col_owner"),
-          flex: 1.5,
           minWidth: 180,
-          valueGetter: (_value, row) => `${row.owner_account || "-"} / ${row.owner_name || "-"}`
+          filterOperators: containsFilterOperators
         });
       }
 
@@ -413,11 +470,23 @@ export default function MyApiKeysPage({ auth }) {
                 columns={columns}
                 getRowId={(row) => row.id}
                 paginationMode="server"
+                sortingMode="server"
+                filterMode="server"
                 rowCount={total}
                 paginationModel={{ page, pageSize }}
                 onPaginationModelChange={(model) => {
                   setPage(model.page);
                   setPageSize(model.pageSize);
+                }}
+                sortModel={sortModel}
+                onSortModelChange={(model) => {
+                  setSortModel(model);
+                  setPage(0);
+                }}
+                filterModel={filterModel}
+                onFilterModelChange={(model) => {
+                  setFilterModel(model);
+                  setPage(0);
                 }}
                 pageSizeOptions={[10, 20, 50]}
                 disableRowSelectionOnClick

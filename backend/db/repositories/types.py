@@ -57,8 +57,14 @@ class ApiKeyListItem:
 class ApiKeyListFilter:
     status: str | None = None
     owner_account: str | None = None
-    from_date: date | None = None
-    to_date: date | None = None
+    owner_name: str | None = None
+    key_alias: str | None = None
+    application_date_from: date | None = None
+    application_date_to: date | None = None
+    expires_from: datetime | None = None
+    expires_to: datetime | None = None
+    sort_by: str = "created_at"
+    sort_dir: str = "desc"
 
 
 @dataclass(slots=True)
@@ -89,6 +95,17 @@ class ApiKeyUserStatisticsItem:
     revoked_count: int
     expired_count: int
     last_applied_at: date
+
+
+@dataclass(slots=True)
+class ApiKeyUserStatisticsFilter:
+    q: str | None = None
+    owner_account: str | None = None
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_department: str | None = None
+    from_date: date | None = None
+    to_date: date | None = None
 
 
 @dataclass(slots=True)

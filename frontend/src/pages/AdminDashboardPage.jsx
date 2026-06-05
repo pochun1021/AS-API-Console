@@ -23,7 +23,7 @@ import {
   Typography
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid, getGridStringOperators } from "@mui/x-data-grid";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
 import { apiClient } from "../api/client";
@@ -31,6 +31,7 @@ import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
+import { getContainsFilterValue } from "../utils/serverDataGrid";
 
 function statusColor(status) {
   if (status === "active") return "success";
@@ -42,6 +43,8 @@ function formatMaskedKey(value) {
   if (!value) return "-";
   return String(value);
 }
+
+const containsFilterOperators = getGridStringOperators().filter((operator) => operator.value === "contains");
 
 export default function AdminDashboardPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
@@ -78,6 +81,7 @@ export default function AdminDashboardPage({ auth }) {
   const [toDate, setToDate] = useState("");
   const [q, setQ] = useState("");
   const [sortModel, setSortModel] = useState([{ field: "total_applications", sort: "desc" }]);
+  const [filterModel, setFilterModel] = useState({ items: [] });
   const [view, setView] = useState("table");
   const [topN, setTopN] = useState(10);
   const [xAxisField, setXAxisField] = useState("account");
@@ -131,14 +135,33 @@ export default function AdminDashboardPage({ auth }) {
 
   const columns = useMemo(
     () => [
-      { field: "owner_account", headerName: t("dashboard_col_owner_account"), flex: 1, minWidth: 140 },
-      { field: "owner_name", headerName: t("dashboard_col_owner_name"), flex: 1, minWidth: 140 },
-      { field: "owner_email", headerName: t("dashboard_col_owner_email"), flex: 1.6, minWidth: 220 },
+      {
+        field: "owner_account",
+        headerName: t("dashboard_col_owner_account"),
+        flex: 1,
+        minWidth: 140,
+        filterOperators: containsFilterOperators
+      },
+      {
+        field: "owner_name",
+        headerName: t("dashboard_col_owner_name"),
+        flex: 1,
+        minWidth: 140,
+        filterOperators: containsFilterOperators
+      },
+      {
+        field: "owner_email",
+        headerName: t("dashboard_col_owner_email"),
+        flex: 1.6,
+        minWidth: 220,
+        filterOperators: containsFilterOperators
+      },
       {
         field: "owner_department",
         headerName: t("dashboard_col_owner_department"),
         flex: 1,
         minWidth: 140,
+        filterOperators: containsFilterOperators,
         renderCell: (params) => formatDepartment(params.row.owner_department, locale)
       },
       {
@@ -167,7 +190,7 @@ export default function AdminDashboardPage({ auth }) {
       },
       { field: "revoked_count", headerName: t("dashboard_col_revoked_count"), type: "number", flex: 0.8, minWidth: 120 },
       { field: "expired_count", headerName: t("dashboard_col_expired_count"), type: "number", flex: 0.8, minWidth: 120 },
-      { field: "last_applied_at", headerName: t("dashboard_col_last_applied_at"), flex: 1, minWidth: 140 }
+      { field: "last_applied_at", headerName: t("dashboard_col_last_applied_at"), flex: 1, minWidth: 140, filterable: false }
     ],
     [t, fromDate, toDate, auth, formatDepartment, locale]
   );
@@ -202,6 +225,10 @@ export default function AdminDashboardPage({ auth }) {
           q: q.trim(),
           from: fromDate || undefined,
           to: toDate || undefined,
+          owner_account: getContainsFilterValue(filterModel, "owner_account") || undefined,
+          owner_name: getContainsFilterValue(filterModel, "owner_name") || undefined,
+          owner_email: getContainsFilterValue(filterModel, "owner_email") || undefined,
+          owner_department: getContainsFilterValue(filterModel, "owner_department") || undefined,
           sort_by: sort.field,
           sort_dir: sort.sort || "desc"
         },
@@ -224,7 +251,7 @@ export default function AdminDashboardPage({ auth }) {
 
   useEffect(() => {
     load();
-  }, [page, pageSize, scope, fromDate, toDate, q, sortModel]);
+  }, [filterModel, fromDate, page, pageSize, q, scope, sortModel, toDate]);
 
   if (auth.role !== "admin") {
     return (
@@ -305,6 +332,7 @@ export default function AdminDashboardPage({ auth }) {
             pageSizeOptions={[10, 20, 50]}
             paginationMode="server"
             sortingMode="server"
+            filterMode="server"
             rowCount={total}
             paginationModel={{ page, pageSize }}
             onPaginationModelChange={(model) => {
@@ -318,6 +346,12 @@ export default function AdminDashboardPage({ auth }) {
                 return;
               }
               setSortModel(model);
+              setPage(0);
+            }}
+            filterModel={filterModel}
+            onFilterModelChange={(model) => {
+              setFilterModel(model);
+              setPage(0);
             }}
             disableRowSelectionOnClick
             localeText={gridLocaleText}

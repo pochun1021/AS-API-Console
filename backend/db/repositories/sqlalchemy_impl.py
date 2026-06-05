@@ -16,12 +16,17 @@ from db.repositories.types import (
     ApiKeyListFilter,
     ApiKeyListItem,
     ApiKeySecretMaterial,
+    ApiKeyUserStatisticsFilter,
     ApiKeyUserStatisticsItem,
     ApplicationCreateInput,
     AuthIdentity,
     WhitelistCreateInput,
     WhitelistUpdateInput,
 )
+
+
+def _contains_ci(column, value: str):
+    return func.lower(column).like(f"%{value.lower()}%")
 
 
 class SQLAlchemyAdminRepository:
@@ -274,8 +279,9 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             ),
             else_=ApiKey.status,
         ).label("effective_status")
+        effective_key_alias = func.coalesce(ApiKey.key_alias, literal("for_") + ApiKeyApplication.account).label("effective_key_alias")
         base_stmt = (
-            select(ApiKey, ApiKeyApplication, effective_status)
+            select(ApiKey, ApiKeyApplication, effective_status, effective_key_alias)
             .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
         )
         if requester_role == "user":
@@ -284,16 +290,41 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         if filters.status:
             base_stmt = base_stmt.where(effective_status == filters.status)
         if filters.owner_account:
-            base_stmt = base_stmt.where(ApiKeyApplication.account == filters.owner_account)
-        if filters.from_date:
-            base_stmt = base_stmt.where(ApiKeyApplication.application_date >= filters.from_date)
-        if filters.to_date:
-            base_stmt = base_stmt.where(ApiKeyApplication.application_date <= filters.to_date)
+            base_stmt = base_stmt.where(_contains_ci(ApiKeyApplication.account, filters.owner_account))
+        if filters.owner_name:
+            base_stmt = base_stmt.where(_contains_ci(ApiKeyApplication.name, filters.owner_name))
+        if filters.key_alias:
+            base_stmt = base_stmt.where(_contains_ci(effective_key_alias, filters.key_alias))
+        if filters.application_date_from:
+            base_stmt = base_stmt.where(ApiKeyApplication.application_date >= filters.application_date_from)
+        if filters.application_date_to:
+            base_stmt = base_stmt.where(ApiKeyApplication.application_date <= filters.application_date_to)
+        if filters.expires_from:
+            base_stmt = base_stmt.where(ApiKeyApplication.expires_at >= filters.expires_from)
+        if filters.expires_to:
+            base_stmt = base_stmt.where(ApiKeyApplication.expires_at <= filters.expires_to)
 
         total_stmt = select(func.count()).select_from(base_stmt.order_by(None).subquery())
         total = int(self.session.scalar(total_stmt) or 0)
 
-        stmt = base_stmt.order_by(ApiKey.created_at.desc()).limit(limit).offset(offset)
+        sort_expressions = {
+            "application_date": ApiKeyApplication.application_date,
+            "duration_months": ApiKeyApplication.duration_months,
+            "status": effective_status,
+            "expires_at": ApiKeyApplication.expires_at,
+            "masked_key": ApiKey.masked_key,
+            "key_alias": effective_key_alias,
+            "owner_account": ApiKeyApplication.account,
+            "owner_name": ApiKeyApplication.name,
+            "created_at": ApiKey.created_at,
+        }
+        sort_expr = sort_expressions.get(filters.sort_by, ApiKey.created_at)
+        if filters.sort_dir == "asc":
+            order_by = [sort_expr.asc(), ApiKey.id.asc()]
+        else:
+            order_by = [sort_expr.desc(), ApiKey.id.desc()]
+
+        stmt = base_stmt.order_by(*order_by).limit(limit).offset(offset)
         rows = self.session.execute(stmt).all()
         return (
             [
@@ -435,9 +466,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         self,
         *,
         scope: str,
-        q: str | None = None,
-        from_date: date | None = None,
-        to_date: date | None = None,
+        filters: ApiKeyUserStatisticsFilter,
         sort_by: str = "total_applications",
         sort_dir: str = "desc",
         limit: int = 20,
@@ -474,17 +503,24 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
 
         if scope != "all":
             stmt = stmt.where(effective_status == scope)
-        if from_date is not None:
-            stmt = stmt.where(ApiKeyApplication.application_date >= from_date)
-        if to_date is not None:
-            stmt = stmt.where(ApiKeyApplication.application_date <= to_date)
-        if q:
-            like = f"%{q}%"
+        if filters.from_date is not None:
+            stmt = stmt.where(ApiKeyApplication.application_date >= filters.from_date)
+        if filters.to_date is not None:
+            stmt = stmt.where(ApiKeyApplication.application_date <= filters.to_date)
+        if filters.q:
             stmt = stmt.where(
-                ApiKeyApplication.account.like(like)
-                | ApiKeyApplication.name.like(like)
-                | ApiKeyApplication.email.like(like)
+                _contains_ci(ApiKeyApplication.account, filters.q)
+                | _contains_ci(ApiKeyApplication.name, filters.q)
+                | _contains_ci(ApiKeyApplication.email, filters.q)
             )
+        if filters.owner_account:
+            stmt = stmt.where(_contains_ci(ApiKeyApplication.account, filters.owner_account))
+        if filters.owner_name:
+            stmt = stmt.where(_contains_ci(ApiKeyApplication.name, filters.owner_name))
+        if filters.owner_email:
+            stmt = stmt.where(_contains_ci(ApiKeyApplication.email, filters.owner_email))
+        if filters.owner_department:
+            stmt = stmt.where(_contains_ci(ApiKeyApplication.department, filters.owner_department))
 
         stmt = stmt.group_by(ApiKeyApplication.account, ApiKeyApplication.name, ApiKeyApplication.email)
 

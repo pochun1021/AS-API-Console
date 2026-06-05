@@ -87,6 +87,21 @@ const initialApiKeys = [
     renewed_to_key_id: null
   },
   {
+    id: "key_005b",
+    status: "active",
+    masked_key: "AS-...kt01",
+    application_date: "2026-04-20",
+    duration_months: 6,
+    purpose: "cross page search demo",
+    department: "02",
+    created_at: "2026-04-20T03:00:00.000Z",
+    expires_at: "2026-10-20T03:00:00.000Z",
+    expiration_notice_sent_at: null,
+    owner_account: "ktu",
+    owner_name: "尤凱婷",
+    renewed_to_key_id: null
+  },
+  {
     id: "key_006",
     status: "revoked",
     masked_key: "AS-...ef56",
@@ -459,12 +474,33 @@ function mapUserForAdminPage(user) {
   };
 }
 
-function buildUserStatistics(items, { q = "", scope = "all", from, to }) {
+function containsCI(value, keyword) {
+  return String(value || "").toLowerCase().includes(String(keyword || "").trim().toLowerCase());
+}
+
+function compareValues(a, b, sortDir = "asc") {
+  if (a === b) return 0;
+  if (typeof a === "number" && typeof b === "number") {
+    return sortDir === "asc" ? a - b : b - a;
+  }
+  return sortDir === "asc"
+    ? String(a || "").localeCompare(String(b || ""))
+    : String(b || "").localeCompare(String(a || ""));
+}
+
+function buildUserStatistics(
+  items,
+  { q = "", scope = "all", from, to, owner_account = "", owner_name = "", owner_email = "", owner_department = "" }
+) {
   const keyword = q.trim().toLowerCase();
   const filtered = items.filter((item) => {
     if (scope !== "all" && item.status !== scope) return false;
     if (from && item.application_date < from) return false;
     if (to && item.application_date > to) return false;
+    if (owner_account && !containsCI(item.owner_account, owner_account)) return false;
+    if (owner_name && !containsCI(item.owner_name, owner_name)) return false;
+    if (owner_email && !containsCI(`${item.owner_account}@example.com`, owner_email)) return false;
+    if (owner_department && !containsCI(item.department || "", owner_department)) return false;
     if (!keyword) return true;
     return [item.owner_account, item.owner_name, `${item.owner_account}@example.com`]
       .join(" ")
@@ -583,17 +619,62 @@ export const mockApiProvider = {
       : apiKeys.filter((item) => item.owner_account === auth.account && !item.renewed_to_key_id);
 
     if (auth.role === "admin" && params.owner_account) {
-      items = items.filter((item) => item.owner_account === params.owner_account);
+      items = items.filter((item) => containsCI(item.owner_account, params.owner_account));
+    }
+    if (auth.role === "admin" && params.owner_name) {
+      items = items.filter((item) => containsCI(item.owner_name, params.owner_name));
     }
     if (params.status) {
       items = items.filter((item) => item.status === params.status);
     }
-    if (params.from) {
-      items = items.filter((item) => item.application_date >= params.from);
+    if (params.key_alias) {
+      items = items.filter((item) => containsCI(normalizeAlias(item), params.key_alias));
     }
-    if (params.to) {
-      items = items.filter((item) => item.application_date <= params.to);
+    const applicationDateFrom = params.application_date_from || params.from;
+    const applicationDateTo = params.application_date_to || params.to;
+    if (applicationDateFrom) {
+      items = items.filter((item) => item.application_date >= applicationDateFrom);
     }
+    if (applicationDateTo) {
+      items = items.filter((item) => item.application_date <= applicationDateTo);
+    }
+    if (params.expires_from) {
+      const expiresFrom = new Date(params.expires_from).getTime();
+      items = items.filter((item) => new Date(item.expires_at).getTime() >= expiresFrom);
+    }
+    if (params.expires_to) {
+      const expiresTo = new Date(params.expires_to).getTime();
+      items = items.filter((item) => new Date(item.expires_at).getTime() <= expiresTo);
+    }
+
+    const sortBy = params.sort_by || "created_at";
+    const sortDir = params.sort_dir === "asc" ? "asc" : "desc";
+    items.sort((left, right) => {
+      const leftValue = {
+        application_date: left.application_date,
+        duration_months: left.duration_months,
+        status: left.status,
+        expires_at: left.expires_at,
+        masked_key: left.masked_key,
+        key_alias: normalizeAlias(left),
+        owner_account: left.owner_account,
+        owner_name: left.owner_name,
+        created_at: left.created_at,
+      }[sortBy];
+      const rightValue = {
+        application_date: right.application_date,
+        duration_months: right.duration_months,
+        status: right.status,
+        expires_at: right.expires_at,
+        masked_key: right.masked_key,
+        key_alias: normalizeAlias(right),
+        owner_account: right.owner_account,
+        owner_name: right.owner_name,
+        created_at: right.created_at,
+      }[sortBy];
+      const compared = compareValues(leftValue, rightValue, sortDir);
+      return compared || compareValues(left.id, right.id, sortDir);
+    });
 
     const page = Number(params.page || 1);
     const pageSize = Number(params.page_size || 20);
@@ -616,11 +697,8 @@ export const mockApiProvider = {
     const sortDir = params.sort_dir === "asc" ? "asc" : "desc";
     const stats = buildUserStatistics(apiKeys, params);
     const sorted = stats.sort((a, b) => {
-      const av = a[sortBy];
-      const bv = b[sortBy];
-      if (av === bv) return a.owner_account.localeCompare(b.owner_account);
-      if (sortDir === "asc") return av > bv ? 1 : -1;
-      return av < bv ? 1 : -1;
+      const compared = compareValues(a[sortBy], b[sortBy], sortDir);
+      return compared || a.owner_account.localeCompare(b.owner_account);
     });
 
     const start = (page - 1) * pageSize;

@@ -57,6 +57,22 @@ test("admin can load and filter statistics", async () => {
   });
 });
 
+test("admin dashboard sends server sort params when sorting columns", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeyUserStatistics");
+  renderPage(<AdminDashboardPage auth={adminAuth} />);
+
+  expect(await screen.findByText("管理者統計")).toBeInTheDocument();
+  await user.click(await screen.findByRole("columnheader", { name: "帳號" }));
+
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: "owner_account", sort_dir: "asc" }),
+      adminAuth
+    );
+  });
+});
+
 test("admin can switch to chart view and change axes", async () => {
   const user = userEvent.setup();
   const { container } = renderPage(<AdminDashboardPage auth={adminAuth} />);

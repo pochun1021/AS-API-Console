@@ -52,16 +52,20 @@ test("shows revoke button only for active rows", async () => {
   expect(screen.queryByRole("columnheader", { name: "建立時間" })).not.toBeInTheDocument();
 });
 
-test("shows owner column for admin list", async () => {
+test("shows applicant account and name columns for admin list", async () => {
   render(
     <MemoryRouter>
       <MyApiKeysPage auth={adminAuth} />
     </MemoryRouter>
   );
 
-  expect(await screen.findByRole("columnheader", { name: "申請人" })).toBeInTheDocument();
+  expect(await screen.findByRole("columnheader", { name: "帳號" })).toBeInTheDocument();
+  expect(await screen.findByRole("columnheader", { name: "姓名" })).toBeInTheDocument();
   expect(await screen.findByRole("columnheader", { name: "Key Alias" })).toBeInTheDocument();
-  expect((await screen.findAllByText("jane.doe / Jane Doe")).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText("jane.doe")).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText("Jane Doe")).length).toBeGreaterThan(0);
+  expect(await screen.findByText("ktu")).toBeInTheDocument();
+  expect(await screen.findByText("尤凱婷")).toBeInTheDocument();
 });
 
 test("shows detail in dialog and can revoke active key with confirm", async () => {
@@ -335,7 +339,8 @@ test("list uses server pagination params", async () => {
   );
 
   expect(await screen.findByText("API Keys")).toBeInTheDocument();
-  expect((await screen.findAllByText("jane.doe / Jane Doe")).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText("jane.doe")).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText("Jane Doe")).length).toBeGreaterThan(0);
   await waitFor(() => {
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 10 }), adminAuth);
   });
@@ -344,5 +349,25 @@ test("list uses server pagination params", async () => {
   await user.click(screen.getByRole("option", { name: "20" }));
   await waitFor(() => {
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 20 }), adminAuth);
+  });
+});
+
+test("admin list sends server sort params when sorting columns", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeys");
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={adminAuth} />
+    </MemoryRouter>
+  );
+
+  expect(await screen.findByText("API Keys")).toBeInTheDocument();
+  await user.click(await screen.findByRole("columnheader", { name: "帳號" }));
+
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: "owner_account", sort_dir: "asc" }),
+      adminAuth
+    );
   });
 });

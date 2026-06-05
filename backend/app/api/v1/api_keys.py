@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi import Response
@@ -121,21 +121,40 @@ def list_api_keys(
     page_size: int = Query(default=20, ge=1, le=100),
     status: str | None = Query(default=None),
     owner_account: str | None = Query(default=None),
-    from_date: date | None = Query(default=None, alias="from"),
-    to_date: date | None = Query(default=None, alias="to"),
+    owner_name: str | None = Query(default=None),
+    key_alias: str | None = Query(default=None),
+    application_date_from: date | None = Query(default=None),
+    application_date_to: date | None = Query(default=None),
+    from_date_legacy: date | None = Query(default=None, alias="from"),
+    to_date_legacy: date | None = Query(default=None, alias="to"),
+    expires_from: datetime | None = Query(default=None),
+    expires_to: datetime | None = Query(default=None),
+    sort_by: str = Query(default="created_at"),
+    sort_dir: str = Query(default="desc"),
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     service = ApiKeysService(db)
-    validate_date_window(from_date, to_date)
+    resolved_application_date_from = application_date_from or from_date_legacy
+    resolved_application_date_to = application_date_to or to_date_legacy
+    validate_date_window(resolved_application_date_from, resolved_application_date_to)
+    validate_search_keyword(owner_account)
+    validate_search_keyword(owner_name)
+    validate_search_keyword(key_alias)
     return service.list_keys(
         current_user=current_user,
         page=page,
         page_size=page_size,
         status=status,
         owner_account=owner_account,
-        from_date=from_date,
-        to_date=to_date,
+        owner_name=owner_name,
+        key_alias=key_alias,
+        application_date_from=resolved_application_date_from,
+        application_date_to=resolved_application_date_to,
+        expires_from=expires_from,
+        expires_to=expires_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
 
 
@@ -147,6 +166,10 @@ def list_api_key_user_statistics(
     scope: str = Query(default="all"),
     from_date: date | None = Query(default=None, alias="from"),
     to_date: date | None = Query(default=None, alias="to"),
+    owner_account: str | None = Query(default=None),
+    owner_name: str | None = Query(default=None),
+    owner_email: str | None = Query(default=None),
+    owner_department: str | None = Query(default=None),
     sort_by: str = Query(default="total_applications"),
     sort_dir: str = Query(default="desc"),
     current_user: CurrentUser = Depends(get_current_user),
@@ -155,6 +178,10 @@ def list_api_key_user_statistics(
     service = ApiKeysService(db)
     validate_date_window(from_date, to_date)
     validate_search_keyword(q)
+    validate_search_keyword(owner_account)
+    validate_search_keyword(owner_name)
+    validate_search_keyword(owner_email)
+    validate_search_keyword(owner_department)
     return service.list_user_statistics(
         current_user=current_user,
         page=page,
@@ -163,6 +190,10 @@ def list_api_key_user_statistics(
         scope=scope,
         from_date=from_date,
         to_date=to_date,
+        owner_account=owner_account,
+        owner_name=owner_name,
+        owner_email=owner_email,
+        owner_department=owner_department,
         sort_by=sort_by,
         sort_dir=sort_dir,
     )

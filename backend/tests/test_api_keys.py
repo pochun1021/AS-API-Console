@@ -84,6 +84,25 @@ def _set_key_expires_at_offset_days(key_id: str, *, days: int, hours: int = 1) -
         )
 
 
+def _set_key_owner_snapshot(key_id: str, *, name: str | None = None, department: str | None = None) -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE api_key_applications a
+                JOIN api_keys k ON k.application_id = a.id
+                SET a.name = COALESCE(:name, a.name),
+                    a.department = COALESCE(:department, a.department)
+                WHERE k.id = :key_id
+                """
+            ),
+            {"name": name, "department": department, "key_id": key_id},
+        )
+
+
 def _set_key_secret_material(key_id: str, *, key_ciphertext: str | None, key_kek_version: str | None) -> None:
     settings = get_settings()
     db_url = settings.test_database_url or settings.database_url
@@ -1851,8 +1870,8 @@ def test_admin_can_list_global_keys(client, admin_headers):
 
 
 def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_headers):
-    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
-    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002")
+    user1 = build_headers(role="user", account="ktu", email="ktu@example.com", sysid="2001", name="KTU")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2002", name="Other User")
     _create_whitelist(client, admin_headers, user1["x-sysid"])
     _create_whitelist(client, admin_headers, user2["x-sysid"])
 
@@ -1872,6 +1891,8 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
         json={"application_date": "2026-05-10", "duration_months": 1, "purpose": "u1-2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp2.status_code == 201
+    latest_user1_key_id = client.get(_api("/api-keys?sort_by=application_date&sort_dir=desc"), headers=user1).json()["items"][0]["id"]
+    _set_key_owner_snapshot(latest_user1_key_id, name="尤凱婷")
 
     resp3 = client.post(
         _api("/api-keys/applications"),
@@ -1881,15 +1902,63 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
     assert resp3.status_code == 201
 
     filtered = client.get(
-        _api("/api-keys?owner_account=user1&status=active&from=2026-05-05&to=2026-05-31"),
+        _api(
+            "/api-keys?owner_account=kt&owner_name=%E5%B0%A4&status=active"
+            "&application_date_from=2026-05-05&application_date_to=2026-05-31"
+        ),
         headers=admin_headers,
     )
     assert filtered.status_code == 200
     items = filtered.json()["items"]
     assert len(items) == 1
-    assert items[0]["owner_account"] == "user1"
+    assert items[0]["owner_account"] == "ktu"
+    assert items[0]["owner_name"] == "尤凱婷"
     assert items[0]["status"] == "active"
     assert items[0]["application_date"] == "2026-05-10"
+
+
+def test_admin_can_filter_key_list_by_key_alias_expires_and_sort(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2301", name="User One")
+    user2 = build_headers(role="user", account="user2", email="user2@example.com", sysid="2302", name="User Two")
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    _create_whitelist(client, admin_headers, user2["x-sysid"])
+
+    first = client.post(
+        _api("/api-keys/applications"),
+        headers=user1,
+        json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
+    )
+    second = client.post(
+        _api("/api-keys/applications"),
+        headers=user2,
+        json={"application_date": "2026-05-02", "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    listed = client.get(_api("/api-keys"), headers=admin_headers)
+    assert listed.status_code == 200
+    key_ids = {item["owner_account"]: item["id"] for item in listed.json()["items"] if item["owner_account"] in {"user1", "user2"}}
+
+    alias_update = client.patch(
+        _api(f"/api-keys/{key_ids['user2']}"),
+        headers=admin_headers,
+        json={"key_alias": "custom_sort_alias"},
+    )
+    assert alias_update.status_code == 200
+
+    expires_filtered = client.get(
+        _api(
+            "/api-keys?key_alias=sort_alias&expires_from=2026-05-31T00:00:00Z"
+            "&expires_to=2026-12-31T23:59:59Z&sort_by=owner_account&sort_dir=asc"
+        ),
+        headers=admin_headers,
+    )
+    assert expires_filtered.status_code == 200
+    body = expires_filtered.json()
+    assert body["total"] == 1
+    assert body["items"][0]["owner_account"] == "user2"
+    assert body["items"][0]["key_alias"] == "custom_sort_alias"
 
 
 def test_list_api_keys_total_is_full_match_count_not_page_size(client, admin_headers):
@@ -2350,3 +2419,44 @@ def test_admin_user_statistics_rejects_invalid_sort_by(client, admin_headers):
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_admin_user_statistics_supports_column_filters(client, admin_headers):
+    user1 = build_headers(
+        role="user", account="ktu", email="ktu@example.com", sysid=9101, name="KTU", department="IIS"
+    )
+    user2 = build_headers(
+        role="user", account="alice", email="alice@example.com", sysid=9102, name="Alice", department="Security"
+    )
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    _create_whitelist(client, admin_headers, user2["x-sysid"])
+
+    for user, application_date in ((user1, "2026-05-01"), (user2, "2026-05-02")):
+        resp = client.post(
+            _api("/api-keys/applications"),
+            headers=user,
+            json={
+                "application_date": application_date,
+                "duration_months": 1,
+                "purpose": user["x-account"],
+                "max_budget": "1000",
+                "budget_duration": "monthly",
+            },
+        )
+        assert resp.status_code == 201
+
+    user1_key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
+    _set_key_owner_snapshot(user1_key_id, name="尤凱婷", department="資訊所")
+
+    filtered = client.get(
+        _api(
+            "/api-keys/statistics/users?owner_account=kt&owner_name=%E5%B0%A4"
+            "&owner_department=%E8%B3%87%E8%A8%8A&sort_by=owner_account&sort_dir=asc"
+        ),
+        headers=admin_headers,
+    )
+    assert filtered.status_code == 200
+    body = filtered.json()
+    assert body["total"] == 1
+    assert body["items"][0]["owner_account"] == "ktu"
+    assert body["items"][0]["owner_name"] == "尤凱婷"
