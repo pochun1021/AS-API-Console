@@ -39,7 +39,7 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 4. Keep changes scoped; do not mix unrelated edits.
 5. For DB migration changes, verify Alembic `revision` naming constraints (length <= 32 chars) and `down_revision` links before validation.
 6. For DB migration changes, run `cd backend && uv run alembic upgrade head` and treat any failure (missing `uv`, env/config issue, DB connectivity issue, or Alembic error) as a blocking error that must be reported.
-7. After any frontend code change, run `npm run build` in `frontend` and report the result.
+7. After any change under `frontend/`, run `npm run build` in `frontend` and report the result.
 8. Report what changed, which spec rules were affected, and any residual risk.
 
 ## Change Rules
@@ -57,7 +57,7 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - Acceptance criteria are updated when behavior or contract changes.
 - If Python dependencies changed, ensure `requirements.txt` exists and is updated consistently with `pyproject.toml`.
 - If a migration is added/edited, ensure Alembic `revision` length is <= 32 chars, `down_revision` links correctly, and `cd backend && uv run alembic upgrade head` succeeds.
-- If frontend files were modified, `npm run build` has been executed in `frontend` successfully.
+- If any files under `frontend/` were modified, `npm run build` has been executed in `frontend` successfully.
 
 ## CI / Workflow Trigger Rules
 - Security scan workflow uses:
