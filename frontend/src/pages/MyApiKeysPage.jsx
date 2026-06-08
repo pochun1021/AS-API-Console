@@ -138,6 +138,18 @@ export default function MyApiKeysPage({ auth }) {
     setActionMenuRow(null);
   }
 
+  function clearFilters() {
+    setStatusFilter("");
+    setApplicationDateFrom("");
+    setApplicationDateTo("");
+    setExpiresDateFrom("");
+    setExpiresDateTo("");
+    setOwnerAccountFilter("");
+    setOwnerNameFilter("");
+    setKeyAliasFilter("");
+    setPage(0);
+  }
+
   async function load() {
     setLoading(true);
     setError("");
@@ -469,6 +481,17 @@ export default function MyApiKeysPage({ auth }) {
     [auth.role, locale, t]
   );
 
+  const hasActiveFilters = Boolean(
+    statusFilter
+    || applicationDateFrom
+    || applicationDateTo
+    || expiresDateFrom
+    || expiresDateTo
+    || ownerAccountFilter.trim()
+    || ownerNameFilter.trim()
+    || keyAliasFilter.trim()
+  );
+
   return (
     <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Typography variant="h4">{t("mykeys_title")}</Typography>
@@ -568,6 +591,9 @@ export default function MyApiKeysPage({ auth }) {
             sx={{ minWidth: 180 }}
           />
         ) : null}
+        <Button variant="outlined" onClick={clearFilters} disabled={!hasActiveFilters}>
+          {t("mykeys_clear_filters")}
+        </Button>
       </Stack>
       <Card sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
         <CardContent sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, p: 1.5, "&:last-child": { pb: 1.5 } }}>

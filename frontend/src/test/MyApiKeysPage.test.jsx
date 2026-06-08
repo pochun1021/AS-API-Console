@@ -408,3 +408,47 @@ test("admin list sends custom filter params without DataGrid filter model", asyn
     );
   });
 });
+
+test("clear filters button resets api key list filters", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeys");
+  render(
+    <MemoryRouter>
+      <MyApiKeysPage auth={adminAuth} />
+    </MemoryRouter>
+  );
+
+  expect(await screen.findByText("API Keys")).toBeInTheDocument();
+  const clearButton = screen.getByRole("button", { name: "清除篩選" });
+  expect(clearButton).toBeDisabled();
+
+  await user.type(screen.getByLabelText("帳號"), "ktu");
+  await waitFor(() => {
+    expect(clearButton).toBeEnabled();
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ owner_account: "ktu" }),
+      adminAuth
+    );
+  });
+
+  await user.click(clearButton);
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("帳號")).toHaveValue("");
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: undefined,
+        owner_account: undefined,
+        owner_name: undefined,
+        key_alias: undefined,
+        application_date_from: undefined,
+        application_date_to: undefined,
+        expires_from: undefined,
+        expires_to: undefined,
+      }),
+      adminAuth
+    );
+  });
+
+  expect(clearButton).toBeDisabled();
+});
