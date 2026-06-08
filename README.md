@@ -3,6 +3,8 @@
 ## 專案簡介
 AS API Console 是一套 API Key 申請與管理系統，提供從申請、核發、查詢到停用的完整流程。系統以「研究人員名單（職稱代碼）」與「特殊人員名單（原白名單）」做資格檢查，申請成功後即時核發並一次性顯示明文 API Key，一般使用者僅可查看本人紀錄，並可自行停用已生效 Key。API key lifecycle 採 external provider 為主權威，本地僅保存 encrypted secret material（`key_hash`、`key_ciphertext`、`key_kek_version`）。
 
+目前已登入的 `user` 與 `admin` 也可從 `Models` 頁查看 provider 提供的可用模型清單；詳細契約與頁面行為以 `docs/SPEC.md` 為準。
+
 ## 技術棧
 - Backend
   - Python `>=3.12,<3.14`
@@ -87,6 +89,7 @@ export ENV_FILE=/home/app/config/.env
 - `API_KEY_ENCRYPTION_SECRET`：必填（正式環境），用於 API key 密文加解密的主密鑰來源
 - `API_KEY_KEK_VERSION`：可選，金鑰版本標記（預設 `v1`）
 - `PROVIDER_BASE_URL`：可選，外部 key provider base URL（例如 `https://provider.internal`）；系統會用於 `POST /key/generate`、`/key/update`、`/key/block`、`/team/key/bulk_update`
+- `GET /main/api/v1/models` 在 `APP_ENV=dev/test` 會直接回內建測試資料 `gpt-4o`、`gpt-4o-mini`；`APP_ENV=prod` 才會讀取 provider `/models`
 - `PROVIDER_MASTER_KEY`：可選，provider Bearer token 值；系統會送出 `Authorization: Bearer ${PROVIDER_MASTER_KEY}`
 - `PROVIDER_TEAM_ID`：external provider mode 必填；create/renew 的 `POST /key/generate` payload 與 `PATCH /main/api/v1/limit-strategy-config` 對應的 `POST /team/key/bulk_update` payload 都會帶此值。若缺少此設定，系統需 fail fast，且不得呼叫 provider
 - `PROVIDER_TIMEOUT_SECONDS`：可選，provider timeout 秒數（預設 `3.0`）

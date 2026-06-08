@@ -40,6 +40,7 @@ export const apiClient = {
   listAuthAuditLogs: (params, auth) => provider.listAuthAuditLogs(params, auth),
   listAdmins: (paramsOrAuth, maybeAuth) => provider.listAdmins(paramsOrAuth, maybeAuth),
   listInstitutes: (auth) => provider.listInstitutes(auth),
+  listModels: (auth) => provider.listModels(auth),
   syncInstitutes: (auth) => provider.syncInstitutes(auth),
   searchUsers: (keyword, auth, options) => provider.searchUsers(keyword, auth, options),
   createAdmin: (id, payload, auth) => provider.createAdmin(id, payload, auth),
