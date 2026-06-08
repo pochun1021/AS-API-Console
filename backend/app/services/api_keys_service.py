@@ -23,7 +23,6 @@ from app.services.directory_identity_service import (
     DirectoryLookupUnavailableError,
 )
 from app.services.login_eligibility_service import LoginEligibilityService
-from app.services.mail_service import MailService
 from app.services.persnl_soap_service import PersnlSoapService, PersnlSoapUnavailableError
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
 from db.models.applications import ApiKeyApplication
@@ -167,7 +166,6 @@ class ApiKeysService:
         self.persnl = PersnlSoapService()
         self.provider_client = ProviderClient()
         self.crypto = CryptoService(self.settings.api_key_encryption_secret)
-        self.mail_service = MailService()
 
     def create_application(
         self,
@@ -227,22 +225,11 @@ class ApiKeysService:
         issued_at = datetime.now(UTC)
         expires_at = _calc_expiration(issued_at, duration_months)
         config = self._get_limit_strategy_values()
-        try:
-            plaintext, provider_metadata, key_alias = self._generate_key_for_application(
-                owner_account=identity.account,
-                duration_months=duration_months,
-                config=config,
-            )
-        except ApiError as exc:
-            if exc.code == "PROVIDER_UNAVAILABLE":
-                self._notify_admins_issuance_failure(
-                    operation="application",
-                    actor_account=current_user.account,
-                    actor_role=current_user.role,
-                    target_account=identity.account,
-                    error_code=exc.code,
-                )
-            raise
+        plaintext, provider_metadata, key_alias = self._generate_key_for_application(
+            owner_account=identity.account,
+            duration_months=duration_months,
+            config=config,
+        )
 
         application = self.key_repo.create_application(
             ApplicationCreateInput(
@@ -267,20 +254,8 @@ class ApiKeysService:
         application_status = application.status
         application_issued_at = application.issued_at
         application_expires_at = application.expires_at
-        applicant_email = application.email
-        applicant_name = application.name
-
         self.session.add(application)
         self.session.commit()
-        self.mail_service.dispatch_background(
-            lambda: self.mail_service.send_application_received_to_applicant(
-                to_email=applicant_email,
-                owner_name=applicant_name,
-                application_id=application_id,
-                app_domain=self.settings.app_domain,
-            ),
-            error_message="failed to send application received email to applicant",
-        )
 
         return {
             "application": {
@@ -783,13 +758,6 @@ class ApiKeysService:
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError as exc:
-            self._notify_admins_issuance_failure(
-                operation="revoke",
-                actor_account=current_user.account,
-                actor_role=current_user.role,
-                target_account=application.account,
-                error_code="PROVIDER_UNAVAILABLE",
-            )
             raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
 
         key.status = "revoked"
@@ -839,13 +807,6 @@ class ApiKeysService:
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError as exc:
-            self._notify_admins_issuance_failure(
-                operation="renew",
-                actor_account=current_user.account,
-                actor_role=current_user.role,
-                target_account=source_app.account,
-                error_code="PROVIDER_UNAVAILABLE",
-            )
             raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
 
         identity = AuthIdentity(
@@ -875,16 +836,7 @@ class ApiKeysService:
             )
         )
         issued_key = self._create_key_record(application_id=application.id, plaintext=plaintext, key_alias=key_alias)
-        email_warning: str | None = None
 
-        self.mail_service.dispatch_background(
-            lambda: self.mail_service.send_key_renewed_notification(
-                to_email=source_app.email,
-                owner_name=source_app.name,
-                app_domain=self.settings.app_domain,
-            ),
-            error_message="failed to send key renewed email to applicant",
-        )
         source_key.renewed_to_key_id = issued_key.id
         source_app.updated_at = datetime.now(UTC)
         self.session.add(source_key)
@@ -896,7 +848,7 @@ class ApiKeysService:
             "expires_at": application.expires_at,
             "renewed_from_key_id": source_key.id,
             "api_key_plaintext": plaintext,
-            "email_warning": email_warning,
+            "email_warning": None,
             **provider_metadata,
         }
 
@@ -959,13 +911,6 @@ class ApiKeysService:
         except ProviderBadRequestError as exc:
             raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
         except ProviderUnavailableError as exc:
-            self._notify_admins_issuance_failure(
-                operation="extend",
-                actor_account=current_user.account,
-                actor_role=current_user.role,
-                target_account=source_app.account,
-                error_code="PROVIDER_UNAVAILABLE",
-            )
             raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
 
         source_app.application_date = next_application_date
@@ -984,30 +929,6 @@ class ApiKeysService:
             "expires_at": source_app.expires_at,
             **provider_metadata,
         }
-
-    def _notify_admins_issuance_failure(
-        self,
-        *,
-        operation: str,
-        actor_account: str,
-        actor_role: str,
-        target_account: str,
-        error_code: str,
-    ) -> None:
-        recipients = sorted({email.strip().lower() for email in self.admin_repo.list_active_emails() if email and email.strip()})
-        if not recipients:
-            return
-        self.mail_service.dispatch_background(
-            lambda: self.mail_service.send_provider_issuance_failed_to_admins(
-                to_emails=recipients,
-                operation=operation,
-                actor_account=actor_account,
-                actor_role=actor_role,
-                target_account=target_account,
-                error_code=error_code,
-            ),
-            error_message="failed to send provider issuance failure email to admins",
-        )
 
     def reveal_key_plaintext(self, current_user: CurrentUser, key_id: str) -> dict:
         if current_user.role != "admin":

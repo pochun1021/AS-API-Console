@@ -298,6 +298,6 @@ Security validation：
 - 產品與功能規格：`docs/SPEC.md`
 - DB 操作與 migration runbook：`docs/runbook-db.md`
   - `alembic current` 的 head 判讀請以 runbook 內「最新 head revision」為準，不使用固定舊 revision 範例
-- Mail 設定與測試速查：`docs/mail.md`
+- Mail 設定與測試速查（SMTP 驗證與到期提醒信）：`docs/mail.md`
 - Ubuntu + Nginx 部署指南：`docs/deploy-ubuntu-nginx.md`
 - 一鍵部署腳本（預設來源 `/root/AS-API-Console`，可用 `--source-dir` 覆蓋；此路徑為 root 下 `git clone` 來源目錄；搬遷到 `/home/app/AS-API-Console`（可用 `--app-dir` 覆蓋）；若目標已存在會先備份到 `APP_DIR` 父目錄下的 `AS-API-Console_YYYYMMDD_HHMMSS.tar.gz`（每次部署會帶時間戳產生新備份）；完成安裝與設定後才清理 clone 來源目錄；安裝 backend 套件 + frontend `npm install`/`npm run build` + migration + crontab 補齊；`ENV_FILE` 可用 `--env-file` 指定，預設 `/home/app/config/.env`，缺檔時 fallback 到 `backend/.env`）：`scripts/deploy_full.sh`

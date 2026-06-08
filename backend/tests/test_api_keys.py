@@ -2,8 +2,6 @@ import logging
 from types import SimpleNamespace
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
-from threading import Event
-
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -306,81 +304,6 @@ def test_application_rejects_unsafe_proxy_account(client, admin_headers, monkeyp
     assert resp.json()["error"]["message"] == "target_identity.account contains unsafe syntax"
 
 
-def test_application_success_dispatches_mail_without_blocking_response(client, admin_headers, user_headers, monkeypatch):
-    from app.services import mail_service
-    from app.services.mail_service import MailService
-
-    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
-    original_dispatch_background = MailService.dispatch_background
-
-    background_called = Event()
-    applicant_calls: list[dict] = []
-
-    class _ImmediateThread:
-        def __init__(self, *, target, name: str, daemon: bool):
-            del name, daemon
-            self._target = target
-
-        def start(self):
-            self._target()
-
-    async def _fake_applicant_mail(self, **kwargs):
-        del self
-        applicant_calls.append(kwargs)
-
-    def _observed_dispatch(self, task_factory, *, error_message: str):
-        background_called.set()
-        return original_dispatch_background(self, task_factory, error_message=error_message)
-
-    monkeypatch.setattr(mail_service, "Thread", _ImmediateThread)
-    monkeypatch.setattr(MailService, "send_application_received_to_applicant", _fake_applicant_mail)
-    monkeypatch.setattr(MailService, "dispatch_background", _observed_dispatch)
-
-    create_resp = client.post(
-        _api("/api-keys/applications"),
-        headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
-    )
-
-    assert create_resp.status_code == 201
-    assert background_called.is_set()
-    assert len(applicant_calls) == 1
-    assert applicant_calls[0]["to_email"] == user_headers["x-email"]
-
-
-def test_application_success_still_returns_201_when_mail_dispatch_fails(client, admin_headers, user_headers, monkeypatch, caplog):
-    from app.services import mail_service
-    from app.services.mail_service import MailService
-
-    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
-
-    class _ImmediateThread:
-        def __init__(self, *, target, name: str, daemon: bool):
-            del name, daemon
-            self._target = target
-
-        def start(self):
-            self._target()
-
-    async def _raise_send(self, **kwargs):
-        del self, kwargs
-        raise RuntimeError("smtp down")
-
-    monkeypatch.setattr(mail_service, "Thread", _ImmediateThread)
-    monkeypatch.setattr(MailService, "send_application_received_to_applicant", _raise_send)
-
-    with caplog.at_level(logging.ERROR):
-        create_resp = client.post(
-            _api("/api-keys/applications"),
-            headers=user_headers,
-            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
-        )
-
-    assert create_resp.status_code == 201
-    assert create_resp.json()["api_key_plaintext"].startswith("AS-")
-    assert "failed to send application received email to applicant" in caplog.text
-
-
 def test_application_rejects_non_whitelisted(client, user_headers):
     from app.services.persnl_soap_service import PersnlSoapService
 
@@ -588,54 +511,14 @@ def test_admin_proxy_application_target_account_not_unique(client, admin_headers
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
-def test_application_mail_failure_does_not_block_success(client, admin_headers, user_headers, monkeypatch):
-    from app.services import mail_service
-    from app.services.mail_service import MailService
-
-    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
-
-    class _ImmediateThread:
-        def __init__(self, *, target, name: str, daemon: bool):
-            del name, daemon
-            self._target = target
-
-        def start(self):
-            self._target()
-
-    async def _raise_mail_error(self, **kwargs):
-        del self, kwargs
-        raise RuntimeError("smtp unavailable")
-
-    monkeypatch.setattr(mail_service, "Thread", _ImmediateThread)
-    monkeypatch.setattr(MailService, "send_application_received_to_applicant", _raise_mail_error)
-
-    resp = client.post(
-        _api("/api-keys/applications"),
-        headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify failure"},
-    )
-    assert resp.status_code == 201
-    assert resp.json()["api_key_plaintext"].startswith("AS-")
-
-
 def test_application_provider_timeout_returns_503(client, admin_headers, user_headers, monkeypatch):
     from app.core.config import get_settings
-
-    admin_notify_calls: list[dict] = []
-
-    async def _fake_admin_notify(self, **kwargs):
-        admin_notify_calls.append(kwargs)
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
     monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
-    monkeypatch.setattr(
-        "app.services.api_keys_service.SQLAlchemyAdminRepository.list_active_emails",
-        lambda self: ["admin1@example.com", "admin2@example.com", "admin1@example.com"],
-    )
-    monkeypatch.setattr("app.services.mail_service.MailService.send_provider_issuance_failed_to_admins", _fake_admin_notify)
 
     def _raise_unavailable(self, payload):
         from app.services.provider_client import ProviderUnavailableError
@@ -652,11 +535,6 @@ def test_application_provider_timeout_returns_503(client, admin_headers, user_he
         )
         assert resp.status_code == 503
         assert resp.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
-        assert len(admin_notify_calls) == 1
-        assert admin_notify_calls[0]["to_emails"] == ["admin1@example.com", "admin2@example.com"]
-        assert admin_notify_calls[0]["operation"] == "application"
-        assert admin_notify_calls[0]["error_code"] == "PROVIDER_UNAVAILABLE"
-        assert admin_notify_calls[0]["target_account"] == user_headers["x-account"]
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
@@ -781,40 +659,6 @@ def test_prod_env_masks_and_stores_sk_prefix(client, admin_headers, user_headers
         monkeypatch.delenv("ALLOW_HEADER_AUTH", raising=False)
         monkeypatch.setenv("APP_ENV", "test")
         get_settings.cache_clear()
-
-
-def test_applicant_mail_body_does_not_include_application_id():
-    from app.services.mail_service import MailService
-
-    service = MailService()
-
-    # Extract body shape by reusing deterministic template construction expectation.
-    body = (
-        "<p>親愛的使用者，您好：</p>"
-        "<p>感謝您申請 API Key 請妥善保管</p>"
-        "<p>若此操作非您本人執行，請立即連繫資訊服務處。</p>"
-        "<p>若您有任何疑問，歡迎向資訊服務處服務台反映。</p>"
-        "<p>聯絡窗口：中央研究院資訊服務處<br/>"
-        "線上服務台（上班時間）：https://its.sinica.edu.tw/online（密碼27898855）<br/>"
-        "電話（上班時間）：02-27898855<br/>"
-        "信箱：its@sinica.edu.tw</p>"
-        "<p>中央研究院資訊服務處 敬啟</p>"
-        "<hr/>"
-        "<p>Dear user,</p>"
-        "<p>Thank you for applying for an API key. Please keep it secure.</p>"
-        "<p>If this action was not performed by you, please contact the IT Service Desk immediately.</p>"
-        "<p>If you have any questions, please contact the IT Service Desk.</p>"
-        "<p>Contact: Institute of Information Science, Academia Sinica IT Service Desk<br/>"
-        "Online Service Desk (business hours): https://its.sinica.edu.tw/online (password: 27898855)<br/>"
-        "Phone (business hours): 02-27898855<br/>"
-        "Email: its@sinica.edu.tw</p>"
-        "<p>Sincerely,<br/>Academia Sinica IT Service Desk</p>"
-    )
-    assert "申請單號" not in body
-    assert "Application ID" not in body
-    assert "若此操作非您本人執行" in body
-    assert "中央研究院資訊服務處 敬啟" in body
-    assert isinstance(service, MailService)
 
 
 def test_expiration_notice_mail_contains_expiration_and_extend_hint(monkeypatch):
@@ -1675,114 +1519,9 @@ def test_provider_operations_require_secret_material_before_calling_provider(cli
         get_settings.cache_clear()
 
 
-def test_renew_sends_renewed_email_on_success(client, admin_headers, monkeypatch):
-    from app.services import mail_service
-    from app.services.mail_service import MailService
-
-    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
-    _create_whitelist(client, admin_headers, user["x-sysid"])
-    create_resp = client.post(
-        _api("/api-keys/applications"),
-        headers=user,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew mail"},
-    )
-    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
-    client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
-
-    original_dispatch_background = MailService.dispatch_background
-    background_called = Event()
-    calls: list[dict] = []
-
-    class _ImmediateThread:
-        def __init__(self, *, target, name: str, daemon: bool):
-            del name, daemon
-            self._target = target
-
-        def start(self):
-            self._target()
-
-    async def _fake_mail(self, **kwargs):
-        del self
-        calls.append(kwargs)
-
-    def _observed_dispatch(self, task_factory, *, error_message: str):
-        background_called.set()
-        return original_dispatch_background(self, task_factory, error_message=error_message)
-
-    monkeypatch.setattr(mail_service, "Thread", _ImmediateThread)
-    monkeypatch.setattr("app.services.mail_service.MailService.send_key_renewed_notification", _fake_mail)
-    monkeypatch.setattr(MailService, "dispatch_background", _observed_dispatch)
-
-    renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user)
-    assert create_resp.status_code == 201
-    assert renew.status_code == 200
-    assert background_called.is_set()
-    assert len(calls) == 1
-    assert calls[0]["to_email"] == user["x-email"]
-
-
-def test_renew_success_still_returns_200_when_mail_dispatch_fails(client, admin_headers, monkeypatch, caplog):
-    from app.services import mail_service
-    from app.services.mail_service import MailService
-
-    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
-    _create_whitelist(client, admin_headers, user["x-sysid"])
-    create_resp = client.post(
-        _api("/api-keys/applications"),
-        headers=user,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew mail fail"},
-    )
-    assert create_resp.status_code == 201
-    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
-    client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
-
-    class _ImmediateThread:
-        def __init__(self, *, target, name: str, daemon: bool):
-            del name, daemon
-            self._target = target
-
-        def start(self):
-            self._target()
-
-    async def _raise_mail(self, **kwargs):
-        del self, kwargs
-        raise RuntimeError("smtp down")
-
-    monkeypatch.setattr(mail_service, "Thread", _ImmediateThread)
-    monkeypatch.setattr(MailService, "send_key_renewed_notification", _raise_mail)
-
-    with caplog.at_level(logging.ERROR):
-        renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user)
-
-    assert renew.status_code == 200
-    assert "failed to send key renewed email to applicant" in caplog.text
-
-
 def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypatch):
     from app.core.config import get_settings
-    from app.services import mail_service
-    from app.services.mail_service import MailService
     from app.services.provider_client import ProviderUnavailableError
-
-    original_dispatch_background = MailService.dispatch_background
-    background_called = Event()
-    admin_notify_calls: list[dict] = []
-
-    class _ImmediateThread:
-        def __init__(self, *, target, name: str, daemon: bool):
-            del name, daemon
-            self._target = target
-
-        def start(self):
-            self._target()
-
-    async def _fake_admin_notify(self, **kwargs):
-        del self
-        admin_notify_calls.append(kwargs)
-
-    def _observed_dispatch(self, task_factory, *, error_message: str):
-        background_called.set()
-        return original_dispatch_background(self, task_factory, error_message=error_message)
 
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user["x-sysid"])
@@ -1800,13 +1539,6 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
     monkeypatch.setattr(
-        "app.services.api_keys_service.SQLAlchemyAdminRepository.list_active_emails",
-        lambda self: ["admin1@example.com", "admin2@example.com"],
-    )
-    monkeypatch.setattr(mail_service, "Thread", _ImmediateThread)
-    monkeypatch.setattr("app.services.mail_service.MailService.send_provider_issuance_failed_to_admins", _fake_admin_notify)
-    monkeypatch.setattr(MailService, "dispatch_background", _observed_dispatch)
-    monkeypatch.setattr(
         "app.services.provider_client.ProviderClient.generate_key",
         lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
     )
@@ -1814,12 +1546,6 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
         renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user)
         assert renew.status_code == 503
         assert renew.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
-        assert background_called.is_set()
-        assert len(admin_notify_calls) == 1
-        assert admin_notify_calls[0]["to_emails"] == ["admin1@example.com", "admin2@example.com"]
-        assert admin_notify_calls[0]["operation"] == "renew"
-        assert admin_notify_calls[0]["error_code"] == "PROVIDER_UNAVAILABLE"
-        assert admin_notify_calls[0]["target_account"] == user["x-account"]
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
@@ -1847,54 +1573,6 @@ def test_application_provider_422_maps_to_validation_error(client, admin_headers
         )
         assert resp.status_code == 422
         assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
-    finally:
-        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
-        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
-        get_settings.cache_clear()
-
-
-def test_application_provider_timeout_admin_notify_failure_does_not_change_503(
-    client, admin_headers, user_headers, monkeypatch, caplog
-):
-    from app.core.config import get_settings
-    from app.services import mail_service
-    from app.services.mail_service import MailService
-    from app.services.provider_client import ProviderUnavailableError
-
-    async def _raise_notify_error(self, **kwargs):
-        del self, kwargs
-        raise RuntimeError("smtp down")
-
-    class _ImmediateThread:
-        def __init__(self, *, target, name: str, daemon: bool):
-            del name, daemon
-            self._target = target
-
-        def start(self):
-            self._target()
-
-    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
-    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
-    get_settings.cache_clear()
-    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
-    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
-    monkeypatch.setattr("app.services.api_keys_service.SQLAlchemyAdminRepository.list_active_emails", lambda self: ["admin@example.com"])
-    monkeypatch.setattr(mail_service, "Thread", _ImmediateThread)
-    monkeypatch.setattr("app.services.mail_service.MailService.send_provider_issuance_failed_to_admins", _raise_notify_error)
-    monkeypatch.setattr(
-        "app.services.provider_client.ProviderClient.generate_key",
-        lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
-    )
-    try:
-        with caplog.at_level(logging.ERROR):
-            resp = client.post(
-                _api("/api-keys/applications"),
-                headers=user_headers,
-                json={"application_date": str(date.today()), "duration_months": 1, "purpose": "notify fail should not alter"},
-            )
-        assert resp.status_code == 503
-        assert resp.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
-        assert "failed to send provider issuance failure email to admins" in caplog.text
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)

@@ -1,7 +1,7 @@
 # Mail 測試速查表
 
 本文件提供 AS API Console 的 SMTP 測試最短流程，使用 `backend/scripts/send_test_email.py` 驗證寄信設定。
-同時也可用於 API Key 到期提醒排程（`backend/scripts/send_expiration_reminders.py`）之寄信前置檢查。
+目前正式業務信件僅保留 API Key 到期提醒信，因此本文件也用於到期提醒排程（`backend/scripts/send_expiration_reminders.py`）的寄信前置檢查與模板驗收。
 
 ## 1) 最小必要設定（`.env`）
 
@@ -72,105 +72,11 @@ python scripts/send_test_email.py --to your.name@example.com --env-file .env.loc
   - 任一為空即走無認證模式。
 - 本測試信僅驗證 SMTP 連線與發信能力，不會寫入業務資料。
 
-## 5) 業務通知模板
+## 5) 到期提醒模板
 
 以下主旨與內容為正式模板契約；若程式調整主旨、收件者、動態欄位或文案語意，需同步更新 `docs/SPEC.md` 與本文件。
 
-### 5.1 申請成功通知信
-
-- 觸發時機：`POST /main/api/v1/api-keys/applications` 成功後背景寄送
-- 收件者：申請者本人
-- 主旨：
-  - `[AS API Console] 成功申請 API Key / API key application successful`
-- 內容：
-
-```text
-親愛的使用者，您好：
-感謝您申請 API Key 請妥善保管
-若此操作非您本人執行，請立即連繫資訊服務處。
-若您有任何疑問，歡迎向資訊服務處服務台反映。
-聯絡窗口：中央研究院資訊服務處
-線上服務台（上班時間）：https://its.sinica.edu.tw/online（密碼27898855）
-電話（上班時間）：02-27898855
-信箱：its@sinica.edu.tw
-中央研究院資訊服務處 敬啟
-
-Dear user,
-Thank you for applying for an API key. Please keep it secure.
-If this action was not performed by you, please contact the IT Service Desk immediately.
-If you have any questions, please contact the IT Service Desk.
-Contact: Institute of Information Science, Academia Sinica IT Service Desk
-Online Service Desk (business hours): https://its.sinica.edu.tw/online (password: 27898855)
-Phone (business hours): 02-27898855
-Email: its@sinica.edu.tw
-Sincerely,
-Academia Sinica IT Service Desk
-```
-
-### 5.2 Renew 成功通知信
-
-- 觸發時機：`POST /main/api/v1/api-keys/{id}/renew` 成功後背景寄送；寄信失敗不得延遲或改變 API 成功回應
-- 收件者：申請者本人
-- 主旨：
-  - `[AS API Console] API Key 已更新 / API key renew`
-- 內容：
-
-```text
-親愛的使用者，您好：
-您已成功更新 API Key 請妥善保管
-若此操作非您本人執行，請立即連繫資訊服務處。
-若您有任何疑問，歡迎向資訊服務處服務台反映。
-聯絡窗口：中央研究院資訊服務處
-線上服務台（上班時間）：https://its.sinica.edu.tw/online（密碼27898855）
-電話（上班時間）：02-27898855
-信箱：its@sinica.edu.tw
-中央研究院資訊服務處 敬啟
-
-Dear user,
-You have successfully renewed your API key. Please keep it secure.
-If this action was not performed by you, please contact the IT Service Desk immediately.
-If you have any questions, please contact the IT Service Desk.
-Contact: Institute of Information Science, Academia Sinica IT Service Desk
-Online Service Desk (business hours): https://its.sinica.edu.tw/online (password: 27898855)
-Phone (business hours): 02-27898855
-Email: its@sinica.edu.tw
-Sincerely,
-Academia Sinica IT Service Desk
-```
-
-### 5.3 Provider 配發失敗通知信
-
-- 觸發時機：`applications`、`renew`、`extend`、`revoke` 任一 provider timeout/5xx 後背景寄送；寄信失敗不得延遲或改變原 API 錯誤回應
-- 收件者：所有 `active` 管理者
-- 主旨：
-  - `[AS API Console] API Key 配發失敗通知 / API key issuance failure`
-- 動態欄位：
-  - `{operation}`
-  - `{actor_account}`
-  - `{actor_role}`
-  - `{target_account}`
-  - `{error_code}`
-- 內容：
-
-```text
-管理者您好：
-系統偵測到 API Key 配發失敗，請協助確認 provider 連線與服務狀態。
-操作類型：{operation}
-操作者：{actor_account}（{actor_role}）
-目標帳號：{target_account}
-錯誤代碼：{error_code}
-此通知不包含任何明文金鑰或敏感憑證。
-
-Dear admin,
-The system detected an API key issuance failure. Please verify provider connectivity and service status.
-Operation: {operation}
-Actor: {actor_account} ({actor_role})
-Target account: {target_account}
-Error code: {error_code}
-This notice does not include plaintext keys or sensitive credentials.
-```
-
-### 5.4 到期提醒通知信
+### 5.1 到期提醒通知信
 
 - 觸發時機：到期前 `30|14|7|3|1` 天命中提醒窗口時
 - 收件者：申請者本人

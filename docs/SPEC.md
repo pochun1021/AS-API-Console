@@ -24,7 +24,7 @@
 2. 通過進入資格後進入申請頁，系統自動帶入 `account`、`name`、`email`、`department`、`sysid`（對應 OAuth claims：`cn`、`chName`、`email`、`instCode`、`sysId`）。
 3. 一般使用者填寫申請日期、用途與 API 生效時長；管理者可選擇代他人送出申請，僅需填寫目標 `account`，其餘身份欄位由系統查詢補齊。
 4. 送出申請時依 `POST /main/api/v1/api-keys/applications` 契約再次檢查資格與 request/auth 驗證。
-5. 資格檢查通過後系統立即核發 API Key 並回傳一次性明文；不需經過常態管理者審核。成功回應不得等待成功通知信送達後才返回。若 provider timeout/5xx，系統直接回傳 `503 PROVIDER_UNAVAILABLE`，且不得建立 pending 申請。
+5. 資格檢查通過後系統立即核發 API Key 並回傳一次性明文；不需經過常態管理者審核。若 provider timeout/5xx，系統直接回傳 `503 PROVIDER_UNAVAILABLE`，且不得建立 pending 申請。
 6. 系統只顯示一次明文 API Key，使用者需立即保存。
 7. 一般使用者可在「我的 API Key 紀錄」查看本人歷史紀錄（`active|revoked|expired`），Key 僅顯示遮罩；`APP_ENV=prod` 顯示 `sk-...` + 後 4 碼，`dev/test` 顯示 `AS-...` + 後 4 碼。若舊 key 已被 renew，該舊 key 對一般使用者隱藏。
 8. 一般使用者可自行停用本人已生效（`active`）的 Key。
@@ -225,7 +225,7 @@
 - 研究人員名單由外部服務提供並以職稱代碼判斷
 - 本系統不同步維護本地研究人員名單；申請時以外部服務即時查詢為準
 - 外部研究人員服務失敗（timeout/5xx）時：允許進入系統，但阻擋申請
-- 申請成功時立即核發 API Key，且成功通知信不得延遲成功回應；provider timeout/5xx 時直接回傳 `503 PROVIDER_UNAVAILABLE`
+- 申請成功時立即核發 API Key；provider timeout/5xx 時直接回傳 `503 PROVIDER_UNAVAILABLE`
 - 需提供 API Key 到期前 `30|14|7|3|1` 天多段式提醒信機制，通知申請者本人可進行展延
 - API 生效時長固定月數選單（`1|6|12`）
 - API Key 對外前綴依環境決定：`APP_ENV=prod` 為 `sk-` + 30 碼隨機字元，`dev/test` 為 `AS-` + 30 碼隨機字元（總長皆為 33）
@@ -664,7 +664,6 @@ Base path：`/main/api/v1`
   - provider 成功但本地同步失敗時，需保留可追蹤資訊並支援 retry / reconciliation，避免 provider 與本地資料不一致。
 - renew 成功時，回傳一次性 `api_key_plaintext`。
   - renew 的新明文需自 provider response `key` 讀取。
-  - renew 成功後需以非阻塞方式寄送 Email 通知申請者「已更新金鑰」；通知信不得包含明文 key，且寄信失敗不得延遲或改變 API 成功回應。
   - 續發成功後，來源 key 對 `user` 列表需隱藏；`admin` 列表仍需可見完整歷史。
 
 ### 4-3) 展延（Extend）API Key
@@ -995,11 +994,9 @@ Base path：`/main/api/v1`
 32. 同一把 key 在同一輪 `expires_at`、同一提醒時段最多成功寄送一次，但不同提醒時段可在不同日期成功寄送；若 `extend` 後 `expires_at` 改變，新的到期日需重新啟動完整提醒週期。
 33. 某提醒時段寄送失敗時，不得影響其他 key 或其他提醒時段；只要該時段尚未成功，後續重跑需可再次嘗試。
 34. 本輪首次成功寄出任一提醒後，`api_keys.expiration_notice_sent_at` 需填值；寄送失敗不得填值；後續提醒時段不得覆蓋其既有語意。
-35. `POST /main/api/v1/api-keys/applications` 成功後需以非阻塞方式寄送申請成功通知信給申請者本人；寄信失敗時 API 仍需回 `201`，且不得回滾申請資料或延遲一次性明文 key 回應。
-36. `POST /main/api/v1/api-keys/{id}/renew` 成功後需以非阻塞方式寄送 renew 成功通知信給申請者本人，且通知信不得包含明文 key；寄信失敗不得延遲或改變 API 成功回應。
-37. `applications`、`renew`、`extend`、`revoke` 若遇 provider timeout/5xx（`PROVIDER_UNAVAILABLE`），需以非阻塞方式寄送通知信給所有 `active` 管理者；若管理者通知信寄送失敗，不得延遲或改變原 API 錯誤回應。
-38. 所有業務通知信內容需中英並列（中文在前、英文在後）；到期提醒信僅寄送申請者本人，需包含正確剩餘天數、到期時間與可展延提示，且信內顯示的到期時間需轉為 `Asia/Taipei`，但提醒判定與資料儲存仍維持 UTC。
-39. 通知信模板屬正式契約；主旨、收件者、動態欄位與中英段落順序變更時，需同步更新 `docs/mail.md`。詳細主旨與完整模板內容以 `docs/mail.md` 為準。
+35. 到期提醒信為目前唯一保留的正式業務信件；`POST /main/api/v1/api-keys/applications`、`POST /main/api/v1/api-keys/{id}/renew` 成功後，以及 `applications|renew|extend|revoke` 遇 `PROVIDER_UNAVAILABLE` 時，系統都不再寄送其他業務通知信。
+36. 正式業務通知信內容需中英並列（中文在前、英文在後）；到期提醒信僅寄送申請者本人，需包含正確剩餘天數、到期時間與可展延提示，且信內顯示的到期時間需轉為 `Asia/Taipei`，但提醒判定與資料儲存仍維持 UTC。
+37. 通知信模板屬正式契約；主旨、收件者、動態欄位與中英段落順序變更時，需同步更新 `docs/mail.md`。詳細主旨與完整模板內容以 `docs/mail.md` 為準。
 
 ### 管理功能與後台查詢
 37. 非 `admin` 呼叫特殊人員名單、管理者名單、限制策略、統計、稽核與單位同步相關管理 API 時，均需回傳 `403`。
