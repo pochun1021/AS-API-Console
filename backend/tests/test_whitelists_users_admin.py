@@ -80,6 +80,19 @@ def test_whitelist_note_rejects_invalid_characters(client, admin_headers):
     assert resp.json()["error"]["message"] == "note contains invalid characters"
 
 
+def test_whitelist_note_allows_ideographic_comma(client, admin_headers):
+    payload = {
+        "sysid": 7008,
+        "account": "u7008",
+        "name": "User 7008",
+        "email": "u7008@example.com",
+        "note": "平台、批次作業",
+    }
+    resp = client.post(api_path("/whitelists"), headers=admin_headers, json=payload)
+    assert resp.status_code == 201
+    assert resp.json()["note"] == payload["note"]
+
+
 def test_whitelist_delete_admin_only(client, admin_headers, user_headers):
     created = client.post(
         api_path("/whitelists"),

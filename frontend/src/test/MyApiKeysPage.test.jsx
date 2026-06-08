@@ -156,7 +156,23 @@ test("admin cannot save key alias with invalid characters", async () => {
   await user.type(aliasInput, "for_john.admin");
   await user.click(screen.getByRole("button", { name: "儲存" }));
 
-  expect(await screen.findByText("Key Alias 僅允許中英文、數字、底線與連字號。")).toBeInTheDocument();
+  expect(await screen.findByText("Key Alias 僅允許中英文、數字、_、-、全形頓號（、）。")).toBeInTheDocument();
+});
+
+test("admin can save key alias with ideographic comma", async () => {
+  const user = userEvent.setup();
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
+
+  await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
+  const aliasInput = (await screen.findAllByLabelText("Key Alias")).at(-1);
+  expect(aliasInput).toBeTruthy();
+  await user.clear(aliasInput);
+  await user.type(aliasInput, "平台、批次_alias");
+  await user.click(screen.getByRole("button", { name: "儲存" }));
+
+  await waitFor(() => {
+    expect(screen.getByRole("alert")).toHaveTextContent("Key Alias 已更新。");
+  });
 });
 
 test("user renew hides old key from list", async () => {

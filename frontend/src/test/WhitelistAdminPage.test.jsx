@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -131,7 +131,21 @@ test("admin cannot save whitelist note with invalid characters", async () => {
   await user.type(remarkInput, "平台備註.2026");
   await user.click((await screen.findAllByRole("button", { name: "儲存備註" }))[0]);
 
-  expect(await screen.findByText("備註僅允許中英文、數字、空白、_、-。")).toBeInTheDocument();
+  expect(await screen.findByText("備註僅允許中英文、數字、空白、_、-、全形頓號（、）。")).toBeInTheDocument();
+});
+
+test("admin can save whitelist note with ideographic comma", async () => {
+  const user = userEvent.setup();
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
+
+  const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];
+  await user.clear(remarkInput);
+  await user.type(remarkInput, "平台、批次作業");
+  await user.click((await screen.findAllByRole("button", { name: "儲存備註" }))[0]);
+
+  await waitFor(() => {
+    expect(screen.getByRole("alert")).toHaveTextContent("特殊人員名單已更新。");
+  });
 });
 
 test.each([

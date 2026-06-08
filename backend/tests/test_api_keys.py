@@ -2043,6 +2043,22 @@ def test_admin_update_key_alias_rejects_invalid_characters(client, admin_headers
     assert invalid.json()["error"]["message"] == "key_alias contains invalid characters"
 
 
+def test_admin_update_key_alias_allows_ideographic_comma(client, admin_headers):
+    user1 = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user1["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user1,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
+
+    updated = client.patch(_api(f"/api-keys/{key_id}"), headers=admin_headers, json={"key_alias": "平台、批次_key"})
+    assert updated.status_code == 200
+    assert updated.json()["key_alias"] == "平台、批次_key"
+
+
 def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
     _create_whitelist(client, admin_headers, 8100)
     bad_headers = {

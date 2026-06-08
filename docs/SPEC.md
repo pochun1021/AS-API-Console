@@ -70,7 +70,7 @@
   - `expires_at` 一律採 fixed-day 規則計算：`1|6|12` 個月分別視為 `30|180|360` 天，直接以生效時刻往後加上對應天數；例如 7/8 生效、1 個月效期時，結束日為 8/7，不得算到 8/8。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
 - 日期區間篩選 UI 需使用 Date Range Picker，並以雙月曆（開始/結束）呈現 `application_date` 與 `expires_at` 的區間選擇。
-- 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示系統產生 alias（初始為 `for_{owner_account}`，若 provider 回報衝突則自動改為 `for_{owner_account}_vN`）。管理者手動輸入時僅允許中英文、數字、`_`、`-`，不得包含空白或其他符號。
+- 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示系統產生 alias（初始為 `for_{owner_account}`，若 provider 回報衝突則自動改為 `for_{owner_account}_vN`）。管理者手動輸入時僅允許中英文、數字、`_`、`-`、`、`，不得包含空白或其他符號。
 - 操作：
   - 對 `active` key 顯示「停用」與「展延（extend）」按鈕。
   - 對 `expired` key 顯示「展延（extend）」按鈕（icon + 文字）。
@@ -101,7 +101,7 @@
 - 名單表格預設排序為 `created_at desc`；`note` 與 `actions` 欄位不得提供誤導使用者的前端 filter/sort UI。
 - 可停用/啟用特殊人員名單條目。
 - 可刪除特殊人員名單條目（實體刪除）。
-- `note` / 備註欄位需支援中英文、數字、空白、`_`、`-`，且不得因前端驗證破壞中文輸入法組字。
+- `note` / 備註欄位需支援中英文、數字、空白、`_`、`-`、`、`，且不得因前端驗證破壞中文輸入法組字。
 - `note` 違反 persisted-text 驗證時，前端需在儲存前提示並阻止送出；直接打 API 時後端需回 `422 VALIDATION_ERROR`。
 
 ### 5) Admin List Page（管理者名單頁）
@@ -698,8 +698,8 @@ Base path：`/main/api/v1`
   "key_alias": "service_internal_batch"
 }
 ```
-- 規則：僅 `admin` 可使用；`key_alias` 不可為空字串；僅允許中英文、數字、`_`、`-`；若與其他 key alias 重複需回傳 `409 KEY_ALIAS_DUPLICATE`；external provider mode 下需先同步 provider `update` 成功後才可提交本地更新，成功後回傳更新後單筆資料。
-- `key_alias` 需通過 persisted-text 驗證；若包含明顯程式語法片段或 `_`、`-` 以外特殊符號，回傳 `422 VALIDATION_ERROR`。
+- 規則：僅 `admin` 可使用；`key_alias` 不可為空字串；僅允許中英文、數字、`_`、`-`、`、`；若與其他 key alias 重複需回傳 `409 KEY_ALIAS_DUPLICATE`；external provider mode 下需先同步 provider `update` 成功後才可提交本地更新，成功後回傳更新後單筆資料。
+- `key_alias` 需通過 persisted-text 驗證；若包含明顯程式語法片段或 `_`、`-`、`、` 以外特殊符號，回傳 `422 VALIDATION_ERROR`。
 
 ### 4-1) 受控回取 API Key 明文（Reveal）
 - `POST /main/api/v1/api-keys/{id}/reveal`
@@ -724,7 +724,7 @@ Base path：`/main/api/v1`
 - `POST /main/api/v1/whitelists`、`PATCH /main/api/v1/whitelists/{id}`、`DELETE /main/api/v1/whitelists/{id}` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
 - `POST /main/api/v1/whitelists` 若 `sysid` 重複需回 `409 WHITELIST_SYSID_DUPLICATED`。
 - 回傳欄位至少包含：`id`、`sysid`、`account`、`name`、`email`、`status`、`note`、`created_at`、`updated_at`。
-- `note` 若存在，需通過 persisted-text 驗證；僅允許中英文、數字、空白、`_`、`-`，正常中英文混合內容需可成功儲存。
+- `note` 若存在，需通過 persisted-text 驗證；僅允許中英文、數字、空白、`_`、`-`、`、`，正常中英文混合內容需可成功儲存。
 
 ### 5-1) 特殊人員名單新增前使用者查詢 API
 - `GET /main/api/v1/users?q={keyword}`
@@ -984,8 +984,8 @@ Base path：`/main/api/v1`
   - 若來源是 `active` key，`application_date` 維持原申請日，讀取 API 的 `duration_months` 改為累計總月數。
   - 若來源是 `expired` key，`application_date` 改為 extend 當日，讀取 API 的 `duration_months` 改為本次展延月數，新的 `expires_at` 需以 extend 成功當下為基準計算。
 27. `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm`、`max_parallel_requests` 僅接受 ASCII `0-9`；非數字字元、空字串、科學記號、小數、負號、全形數字與混合字串不得通過前端送出，也不得通過後端 API 驗證。
-28. whitelist `note` 需可正常輸入與儲存中英文混合內容，且中文輸入法組字不得被前端驗證破壞；若內容包含明顯程式語法，或含空白、`_`、`-` 以外特殊符號（例如 `.`, `@`, `/`, `<`, `>`），前後端都需拒絕。
-29. `key_alias` 僅允許中英文、數字、`_`、`-`；若包含空白、其他特殊符號，或明顯程式語法，前端需阻擋儲存，後端直接打 API 時需回傳 `422 VALIDATION_ERROR`。
+28. whitelist `note` 需可正常輸入與儲存中英文混合內容，且中文輸入法組字不得被前端驗證破壞；允許空白、`_`、`-`、`、`，但若內容包含明顯程式語法，或含上述以外特殊符號（例如 `.`, `@`, `/`, `<`, `>`），前後端都需拒絕。
+29. `key_alias` 僅允許中英文、數字、`_`、`-`、`、`；若包含空白、其他特殊符號，或明顯程式語法，前端需阻擋儲存，後端直接打 API 時需回傳 `422 VALIDATION_ERROR`。
 30. `renew`、`extend`、`revoke` 的本地同步不得改變既有受保護 API 路徑、角色模型或現有對外 response shape。
 
 ### 到期提醒與通知信

@@ -14,8 +14,8 @@ _UNSAFE_JS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _ASCII_DIGITS_PATTERN = re.compile(r"^[0-9]+$")
-_ALIAS_SAFE_TEXT_PATTERN = re.compile(r"^[A-Za-z0-9_\-\u3400-\u9FFF]+$")
-_NOTE_SAFE_TEXT_PATTERN = re.compile(r"^[A-Za-z0-9_\-\u3400-\u9FFF ]+$")
+_ALIAS_SAFE_TEXT_PATTERN = re.compile(r"^[A-Za-z0-9_\-\u3400-\u9FFF、]+$")
+_NOTE_SAFE_TEXT_PATTERN = re.compile(r"^[A-Za-z0-9_\-\u3400-\u9FFF、 ]+$")
 
 
 def contains_unsafe_persisted_text(value: str) -> bool:

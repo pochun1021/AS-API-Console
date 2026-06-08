@@ -5,8 +5,8 @@ const unsafeSqlPattern = /(?:\bunion\b\s+\bselect\b|\bdrop\b\s+\btable\b|\binser
 const unsafeJsPattern = /(?:\bfunction\b\s*\(|=>|\balert\s*\(|\bconsole\.[a-zA-Z_]+\s*\()/i;
 const asciiDigitsPattern = /^[0-9]+$/;
 const asciiDigitsPartialPattern = /^[0-9]*$/;
-const aliasSafeTextPattern = /^[A-Za-z0-9_\-\u3400-\u9FFF]+$/;
-const noteSafeTextPattern = /^[A-Za-z0-9_\-\u3400-\u9FFF ]+$/;
+const aliasSafeTextPattern = /^[A-Za-z0-9_\-\u3400-\u9FFF、]+$/;
+const noteSafeTextPattern = /^[A-Za-z0-9_\-\u3400-\u9FFF、 ]+$/;
 
 export function containsUnsafePersistedText(value) {
   const text = String(value || "");
