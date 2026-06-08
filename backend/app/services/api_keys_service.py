@@ -30,7 +30,14 @@ from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
 from db.models.limit_strategy_config import LimitStrategyConfig
 from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyApiKeyRepository, SQLAlchemyWhitelistRepository
-from db.repositories.types import ApiKeyAliasUpdateInput, ApiKeyCreateInput, ApiKeyListFilter, ApplicationCreateInput, AuthIdentity
+from db.repositories.types import (
+    ApiKeyAliasUpdateInput,
+    ApiKeyCreateInput,
+    ApiKeyListFilter,
+    ApiKeyUserStatisticsFilter,
+    ApplicationCreateInput,
+    AuthIdentity,
+)
 
 LIMIT_STRATEGY_CONFIG_ID = "global-limit-strategy-config"
 MAX_KEY_ALIAS_ATTEMPTS = 20
@@ -516,16 +523,46 @@ class ApiKeysService:
         page_size: int,
         status: str | None = None,
         owner_account: str | None = None,
-        from_date: date | None = None,
-        to_date: date | None = None,
+        owner_name: str | None = None,
+        key_alias: str | None = None,
+        application_date_from: date | None = None,
+        application_date_to: date | None = None,
+        expires_from: datetime | None = None,
+        expires_to: datetime | None = None,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
     ) -> dict:
+        allowed_statuses = {"active", "revoked", "expired"}
+        allowed_sort_by = {
+            "application_date",
+            "duration_months",
+            "status",
+            "expires_at",
+            "masked_key",
+            "key_alias",
+            "owner_account",
+            "owner_name",
+            "created_at",
+        }
+        if status is not None and status not in allowed_statuses:
+            raise ApiError("VALIDATION_ERROR", "status must be one of active, revoked, expired", 422)
+        if sort_by not in allowed_sort_by:
+            raise ApiError("VALIDATION_ERROR", "sort_by is invalid", 422)
+        if sort_dir not in {"asc", "desc"}:
+            raise ApiError("VALIDATION_ERROR", "sort_dir must be asc or desc", 422)
+        if expires_from is not None and expires_to is not None and expires_from > expires_to:
+            raise ApiError("VALIDATION_ERROR", "expires_from cannot be greater than expires_to", 422)
+
         page = max(page, 1)
         page_size = min(max(page_size, 1), 100)
         offset = (page - 1) * page_size
 
         normalized_owner_account = owner_account.strip() if owner_account else None
+        normalized_owner_name = owner_name.strip() if owner_name else None
+        normalized_key_alias = key_alias.strip() if key_alias else None
         if current_user.role != "admin":
             normalized_owner_account = None
+            normalized_owner_name = None
 
         items, total = self.key_repo.list_keys(
             requester_role=current_user.role,
@@ -533,8 +570,14 @@ class ApiKeysService:
             filters=ApiKeyListFilter(
                 status=status,
                 owner_account=normalized_owner_account or None,
-                from_date=from_date,
-                to_date=to_date,
+                owner_name=normalized_owner_name or None,
+                key_alias=normalized_key_alias or None,
+                application_date_from=application_date_from,
+                application_date_to=application_date_to,
+                expires_from=expires_from,
+                expires_to=expires_to,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
             ),
             limit=page_size,
             offset=offset,
@@ -971,6 +1014,10 @@ class ApiKeysService:
         scope: str = "all",
         from_date: date | None = None,
         to_date: date | None = None,
+        owner_account: str | None = None,
+        owner_name: str | None = None,
+        owner_email: str | None = None,
+        owner_department: str | None = None,
         sort_by: str = "total_applications",
         sort_dir: str = "desc",
     ) -> dict:
@@ -1007,9 +1054,15 @@ class ApiKeysService:
 
         items, total = self.key_repo.list_user_statistics(
             scope=scope,
-            q=q.strip() if q else None,
-            from_date=from_date,
-            to_date=to_date,
+            filters=ApiKeyUserStatisticsFilter(
+                q=q.strip() if q else None,
+                owner_account=owner_account.strip() if owner_account else None,
+                owner_name=owner_name.strip() if owner_name else None,
+                owner_email=owner_email.strip() if owner_email else None,
+                owner_department=owner_department.strip() if owner_department else None,
+                from_date=from_date,
+                to_date=to_date,
+            ),
             sort_by=sort_by,
             sort_dir=sort_dir,
             limit=page_size,

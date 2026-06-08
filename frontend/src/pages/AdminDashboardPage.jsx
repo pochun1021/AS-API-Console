@@ -24,12 +24,12 @@ import {
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { DataGrid } from "@mui/x-data-grid";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
+import DateRangeFilterField from "../components/DateRangeFilterField";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { COMPACT_MAIN_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 
 function statusColor(status) {
@@ -45,7 +45,7 @@ function formatMaskedKey(value) {
 
 export default function AdminDashboardPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
-  const { formatDepartment } = useDepartmentDisplay(auth);
+  const { departmentOptions, formatDepartment } = useDepartmentDisplay(auth);
   const scopeOptions = ["all", "active", "revoked", "expired"];
   const topNOptions = [5, 10, 20];
   const xAxisOptions = [
@@ -71,13 +71,16 @@ export default function AdminDashboardPage({ auth }) {
   ]);
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [scope, setScope] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [q, setQ] = useState("");
   const [sortModel, setSortModel] = useState([{ field: "total_applications", sort: "desc" }]);
+  const [ownerAccountFilter, setOwnerAccountFilter] = useState("");
+  const [ownerNameFilter, setOwnerNameFilter] = useState("");
+  const [ownerEmailFilter, setOwnerEmailFilter] = useState("");
+  const [ownerDepartmentFilter, setOwnerDepartmentFilter] = useState("");
   const [view, setView] = useState("table");
   const [topN, setTopN] = useState(10);
   const [xAxisField, setXAxisField] = useState("account");
@@ -89,6 +92,15 @@ export default function AdminDashboardPage({ auth }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [detailItems, setDetailItems] = useState([]);
+  const hasActiveFilters = Boolean(
+    scope !== "all" ||
+    fromDate ||
+    toDate ||
+    ownerAccountFilter.trim() ||
+    ownerNameFilter.trim() ||
+    ownerEmailFilter.trim() ||
+    ownerDepartmentFilter
+  );
 
   async function openDetailDialog(row, metric) {
     const status = metric === "active_count" ? "active" : undefined;
@@ -129,16 +141,46 @@ export default function AdminDashboardPage({ auth }) {
     setDetailLoading(false);
   }
 
+  function clearFilters() {
+    setScope("all");
+    setFromDate("");
+    setToDate("");
+    setOwnerAccountFilter("");
+    setOwnerNameFilter("");
+    setOwnerEmailFilter("");
+    setOwnerDepartmentFilter("");
+    setPage(0);
+  }
+
   const columns = useMemo(
     () => [
-      { field: "owner_account", headerName: t("dashboard_col_owner_account"), flex: 1, minWidth: 140 },
-      { field: "owner_name", headerName: t("dashboard_col_owner_name"), flex: 1, minWidth: 140 },
-      { field: "owner_email", headerName: t("dashboard_col_owner_email"), flex: 1.6, minWidth: 220 },
+      {
+        field: "owner_account",
+        headerName: t("dashboard_col_owner_account"),
+        flex: 1,
+        minWidth: 140,
+        filterable: false
+      },
+      {
+        field: "owner_name",
+        headerName: t("dashboard_col_owner_name"),
+        flex: 1,
+        minWidth: 140,
+        filterable: false
+      },
+      {
+        field: "owner_email",
+        headerName: t("dashboard_col_owner_email"),
+        flex: 1.6,
+        minWidth: 220,
+        filterable: false
+      },
       {
         field: "owner_department",
         headerName: t("dashboard_col_owner_department"),
         flex: 1,
         minWidth: 140,
+        filterable: false,
         renderCell: (params) => formatDepartment(params.row.owner_department, locale)
       },
       {
@@ -167,7 +209,7 @@ export default function AdminDashboardPage({ auth }) {
       },
       { field: "revoked_count", headerName: t("dashboard_col_revoked_count"), type: "number", flex: 0.8, minWidth: 120 },
       { field: "expired_count", headerName: t("dashboard_col_expired_count"), type: "number", flex: 0.8, minWidth: 120 },
-      { field: "last_applied_at", headerName: t("dashboard_col_last_applied_at"), flex: 1, minWidth: 140 }
+      { field: "last_applied_at", headerName: t("dashboard_col_last_applied_at"), flex: 1, minWidth: 140, filterable: false }
     ],
     [t, fromDate, toDate, auth, formatDepartment, locale]
   );
@@ -199,9 +241,12 @@ export default function AdminDashboardPage({ auth }) {
           page: page + 1,
           page_size: pageSize,
           scope,
-          q: q.trim(),
           from: fromDate || undefined,
           to: toDate || undefined,
+          owner_account: ownerAccountFilter.trim() || undefined,
+          owner_name: ownerNameFilter.trim() || undefined,
+          owner_email: ownerEmailFilter.trim() || undefined,
+          owner_department: ownerDepartmentFilter.trim() || undefined,
           sort_by: sort.field,
           sort_dir: sort.sort || "desc"
         },
@@ -224,7 +269,7 @@ export default function AdminDashboardPage({ auth }) {
 
   useEffect(() => {
     load();
-  }, [page, pageSize, scope, fromDate, toDate, q, sortModel]);
+  }, [fromDate, ownerAccountFilter, ownerDepartmentFilter, ownerEmailFilter, ownerNameFilter, page, pageSize, scope, sortModel, toDate]);
 
   if (auth.role !== "admin") {
     return (
@@ -236,7 +281,7 @@ export default function AdminDashboardPage({ auth }) {
   }
 
   return (
-    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
+    <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Typography variant="h4">{t("dashboard_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
@@ -245,64 +290,100 @@ export default function AdminDashboardPage({ auth }) {
         <Tab value="chart" label={t("dashboard_tab_chart")} />
       </Tabs>
 
-      <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-        <TextField
-          select
-          label={t("dashboard_scope")}
-          value={scope}
-          onChange={(event) => {
-            setScope(event.target.value);
-            setPage(0);
-          }}
-          sx={{ minWidth: 180 }}
-        >
-          {scopeOptions.map((option) => (
-            <MenuItem key={option} value={option}>
-              {t(`dashboard_scope_${option}`)}
+      {view === "table" ? (
+        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
+          <TextField
+            select
+            label={t("dashboard_scope")}
+            value={scope}
+            onChange={(event) => {
+              setScope(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          >
+            {scopeOptions.map((option) => (
+              <MenuItem key={option} value={option}>
+                {t(`dashboard_scope_${option}`)}
+              </MenuItem>
+            ))}
+          </TextField>
+          <DateRangeFilterField
+            label={t("dashboard_date_range")}
+            fromValue={fromDate}
+            toValue={toDate}
+            startLabel={t("dashboard_from")}
+            endLabel={t("dashboard_to")}
+            clearLabel={t("common_clear")}
+            closeLabel={t("common_close")}
+            minWidth={260}
+            onChange={({ from, to }) => {
+              setFromDate(from);
+              setToDate(to);
+              setPage(0);
+            }}
+          />
+          <TextField
+            label={t("dashboard_col_owner_account")}
+            value={ownerAccountFilter}
+            onChange={(event) => {
+              setOwnerAccountFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          />
+          <TextField
+            label={t("dashboard_col_owner_name")}
+            value={ownerNameFilter}
+            onChange={(event) => {
+              setOwnerNameFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          />
+          <TextField
+            label={t("dashboard_col_owner_email")}
+            value={ownerEmailFilter}
+            onChange={(event) => {
+              setOwnerEmailFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 220 }}
+          />
+          <TextField
+            select
+            label={t("dashboard_col_owner_department")}
+            value={ownerDepartmentFilter}
+            onChange={(event) => {
+              setOwnerDepartmentFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 220 }}
+          >
+            <MenuItem value="">{t("dashboard_all_departments")}</MenuItem>
+            {departmentOptions.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+              {option.label}
             </MenuItem>
           ))}
-        </TextField>
-        <DatePicker
-          label={t("dashboard_from")}
-          value={fromDate ? dayjs(fromDate) : null}
-          onChange={(value) => {
-            setFromDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
-            setPage(0);
-          }}
-          slotProps={{ textField: { sx: { minWidth: 180 } } }}
-        />
-        <DatePicker
-          label={t("dashboard_to")}
-          value={toDate ? dayjs(toDate) : null}
-          onChange={(value) => {
-            setToDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
-            setPage(0);
-          }}
-          slotProps={{ textField: { sx: { minWidth: 180 } } }}
-        />
-        <TextField
-          label={t("common_keyword")}
-          value={q}
-          onChange={(event) => {
-            setQ(event.target.value);
-            setPage(0);
-          }}
-          placeholder={t("dashboard_keyword_placeholder")}
-          sx={{ minWidth: 260 }}
-        />
-      </Stack>
+          </TextField>
+          <Button variant="outlined" onClick={clearFilters} disabled={!hasActiveFilters} sx={{ minHeight: 56 }}>
+            {t("mykeys_clear_filters")}
+          </Button>
+        </Stack>
+      ) : null}
 
       {loading ? <LoadingBlock text={t("dashboard_loading")} /> : null}
       {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
       {!loading && !error && items.length === 0 ? <EmptyBlock text={t("dashboard_no_data")} /> : null}
 
       {!loading && !error && items.length > 0 && view === "table" ? (
-        <Box sx={{ width: "100%", backgroundColor: "white", borderRadius: 2, p: 1, flex: 1, minHeight: 320 }}>
+        <Box sx={{ width: "100%", borderRadius: 2, p: 0.5, flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "white" }}>
           <DataGrid
-            sx={{ height: "100%" }}
+            sx={compactGridSx}
             rows={items}
             columns={columns}
-            pageSizeOptions={[10, 20, 50]}
+            pageSizeOptions={COMPACT_MAIN_PAGE_SIZE_OPTIONS}
             paginationMode="server"
             sortingMode="server"
             rowCount={total}
@@ -318,8 +399,10 @@ export default function AdminDashboardPage({ auth }) {
                 return;
               }
               setSortModel(model);
+              setPage(0);
             }}
             disableRowSelectionOnClick
+            {...compactGridProps}
             localeText={gridLocaleText}
           />
         </Box>

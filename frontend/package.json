@@ -20,6 +20,7 @@
     "@mui/x-date-pickers": "^9.0.4",
     "dayjs": "^1.11.20",
     "react": "^19.1.0",
+    "react-day-picker": "^10.0.1",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.16.0"
   },

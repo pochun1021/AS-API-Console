@@ -117,8 +117,8 @@ export default function AppLayout({ children, auth, onChangeLocale = () => {}, o
           </Box>
         </Toolbar>
       </AppBar>
-      <Container maxWidth={false} sx={{ py: 4, px: { xs: 2, md: 4 }, display: "flex", flex: 1, minHeight: 0 }}>
-        <Box sx={{ maxWidth: 1840, mx: "auto", width: "100%", display: "flex", flexDirection: "column", gap: 3, flex: 1, minHeight: 0 }}>
+      <Container maxWidth={false} sx={{ py: { xs: 2, md: 2.5 }, px: { xs: 2, md: 3 }, display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <Box sx={{ maxWidth: 1840, mx: "auto", width: "100%", display: "flex", flexDirection: "column", gap: 2, flex: 1, minHeight: 0, overflow: "hidden" }}>
           {children}
         </Box>
       </Container>

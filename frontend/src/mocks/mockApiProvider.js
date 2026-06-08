@@ -87,6 +87,21 @@ const initialApiKeys = [
     renewed_to_key_id: null
   },
   {
+    id: "key_005b",
+    status: "active",
+    masked_key: "AS-...kt01",
+    application_date: "2026-04-20",
+    duration_months: 6,
+    purpose: "cross page search demo",
+    department: "02",
+    created_at: "2026-04-20T03:00:00.000Z",
+    expires_at: "2026-10-20T03:00:00.000Z",
+    expiration_notice_sent_at: null,
+    owner_account: "ktu",
+    owner_name: "尤凱婷",
+    renewed_to_key_id: null
+  },
+  {
     id: "key_006",
     status: "revoked",
     masked_key: "AS-...ef56",
@@ -455,16 +470,51 @@ function mapUserForAdminPage(user) {
     name: user.name,
     email: user.email,
     department: user.department || "",
-    status: user.status || "active"
+    status: user.status || "active",
+    created_at: user.created_at || new Date().toISOString(),
+    updated_at: user.updated_at || user.created_at || new Date().toISOString()
   };
 }
 
-function buildUserStatistics(items, { q = "", scope = "all", from, to }) {
+function containsCI(value, keyword) {
+  return String(value || "").toLowerCase().includes(String(keyword || "").trim().toLowerCase());
+}
+
+function compareValues(a, b, sortDir = "asc") {
+  if (a === b) return 0;
+  if (typeof a === "number" && typeof b === "number") {
+    return sortDir === "asc" ? a - b : b - a;
+  }
+  return sortDir === "asc"
+    ? String(a || "").localeCompare(String(b || ""))
+    : String(b || "").localeCompare(String(a || ""));
+}
+
+function paginateItems(items, params, defaultPageSize = 20) {
+  const page = Number(params?.page || 1);
+  const pageSize = Number(params?.page_size || defaultPageSize);
+  const start = (page - 1) * pageSize;
+  return {
+    items: items.slice(start, start + pageSize),
+    page,
+    page_size: pageSize,
+    total: items.length
+  };
+}
+
+function buildUserStatistics(
+  items,
+  { q = "", scope = "all", from, to, owner_account = "", owner_name = "", owner_email = "", owner_department = "" }
+) {
   const keyword = q.trim().toLowerCase();
   const filtered = items.filter((item) => {
     if (scope !== "all" && item.status !== scope) return false;
     if (from && item.application_date < from) return false;
     if (to && item.application_date > to) return false;
+    if (owner_account && !containsCI(item.owner_account, owner_account)) return false;
+    if (owner_name && !containsCI(item.owner_name, owner_name)) return false;
+    if (owner_email && !containsCI(`${item.owner_account}@example.com`, owner_email)) return false;
+    if (owner_department && !containsCI(item.department || "", owner_department)) return false;
     if (!keyword) return true;
     return [item.owner_account, item.owner_name, `${item.owner_account}@example.com`]
       .join(" ")
@@ -583,17 +633,62 @@ export const mockApiProvider = {
       : apiKeys.filter((item) => item.owner_account === auth.account && !item.renewed_to_key_id);
 
     if (auth.role === "admin" && params.owner_account) {
-      items = items.filter((item) => item.owner_account === params.owner_account);
+      items = items.filter((item) => containsCI(item.owner_account, params.owner_account));
+    }
+    if (auth.role === "admin" && params.owner_name) {
+      items = items.filter((item) => containsCI(item.owner_name, params.owner_name));
     }
     if (params.status) {
       items = items.filter((item) => item.status === params.status);
     }
-    if (params.from) {
-      items = items.filter((item) => item.application_date >= params.from);
+    if (params.key_alias) {
+      items = items.filter((item) => containsCI(normalizeAlias(item), params.key_alias));
     }
-    if (params.to) {
-      items = items.filter((item) => item.application_date <= params.to);
+    const applicationDateFrom = params.application_date_from || params.from;
+    const applicationDateTo = params.application_date_to || params.to;
+    if (applicationDateFrom) {
+      items = items.filter((item) => item.application_date >= applicationDateFrom);
     }
+    if (applicationDateTo) {
+      items = items.filter((item) => item.application_date <= applicationDateTo);
+    }
+    if (params.expires_from) {
+      const expiresFrom = new Date(params.expires_from).getTime();
+      items = items.filter((item) => new Date(item.expires_at).getTime() >= expiresFrom);
+    }
+    if (params.expires_to) {
+      const expiresTo = new Date(params.expires_to).getTime();
+      items = items.filter((item) => new Date(item.expires_at).getTime() <= expiresTo);
+    }
+
+    const sortBy = params.sort_by || "created_at";
+    const sortDir = params.sort_dir === "asc" ? "asc" : "desc";
+    items.sort((left, right) => {
+      const leftValue = {
+        application_date: left.application_date,
+        duration_months: left.duration_months,
+        status: left.status,
+        expires_at: left.expires_at,
+        masked_key: left.masked_key,
+        key_alias: normalizeAlias(left),
+        owner_account: left.owner_account,
+        owner_name: left.owner_name,
+        created_at: left.created_at,
+      }[sortBy];
+      const rightValue = {
+        application_date: right.application_date,
+        duration_months: right.duration_months,
+        status: right.status,
+        expires_at: right.expires_at,
+        masked_key: right.masked_key,
+        key_alias: normalizeAlias(right),
+        owner_account: right.owner_account,
+        owner_name: right.owner_name,
+        created_at: right.created_at,
+      }[sortBy];
+      const compared = compareValues(leftValue, rightValue, sortDir);
+      return compared || compareValues(left.id, right.id, sortDir);
+    });
 
     const page = Number(params.page || 1);
     const pageSize = Number(params.page_size || 20);
@@ -616,11 +711,8 @@ export const mockApiProvider = {
     const sortDir = params.sort_dir === "asc" ? "asc" : "desc";
     const stats = buildUserStatistics(apiKeys, params);
     const sorted = stats.sort((a, b) => {
-      const av = a[sortBy];
-      const bv = b[sortBy];
-      if (av === bv) return a.owner_account.localeCompare(b.owner_account);
-      if (sortDir === "asc") return av > bv ? 1 : -1;
-      return av < bv ? 1 : -1;
+      const compared = compareValues(a[sortBy], b[sortBy], sortDir);
+      return compared || a.owner_account.localeCompare(b.owner_account);
     });
 
     const start = (page - 1) * pageSize;
@@ -636,39 +728,46 @@ export const mockApiProvider = {
   async listOperationAuditLogs(params, auth) {
     await delay();
     ensureAdmin(auth);
-    const page = Number(params?.page || 1);
-    const pageSize = Number(params?.page_size || 20);
+    const sortBy = params?.sort_by || "created_at";
+    const sortDir = params?.sort_dir === "asc" ? "asc" : "desc";
     const filtered = applyDateRange(operationAuditLogs, params || {})
       .filter((item) => (params?.event_type ? item.event_type === params.event_type : true))
+      .filter((item) => (params?.action ? containsCI(item.action, params.action) : true))
       .filter((item) => (params?.result ? item.result === params.result : true))
-      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+      .filter((item) => (params?.actor_account ? containsCI(item.actor_account, params.actor_account) : true))
+      .filter((item) => (params?.target_type ? item.target_type === params.target_type : true))
+      .filter((item) => (params?.target_id ? containsCI(item.target_id, params.target_id) : true))
+      .filter((item) => (params?.error_code ? containsCI(item.error_code, params.error_code) : true))
+      .sort((a, b) => {
+        const compared = compareValues(a[sortBy], b[sortBy], sortDir);
+        return compared || String(a.id).localeCompare(String(b.id));
+      });
 
-    const start = (page - 1) * pageSize;
-    return {
-      items: filtered.slice(start, start + pageSize),
-      page,
-      page_size: pageSize,
-      total: filtered.length
-    };
+    return paginateItems(filtered, params);
   },
 
   async listAuthAuditLogs(params, auth) {
     await delay();
     ensureAdmin(auth);
-    const page = Number(params?.page || 1);
-    const pageSize = Number(params?.page_size || 20);
+    const sortBy = params?.sort_by || "created_at";
+    const sortDir = params?.sort_dir === "asc" ? "asc" : "desc";
+    const normalizedSysid = params?.sysid != null && String(params.sysid).trim() !== ""
+      ? Number(params.sysid)
+      : null;
     const filtered = applyDateRange(authAuditLogs, params || {})
       .filter((item) => (params?.provider ? item.provider === params.provider : true))
       .filter((item) => (params?.result ? item.result === params.result : true))
-      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+      .filter((item) => (params?.account ? containsCI(item.account, params.account) : true))
+      .filter((item) => (normalizedSysid != null ? item.sysid === normalizedSysid : true))
+      .filter((item) => (params?.role ? item.role === params.role : true))
+      .filter((item) => (params?.error_code ? containsCI(item.error_code, params.error_code) : true))
+      .filter((item) => (params?.request_id ? containsCI(item.request_id, params.request_id) : true))
+      .sort((a, b) => {
+        const compared = compareValues(a[sortBy], b[sortBy], sortDir);
+        return compared || String(a.id).localeCompare(String(b.id));
+      });
 
-    const start = (page - 1) * pageSize;
-    return {
-      items: filtered.slice(start, start + pageSize),
-      page,
-      page_size: pageSize,
-      total: filtered.length
-    };
+    return paginateItems(filtered, params);
   },
 
   async getApiKeyById(id, auth) {
@@ -824,10 +923,65 @@ export const mockApiProvider = {
     };
   },
 
-  async listWhitelists(auth) {
+  async listWhitelists(paramsOrAuth, maybeAuth) {
     await delay();
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
     ensureAdmin(auth);
-    return { items: whitelists, page: 1, page_size: 20, total: whitelists.length };
+    let items = [...whitelists];
+
+    if (params.status) {
+      items = items.filter((item) => item.status === params.status);
+    }
+    if (params.sysid != null && params.sysid !== "") {
+      items = items.filter((item) => item.sysid === Number(params.sysid));
+    }
+    if (params.account) {
+      const q = String(params.account).trim().toLowerCase();
+      items = items.filter((item) => String(item.account || "").toLowerCase().includes(q));
+    }
+    if (params.name) {
+      const q = String(params.name).trim().toLowerCase();
+      items = items.filter((item) => String(item.name || "").toLowerCase().includes(q));
+    }
+    if (params.email) {
+      const q = String(params.email).trim().toLowerCase();
+      items = items.filter((item) => String(item.email || "").toLowerCase().includes(q));
+    }
+    if (params.created_from) {
+      items = items.filter((item) => new Date(item.created_at) >= new Date(params.created_from));
+    }
+    if (params.created_to) {
+      items = items.filter((item) => new Date(item.created_at) <= new Date(params.created_to));
+    }
+    if (params.updated_from) {
+      items = items.filter((item) => new Date(item.updated_at) >= new Date(params.updated_from));
+    }
+    if (params.updated_to) {
+      items = items.filter((item) => new Date(item.updated_at) <= new Date(params.updated_to));
+    }
+
+    const sortBy = params.sort_by || "created_at";
+    const sortDir = params.sort_dir === "asc" ? "asc" : "desc";
+    items.sort((a, b) => {
+      const direction = sortDir === "asc" ? 1 : -1;
+      const left = a[sortBy];
+      const right = b[sortBy];
+      if (left == null && right == null) return 0;
+      if (left == null) return 1 * direction;
+      if (right == null) return -1 * direction;
+      if (sortBy === "sysid") return (Number(left) - Number(right)) * direction;
+      return String(left).localeCompare(String(right)) * direction;
+    });
+
+    const page = Math.max(Number(params.page || 1), 1);
+    const pageSize = Math.max(Number(params.page_size || 20), 1);
+    const total = items.length;
+    const start = (page - 1) * pageSize;
+    const pagedItems = items.slice(start, start + pageSize);
+
+    return { items: pagedItems, page, page_size: pageSize, total };
   },
 
   async searchUsers(keyword, auth, options = {}) {
@@ -853,10 +1007,34 @@ export const mockApiProvider = {
     return { items: items.map(mapUserForAdminPage) };
   },
 
-  async listAdmins(auth) {
+  async listAdmins(paramsOrAuth, maybeAuth) {
     await delay();
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
     ensureAdmin(auth);
-    return { items: users.filter((item) => item.role === "admin").map(mapUserForAdminPage) };
+    const normalizedSysid = String(params.sysid || "").trim();
+    const parsedSysid = normalizedSysid && isAsciiDigits(normalizedSysid) ? Number(normalizedSysid) : null;
+    const filtered = users
+      .filter((item) => item.role === "admin")
+      .map(mapUserForAdminPage)
+      .filter((item) => {
+        if (params.status && item.status !== params.status) return false;
+        if (parsedSysid != null && item.sysid !== parsedSysid) return false;
+        if (params.account && !containsCI(item.account, params.account)) return false;
+        if (params.name && !containsCI(item.name, params.name)) return false;
+        if (params.email && !containsCI(item.email, params.email)) return false;
+        if (params.created_from && item.created_at < params.created_from) return false;
+        if (params.created_to && item.created_at > params.created_to) return false;
+        if (params.updated_from && item.updated_at < params.updated_from) return false;
+        if (params.updated_to && item.updated_at > params.updated_to) return false;
+        return true;
+      });
+
+    const sortField = params.sort_by || "created_at";
+    const sortDir = params.sort_dir || "desc";
+    const sorted = [...filtered].sort((a, b) => compareValues(a[sortField], b[sortField], sortDir));
+    return paginateItems(sorted, params);
   },
 
   async listInstitutes(auth) {

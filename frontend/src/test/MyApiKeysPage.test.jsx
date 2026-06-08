@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { MemoryRouter } from "react-router-dom";
 import { mockApiProvider } from "../mocks/mockApiProvider";
 import MyApiKeysPage from "../pages/MyApiKeysPage";
@@ -35,12 +37,26 @@ beforeEach(() => {
   mockApiProvider.resetForTests();
 });
 
-test("shows revoke button only for active rows", async () => {
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={auth} />
-    </MemoryRouter>
+function renderPage(ui) {
+  return render(
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </LocalizationProvider>
   );
+}
+
+async function setDateRange(triggerLabel, startLabel, endLabel, startValue, endValue) {
+  await userEvent.setup().click(screen.getByLabelText(triggerLabel));
+  if (startValue != null) {
+    fireEvent.change(screen.getByLabelText(startLabel), { target: { value: startValue } });
+  }
+  if (endValue != null) {
+    fireEvent.change(screen.getByLabelText(endLabel), { target: { value: endValue } });
+  }
+}
+
+test("shows revoke button only for active rows", async () => {
+  renderPage(<MyApiKeysPage auth={auth} />);
 
   expect(await screen.findByText("API Keys")).toBeInTheDocument();
   const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
@@ -52,25 +68,21 @@ test("shows revoke button only for active rows", async () => {
   expect(screen.queryByRole("columnheader", { name: "建立時間" })).not.toBeInTheDocument();
 });
 
-test("shows owner column for admin list", async () => {
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={adminAuth} />
-    </MemoryRouter>
-  );
+test("shows applicant account and name columns for admin list", async () => {
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
 
-  expect(await screen.findByRole("columnheader", { name: "申請人" })).toBeInTheDocument();
+  expect(await screen.findByRole("columnheader", { name: "帳號" })).toBeInTheDocument();
+  expect(await screen.findByRole("columnheader", { name: "姓名" })).toBeInTheDocument();
   expect(await screen.findByRole("columnheader", { name: "Key Alias" })).toBeInTheDocument();
-  expect((await screen.findAllByText("jane.doe / Jane Doe")).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText("jane.doe")).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText("Jane Doe")).length).toBeGreaterThan(0);
+  expect(await screen.findByText("ktu")).toBeInTheDocument();
+  expect(await screen.findByText("尤凱婷")).toBeInTheDocument();
 });
 
 test("shows detail in dialog and can revoke active key with confirm", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={auth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={auth} />);
 
   await user.click((await screen.findAllByRole("button", { name: "查看詳情" }))[0]);
   expect(await screen.findByText("API Key 詳情")).toBeInTheDocument();
@@ -90,11 +102,7 @@ test("shows detail in dialog and can revoke active key with confirm", async () =
 
 test("shows applicant identity in detail dialog for admin", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={adminAuth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   await user.click((await screen.findAllByRole("button", { name: "查看詳情" }))[0]);
   expect(await screen.findByText("申請人: jane.doe / Jane Doe")).toBeInTheDocument();
@@ -102,11 +110,7 @@ test("shows applicant identity in detail dialog for admin", async () => {
 
 test("admin can edit key alias in list dialog", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={adminAuth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
   const aliasInput = await screen.findByLabelText("Key Alias");
@@ -119,11 +123,7 @@ test("admin can edit key alias in list dialog", async () => {
 
 test("admin sees duplicate prompt when key alias already exists", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={adminAuth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
   const aliasInput = await screen.findByLabelText("Key Alias");
@@ -135,11 +135,7 @@ test("admin sees duplicate prompt when key alias already exists", async () => {
 
 test("admin cannot save unsafe key alias", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={adminAuth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
   const aliasInput = await screen.findByLabelText("Key Alias");
@@ -152,11 +148,7 @@ test("admin cannot save unsafe key alias", async () => {
 
 test("admin cannot save key alias with invalid characters", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={adminAuth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
   const aliasInput = await screen.findByLabelText("Key Alias");
@@ -169,11 +161,7 @@ test("admin cannot save key alias with invalid characters", async () => {
 
 test("user renew hides old key from list", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={auth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={auth} />);
 
   expect(await screen.findByText("AS-...mn56")).toBeInTheDocument();
   const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
@@ -190,11 +178,7 @@ test("user renew hides old key from list", async () => {
 
 test("renewed key dialog stays open on backdrop click and escape", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={auth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={auth} />);
 
   const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
   await user.click(moreActionButtons[1]);
@@ -220,11 +204,7 @@ test("renewed key dialog stays open on backdrop click and escape", async () => {
 
 test("user can extend active key with selected duration", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={auth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={auth} />);
 
   const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
   await user.click(moreActionButtons[0]);
@@ -243,11 +223,7 @@ test("user can extend active key with selected duration", async () => {
 test("extending an expired key resets start date and duration in detail view", async () => {
   const user = userEvent.setup();
   const today = new Date().toISOString().slice(0, 10);
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={devUserAuth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
   const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
   await user.click(moreActionButtons[2]);
@@ -280,11 +256,7 @@ test.each([
   },
 ])("$name", async ({ buttonIndex, shouldSeeExtend }) => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={devUserAuth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
   const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
   await user.click(moreActionButtons[buttonIndex]);
@@ -297,11 +269,7 @@ test.each([
 
 test("admin does not see extend action for active key outside near-expiry window", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={adminAuth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
   await user.click(moreActionButtons[1]);
@@ -310,11 +278,7 @@ test("admin does not see extend action for active key outside near-expiry window
 
 test("renders timestamps in Asia/Taipei on list and detail views", async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={devUserAuth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
   expect(await screen.findByText("2026-03-10 19:00:00")).toBeInTheDocument();
 
@@ -328,14 +292,11 @@ test("renders timestamps in Asia/Taipei on list and detail views", async () => {
 test("list uses server pagination params", async () => {
   const user = userEvent.setup();
   const spy = vi.spyOn(mockApiProvider, "listApiKeys");
-  render(
-    <MemoryRouter>
-      <MyApiKeysPage auth={adminAuth} />
-    </MemoryRouter>
-  );
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   expect(await screen.findByText("API Keys")).toBeInTheDocument();
-  expect((await screen.findAllByText("jane.doe / Jane Doe")).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText("jane.doe")).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText("Jane Doe")).length).toBeGreaterThan(0);
   await waitFor(() => {
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 10 }), adminAuth);
   });
@@ -345,4 +306,91 @@ test("list uses server pagination params", async () => {
   await waitFor(() => {
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 20 }), adminAuth);
   });
+});
+
+test("admin list sends server sort params when sorting columns", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeys");
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
+
+  expect(await screen.findByText("API Keys")).toBeInTheDocument();
+  await user.click(await screen.findByRole("columnheader", { name: "帳號" }));
+
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: "owner_account", sort_dir: "asc" }),
+      adminAuth
+    );
+  });
+});
+
+test("admin list sends custom filter params without DataGrid filter model", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeys");
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
+
+  expect(await screen.findByText("API Keys")).toBeInTheDocument();
+  await user.type(screen.getByLabelText("帳號"), "ktu");
+  await user.type(screen.getByLabelText("姓名"), "尤");
+  await user.type(screen.getByLabelText("Key Alias"), "for_ktu");
+  await user.click(screen.getByLabelText("狀態"));
+  await user.click(screen.getByRole("option", { name: "active" }));
+  await setDateRange("起算日期", "起算日期（起）", "起算日期（迄）", "2026-04-01", "2026-04-30");
+  await setDateRange("到期日期", "到期日期（起）", "到期日期（迄）", "2026-10-01", "2026-10-31");
+
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        owner_account: "ktu",
+        owner_name: "尤",
+        key_alias: "for_ktu",
+        status: "active",
+        application_date_from: "2026-04-01",
+        application_date_to: "2026-04-30",
+        expires_from: "2026-09-30T16:00:00.000Z",
+        expires_to: "2026-10-31T15:59:59.999Z",
+      }),
+      adminAuth
+    );
+  });
+});
+
+test("clear filters button resets api key list filters", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeys");
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
+
+  expect(await screen.findByText("API Keys")).toBeInTheDocument();
+  const clearButton = screen.getByRole("button", { name: "清除篩選" });
+  expect(clearButton).toBeDisabled();
+
+  await user.type(screen.getByLabelText("帳號"), "ktu");
+  await waitFor(() => {
+    expect(clearButton).toBeEnabled();
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ owner_account: "ktu" }),
+      adminAuth
+    );
+  });
+
+  await user.click(clearButton);
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("帳號")).toHaveValue("");
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: undefined,
+        owner_account: undefined,
+        owner_name: undefined,
+        key_alias: undefined,
+        application_date_from: undefined,
+        application_date_to: undefined,
+        expires_from: undefined,
+        expires_to: undefined,
+      }),
+      adminAuth
+    );
+  });
+
+  expect(clearButton).toBeDisabled();
 });

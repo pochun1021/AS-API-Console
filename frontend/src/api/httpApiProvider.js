@@ -90,8 +90,16 @@ export const httpApiProvider = {
     if (params.page_size) query.set("page_size", String(params.page_size));
     if (params.status) query.set("status", params.status);
     if (params.owner_account) query.set("owner_account", params.owner_account);
+    if (params.owner_name) query.set("owner_name", params.owner_name);
+    if (params.key_alias) query.set("key_alias", params.key_alias);
+    if (params.application_date_from) query.set("application_date_from", params.application_date_from);
+    if (params.application_date_to) query.set("application_date_to", params.application_date_to);
+    if (params.expires_from) query.set("expires_from", params.expires_from);
+    if (params.expires_to) query.set("expires_to", params.expires_to);
     if (params.from) query.set("from", params.from);
     if (params.to) query.set("to", params.to);
+    if (params.sort_by) query.set("sort_by", params.sort_by);
+    if (params.sort_dir) query.set("sort_dir", params.sort_dir);
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request(`${apiPath("/api-keys")}${suffix}`, { auth });
   },
@@ -123,6 +131,10 @@ export const httpApiProvider = {
     if (params.scope) query.set("scope", params.scope);
     if (params.from) query.set("from", params.from);
     if (params.to) query.set("to", params.to);
+    if (params.owner_account) query.set("owner_account", params.owner_account);
+    if (params.owner_name) query.set("owner_name", params.owner_name);
+    if (params.owner_email) query.set("owner_email", params.owner_email);
+    if (params.owner_department) query.set("owner_department", params.owner_department);
     if (params.sort_by) query.set("sort_by", params.sort_by);
     if (params.sort_dir) query.set("sort_dir", params.sort_dir);
     return request(`${apiPath("/api-keys/statistics/users")}?${query.toString()}`, { auth });
@@ -135,7 +147,14 @@ export const httpApiProvider = {
     if (params?.from) query.set("from", params.from);
     if (params?.to) query.set("to", params.to);
     if (params?.event_type) query.set("event_type", params.event_type);
+    if (params?.action) query.set("action", params.action);
     if (params?.result) query.set("result", params.result);
+    if (params?.actor_account) query.set("actor_account", params.actor_account);
+    if (params?.target_type) query.set("target_type", params.target_type);
+    if (params?.target_id) query.set("target_id", params.target_id);
+    if (params?.error_code) query.set("error_code", params.error_code);
+    if (params?.sort_by) query.set("sort_by", params.sort_by);
+    if (params?.sort_dir) query.set("sort_dir", params.sort_dir);
     return request(`${apiPath("/operation-audit-logs")}?${query.toString()}`, { auth });
   },
 
@@ -147,11 +166,35 @@ export const httpApiProvider = {
     if (params?.to) query.set("to", params.to);
     if (params?.provider) query.set("provider", params.provider);
     if (params?.result) query.set("result", params.result);
+    if (params?.account) query.set("account", params.account);
+    if (params?.sysid != null) query.set("sysid", String(params.sysid));
+    if (params?.role) query.set("role", params.role);
+    if (params?.error_code) query.set("error_code", params.error_code);
+    if (params?.request_id) query.set("request_id", params.request_id);
+    if (params?.sort_by) query.set("sort_by", params.sort_by);
+    if (params?.sort_dir) query.set("sort_dir", params.sort_dir);
     return request(`${apiPath("/auth-audit-logs")}?${query.toString()}`, { auth });
   },
 
-  listAdmins(auth) {
-    return request(apiPath("/admins"), { auth });
+  async listAdmins(paramsOrAuth, maybeAuth) {
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
+    const query = new URLSearchParams();
+    if (params.page) query.set("page", String(params.page));
+    if (params.page_size) query.set("page_size", String(params.page_size));
+    if (params.status) query.set("status", params.status);
+    if (params.sysid != null) query.set("sysid", String(params.sysid));
+    if (params.account) query.set("account", params.account);
+    if (params.name) query.set("name", params.name);
+    if (params.email) query.set("email", params.email);
+    if (params.created_from) query.set("created_from", params.created_from);
+    if (params.created_to) query.set("created_to", params.created_to);
+    if (params.updated_from) query.set("updated_from", params.updated_from);
+    if (params.updated_to) query.set("updated_to", params.updated_to);
+    if (params.sort_by) query.set("sort_by", params.sort_by);
+    if (params.sort_dir) query.set("sort_dir", params.sort_dir);
+    return request(`${apiPath("/admins")}?${query.toString()}`, { auth });
   },
 
   listInstitutes(auth) {
@@ -197,8 +240,26 @@ export const httpApiProvider = {
     });
   },
 
-  async listWhitelists(auth) {
-    const result = await request(apiPath("/whitelists"), { auth });
+  async listWhitelists(paramsOrAuth, maybeAuth) {
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
+    const query = new URLSearchParams();
+    if (params.page) query.set("page", String(params.page));
+    if (params.page_size) query.set("page_size", String(params.page_size));
+    if (params.status) query.set("status", params.status);
+    if (params.sysid) query.set("sysid", String(params.sysid));
+    if (params.account) query.set("account", params.account);
+    if (params.name) query.set("name", params.name);
+    if (params.email) query.set("email", params.email);
+    if (params.created_from) query.set("created_from", params.created_from);
+    if (params.created_to) query.set("created_to", params.created_to);
+    if (params.updated_from) query.set("updated_from", params.updated_from);
+    if (params.updated_to) query.set("updated_to", params.updated_to);
+    if (params.sort_by) query.set("sort_by", params.sort_by);
+    if (params.sort_dir) query.set("sort_dir", params.sort_dir);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const result = await request(`${apiPath("/whitelists")}${suffix}`, { auth });
     return { ...result, items: result.items.map(mapWhitelistItem) };
   },
 

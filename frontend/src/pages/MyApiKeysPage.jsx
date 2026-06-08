@@ -23,16 +23,26 @@ import {
   Typography,
   Button,
   Menu,
-  MenuItem
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Select
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
+import DateRangeFilterField from "../components/DateRangeFilterField";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { formatDateTimeInTaipei, isWithinThirtyDaysBeforeExpiration } from "../utils/datetime";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 import { validatePersistedText } from "../utils/inputValidation";
+import {
+  buildDateRange,
+  getServerSort,
+  buildTaipeiDateTimeRange,
+} from "../utils/serverDataGrid";
+import { compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 
 const actionCellSx = {
   display: "flex",
@@ -87,6 +97,15 @@ export default function MyApiKeysPage({ auth }) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
+  const [sortModel, setSortModel] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [applicationDateFrom, setApplicationDateFrom] = useState("");
+  const [applicationDateTo, setApplicationDateTo] = useState("");
+  const [expiresDateFrom, setExpiresDateFrom] = useState("");
+  const [expiresDateTo, setExpiresDateTo] = useState("");
+  const [ownerAccountFilter, setOwnerAccountFilter] = useState("");
+  const [ownerNameFilter, setOwnerNameFilter] = useState("");
+  const [keyAliasFilter, setKeyAliasFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
@@ -120,12 +139,40 @@ export default function MyApiKeysPage({ auth }) {
     setActionMenuRow(null);
   }
 
+  function clearFilters() {
+    setStatusFilter("");
+    setApplicationDateFrom("");
+    setApplicationDateTo("");
+    setExpiresDateFrom("");
+    setExpiresDateTo("");
+    setOwnerAccountFilter("");
+    setOwnerNameFilter("");
+    setKeyAliasFilter("");
+    setPage(0);
+  }
+
   async function load() {
     setLoading(true);
     setError("");
     try {
+      const sort = getServerSort(sortModel, { field: "created_at", sort: "desc" });
+      const applicationDateRange = buildDateRange(applicationDateFrom, applicationDateTo);
+      const expiresAtRange = buildTaipeiDateTimeRange(expiresDateFrom, expiresDateTo);
       const response = await apiClient.listApiKeys(
-        { page: page + 1, page_size: pageSize },
+        {
+          page: page + 1,
+          page_size: pageSize,
+          status: statusFilter || undefined,
+          owner_account: auth.role === "admin" ? ownerAccountFilter.trim() || undefined : undefined,
+          owner_name: auth.role === "admin" ? ownerNameFilter.trim() || undefined : undefined,
+          key_alias: auth.role === "admin" ? keyAliasFilter.trim() || undefined : undefined,
+          application_date_from: applicationDateRange.from || undefined,
+          application_date_to: applicationDateRange.to || undefined,
+          expires_from: expiresAtRange.from || undefined,
+          expires_to: expiresAtRange.to || undefined,
+          sort_by: sort.field,
+          sort_dir: sort.sort,
+        },
         auth
       );
       setItems(response.items || []);
@@ -290,7 +337,20 @@ export default function MyApiKeysPage({ auth }) {
 
   useEffect(() => {
     load();
-  }, [page, pageSize]);
+  }, [
+    applicationDateFrom,
+    applicationDateTo,
+    auth.role,
+    expiresDateFrom,
+    expiresDateTo,
+    keyAliasFilter,
+    ownerAccountFilter,
+    ownerNameFilter,
+    page,
+    pageSize,
+    sortModel,
+    statusFilter,
+  ]);
 
   useEffect(() => () => {
     if (renewCopyResetTimerRef.current) clearTimeout(renewCopyResetTimerRef.current);
@@ -299,50 +359,76 @@ export default function MyApiKeysPage({ auth }) {
   const columns = useMemo(
     () => {
       const baseColumns = [
-        { field: "application_date", headerName: t("mykeys_col_application_date"), flex: 1, minWidth: 120 },
+        {
+          field: "application_date",
+          headerName: t("mykeys_col_application_date"),
+          type: "date",
+          flex: 1,
+          minWidth: 120,
+          filterable: false,
+          valueGetter: (value) => (value ? new Date(`${value}T00:00:00`) : null),
+          renderCell: (params) => params.row.application_date || "-"
+        },
         {
           field: "duration_months",
           headerName: t("mykeys_col_duration_months"),
           flex: 1,
           minWidth: 120,
-          valueFormatter: (value) => `${value} ${t("mykeys_duration_suffix")}`
+          valueFormatter: (value) => `${value} ${t("mykeys_duration_suffix")}`,
+          filterable: false
         },
         {
           field: "status",
           headerName: t("common_status"),
+          type: "singleSelect",
+          valueOptions: ["active", "revoked", "expired"],
           flex: 1,
           minWidth: 120,
+          filterable: false,
           renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
         },
         {
           field: "expires_at",
           headerName: t("mykeys_col_expires_at"),
+          type: "dateTime",
           flex: 1.5,
           minWidth: 180,
-          valueFormatter: (value) => formatDateTimeInTaipei(value, { locale })
+          filterable: false,
+          valueGetter: (value) => (value ? new Date(value) : null),
+          renderCell: (params) => formatDateTimeInTaipei(params.row.expires_at, { locale })
         },
         {
           field: "masked_key",
           headerName: t("mykeys_col_masked_key"),
           flex: 1.5,
           minWidth: 180,
-          valueFormatter: (value) => formatMaskedKey(value)
+          valueFormatter: (value) => formatMaskedKey(value),
+          sortable: false,
+          filterable: false
         }
       ];
 
       if (auth.role === "admin") {
         baseColumns.push({
+          field: "owner_account",
+          headerName: t("dashboard_col_owner_account"),
+          flex: 1.2,
+          minWidth: 150,
+          filterable: false
+        });
+        baseColumns.push({
+          field: "owner_name",
+          headerName: t("dashboard_col_owner_name"),
+          flex: 1.2,
+          minWidth: 150,
+          filterable: false
+        });
+        baseColumns.push({
           field: "key_alias",
           headerName: t("mykeys_col_key_alias"),
           flex: 1.4,
-          minWidth: 180
-        });
-        baseColumns.push({
-          field: "owner",
-          headerName: t("mykeys_col_owner"),
-          flex: 1.5,
           minWidth: 180,
-          valueGetter: (_value, row) => `${row.owner_account || "-"} / ${row.owner_name || "-"}`
+          filterable: false
         });
       }
 
@@ -396,32 +482,132 @@ export default function MyApiKeysPage({ auth }) {
     [auth.role, locale, t]
   );
 
+  const hasActiveFilters = Boolean(
+    statusFilter
+    || applicationDateFrom
+    || applicationDateTo
+    || expiresDateFrom
+    || expiresDateTo
+    || ownerAccountFilter.trim()
+    || ownerNameFilter.trim()
+    || keyAliasFilter.trim()
+  );
+
   return (
-    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
+    <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Typography variant="h4">{t("mykeys_title")}</Typography>
       {banner && <Alert severity="info">{banner}</Alert>}
-      <Card sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-        <CardContent sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
+        <FormControl sx={{ minWidth: 180 }}>
+          <InputLabel id="mykeys-status-filter-label">{t("common_status")}</InputLabel>
+          <Select
+            labelId="mykeys-status-filter-label"
+            label={t("common_status")}
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value);
+              setPage(0);
+            }}
+          >
+            <MenuItem value="">{t("mykeys_filter_all_statuses")}</MenuItem>
+            <MenuItem value="active">active</MenuItem>
+            <MenuItem value="revoked">revoked</MenuItem>
+            <MenuItem value="expired">expired</MenuItem>
+          </Select>
+        </FormControl>
+        <DateRangeFilterField
+          label={t("mykeys_filter_application_range")}
+          fromValue={applicationDateFrom}
+          toValue={applicationDateTo}
+          startLabel={t("mykeys_filter_application_from")}
+          endLabel={t("mykeys_filter_application_to")}
+          clearLabel={t("common_clear")}
+          closeLabel={t("common_close")}
+          onChange={({ from, to }) => {
+            setApplicationDateFrom(from);
+            setApplicationDateTo(to);
+            setPage(0);
+          }}
+        />
+        <DateRangeFilterField
+          label={t("mykeys_filter_expires_range")}
+          fromValue={expiresDateFrom}
+          toValue={expiresDateTo}
+          startLabel={t("mykeys_filter_expires_from")}
+          endLabel={t("mykeys_filter_expires_to")}
+          clearLabel={t("common_clear")}
+          closeLabel={t("common_close")}
+          onChange={({ from, to }) => {
+            setExpiresDateFrom(from);
+            setExpiresDateTo(to);
+            setPage(0);
+          }}
+        />
+        {auth.role === "admin" ? (
+          <TextField
+            label={t("dashboard_col_owner_account")}
+            value={ownerAccountFilter}
+            onChange={(event) => {
+              setOwnerAccountFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          />
+        ) : null}
+        {auth.role === "admin" ? (
+          <TextField
+            label={t("dashboard_col_owner_name")}
+            value={ownerNameFilter}
+            onChange={(event) => {
+              setOwnerNameFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          />
+        ) : null}
+        {auth.role === "admin" ? (
+          <TextField
+            label={t("mykeys_col_key_alias")}
+            value={keyAliasFilter}
+            onChange={(event) => {
+              setKeyAliasFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          />
+        ) : null}
+        <Button variant="outlined" onClick={clearFilters} disabled={!hasActiveFilters}>
+          {t("mykeys_clear_filters")}
+        </Button>
+      </Stack>
+      <Card sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <CardContent sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, p: 1.5, "&:last-child": { pb: 1.5 } }}>
           {loading ? <LoadingBlock text={t("mykeys_loading_list")} /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && items.length === 0 ? <EmptyBlock text={t("mykeys_empty")} /> : null}
           {!loading && !error && items.length > 0 ? (
-            <Box sx={{ flex: 1, minHeight: 320 }}>
+            <Box sx={{ flex: 1, minHeight: 0 }}>
               <DataGrid
-                sx={{ height: "100%" }}
+                sx={compactGridSx}
                 rows={items}
                 columns={columns}
                 getRowId={(row) => row.id}
                 paginationMode="server"
+                sortingMode="server"
                 rowCount={total}
                 paginationModel={{ page, pageSize }}
                 onPaginationModelChange={(model) => {
                   setPage(model.page);
                   setPageSize(model.pageSize);
                 }}
+                sortModel={sortModel}
+                onSortModelChange={(model) => {
+                  setSortModel(model);
+                  setPage(0);
+                }}
                 pageSizeOptions={[10, 20, 50]}
                 disableRowSelectionOnClick
-                rowHeight={56}
+                {...compactGridProps}
                 localeText={gridLocaleText}
               />
             </Box>

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,7 @@ from app.services.operation_audit_service import (
     summarize_operation_audit_error,
 )
 from app.schemas.users import (
+    AdminListResponse,
     AdminCreateRequest,
     CurrentUserResponse,
     UserListResponse,
@@ -68,18 +71,45 @@ def get_current_user_profile(
 
 @router.get(
     "/admins",
-    response_model=UserListResponse,
+    response_model=AdminListResponse,
     responses={
         403: {"model": ErrorResponse, "description": "Admin role is required"},
     },
 )
 def list_admins(
+    status: str | None = Query(default=None),
+    sysid: int | None = Query(default=None),
+    account: str | None = Query(default=None),
+    name: str | None = Query(default=None),
+    email: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    updated_from: datetime | None = Query(default=None),
+    updated_to: datetime | None = Query(default=None),
+    sort_by: str = Query(default="created_at"),
+    sort_dir: str = Query(default="desc"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     _require_admin(current_user)
     service = UsersService(db)
-    return service.list_admins()
+    return service.list_admins(
+        status=status,
+        sysid=sysid,
+        account=account,
+        name=name,
+        email=email,
+        created_from=created_from,
+        created_to=created_to,
+        updated_from=updated_from,
+        updated_to=updated_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get(

@@ -49,11 +49,9 @@ def apply_security_headers(request: Request, headers: MutableHeaders) -> None:
         headers["Cache-Control"] = "no-store"
 
 
-def validate_date_window(from_date, to_date, *, max_days: int = 31) -> None:
+def validate_date_window(from_date, to_date) -> None:
     if from_date and to_date and from_date > to_date:
         raise ApiError("VALIDATION_ERROR", "from must be <= to", 422)
-    if from_date and to_date and (to_date - from_date).days > max_days:
-        raise ApiError("VALIDATION_ERROR", f"date range must be <= {max_days} days", 422)
 
 
 def validate_search_keyword(keyword: str | None, *, max_length: int = 100) -> None:

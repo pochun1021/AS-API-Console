@@ -63,10 +63,12 @@
 ### 2) My API Keys Page（一般使用者我的紀錄頁）
 - 顯示範圍：僅本人帳號歷史紀錄（`active|revoked|expired`）；若舊 key 已被 renew，對一般使用者隱藏。
 - 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（`APP_ENV=prod` 為 `sk-...` + 後 4 碼；`dev/test` 為 `AS-...` + 後 4 碼）。
+- 清單查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
 - 時間欄位語意：
   - 對 `active` key 成功 extend 後：`application_date` 維持原始申請日；`duration_months` 為目前這把 key 已累計生效的總月數（原申請月數 + 每次成功 extend 的月數）；`expires_at` 為目前有效到期時間。
   - 對 `expired` key 成功 extend 後：`application_date` 改為本次 extend 當日；`duration_months` 改為本次 extend 選擇的月數；`expires_at` 以本次 extend 成功當下為基準計算新的有效到期時間。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
+- 日期區間篩選 UI 需使用 Date Range Picker，並以雙月曆（開始/結束）呈現 `application_date` 與 `expires_at` 的區間選擇。
 - 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示系統產生 alias（初始為 `for_{owner_account}`，若 provider 回報衝突則自動改為 `for_{owner_account}_vN`）。管理者手動輸入時僅允許中英文、數字、`_`、`-`，不得包含空白或其他符號。
 - 操作：
   - 對 `active` key 顯示「停用」與「展延（extend）」按鈕。
@@ -90,7 +92,12 @@
 
 ### 4) Whitelist Admin Page（特殊人員名單管理頁）
 - 可用 `account`、`name` 查詢使用者後加入特殊人員名單。
+- 名單表格屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
+- 查詢候選表格屬於 `local-full-dataset table`：目前可保留前端 local sorting/filter/pagination。
 - 可查詢特殊人員名單與狀態，列表需顯示 `account`、`name`、`email`。
+- 名單表格支援 `status`、`sysid`、`account`、`name`、`email`、`created_at`、`updated_at` 的 server-side 篩選；其中 `status`、`sysid` 為 exact match，`account`、`name`、`email` 為 case-insensitive `contains`，時間欄位為區間查詢。
+- `created_at`、`updated_at` 的日期區間篩選 UI 需使用 Date Range Picker，並以雙月曆（開始/結束）呈現。
+- 名單表格預設排序為 `created_at desc`；`note` 與 `actions` 欄位不得提供誤導使用者的前端 filter/sort UI。
 - 可停用/啟用特殊人員名單條目。
 - 可刪除特殊人員名單條目（實體刪除）。
 - `note` / 備註欄位需支援中英文、數字、空白、`_`、`-`，且不得因前端驗證破壞中文輸入法組字。
@@ -98,8 +105,13 @@
 
 ### 5) Admin List Page（管理者名單頁）
 - 僅 `admin` 可使用。
-- 列表僅顯示目前已啟用管理權限（`role=admin`）的人員。
+- 名單表格屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
+- 查詢候選表格屬於 `local-full-dataset table`：目前可保留前端 local sorting/filter/pagination。
+- 列表需顯示全部管理者名單（來源 `admins`，含 `active`、`inactive`），不得只顯示啟用中資料。
 - 列表需顯示管理者狀態（`active`/`inactive`），停用後不得自動從名單移除。
+- 名單表格支援 `status`、`sysid`、`account`、`name`、`email`、`created_at`、`updated_at` 的 server-side 篩選；其中 `status`、`sysid` 為 exact match，`account`、`name`、`email` 為 case-insensitive `contains`，時間欄位為區間查詢。
+- `created_at`、`updated_at` 的日期區間篩選 UI 需使用 Date Range Picker，並以雙月曆（開始/結束）呈現。
+- 名單表格預設排序為 `created_at desc`；`actions` 欄位不得提供誤導使用者的前端 filter/sort UI。
 - 可用 `account`、`name` 查詢使用者。
 - 可啟用一般使用者的管理者權限（對應 `enable`）。
 - 可停用其他管理者的管理者權限（對應 `disable`）。
@@ -111,15 +123,20 @@
 ### 6) Admin Dashboard Page（管理者統計頁）
 - 僅 `admin` 可使用。
 - 以 Data Table 呈現每位申請人的統計資料，欄位至少包含：`account`、`name`、`email`、`total_applications`、`active_count`、`revoked_count`、`expired_count`、`last_applied_at`。
+- 表格查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；欄位 filter 不得退化成單純前端本頁比對。
 - 提供「圖表 / 表格」視圖切換；圖表以長條圖呈現。
+- 篩選欄位（`scope`、日期區間、欄位篩選）僅於表格視圖顯示；切換到圖表視圖時不顯示篩選列，但圖表仍沿用目前查詢口徑。
 - 圖表支援 X 軸切換：`account|department`，Y 軸切換：`total_applications|active_count|revoked_count|expired_count`，與 Top N（`5|10|20`）切換。
 - 圖表 X 軸分類文字需直接顯示在圖下方，不可僅依賴滑鼠 hover tooltip 才能辨識帳號/單位。
 - X 軸刻度文字在圖表視圖中不得被自動省略為僅部分可見（需可直接辨識每個可見柱狀分類）。
 - 支援口徑切換 `scope`：`all|active|revoked|expired`（預設 `all`）。
 - 支援日期區間篩選：`from`、`to`（`YYYY-MM-DD`），統計基準為 `application_date`。
-- 支援 `q`（`account`、`name`、`email`）查詢、分頁與排序。
+- 日期區間篩選 UI 需比照 API Keys 頁使用 Date Range Picker，並以雙月曆（開始/結束）呈現。
+- 支援 `owner_account`、`owner_name`、`owner_email`、`owner_department` 欄位查詢、分頁與排序。
+- `owner_department` 篩選 UI 需使用下拉選單；選項值以單位代碼送出，顯示文字需為「單位代碼 + 單位名稱」。
+- 表格視圖的篩選列需提供「清除篩選」按鈕，可一次重置目前所有篩選欄位並回到第一頁。
 - 預設排序為 `total_applications desc`。
-- 圖表口徑需與目前篩選條件一致（`scope`、`from`、`to`、`q`、`sort`）。
+- 圖表口徑需與目前篩選條件一致（`scope`、`from`、`to`、欄位篩選、`sort`）。
 - 表格中的 `total_applications` 與 `active_count` 需可點擊，並以 Dialog 顯示該申請人的 API Key 明細（僅遮罩 key，不得回傳明文）。
 - Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨目前統計頁日期篩選（`from`、`to`）。
 
@@ -127,6 +144,7 @@
 - 僅 `admin` 可使用。
 - 目的：供管理者確認 DB `institutes` 資料是否已寫入。
 - 資料來源僅 `GET /main/api/v1/institutes`（僅顯示 `active` institutes）。
+- 清單查詢模式屬於 `local-full-dataset table`：頁面一次載入完整資料後，可保留前端 local sorting/filter/pagination。
 - 頁面需顯示 `total` 與列表資料，欄位至少包含：`inst_code`、`inst_name`、`abb_inst_name`、`einst_name`、`division`。
 - 需提供 Loading、Empty、Error（含重試）狀態。
 
@@ -162,6 +180,20 @@
 - persisted text fields 採「阻擋明顯程式片段」策略，不採極端字元白名單，以避免誤傷正常中英文內容。
 - 前端需先提示/阻擋，後端需再次驗證；相同違規 payload 直接打 API 時一律回 `422 VALIDATION_ERROR`。
 - persisted numeric fields 若為使用者可輸入值，前端需在輸入/貼上階段阻擋非 ASCII digits，送出前再驗證一次；後端不得接受非 digits payload。
+
+### 7-2) Data Table Query Contract
+- DataGrid 的 raw `filterModel`、`sortModel` 不得直接作為公開 API 契約；前端需先轉成受控 query 參數，再呼叫後端 API。
+- 只要頁面採 `server-side table`，分頁、排序、欄位篩選、`total` 與頁數都必須由後端資料集計算；前端不得再對當前頁 rows 做 local filter。
+- 只有 `local-full-dataset table` 可保留前端 local filtering/sorting/pagination；若未來改為後端分頁，需同步升級為 `server-side table` 並補齊 query contract。
+- `server-side table` 的欄位若沒有對應後端 query contract，前端必須將該欄位標示為 `filterable: false` 或 `sortable: false`，不得留下會誤導使用者的 UI。
+- 字串欄位 filter operator 僅允許白名單語意：
+  - 識別/名稱類字串（如 `account`、`name`、`email`、`key_alias`、`target_id`、`error_code`）僅允許 `contains`，語意為 case-insensitive substring match。
+  - 列舉欄位（如 `status`、`scope`、`result`、`provider`、`role`、`event_type`、`target_type`）僅允許 exact match。
+  - 日期欄位僅允許區間查詢，使用 `from/to` 或 `<field>_from/<field>_to`；不得把 DataGrid 原生日期 operator 直接暴露成公開 API。
+  - 數字/識別碼欄位（如 `sysid`）僅允許 exact match。
+- 本 repo 現階段 Data Table 分類如下：
+  - `server-side table`：`My API Keys Page`、`Whitelist Admin Page`、`Admin Dashboard Page`、`Operation Audit Logs Page`、`Auth Audit Logs Page`
+  - `local-full-dataset table`：`Admin List Page`、`Institute View Page`
 
 ## 功能需求
 ### Must Have（MVP）
@@ -347,7 +379,6 @@ Base path：`/main/api/v1`
 - `dev/test` 可透過 `ALLOW_HEADER_AUTH=true` 啟用 header auth 供開發與測試使用。
 - 所有 `POST`、`PATCH` 端點需驗證 `X-CSRF-Token` 與 session 內 token 一致；header auth 模式除外。
 - 所有清單查詢 `page_size` 上限為 `100`。
-- 稽核與統計查詢的 `from/to` 視窗上限為 `31` 天。
 - `GET /main/api/v1/users?q=...` 查詢字串上限為 `100` 字元。
 - `POST /main/api/v1/api-keys/{id}/reveal` 回應需帶 `Cache-Control: no-store`。
 - 非 `dev/test` 環境之外部整合 URL 必須為 `https`，且不得解析到 loopback / private / link-local 位址。
@@ -486,14 +517,18 @@ Base path：`/main/api/v1`
 ### 2) 查詢 API Key 清單
 - `GET /main/api/v1/api-keys`
 - 規則：`user` 僅回傳 auth 使用者本人的資料；`admin` 可查全部資料。
+- 查詢模式：此端點為 `server-side table` contract，前端欄位排序、分頁與篩選都必須由此端點對完整資料集處理。
 - 到期口徑：`expires_at` 早於查詢當下（UTC）且原始狀態為 `active` 時，API 對外狀態需視為 `expired`（即使 DB 原始欄位尚未同步更新）。
 - 讀取欄位語意：
   - 對 `active` key 或由 `active` key extend 後的資料：`application_date` 為原始申請日；`duration_months` 為目前此 key 已累計生效的總月數（非最近一次 extend request 值）；`expires_at` 為目前有效到期時間。
   - 對由 `expired` key extend 後的資料：`application_date` 為本次重新起算日；`duration_months` 為本次展延月數；`expires_at` 為該次重新起算後的有效到期時間。
-- Query（草案）：`page`, `page_size`, `status`, `owner_account`, `from`, `to`
+- Query：`page`, `page_size`, `status`, `owner_account`, `owner_name`, `key_alias`, `application_date_from`, `application_date_to`, `expires_from`, `expires_to`, `sort_by`, `sort_dir`
   - `page_size` 定義為每頁顯示筆數（非全量上限）。
-  - `owner_account` 僅 `admin` 可用於指定申請人篩選；`user` 不得跨人查詢
-  - `from`、`to` 格式為 `YYYY-MM-DD`，基準欄位為 `application_date`
+  - `status` 為 exact match，allowed: `active|revoked|expired`
+  - `owner_account`、`owner_name`、`key_alias` 為 case-insensitive `contains` 語意；`owner_*` 僅 `admin` 可跨人查詢，`user` 不得用於越權查詢
+  - `application_date_from`、`application_date_to` 格式為 `YYYY-MM-DD`，基準欄位為 `application_date`
+  - `expires_from`、`expires_to` 格式為 UTC `date-time`（RFC 3339），基準欄位為 `expires_at`
+  - `sort_by` 僅允許既定欄位白名單；`sort_dir` 僅允許 `asc|desc`
   - 前端清單需採伺服器分頁，透過 `page/page_size` 可翻頁讀取完整資料集（不限於首 20 筆）。
 - Response（200）：
 ```json
@@ -519,9 +554,12 @@ Base path：`/main/api/v1`
 ### 2-1) 查詢每位使用者 API Key 申請統計（Admin Dashboard）
 - `GET /main/api/v1/api-keys/statistics/users`
 - 規則：僅 `admin` 可使用；回傳為申請人維度聚合結果，不得包含明文 key。
+- 查詢模式：此端點為 `server-side table` contract；表格分頁、排序、欄位篩選與圖表口徑都必須以此端點回傳為準。
 - 統計口徑：`active/revoked/expired` 與 `scope` 篩選需採相同到期口徑（`expires_at` 已過且原始 `active` 視為 `expired`）。
-- Query（草案）：`page`, `page_size`, `q`, `scope`, `from`, `to`, `sort_by`, `sort_dir`
+- Query：`page`, `page_size`, `q`, `scope`, `from`, `to`, `owner_account`, `owner_name`, `owner_email`, `owner_department`, `sort_by`, `sort_dir`
   - `scope` allowed: `all|active|revoked|expired`（預設 `all`）
+  - `q` 為全域搜尋，僅比對 `account`、`name`、`email`
+  - `owner_account`、`owner_name`、`owner_email`、`owner_department` 為欄位級 case-insensitive `contains` 篩選；其語意獨立於 `q`
   - `from`、`to` 格式為 `YYYY-MM-DD`，基準欄位為 `application_date`
   - `sort_by` 預設 `total_applications`；`sort_dir` 預設 `desc`
 - Response（200）：
@@ -645,7 +683,7 @@ Base path：`/main/api/v1`
 
 ### 5) 特殊人員名單管理 API（沿用受保護路徑）
 - `POST /main/api/v1/whitelists`：新增特殊人員名單（需帶 `sysid`、`account`、`name`、`email`）
-- `GET /main/api/v1/whitelists`：查詢特殊人員名單列表
+- `GET /main/api/v1/whitelists`：查詢特殊人員名單列表，需支援 `page`、`page_size`、`status`、`sysid`、`account`、`name`、`email`、`created_from`、`created_to`、`updated_from`、`updated_to`、`sort_by`、`sort_dir`
 - `PATCH /main/api/v1/whitelists/{id}`：更新狀態（`active/inactive`）與備註
 - `DELETE /main/api/v1/whitelists/{id}`：刪除特殊人員名單條目（實體刪除）
 - 規則：僅 `admin` 可使用。
@@ -679,7 +717,9 @@ Base path：`/main/api/v1`
   - 僅 `admin` 可使用。
   - 資料來源為本地 DB `admins`（含 `active`、`inactive`）。
   - 不得在此 API 路徑呼叫 Persnl SOAP。
-- 回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`、`status`。
+- 需支援 `page`、`page_size`、`status`、`sysid`、`account`、`name`、`email`、`created_from`、`created_to`、`updated_from`、`updated_to`、`sort_by`、`sort_dir`。
+- `status`、`sysid` 為 exact match；`account`、`name`、`email` 為 case-insensitive `contains`；時間欄位為區間查詢。
+- 回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`、`status`、`created_at`、`updated_at`。
 
 ### 5-2) 目前使用者語言偏好 API
 - `GET /main/api/v1/users/preferences/locale`
@@ -766,7 +806,12 @@ Base path：`/main/api/v1`
 ### 6-2) 操作稽核熱資料查詢（v1）
 - `GET /main/api/v1/operation-audit-logs`
 - 規則：僅 `admin` 可使用。
-- 查詢參數：`page`、`page_size`、`from`、`to`、`event_type`、`result(success|failure)`。
+- 查詢模式：此端點為 `server-side table` contract；分頁、排序與欄位篩選需由後端對完整資料集處理。
+- 查詢參數：`page`、`page_size`、`from`、`to`、`event_type`、`action`、`result(success|failure)`、`actor_account`、`target_type`、`target_id`、`error_code`、`sort_by`、`sort_dir`。
+- 欄位語意：
+  - `event_type`、`result`、`target_type` 為 exact match。
+  - `action`、`actor_account`、`target_id`、`error_code` 為 case-insensitive `contains`。
+  - `sort_by` 僅允許既定欄位白名單；`sort_dir` 僅允許 `asc|desc`。
 - 預設熱資料窗：若未提供 `from/to`，回傳最近 7 天資料。
 - 排序：`created_at desc`（最新優先）。
 - 回傳欄位（精簡 + 失敗詳情）：`created_at`、`event_type`、`action`、`result`、`actor_account`、`target_type`、`target_id`、`error_code`、`request_id`、`error_detail`。
@@ -775,7 +820,13 @@ Base path：`/main/api/v1`
 ### 6-3) 登入稽核熱資料查詢（v1）
 - `GET /main/api/v1/auth-audit-logs`
 - 規則：僅 `admin` 可使用。
-- 查詢參數：`page`、`page_size`、`from`、`to`、`provider`、`result(success|failure)`。
+- 查詢模式：此端點為 `server-side table` contract；分頁、排序與欄位篩選需由後端對完整資料集處理。
+- 查詢參數：`page`、`page_size`、`from`、`to`、`provider`、`result(success|failure)`、`account`、`sysid`、`role`、`error_code`、`request_id`、`sort_by`、`sort_dir`。
+- 欄位語意：
+  - `provider`、`result`、`role` 為 exact match。
+  - `account`、`error_code`、`request_id` 為 case-insensitive `contains`。
+  - `sysid` 為 exact match。
+  - `sort_by` 僅允許既定欄位白名單；`sort_dir` 僅允許 `asc|desc`。
 - 預設熱資料窗：若未提供 `from/to`，回傳最近 7 天資料。
 - 排序：`created_at desc`（最新優先）。
 - 回傳欄位（精簡）：`created_at`、`provider`、`result`、`account`、`sysid`、`role`、`error_code`、`request_id`。
@@ -912,8 +963,12 @@ Base path：`/main/api/v1`
 54. `GET /main/api/v1/users` 與 `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`limit-strategy-config`、`institutes/sync` 等關鍵操作 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`；failure 事件另需提供可供管理者除錯的 `error_detail` 與 `request_id`。其中 `GET /main/api/v1/users` 需以 `lookup_context` 區分 `proxy_application|admin_create|whitelist_create` 用途。
 55. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證；`metadata_json` 與 `error_detail` 僅允許白名單安全內容，不得包含 stack trace、SQL、完整第三方 payload。若 audit 寫入失敗，不得改變主流程成功或失敗語意。
 56. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 僅 `admin` 可使用；未提供 `from/to` 時預設回傳最近 7 天熱資料，結果依 `created_at desc` 排序，並支援分頁與既定篩選條件。
-57. `GET /main/api/v1/api-keys/statistics/users`、`GET /main/api/v1/operation-audit-logs`、`GET /main/api/v1/auth-audit-logs` 的 `from/to` 查詢區間不得超過 `31` 天；`GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
-58. 關鍵操作稽核功能、申請人識別欄位調整、統計與 lifecycle 擴充，均不得改動既有受保護 API 路徑與角色模型（`user|admin`）；若需擴充對外 error response，僅允許增加相容性的 optional 欄位（如 `error.details`），不得破壞既有 `error.code` / `error.message` 契約或既有 success response shape。
+57. `GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
+58. 對所有 `server-side table` 頁面，前端 DataGrid 欄位篩選不得只作用於當前頁 rows；`items`、`total`、頁數、排序與篩選結果都必須來自完整資料集的後端查詢。
+59. `GET /main/api/v1/api-keys` 的 `owner_account`、`owner_name`、`key_alias` 篩選需採 case-insensitive `contains`；`application_date_from/application_date_to` 與 `expires_from/expires_to` 需分別正確套用到 `application_date` 與 `expires_at`；`sort_by/sort_dir` 僅允許既定白名單欄位與 `asc|desc`。
+60. `GET /main/api/v1/api-keys/statistics/users` 的 `q` 僅作全域搜尋；`owner_account`、`owner_name`、`owner_email`、`owner_department` 欄位篩選需彼此獨立且採 case-insensitive `contains`；切換圖表與表格視圖時查詢口徑需保持一致。
+61. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 需支援欄位級 server-side sorting/filtering；若某欄位未支援後端 query contract，對應前端欄位必須禁用 filter 或 sort，不得回退成 local table 行為。
+62. 關鍵操作稽核功能、申請人識別欄位調整、統計與 lifecycle 擴充，均不得改動既有受保護 API 路徑與角色模型（`user|admin`）；若需擴充對外 error response，僅允許增加相容性的 optional 欄位（如 `error.details`），不得破壞既有 `error.code` / `error.message` 契約或既有 success response shape。
 
 ## Roadmap
 ### Phase 1：Foundation

@@ -57,8 +57,14 @@ class ApiKeyListItem:
 class ApiKeyListFilter:
     status: str | None = None
     owner_account: str | None = None
-    from_date: date | None = None
-    to_date: date | None = None
+    owner_name: str | None = None
+    key_alias: str | None = None
+    application_date_from: date | None = None
+    application_date_to: date | None = None
+    expires_from: datetime | None = None
+    expires_to: datetime | None = None
+    sort_by: str = "created_at"
+    sort_dir: str = "desc"
 
 
 @dataclass(slots=True)
@@ -92,6 +98,17 @@ class ApiKeyUserStatisticsItem:
 
 
 @dataclass(slots=True)
+class ApiKeyUserStatisticsFilter:
+    q: str | None = None
+    owner_account: str | None = None
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_department: str | None = None
+    from_date: date | None = None
+    to_date: date | None = None
+
+
+@dataclass(slots=True)
 class ApiKeySecretMaterial:
     id: str
     status: str
@@ -121,3 +138,33 @@ class WhitelistUpdateInput:
     status: str
     updated_by: str
     note: str | None = None
+
+
+@dataclass(slots=True)
+class WhitelistListFilter:
+    status: str | None = None
+    sysid: int | None = None
+    account: str | None = None
+    name: str | None = None
+    email: str | None = None
+    created_from: datetime | None = None
+    created_to: datetime | None = None
+    updated_from: datetime | None = None
+    updated_to: datetime | None = None
+    sort_by: str = "created_at"
+    sort_dir: str = "desc"
+
+
+@dataclass(slots=True)
+class AdminListFilter:
+    status: str | None = None
+    sysid: int | None = None
+    account: str | None = None
+    name: str | None = None
+    email: str | None = None
+    created_from: datetime | None = None
+    created_to: datetime | None = None
+    updated_from: datetime | None = None
+    updated_to: datetime | None = None
+    sort_by: str = "created_at"
+    sort_dir: str = "desc"

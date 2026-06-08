@@ -16,7 +16,11 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
   IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   TextField,
   Tooltip,
@@ -27,10 +31,13 @@ import { DataGrid } from "@mui/x-data-grid";
 import { useTheme } from "@mui/material/styles";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
+import DateRangeFilterField from "../components/DateRangeFilterField";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
+import { COMPACT_DIALOG_PAGE_SIZE_OPTIONS, COMPACT_LOCAL_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 import { formatDateTimeInTaipei } from "../utils/datetime";
 import { validatePersistedText } from "../utils/inputValidation";
+import { buildTaipeiDateTimeRange, getServerSort } from "../utils/serverDataGrid";
 
 const actionCellSx = {
   display: "flex",
@@ -87,6 +94,19 @@ function WhitelistNoteField({ note, onDraftChange }) {
 export default function WhitelistAdminPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [sortModel, setSortModel] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sysidFilter, setSysidFilter] = useState("");
+  const [accountFilter, setAccountFilter] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [emailFilter, setEmailFilter] = useState("");
+  const [createdDateFrom, setCreatedDateFrom] = useState("");
+  const [createdDateTo, setCreatedDateTo] = useState("");
+  const [updatedDateFrom, setUpdatedDateFrom] = useState("");
+  const [updatedDateTo, setUpdatedDateTo] = useState("");
   const [keyword, setKeyword] = useState("");
   const [candidates, setCandidates] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -101,6 +121,17 @@ export default function WhitelistAdminPage({ auth }) {
   const editingRemarkRef = useRef({});
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
+  const hasActiveFilters = Boolean(
+    statusFilter ||
+      sysidFilter.trim() ||
+      accountFilter.trim() ||
+      nameFilter.trim() ||
+      emailFilter.trim() ||
+      createdDateFrom ||
+      createdDateTo ||
+      updatedDateFrom ||
+      updatedDateTo
+  );
 
   function closeSearchDialog() {
     setSearchDialogOpen(false);
@@ -115,14 +146,52 @@ export default function WhitelistAdminPage({ auth }) {
     setLoading(true);
     setError("");
     try {
-      const response = await apiClient.listWhitelists(auth);
+      const createdRange = buildTaipeiDateTimeRange(createdDateFrom, createdDateTo);
+      const updatedRange = buildTaipeiDateTimeRange(updatedDateFrom, updatedDateTo);
+      const sort = getServerSort(sortModel, { field: "created_at", sort: "desc" });
+      const normalizedSysid = sysidFilter.trim();
+      const parsedSysid = /^\d+$/.test(normalizedSysid) ? Number(normalizedSysid) : undefined;
+      const response = await apiClient.listWhitelists(
+        {
+          page: page + 1,
+          page_size: pageSize,
+          status: statusFilter || undefined,
+          sysid: parsedSysid,
+          account: accountFilter.trim() || undefined,
+          name: nameFilter.trim() || undefined,
+          email: emailFilter.trim() || undefined,
+          created_from: createdRange.from || undefined,
+          created_to: createdRange.to || undefined,
+          updated_from: updatedRange.from || undefined,
+          updated_to: updatedRange.to || undefined,
+          sort_by: sort.field,
+          sort_dir: sort.sort,
+        },
+        auth
+      );
       setItems(response.items);
+      setTotal(response.total || 0);
       editingRemarkRef.current = {};
     } catch (e) {
       setError(normalizeApiError(e, t("whitelist_load_failed")));
+      setItems([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
+  }
+
+  function clearFilters() {
+    setStatusFilter("");
+    setSysidFilter("");
+    setAccountFilter("");
+    setNameFilter("");
+    setEmailFilter("");
+    setCreatedDateFrom("");
+    setCreatedDateTo("");
+    setUpdatedDateFrom("");
+    setUpdatedDateTo("");
+    setPage(0);
   }
 
   async function searchCandidates() {
@@ -190,7 +259,7 @@ export default function WhitelistAdminPage({ auth }) {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [page, pageSize, sortModel, statusFilter, sysidFilter, accountFilter, nameFilter, emailFilter, createdDateFrom, createdDateTo, updatedDateFrom, updatedDateTo]);
 
   const candidateColumns = useMemo(
     () => [
@@ -223,15 +292,16 @@ export default function WhitelistAdminPage({ auth }) {
 
   const whitelistColumns = useMemo(
     () => [
-      { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
-      { field: "account", headerName: t("common_account"), flex: 1, minWidth: 140 },
-      { field: "name", headerName: t("common_name"), flex: 1, minWidth: 140 },
-      { field: "email", headerName: t("common_email"), flex: 1.5, minWidth: 220 },
+      { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140, filterable: false },
+      { field: "account", headerName: t("common_account"), flex: 1, minWidth: 140, filterable: false },
+      { field: "name", headerName: t("common_name"), flex: 1, minWidth: 140, filterable: false },
+      { field: "email", headerName: t("common_email"), flex: 1.5, minWidth: 220, filterable: false },
       {
         field: "status",
         headerName: t("common_status"),
         flex: 1,
         minWidth: 120,
+        filterable: false,
         renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
       },
       {
@@ -239,6 +309,8 @@ export default function WhitelistAdminPage({ auth }) {
         headerName: t("whitelist_col_remark"),
         flex: 1.5,
         minWidth: 220,
+        sortable: false,
+        filterable: false,
         renderCell: (params) => (
           <Box sx={{ display: "flex", alignItems: "center", height: "100%", width: "100%" }}>
             <WhitelistNoteField
@@ -255,6 +327,7 @@ export default function WhitelistAdminPage({ auth }) {
         headerName: t("common_created_at"),
         flex: 1.5,
         minWidth: 180,
+        filterable: false,
         valueFormatter: (value) => formatDateTimeInTaipei(value, { locale })
       },
       {
@@ -262,6 +335,7 @@ export default function WhitelistAdminPage({ auth }) {
         headerName: t("common_updated_at"),
         flex: 1.5,
         minWidth: 180,
+        filterable: false,
         valueFormatter: (value) => formatDateTimeInTaipei(value, { locale })
       },
       {
@@ -333,20 +407,104 @@ export default function WhitelistAdminPage({ auth }) {
   }
 
   return (
-    <Stack spacing={3} sx={{ flex: 1, minHeight: 0 }}>
+    <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Typography variant="h4">{t("whitelist_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
-      <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={2} useFlexGap flexWrap="wrap" alignItems={{ xs: "stretch", md: "center" }}>
+        <FormControl sx={{ minWidth: 180 }}>
+          <InputLabel id="whitelist-status-filter-label">{t("common_status")}</InputLabel>
+          <Select
+            labelId="whitelist-status-filter-label"
+            label={t("common_status")}
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value);
+              setPage(0);
+            }}
+          >
+            <MenuItem value="">{locale === "zh-TW" ? "全部狀態" : "All statuses"}</MenuItem>
+            <MenuItem value="active">{t("whitelist_status_active")}</MenuItem>
+            <MenuItem value="inactive">{t("whitelist_status_inactive")}</MenuItem>
+          </Select>
+        </FormControl>
+        <TextField
+          label="SysID"
+          value={sysidFilter}
+          onChange={(event) => {
+            setSysidFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 160 }}
+        />
+        <TextField
+          label={t("common_account")}
+          value={accountFilter}
+          onChange={(event) => {
+            setAccountFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label={t("common_name")}
+          value={nameFilter}
+          onChange={(event) => {
+            setNameFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label={t("common_email")}
+          value={emailFilter}
+          onChange={(event) => {
+            setEmailFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 220 }}
+        />
+        <DateRangeFilterField
+          label={t("whitelist_filter_created_range")}
+          fromValue={createdDateFrom}
+          toValue={createdDateTo}
+          startLabel={t("whitelist_filter_created_from")}
+          endLabel={t("whitelist_filter_created_to")}
+          clearLabel={t("common_clear")}
+          closeLabel={t("common_close")}
+          onChange={({ from, to }) => {
+            setCreatedDateFrom(from);
+            setCreatedDateTo(to);
+            setPage(0);
+          }}
+        />
+        <DateRangeFilterField
+          label={t("whitelist_filter_updated_range")}
+          fromValue={updatedDateFrom}
+          toValue={updatedDateTo}
+          startLabel={t("whitelist_filter_updated_from")}
+          endLabel={t("whitelist_filter_updated_to")}
+          clearLabel={t("common_clear")}
+          closeLabel={t("common_close")}
+          onChange={({ from, to }) => {
+            setUpdatedDateFrom(from);
+            setUpdatedDateTo(to);
+            setPage(0);
+          }}
+        />
+        <Button variant="outlined" onClick={clearFilters} disabled={!hasActiveFilters} sx={{ minHeight: 56 }}>
+          {t("mykeys_clear_filters")}
+        </Button>
         <Button
           variant="outlined"
           startIcon={<AddIcon />}
           aria-label="開啟新增特殊人員名單人員"
           onClick={() => setSearchDialogOpen(true)}
+          sx={{ ml: { md: "auto" }, alignSelf: { xs: "stretch", md: "center" }, minHeight: 56 }}
         >
           {t("common_add")}
         </Button>
-      </Box>
+      </Stack>
 
       <Card sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <CardContent sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -354,16 +512,29 @@ export default function WhitelistAdminPage({ auth }) {
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && items.length === 0 ? <EmptyBlock text={t("whitelist_empty")} /> : null}
           {!loading && !error && items.length > 0 ? (
-            <Box sx={{ flex: 1, minHeight: 320 }}>
+            <Box sx={{ flex: 1, minHeight: 0 }}>
               <DataGrid
-                sx={{ height: "100%" }}
+                sx={compactGridSx}
                 rows={items}
                 columns={whitelistColumns}
                 getRowId={(row) => row.id}
-                pageSizeOptions={[10, 20, 50]}
-                initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
+                paginationMode="server"
+                sortingMode="server"
+                rowCount={total}
+                paginationModel={{ page, pageSize }}
+                onPaginationModelChange={(model) => {
+                  setPage(model.page);
+                  setPageSize(model.pageSize);
+                }}
+                sortModel={sortModel}
+                onSortModelChange={(model) => {
+                  setSortModel(model);
+                  setPage(0);
+                }}
+                disableColumnFilter
+                pageSizeOptions={COMPACT_LOCAL_PAGE_SIZE_OPTIONS}
                 disableRowSelectionOnClick
-                rowHeight={56}
+                {...compactGridProps}
                 localeText={gridLocaleText}
               />
             </Box>
@@ -448,13 +619,14 @@ export default function WhitelistAdminPage({ auth }) {
             {candidates.length > 0 ? (
               <Box sx={{ height: 420 }}>
                 <DataGrid
+                  sx={compactGridSx}
                   rows={candidates}
                   columns={candidateColumns}
                   getRowId={(row) => row.id}
-                  pageSizeOptions={[5, 10, 20]}
-                  initialState={{ pagination: { paginationModel: { pageSize: 5, page: 0 } } }}
+                  pageSizeOptions={COMPACT_DIALOG_PAGE_SIZE_OPTIONS}
+                  initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
                   disableRowSelectionOnClick
-                  rowHeight={56}
+                  {...compactGridProps}
                   localeText={gridLocaleText}
                 />
               </Box>

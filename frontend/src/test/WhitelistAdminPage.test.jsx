@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import WhitelistAdminPage from "../pages/WhitelistAdminPage";
 import { mockApiProvider } from "../mocks/mockApiProvider";
 
@@ -25,6 +27,10 @@ beforeEach(() => {
   mockApiProvider.resetForTests();
 });
 
+function renderPage(ui) {
+  return render(<LocalizationProvider dateAdapter={AdapterDayjs}>{ui}</LocalizationProvider>);
+}
+
 async function openSearchDialog(user) {
   await user.click(screen.getByRole("button", { name: "開啟新增特殊人員名單人員" }));
   return screen.findByRole("dialog", { name: "查詢人員" });
@@ -32,7 +38,7 @@ async function openSearchDialog(user) {
 
 test("admin can search user and add whitelist item, then sees duplicated error", async () => {
   const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
 
   expect(await screen.findByText("特殊人員名單管理")).toBeInTheDocument();
   expect(screen.queryByText("白名單列表")).not.toBeInTheDocument();
@@ -53,7 +59,7 @@ test("admin can search user and add whitelist item, then sees duplicated error",
 
 test("admin can toggle status with confirm and update remark", async () => {
   const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
 
   expect(await screen.findByText("jane.doe@company.com")).toBeInTheDocument();
   await user.click((await screen.findAllByRole("button", { name: "停用特殊人員名單" }))[0]);
@@ -70,7 +76,7 @@ test("admin can toggle status with confirm and update remark", async () => {
 
 test("admin can save chinese and english mixed note", async () => {
   const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
 
   const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];
   await user.clear(remarkInput);
@@ -84,7 +90,7 @@ test("admin can save chinese and english mixed note", async () => {
 
 test("whitelist note keeps chinese draft during ime composition", async () => {
   const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
 
   const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];
   await user.clear(remarkInput);
@@ -106,7 +112,7 @@ test("whitelist note keeps chinese draft during ime composition", async () => {
 
 test("admin cannot save unsafe whitelist note", async () => {
   const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
 
   const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];
   await user.clear(remarkInput);
@@ -118,14 +124,14 @@ test("admin cannot save unsafe whitelist note", async () => {
 
 test("admin cannot save whitelist note with invalid characters", async () => {
   const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
 
   const remarkInput = (await screen.findAllByDisplayValue("platform team"))[0];
   await user.clear(remarkInput);
   await user.type(remarkInput, "平台備註.2026");
   await user.click((await screen.findAllByRole("button", { name: "儲存備註" }))[0]);
 
-  expect(await screen.findByText("備註僅允許中英文、數字、空白、底線與連字號。")).toBeInTheDocument();
+  expect(await screen.findByText("備註僅允許中英文、數字、空白、_、-。")).toBeInTheDocument();
 });
 
 test.each([
@@ -133,7 +139,7 @@ test.each([
   { name: "admin can search by account", query: "alice.wang", expectedText: "alice.wang" },
 ])("$name", async ({ query, expectedText }) => {
   const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
 
   const searchDialog = await openSearchDialog(user);
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), query);
@@ -143,7 +149,7 @@ test.each([
 
 test("candidate search dialog resets after close", async () => {
   const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
 
   const firstDialog = await openSearchDialog(user);
   await user.type(within(firstDialog).getByLabelText("查詢關鍵字"), "alice");
@@ -159,7 +165,7 @@ test("candidate search dialog resets after close", async () => {
 
 test("admin can search by pressing enter in dialog input", async () => {
   const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
 
   const searchDialog = await openSearchDialog(user);
   await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "alice{enter}");
@@ -168,7 +174,7 @@ test("admin can search by pressing enter in dialog input", async () => {
 
 test("search requires keyword in whitelist dialog", async () => {
   const user = userEvent.setup();
-  render(<WhitelistAdminPage auth={adminAuth} />);
+  renderPage(<WhitelistAdminPage auth={adminAuth} />);
 
   const searchDialog = await openSearchDialog(user);
   await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));

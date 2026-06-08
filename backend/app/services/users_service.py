@@ -7,6 +7,7 @@ from app.core.errors import ApiError
 from app.services.persnl_soap_service import PersnlSoapService, PersnlSoapUnavailableError
 from db.models.user_preferences import UserPreference
 from db.repositories import SQLAlchemyAdminRepository
+from db.repositories.types import AdminListFilter
 
 
 class UsersService:
@@ -38,8 +39,50 @@ class UsersService:
             "total": len(users),
         }
 
-    def list_admins(self, limit: int = 100) -> dict:
-        admins = self.repo.list_all(limit=limit)
+    def list_admins(
+        self,
+        *,
+        status: str | None,
+        sysid: int | None,
+        account: str | None,
+        name: str | None,
+        email: str | None,
+        created_from: datetime | None,
+        created_to: datetime | None,
+        updated_from: datetime | None,
+        updated_to: datetime | None,
+        sort_by: str,
+        sort_dir: str,
+        page: int,
+        page_size: int,
+    ) -> dict:
+        page = max(page, 1)
+        page_size = min(max(page_size, 1), 100)
+        offset = (page - 1) * page_size
+        if status is not None and status not in {"active", "inactive"}:
+            raise ApiError("VALIDATION_ERROR", "status must be active or inactive", 422)
+        if sort_by not in {"sysid", "account", "name", "email", "status", "created_at", "updated_at"}:
+            raise ApiError("VALIDATION_ERROR", "unsupported sort_by", 422)
+        if sort_dir not in {"asc", "desc"}:
+            raise ApiError("VALIDATION_ERROR", "sort_dir must be asc or desc", 422)
+
+        admins, total = self.repo.list(
+            AdminListFilter(
+                status=status,
+                sysid=sysid,
+                account=account.strip() if account else None,
+                name=name.strip() if name else None,
+                email=email.strip().lower() if email else None,
+                created_from=created_from,
+                created_to=created_to,
+                updated_from=updated_from,
+                updated_to=updated_to,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+            ),
+            limit=page_size,
+            offset=offset,
+        )
         return {
             "items": [
                 {
@@ -51,10 +94,14 @@ class UsersService:
                     "department": admin.department or "",
                     "role": "admin",
                     "status": admin.status,
+                    "created_at": admin.created_at,
+                    "updated_at": admin.updated_at,
                 }
                 for admin in admins
             ],
-            "total": len(admins),
+            "page": page,
+            "page_size": page_size,
+            "total": total,
         }
 
     def enable_admin(self, current_user: CurrentUser, user_id: int) -> dict:

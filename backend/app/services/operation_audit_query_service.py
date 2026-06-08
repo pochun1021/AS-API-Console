@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime, time, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import asc, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
@@ -21,12 +21,34 @@ class OperationAuditQueryService:
         from_date: date | None,
         to_date: date | None,
         event_type: str | None,
+        action: str | None,
         result: str | None,
+        actor_account: str | None,
+        target_type: str | None,
+        target_id: str | None,
+        error_code: str | None,
+        sort_by: str,
+        sort_dir: str,
     ) -> dict:
         if current_user.role != "admin":
             raise ApiError("FORBIDDEN", "admin role required", 403)
         if result is not None and result not in {"success", "failure"}:
             raise ApiError("VALIDATION_ERROR", "result must be success or failure", 422)
+        allowed_sort_by = {
+            "created_at",
+            "event_type",
+            "action",
+            "result",
+            "actor_account",
+            "target_type",
+            "target_id",
+            "error_code",
+            "request_id",
+        }
+        if sort_by not in allowed_sort_by:
+            raise ApiError("VALIDATION_ERROR", "sort_by is invalid", 422)
+        if sort_dir not in {"asc", "desc"}:
+            raise ApiError("VALIDATION_ERROR", "sort_dir must be asc or desc", 422)
 
         if from_date is None and to_date is None:
             to_date = datetime.now(UTC).date()
@@ -48,15 +70,39 @@ class OperationAuditQueryService:
         )
         if event_type:
             stmt = stmt.where(OperationAuditLog.event_type == event_type)
+        if action:
+            stmt = stmt.where(OperationAuditLog.action.ilike(f"%{action.strip()}%"))
         if result:
             stmt = stmt.where(OperationAuditLog.result == result)
+        if actor_account:
+            stmt = stmt.where(OperationAuditLog.actor_account.ilike(f"%{actor_account.strip()}%"))
+        if target_type:
+            stmt = stmt.where(OperationAuditLog.target_type == target_type)
+        if target_id:
+            stmt = stmt.where(OperationAuditLog.target_id.ilike(f"%{target_id.strip()}%"))
+        if error_code:
+            stmt = stmt.where(OperationAuditLog.error_code.ilike(f"%{error_code.strip()}%"))
+
+        sort_expressions = {
+            "created_at": OperationAuditLog.created_at,
+            "event_type": OperationAuditLog.event_type,
+            "action": OperationAuditLog.action,
+            "result": OperationAuditLog.result,
+            "actor_account": OperationAuditLog.actor_account,
+            "target_type": OperationAuditLog.target_type,
+            "target_id": OperationAuditLog.target_id,
+            "error_code": OperationAuditLog.error_code,
+            "request_id": OperationAuditLog.request_id,
+        }
+        sort_expr = sort_expressions[sort_by]
+        order_expr = asc(sort_expr) if sort_dir == "asc" else desc(sort_expr)
 
         total_stmt = select(func.count()).select_from(stmt.subquery())
         total = int(self.session.scalar(total_stmt) or 0)
 
         rows = list(
             self.session.scalars(
-                stmt.order_by(OperationAuditLog.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+                stmt.order_by(order_expr, OperationAuditLog.id.asc()).offset((page - 1) * page_size).limit(page_size)
             ).all()
         )
         return {

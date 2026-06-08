@@ -37,6 +37,7 @@ test("admin can load and filter statistics", async () => {
   renderPage(<AdminDashboardPage auth={adminAuth} />);
 
   expect(await screen.findByText("管理者統計")).toBeInTheDocument();
+  expect(screen.getByLabelText("日期區間")).toBeInTheDocument();
   expect(await screen.findByText("jane.doe")).toBeInTheDocument();
 
   await user.click(screen.getByLabelText("口徑"));
@@ -49,11 +50,93 @@ test("admin can load and filter statistics", async () => {
   await user.click(screen.getByLabelText("口徑"));
   await user.click(screen.getByRole("option", { name: "all" }));
 
-  await user.clear(screen.getByLabelText("關鍵字"));
-  await user.type(screen.getByLabelText("關鍵字"), "alice");
+  await user.type(screen.getAllByLabelText("帳號")[0], "alice");
 
   await waitFor(() => {
     expect(screen.getByText("alice.wang")).toBeInTheDocument();
+  });
+});
+
+test("admin dashboard sends server sort params when sorting columns", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeyUserStatistics");
+  renderPage(<AdminDashboardPage auth={adminAuth} />);
+
+  expect(await screen.findByText("管理者統計")).toBeInTheDocument();
+  await user.click(await screen.findByRole("columnheader", { name: "帳號" }));
+
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: "owner_account", sort_dir: "asc" }),
+      adminAuth
+    );
+  });
+});
+
+test("admin dashboard sends custom owner filters without DataGrid filter model", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeyUserStatistics");
+  renderPage(<AdminDashboardPage auth={adminAuth} />);
+
+  expect(await screen.findByText("管理者統計")).toBeInTheDocument();
+  await user.type(screen.getAllByLabelText("帳號")[0], "ktu");
+  await user.type(screen.getAllByLabelText("姓名")[0], "尤");
+  await user.type(screen.getByLabelText("Email"), "ktu@example.com");
+  await user.click(screen.getAllByLabelText("單位")[0]);
+  await user.click(await screen.findByRole("option", { name: "02 資訊所" }));
+
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        owner_account: "ktu",
+        owner_name: "尤",
+        owner_email: "ktu@example.com",
+        owner_department: "02",
+      }),
+      adminAuth
+    );
+  });
+});
+
+test("admin dashboard can clear table filters", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listApiKeyUserStatistics");
+  renderPage(<AdminDashboardPage auth={adminAuth} />);
+
+  expect(await screen.findByText("管理者統計")).toBeInTheDocument();
+  const clearButton = screen.getByRole("button", { name: "清除篩選" });
+  expect(clearButton).toBeDisabled();
+
+  await user.type(screen.getAllByLabelText("帳號")[0], "alice");
+
+  await waitFor(() => {
+    expect(clearButton).not.toBeDisabled();
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        owner_account: "alice",
+      }),
+      adminAuth
+    );
+  });
+
+  await user.click(clearButton);
+
+  await waitFor(() => {
+    expect(screen.getAllByLabelText("帳號")[0]).toHaveValue("");
+    expect(clearButton).toBeDisabled();
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        scope: "all",
+        from: undefined,
+        to: undefined,
+        owner_account: undefined,
+        owner_name: undefined,
+        owner_email: undefined,
+        owner_department: undefined,
+        page: 1,
+      }),
+      adminAuth
+    );
   });
 });
 
@@ -62,11 +145,14 @@ test("admin can switch to chart view and change axes", async () => {
   const { container } = renderPage(<AdminDashboardPage auth={adminAuth} />);
 
   expect(await screen.findByText("管理者統計")).toBeInTheDocument();
+  expect(screen.getByLabelText("日期區間")).toBeInTheDocument();
   await user.click(screen.getByRole("tab", { name: "圖表" }));
 
   expect(await screen.findByLabelText("X 軸")).toBeInTheDocument();
   expect(screen.getByLabelText("Y 軸")).toBeInTheDocument();
   expect(screen.getByLabelText("Top N")).toBeInTheDocument();
+  expect(screen.queryByLabelText("日期區間")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("口徑")).not.toBeInTheDocument();
 
   await user.click(screen.getByLabelText("X 軸"));
   await user.click(screen.getByRole("option", { name: "單位" }));

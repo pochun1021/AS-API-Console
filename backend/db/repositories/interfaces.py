@@ -11,9 +11,11 @@ from db.repositories.types import (
     ApiKeyListFilter,
     ApiKeyListItem,
     ApiKeySecretMaterial,
+    ApiKeyUserStatisticsFilter,
     ApiKeyUserStatisticsItem,
     ApplicationCreateInput,
     AuthIdentity,
+    WhitelistListFilter,
     WhitelistCreateInput,
     WhitelistUpdateInput,
 )
@@ -22,7 +24,13 @@ from db.repositories.types import (
 class WhitelistRepository(Protocol):
     def create(self, data: WhitelistCreateInput) -> ApiKeyWhitelist: ...
 
-    def list(self, status: str | None = None, limit: int = 100, offset: int = 0) -> list[ApiKeyWhitelist]: ...
+    def list(
+        self,
+        filters: WhitelistListFilter,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[ApiKeyWhitelist], int]: ...
 
     def get_by_id(self, whitelist_id: str) -> ApiKeyWhitelist | None: ...
 
@@ -68,9 +76,7 @@ class ApiKeyRepository(Protocol):
         self,
         *,
         scope: str,
-        q: str | None = None,
-        from_date: date | None = None,
-        to_date: date | None = None,
+        filters: ApiKeyUserStatisticsFilter,
         sort_by: str = "total_applications",
         sort_dir: str = "desc",
         limit: int = 20,
