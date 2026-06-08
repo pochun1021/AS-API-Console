@@ -310,6 +310,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             budget_duration=data.budget_duration,
             tpm_limit=data.tpm_limit,
             rpm_limit=data.rpm_limit,
+            max_parallel_requests=data.max_parallel_requests,
             status="active",
             issued_at=data.issued_at,
             expires_at=data.expires_at,

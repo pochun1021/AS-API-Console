@@ -499,6 +499,7 @@ def update_limit_strategy_config(
                 "budget_duration": payload.budget_duration,
                 "rate_limit_tpm": payload.rate_limit_tpm,
                 "rate_limit_rpm": payload.rate_limit_rpm,
+                "max_parallel_requests": payload.max_parallel_requests,
             },
         )
         raise
@@ -518,6 +519,7 @@ def update_limit_strategy_config(
                 "budget_duration": payload.budget_duration,
                 "rate_limit_tpm": payload.rate_limit_tpm,
                 "rate_limit_rpm": payload.rate_limit_rpm,
+                "max_parallel_requests": payload.max_parallel_requests,
             },
         )
         raise
@@ -533,6 +535,7 @@ def update_limit_strategy_config(
             "budget_duration": result["budget_duration"],
             "rate_limit_tpm": result["rate_limit_tpm"],
             "rate_limit_rpm": result["rate_limit_rpm"],
+            "max_parallel_requests": result["max_parallel_requests"],
         },
     )
     return result

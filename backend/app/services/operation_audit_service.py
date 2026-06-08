@@ -31,6 +31,7 @@ ALLOWED_METADATA_KEYS = {
     "provider_operation_id",
     "lookup_context",
     "matched_count",
+    "max_parallel_requests",
     "unchanged_count",
     "updated_count",
 }

@@ -159,6 +159,7 @@
   - `budget_duration`：重置週期（僅允許 `daily|weekly|monthly`）。
   - `tpm_limit`：每分鐘 Token 數限制。
   - `rpm_limit`：每分鐘請求數限制。
+  - `max_parallel_requests`：最大平行請求數限制；預設 `0`，表示不限制。
 - 所有會寫入後端的 number 類型欄位僅允許 ASCII `0-9`；不可接受 `-`、`.`、`+`、`e/E`、空白、全形數字或混合字串。
 - `budget_duration` 前端顯示需使用單選，展示文案映射：
   - `daily` => `1天`
@@ -474,6 +475,7 @@ Base path：`/main/api/v1`
 {
   "rpm_limit": 500,
   "tpm_limit": 10000,
+  "max_parallel_requests": 0,
   "max_budget": 1000.0,
   "budget_duration": "30d",
   "duration": "180d",
@@ -487,6 +489,7 @@ Base path：`/main/api/v1`
   - `budget_duration` 由系統設定映射：`daily->1d`、`weekly->7d`、`monthly->30d`
   - `duration` 由 `duration_months` 映射：`1->30d`、`6->180d`、`12->360d`
   - 若全域設定中的 `tpm_limit` 或 `rpm_limit` 為 `0`，送往 provider 時需轉為 `null`，表示不限制
+  - `max_parallel_requests` 預設為 `0`，表示不限制，送往 provider 時需維持 `0`，不得轉為 `null`
   - `team_id` 固定使用 `PROVIDER_TEAM_ID`
   - `key_alias` 預設先送 `for_{owner_account}`；若 provider 回 `400`，系統需自動依序重試 `for_{owner_account}_v2`、`_v3` ...，成功後將最終 alias 寫回本地 `api_keys.key_alias`
   - 目前不送 `budget_limits`
@@ -499,20 +502,35 @@ Base path：`/main/api/v1`
 - 全域固定單一金鑰條件組合（皆可編輯）：
   - `budget`（額度）：`max_budget`、`budget_duration`
   - `rate_limit`（速度）：`tpm_limit`、`rpm_limit`
+  - `concurrency`（平行請求數）：`max_parallel_requests`
 - 欄位語意同金鑰條件模板：
   - `max_budget`：總金額額度（USD）。
   - `budget_duration`：重置週期（`daily|weekly|monthly`）。
   - `tpm_limit`：每分鐘 Token 數限制；允許 `0`，表示送往 provider 時轉為 `null`（不限制）。
   - `rpm_limit`：每分鐘請求數限制；允許 `0`，表示送往 provider 時轉為 `null`（不限制）。
-- 每把 API Key 需同時套用 `budget` 與 `rate_limit` 兩種限制；不提供二選一模式。
+  - `max_parallel_requests`：最大平行請求數限制；允許 `0`，表示不限制，送往 provider 時維持 `0`。
+- 每把 API Key 需同時套用 `budget`、`rate_limit` 與 `max_parallel_requests` 設定；不提供二選一模式。
 - 一般使用者不可查看或修改金鑰條件設定。
-- 系統需透過 migration 預先補齊 `global-limit-strategy-config` 預設資料列（`1000/monthly/10000/500`）。
+- 系統需透過 migration 預先補齊 `global-limit-strategy-config` 預設資料列（`1000/monthly/10000/500/0`）。
 - `GET /main/api/v1/limit-strategy-config` 在資料缺漏時仍需回傳相同預設值，作為相容性保險。
 - `PATCH /main/api/v1/limit-strategy-config` 需採 upsert：若設定不存在則建立，存在則更新。
-- `PATCH /main/api/v1/limit-strategy-config` 成功時，需同步呼叫 provider `POST {PROVIDER_BASE_URL}/team/update`，request body 僅允許 `team_id`、`tpm_limit`、`rpm_limit`、`max_budget`、`budget_duration`。
+- `PATCH /main/api/v1/limit-strategy-config` 成功時，需同步呼叫 provider `POST {PROVIDER_BASE_URL}/team/key/bulk_update`，request body 固定為：
+```json
+{
+  "team_id": "team-001",
+  "all_keys_in_team": true,
+  "update_fields": {
+    "max_budget": 3000.0,
+    "budget_duration": "7d",
+    "tpm_limit": 13000,
+    "rpm_limit": 700,
+    "max_parallel_requests": 0
+  }
+}
+```
 - `PATCH /main/api/v1/limit-strategy-config` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
-- `PATCH /main/api/v1/limit-strategy-config` 的 `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm` 僅接受 ASCII `0-9`；若為科學記號、小數、負號、全形數字、空白或混合字串，回 `422 VALIDATION_ERROR`。
-- 同步 `/team/update` 時，external provider mode 下缺少 `PROVIDER_TEAM_ID` 必須 fail fast，且不得送 request 給 provider。
+- `PATCH /main/api/v1/limit-strategy-config` 的 `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm`、`max_parallel_requests` 僅接受 ASCII `0-9`；若為空字串、科學記號、小數、負號、全形數字、空白或混合字串，回 `422 VALIDATION_ERROR`。
+- 同步 `/team/key/bulk_update` 時，external provider mode 下缺少 `PROVIDER_TEAM_ID` 必須 fail fast，且不得送 request 給 provider。
 
 ### 2) 查詢 API Key 清單
 - `GET /main/api/v1/api-keys`
@@ -905,7 +923,7 @@ Base path：`/main/api/v1`
 13. `extend`、`revoke` 若需舊明文 key，後端必須從 `key_ciphertext` 解密，且明文只可在服務記憶體中短暫使用；不得出現在 DB、log、audit log、exception message。`renew` 不得依賴舊明文 key。
 14. 若 provider timeout/5xx、明確拒絕、缺少密文材料、解密失敗或回應不完整，本地不得先改動狀態或有效期限，並需回傳對應錯誤。
 15. 若部署使用 local provider adapter 作為開發/測試替身，仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
-16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 需送 `null`，且不得送 `models` 或 `budget_limits`。
+16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_parallel_requests`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 需送 `null`、`max_parallel_requests=0` 需原樣送 `0`，且不得送 `models` 或 `budget_limits`。
 17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`update` 用於 extend 或 alias 同步時可帶 `key_alias`；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
 18. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 
@@ -921,7 +939,7 @@ Base path：`/main/api/v1`
 26. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時需回傳 `KEY_NOT_EXTENDABLE`。`active` key 僅能在 `expires_at - now(UTC) <= 30 days` 時展延，且此門檻同時適用於 `user` 與 `admin`；超過 30 天時需回傳 `KEY_EXTEND_NOT_NEAR_EXPIRY`。`expired` key 不受此限制。extend 成功後：
   - 若來源是 `active` key，`application_date` 維持原申請日，讀取 API 的 `duration_months` 改為累計總月數。
   - 若來源是 `expired` key，`application_date` 改為 extend 當日，讀取 API 的 `duration_months` 改為本次展延月數，新的 `expires_at` 需以 extend 成功當下為基準計算。
-27. `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm` 僅接受 ASCII `0-9`；非數字字元、科學記號、小數、負號、全形數字與混合字串不得通過前端送出，也不得通過後端 API 驗證。
+27. `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm`、`max_parallel_requests` 僅接受 ASCII `0-9`；非數字字元、空字串、科學記號、小數、負號、全形數字與混合字串不得通過前端送出，也不得通過後端 API 驗證。
 28. whitelist `note` 需可正常輸入與儲存中英文混合內容，且中文輸入法組字不得被前端驗證破壞；若內容包含明顯程式語法，或含空白、`_`、`-` 以外特殊符號（例如 `.`, `@`, `/`, `<`, `>`），前後端都需拒絕。
 29. `key_alias` 僅允許中英文、數字、`_`、`-`；若包含空白、其他特殊符號，或明顯程式語法，前端需阻擋儲存，後端直接打 API 時需回傳 `422 VALIDATION_ERROR`。
 30. `renew`、`extend`、`revoke` 的本地同步不得改變既有受保護 API 路徑、角色模型或現有對外 response shape。
@@ -947,7 +965,7 @@ Base path：`/main/api/v1`
 42. `GET /main/api/v1/api-keys/statistics/users` 僅 `admin` 可用，預設依 `total_applications desc` 排序；`sort_by` 僅允許既定欄位，`scope`、`from`、`to` 與 `application_date` 篩選需生效，且統計結果不得包含 `api_key_plaintext`。
 43. 統計 API 每筆資料需包含 `owner_department`；管理者統計表格中的 `total_applications` 與 `active_count` 需可點擊開啟 API Key 明細 Dialog，且明細查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
 44. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳系統產生 alias。`admin` 可透過 `PATCH /main/api/v1/api-keys/{id}` 更新 alias，`user` 呼叫需回傳 `403`，重複 alias 需回傳 `409 KEY_ALIAS_DUPLICATE`；external provider mode 下 alias 更新需同步 provider 狀態。
-45. 限制策略設定僅 `admin` 可讀取與更新；`budget_duration` 僅允許 `daily|weekly|monthly`，管理端顯示映射需為 `1天|7天|30天`，且每把 API Key 的限制策略需同時包含 `budget` 與 `rate_limit`，不得提供 pending 補發端點或 `issuance_mode` 二選一模式。
+45. 限制策略設定僅 `admin` 可讀取與更新；`budget_duration` 僅允許 `daily|weekly|monthly`，管理端顯示映射需為 `1天|7天|30天`，且每把 API Key 的限制策略需同時包含 `budget`、`rate_limit` 與 `max_parallel_requests`，其中 `max_parallel_requests` 預設 `0` 代表不限制；不得提供 pending 補發端點或 `issuance_mode` 二選一模式。
 46. `admin` 可於 `/institute-view` 查看 `active` institutes 清單與 `total`，並可手動觸發同步；若 Persnl SOAP 不可用，`POST /main/api/v1/institutes/sync` 需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 
 ### OAuth、Session 與語系

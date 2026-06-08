@@ -23,6 +23,7 @@ class ApplicationCreateInput:
     budget_duration: str | None
     tpm_limit: int | None
     rpm_limit: int | None
+    max_parallel_requests: int | None
     issued_at: datetime
     expires_at: datetime
 

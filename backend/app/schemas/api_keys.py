@@ -172,6 +172,7 @@ class LimitStrategyConfigResponse(BaseModel):
     budget_duration: str
     rate_limit_tpm: int
     rate_limit_rpm: int
+    max_parallel_requests: int
 
 
 class LimitStrategyConfigUpdateRequest(BaseModel):
@@ -179,6 +180,7 @@ class LimitStrategyConfigUpdateRequest(BaseModel):
     budget_duration: str
     rate_limit_tpm: int
     rate_limit_rpm: int
+    max_parallel_requests: int
 
     @model_validator(mode="before")
     @classmethod
@@ -192,4 +194,8 @@ class LimitStrategyConfigUpdateRequest(BaseModel):
         )
         raw["rate_limit_tpm"] = parse_ascii_digits(field_name="rate_limit_tpm", value=raw.get("rate_limit_tpm"))
         raw["rate_limit_rpm"] = parse_ascii_digits(field_name="rate_limit_rpm", value=raw.get("rate_limit_rpm"))
+        raw["max_parallel_requests"] = parse_ascii_digits(
+            field_name="max_parallel_requests",
+            value=raw.get("max_parallel_requests"),
+        )
         return raw

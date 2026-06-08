@@ -300,7 +300,8 @@ let limitStrategyConfig = {
   budget_max_budget: "1000",
   budget_duration: "monthly",
   rate_limit_tpm: 10000,
-  rate_limit_rpm: 500
+  rate_limit_rpm: 500,
+  max_parallel_requests: 0
 };
 let operationAuditLogs = [
   {
@@ -1221,16 +1222,19 @@ export const mockApiProvider = {
     }
     const rawTpm = payload?.rate_limit_tpm;
     const rawRpm = payload?.rate_limit_rpm;
-    if (!isAsciiDigits(String(rawTpm)) || !isAsciiDigits(String(rawRpm))) {
+    const rawMaxParallelRequests = payload?.max_parallel_requests;
+    if (!isAsciiDigits(String(rawTpm)) || !isAsciiDigits(String(rawRpm)) || !isAsciiDigits(String(rawMaxParallelRequests))) {
       throw createError("VALIDATION_ERROR", "rate limit config is required", 422);
     }
     const rateLimitTpm = Number(rawTpm);
     const rateLimitRpm = Number(rawRpm);
+    const maxParallelRequests = Number(rawMaxParallelRequests);
     limitStrategyConfig = {
       budget_max_budget: String(payload.budget_max_budget).trim(),
       budget_duration: String(payload.budget_duration).trim(),
       rate_limit_tpm: rateLimitTpm,
-      rate_limit_rpm: rateLimitRpm
+      rate_limit_rpm: rateLimitRpm,
+      max_parallel_requests: maxParallelRequests
     };
     return { ...limitStrategyConfig };
   },
@@ -1269,7 +1273,8 @@ export const mockApiProvider = {
       budget_max_budget: "1000",
       budget_duration: "monthly",
       rate_limit_tpm: 10000,
-      rate_limit_rpm: 500
+      rate_limit_rpm: 500,
+      max_parallel_requests: 0
     };
     operationAuditLogs = [
       {

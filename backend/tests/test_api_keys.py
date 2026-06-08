@@ -654,6 +654,8 @@ def test_application_external_provider_requires_team_id(client, admin_headers, u
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
     monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
     get_settings.cache_clear()
+    settings = get_settings().model_copy(update={"provider_team_id": ""})
+    monkeypatch.setattr("app.services.api_keys_service.get_settings", lambda: settings)
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
 
@@ -694,6 +696,7 @@ def test_provider_payload_builder_uses_external_contract():
             budget_duration="monthly",
             tpm_limit=10000,
             rpm_limit=500,
+            max_parallel_requests=0,
         ),
     )
 
@@ -703,6 +706,7 @@ def test_provider_payload_builder_uses_external_contract():
         "duration": "180d",
         "tpm_limit": 10000,
         "rpm_limit": 500,
+        "max_parallel_requests": 0,
         "team_id": "team-001",
         "key_alias": "for_user1",
         "key_type": "llm_api",
@@ -724,11 +728,13 @@ def test_provider_payload_builder_converts_zero_rate_limits_to_null():
             budget_duration="monthly",
             tpm_limit=0,
             rpm_limit=0,
+            max_parallel_requests=0,
         ),
     )
 
     assert payload["tpm_limit"] is None
     assert payload["rpm_limit"] is None
+    assert payload["max_parallel_requests"] == 0
     assert payload["team_id"] == "team-001"
 
 
