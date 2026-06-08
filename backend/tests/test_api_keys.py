@@ -225,6 +225,16 @@ def _assert_utc_datetime_string(value: str) -> None:
     assert value.endswith("Z") or value.endswith("+00:00")
 
 
+def test_calc_expiration_uses_fixed_day_duration():
+    from app.services.api_keys_service import _calc_expiration
+
+    issued_at = datetime(2026, 7, 8, 10, 30, 0, tzinfo=UTC)
+
+    assert _calc_expiration(issued_at, 1) == datetime(2026, 8, 7, 10, 30, 0, tzinfo=UTC)
+    assert _calc_expiration(issued_at, 6) == datetime(2027, 1, 4, 10, 30, 0, tzinfo=UTC)
+    assert _calc_expiration(issued_at, 12) == datetime(2027, 7, 3, 10, 30, 0, tzinfo=UTC)
+
+
 def test_application_success_and_no_plaintext_in_queries(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
@@ -243,6 +253,9 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert application["sysid"] == int(user_headers["x-sysid"])
     assert application["is_proxy_submission"] in {0, False}
     assert application["proxy_operator_account"] is None
+    issued_at = datetime.fromisoformat(body["application"]["issued_at"].replace("Z", "+00:00"))
+    expires_at = datetime.fromisoformat(body["application"]["expires_at"].replace("Z", "+00:00"))
+    assert expires_at - issued_at == timedelta(days=30)
 
     list_resp = client.get(_api("/api-keys"), headers=user_headers)
     assert list_resp.status_code == 200
@@ -1221,6 +1234,8 @@ def test_provider_mutation_payloads_use_key_field_and_shared_contract(client, ad
         assert renew.status_code == 200
         renewed_key_id = renew.json()["id"]
         renewed_plaintext = renew.json()["api_key_plaintext"]
+        renewed_application = _fetch_application_row_for_key(renewed_key_id)
+        renewed_expires_at = datetime.fromisoformat(renew.json()["expires_at"].replace("Z", "+00:00"))
         assert "key" not in captured_generate_payload
         assert captured_generate_payload["duration"] == "30d"
         assert captured_generate_payload["key_alias"] == f"for_{user['x-account']}"
@@ -1233,7 +1248,9 @@ def test_provider_mutation_payloads_use_key_field_and_shared_contract(client, ad
         extend = client.post(_api(f"/api-keys/{renewed_key_id}/extend"), headers=user, json={"duration_months": 6})
         assert extend.status_code == 200
         assert captured_update_payload["key"] == renewed_plaintext
-        assert captured_update_payload["duration"] == "180d"
+        renewed_issued_at = datetime.fromisoformat(str(renewed_application["issued_at"]).replace("Z", "+00:00"))
+        assert renewed_expires_at - renewed_issued_at == timedelta(days=30)
+        assert captured_update_payload["duration"] == "210d"
         assert captured_update_payload["key_alias"] == f"for_{user['x-account']}"
         assert captured_update_payload["key_type"] == "llm_api"
         assert captured_update_payload["team_id"] == "team-001"
@@ -1285,6 +1302,40 @@ def test_extend_sends_latest_key_alias_to_provider(client, admin_headers, monkey
         detail = client.get(_api(f"/api-keys/{key_id}"), headers=admin_headers)
         assert detail.status_code == 200
         assert detail.json()["key_alias"] == "custom_admin_alias"
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
+
+
+def test_extend_expired_key_sends_incremental_duration_to_provider(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user,
+        json={"application_date": str(date.today()), "duration_months": 6, "purpose": "extend expired duration"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    captured_update_payload: dict = {}
+
+    def _capture_update_payload(self, payload):
+        captured_update_payload.update(payload)
+        return SimpleNamespace(request_id=None, operation_id=None)
+
+    _set_key_expires_at_past(key_id)
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _capture_update_payload)
+    try:
+        extend = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 1})
+        assert extend.status_code == 200
+        assert captured_update_payload["duration"] == "30d"
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)

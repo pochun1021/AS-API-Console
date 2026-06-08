@@ -78,12 +78,9 @@ def _mask_key(plaintext: str) -> str:
 
 
 def _calc_expiration(issued_at: datetime, duration_months: int) -> datetime:
-    # MVP constraint guarantees 1/6/12 only; keep simple month offset without external libs
-    month = issued_at.month - 1 + duration_months
-    year = issued_at.year + month // 12
-    month = month % 12 + 1
-    day = min(issued_at.day, 28)
-    return issued_at.replace(year=year, month=month, day=day)
+    if duration_months <= 0:
+        raise ValueError("duration_months must be positive")
+    return issued_at + timedelta(days=duration_months * 30)
 
 
 def _default_alias(owner_account: str) -> str:
@@ -930,6 +927,7 @@ class ApiKeysService:
             next_application_date = now.date()
             next_duration_months = duration_months
             next_expires_at = _calc_expiration(now, duration_months)
+            provider_duration_months = duration_months
         else:
             base_time = source_app.expires_at
             if base_time.tzinfo is None:
@@ -939,6 +937,7 @@ class ApiKeysService:
             next_application_date = source_app.application_date
             next_duration_months = source_app.duration_months + duration_months
             next_expires_at = _calc_expiration(base_time, duration_months)
+            provider_duration_months = next_duration_months
 
         provider_metadata: dict = {}
         config = self._get_limit_strategy_values()
@@ -948,7 +947,7 @@ class ApiKeysService:
                 provider_result = self.provider_client.update_key(
                     self._build_provider_update_payload(
                         plaintext=plaintext,
-                        duration_months=duration_months,
+                        duration_months=provider_duration_months,
                         config=config,
                         key_alias=source_key.key_alias or _default_alias(source_app.account),
                     )

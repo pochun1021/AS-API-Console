@@ -67,6 +67,7 @@
 - 時間欄位語意：
   - 對 `active` key 成功 extend 後：`application_date` 維持原始申請日；`duration_months` 為目前這把 key 已累計生效的總月數（原申請月數 + 每次成功 extend 的月數）；`expires_at` 為目前有效到期時間。
   - 對 `expired` key 成功 extend 後：`application_date` 改為本次 extend 當日；`duration_months` 改為本次 extend 選擇的月數；`expires_at` 以本次 extend 成功當下為基準計算新的有效到期時間。
+  - `expires_at` 一律採 fixed-day 規則計算：`1|6|12` 個月分別視為 `30|180|360` 天，直接以生效時刻往後加上對應天數；例如 7/8 生效、1 個月效期時，結束日為 8/7，不得算到 8/8。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
 - 日期區間篩選 UI 需使用 Date Range Picker，並以雙月曆（開始/結束）呈現 `application_date` 與 `expires_at` 的區間選擇。
 - 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示系統產生 alias（初始為 `for_{owner_account}`，若 provider 回報衝突則自動改為 `for_{owner_account}_vN`）。管理者手動輸入時僅允許中英文、數字、`_`、`-`，不得包含空白或其他符號。
@@ -503,6 +504,7 @@ Base path：`/main/api/v1`
   - external provider mode 下 `PROVIDER_TEAM_ID` 為必要設定；若缺少此設定，建立與 renew 必須 fail fast，且不得呼叫 provider
   - `budget_duration` 由系統設定映射：`daily->1d`、`weekly->7d`、`monthly->30d`
   - `duration` 由 `duration_months` 映射：`1->30d`、`6->180d`、`12->360d`
+  - 本地 `expires_at` 也需沿用同一 fixed-day 規則，不得再使用曆月位移算法
   - 若全域設定中的 `tpm_limit` 或 `rpm_limit` 為 `0`，送往 provider 時需轉為 `null`，表示不限制
   - `max_parallel_requests` 預設為 `0`，表示不限制，送往 provider 時需維持 `0`，不得轉為 `null`
   - `team_id` 固定使用 `PROVIDER_TEAM_ID`
@@ -680,10 +682,10 @@ Base path：`/main/api/v1`
   - request 的 `duration_months` 代表「本次 extend 要增加的月數」；成功後讀取 API 的 `duration_months` 則代表累計總月數，兩者不得混淆。
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
   - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
-  - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format。
+  - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format；若來源是 `active` key，`duration` 需送此 key 累計總月數對應的總天數；若來源是 `expired` key，`duration` 只送本次展延月數對應的天數。
   - extend 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫回原 key。
   - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`），並累加 application 的 `duration_months`。
-  - 若 extend 時 key 尚未過期，新的 `expires_at` 需以原到期時間為基準往後加本次展延月數；若 extend 時 key 已過期，新的 `expires_at` 需以 extend 成功當下為基準往後加本次展延月數。
+  - 若 extend 時 key 尚未過期，新的 `expires_at` 需以原到期時刻為基準，依本次展延月數對應的 fixed-day 天數往後順延；若 extend 時 key 已過期，新的 `expires_at` 需以 extend 成功當下時刻為基準，依本次展延月數對應的 fixed-day 天數重新計算。
   - extend 不得改寫 `application_date`；該欄位仍代表原始申請日。
   - extend 成功後，後續到期提醒需以新的 `expires_at` 重新啟動完整 `30|14|7|3|1` 通知週期。
   - provider timeout / 5xx / 明確拒絕、缺少密文、或解密失敗時，本地不得先更新有效期限或狀態。
@@ -966,8 +968,8 @@ Base path：`/main/api/v1`
 13. `extend`、`revoke` 若需舊明文 key，後端必須從 `key_ciphertext` 解密，且明文只可在服務記憶體中短暫使用；不得出現在 DB、log、audit log、exception message。`renew` 不得依賴舊明文 key。
 14. 若 provider timeout/5xx、明確拒絕、缺少密文材料、解密失敗或回應不完整，本地不得先改動狀態或有效期限，並需回傳對應錯誤。
 15. 若部署使用 local provider adapter 作為開發/測試替身，仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
-16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_parallel_requests`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 需送 `null`、`max_parallel_requests=0` 需原樣送 `0`，且不得送 `models` 或 `budget_limits`。
-17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`update` 用於 extend 或 alias 同步時可帶 `key_alias`；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
+16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_parallel_requests`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地 `expires_at` 也需使用相同的 `30|180|360` 天 fixed-day 規則計算，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 需送 `null`、`max_parallel_requests=0` 需原樣送 `0`，且不得送 `models` 或 `budget_limits`。
+17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`update` 用於 extend 或 alias 同步時可帶 `key_alias`；`active` key extend 時 `duration` 需送累計總天數，`expired` key extend 時 `duration` 只送本次展延天數；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
 18. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 
 ### Key 查詢、狀態與 Lifecycle 權限
