@@ -100,6 +100,35 @@ def test_whitelist_delete_admin_only(client, admin_headers, user_headers):
     assert all(item["id"] != whitelist_id for item in listed.json()["items"])
 
 
+def test_whitelist_list_supports_server_side_filters_sort_and_total(client, admin_headers):
+    payloads = [
+        {"sysid": 8101, "account": "amy.lin", "name": "Amy Lin", "email": "amy.lin@example.com", "note": "ops"},
+        {"sysid": 8102, "account": "bravo.user", "name": "Bravo User", "email": "bravo@example.com", "note": "ops"},
+        {"sysid": 8103, "account": "amy.chen", "name": "Amy Chen", "email": "amy.chen@example.com", "note": "ops"},
+    ]
+    for payload in payloads:
+        created = client.post(api_path("/whitelists"), headers=admin_headers, json=payload)
+        assert created.status_code == 201
+
+    filtered = client.get(
+        api_path("/whitelists?account=amy&status=active&sort_by=sysid&sort_dir=asc&page=1&page_size=1"),
+        headers=admin_headers,
+    )
+    assert filtered.status_code == 200
+    body = filtered.json()
+    assert body["total"] == 2
+    assert body["page"] == 1
+    assert body["page_size"] == 1
+    assert [item["sysid"] for item in body["items"]] == [8101]
+
+    next_page = client.get(
+        api_path("/whitelists?account=amy&status=active&sort_by=sysid&sort_dir=asc&page=2&page_size=1"),
+        headers=admin_headers,
+    )
+    assert next_page.status_code == 200
+    assert [item["sysid"] for item in next_page.json()["items"]] == [8103]
+
+
 def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
     # bootstrap another admin identity via auth headers
     target_admin_headers = build_headers(role="admin", account="u1", email="u1@example.com", sysid=7003)

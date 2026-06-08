@@ -31,6 +31,7 @@ import {
 import { DataGrid } from "@mui/x-data-grid";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
+import DateRangeFilterField from "../components/DateRangeFilterField";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { formatDateTimeInTaipei, isWithinThirtyDaysBeforeExpiration } from "../utils/datetime";
@@ -514,49 +515,33 @@ export default function MyApiKeysPage({ auth }) {
             <MenuItem value="expired">expired</MenuItem>
           </Select>
         </FormControl>
-        <TextField
-          label={t("mykeys_filter_application_from")}
-          type="date"
-          value={applicationDateFrom}
-          onChange={(event) => {
-            setApplicationDateFrom(event.target.value);
+        <DateRangeFilterField
+          label={t("mykeys_filter_application_range")}
+          fromValue={applicationDateFrom}
+          toValue={applicationDateTo}
+          startLabel={t("mykeys_filter_application_from")}
+          endLabel={t("mykeys_filter_application_to")}
+          clearLabel={t("common_clear")}
+          closeLabel={t("common_close")}
+          onChange={({ from, to }) => {
+            setApplicationDateFrom(from);
+            setApplicationDateTo(to);
             setPage(0);
           }}
-          slotProps={{ inputLabel: { shrink: true } }}
-          sx={{ minWidth: 180 }}
         />
-        <TextField
-          label={t("mykeys_filter_application_to")}
-          type="date"
-          value={applicationDateTo}
-          onChange={(event) => {
-            setApplicationDateTo(event.target.value);
+        <DateRangeFilterField
+          label={t("mykeys_filter_expires_range")}
+          fromValue={expiresDateFrom}
+          toValue={expiresDateTo}
+          startLabel={t("mykeys_filter_expires_from")}
+          endLabel={t("mykeys_filter_expires_to")}
+          clearLabel={t("common_clear")}
+          closeLabel={t("common_close")}
+          onChange={({ from, to }) => {
+            setExpiresDateFrom(from);
+            setExpiresDateTo(to);
             setPage(0);
           }}
-          slotProps={{ inputLabel: { shrink: true } }}
-          sx={{ minWidth: 180 }}
-        />
-        <TextField
-          label={t("mykeys_filter_expires_from")}
-          type="date"
-          value={expiresDateFrom}
-          onChange={(event) => {
-            setExpiresDateFrom(event.target.value);
-            setPage(0);
-          }}
-          slotProps={{ inputLabel: { shrink: true } }}
-          sx={{ minWidth: 180 }}
-        />
-        <TextField
-          label={t("mykeys_filter_expires_to")}
-          type="date"
-          value={expiresDateTo}
-          onChange={(event) => {
-            setExpiresDateTo(event.target.value);
-            setPage(0);
-          }}
-          slotProps={{ inputLabel: { shrink: true } }}
-          sx={{ minWidth: 180 }}
         />
         {auth.role === "admin" ? (
           <TextField

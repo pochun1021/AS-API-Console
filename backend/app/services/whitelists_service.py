@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
@@ -7,7 +8,7 @@ from app.core.auth import CurrentUser
 from app.core.errors import ApiError
 from app.core.input_validation import validate_safe_persisted_text
 from db.repositories import SQLAlchemyWhitelistRepository
-from db.repositories.types import WhitelistCreateInput, WhitelistUpdateInput
+from db.repositories.types import WhitelistCreateInput, WhitelistListFilter, WhitelistUpdateInput
 
 
 class WhitelistsService:
@@ -61,11 +62,50 @@ class WhitelistsService:
             "updated_at": item.updated_at,
         }
 
-    def list(self, status: str | None, page: int, page_size: int) -> dict:
+    def list(
+        self,
+        *,
+        status: str | None,
+        sysid: int | None,
+        account: str | None,
+        name: str | None,
+        email: str | None,
+        created_from: datetime | None,
+        created_to: datetime | None,
+        updated_from: datetime | None,
+        updated_to: datetime | None,
+        sort_by: str,
+        sort_dir: str,
+        page: int,
+        page_size: int,
+    ) -> dict:
         page = max(page, 1)
         page_size = min(max(page_size, 1), 100)
         offset = (page - 1) * page_size
-        items = self.repo.list(status=status, limit=page_size, offset=offset)
+        if status is not None and status not in {"active", "inactive"}:
+            raise ApiError("VALIDATION_ERROR", "status must be active or inactive", 422)
+        if sort_by not in {"sysid", "account", "name", "email", "status", "created_at", "updated_at"}:
+            raise ApiError("VALIDATION_ERROR", "unsupported sort_by", 422)
+        if sort_dir not in {"asc", "desc"}:
+            raise ApiError("VALIDATION_ERROR", "sort_dir must be asc or desc", 422)
+
+        items, total = self.repo.list(
+            WhitelistListFilter(
+                status=status,
+                sysid=sysid,
+                account=account.strip() if account else None,
+                name=name.strip() if name else None,
+                email=email.strip().lower() if email else None,
+                created_from=created_from,
+                created_to=created_to,
+                updated_from=updated_from,
+                updated_to=updated_to,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+            ),
+            limit=page_size,
+            offset=offset,
+        )
 
         return {
             "items": [
@@ -86,7 +126,7 @@ class WhitelistsService:
             ],
             "page": page,
             "page_size": page_size,
-            "total": len(items),
+            "total": total,
         }
 
     def update(self, current_user: CurrentUser, whitelist_id: str, status: str, note: str | None) -> dict:

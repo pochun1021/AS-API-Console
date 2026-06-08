@@ -921,10 +921,65 @@ export const mockApiProvider = {
     };
   },
 
-  async listWhitelists(auth) {
+  async listWhitelists(paramsOrAuth, maybeAuth) {
     await delay();
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
     ensureAdmin(auth);
-    return { items: whitelists, page: 1, page_size: 20, total: whitelists.length };
+    let items = [...whitelists];
+
+    if (params.status) {
+      items = items.filter((item) => item.status === params.status);
+    }
+    if (params.sysid != null && params.sysid !== "") {
+      items = items.filter((item) => item.sysid === Number(params.sysid));
+    }
+    if (params.account) {
+      const q = String(params.account).trim().toLowerCase();
+      items = items.filter((item) => String(item.account || "").toLowerCase().includes(q));
+    }
+    if (params.name) {
+      const q = String(params.name).trim().toLowerCase();
+      items = items.filter((item) => String(item.name || "").toLowerCase().includes(q));
+    }
+    if (params.email) {
+      const q = String(params.email).trim().toLowerCase();
+      items = items.filter((item) => String(item.email || "").toLowerCase().includes(q));
+    }
+    if (params.created_from) {
+      items = items.filter((item) => new Date(item.created_at) >= new Date(params.created_from));
+    }
+    if (params.created_to) {
+      items = items.filter((item) => new Date(item.created_at) <= new Date(params.created_to));
+    }
+    if (params.updated_from) {
+      items = items.filter((item) => new Date(item.updated_at) >= new Date(params.updated_from));
+    }
+    if (params.updated_to) {
+      items = items.filter((item) => new Date(item.updated_at) <= new Date(params.updated_to));
+    }
+
+    const sortBy = params.sort_by || "created_at";
+    const sortDir = params.sort_dir === "asc" ? "asc" : "desc";
+    items.sort((a, b) => {
+      const direction = sortDir === "asc" ? 1 : -1;
+      const left = a[sortBy];
+      const right = b[sortBy];
+      if (left == null && right == null) return 0;
+      if (left == null) return 1 * direction;
+      if (right == null) return -1 * direction;
+      if (sortBy === "sysid") return (Number(left) - Number(right)) * direction;
+      return String(left).localeCompare(String(right)) * direction;
+    });
+
+    const page = Math.max(Number(params.page || 1), 1);
+    const pageSize = Math.max(Number(params.page_size || 20), 1);
+    const total = items.length;
+    const start = (page - 1) * pageSize;
+    const pagedItems = items.slice(start, start + pageSize);
+
+    return { items: pagedItems, page, page_size: pageSize, total };
   },
 
   async searchUsers(keyword, auth, options = {}) {

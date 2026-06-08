@@ -21,6 +21,7 @@ from db.repositories.types import (
     ApplicationCreateInput,
     AuthIdentity,
     WhitelistCreateInput,
+    WhitelistListFilter,
     WhitelistUpdateInput,
 )
 
@@ -136,6 +137,28 @@ class SQLAlchemyWhitelistRepository(WhitelistRepository):
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    @staticmethod
+    def _apply_list_filters(stmt: Select, filters: WhitelistListFilter) -> Select:
+        if filters.status:
+            stmt = stmt.where(ApiKeyWhitelist.status == filters.status)
+        if filters.sysid is not None:
+            stmt = stmt.where(ApiKeyWhitelist.sysid == filters.sysid)
+        if filters.account:
+            stmt = stmt.where(_contains_ci(ApiKeyWhitelist.account, filters.account))
+        if filters.name:
+            stmt = stmt.where(_contains_ci(ApiKeyWhitelist.name, filters.name))
+        if filters.email:
+            stmt = stmt.where(_contains_ci(ApiKeyWhitelist.email, filters.email))
+        if filters.created_from:
+            stmt = stmt.where(ApiKeyWhitelist.created_at >= filters.created_from)
+        if filters.created_to:
+            stmt = stmt.where(ApiKeyWhitelist.created_at <= filters.created_to)
+        if filters.updated_from:
+            stmt = stmt.where(ApiKeyWhitelist.updated_at >= filters.updated_from)
+        if filters.updated_to:
+            stmt = stmt.where(ApiKeyWhitelist.updated_at <= filters.updated_to)
+        return stmt
+
     def create(self, data: WhitelistCreateInput) -> ApiKeyWhitelist:
         now = datetime.now(timezone.utc)
         whitelist = ApiKeyWhitelist(
@@ -155,12 +178,37 @@ class SQLAlchemyWhitelistRepository(WhitelistRepository):
         self.session.flush()
         return whitelist
 
-    def list(self, status: str | None = None, limit: int = 100, offset: int = 0) -> list[ApiKeyWhitelist]:
-        stmt: Select[tuple[ApiKeyWhitelist]] = select(ApiKeyWhitelist).order_by(ApiKeyWhitelist.created_at.desc())
-        if status:
-            stmt = stmt.where(ApiKeyWhitelist.status == status)
+    def list(
+        self,
+        filters: WhitelistListFilter,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[ApiKeyWhitelist], int]:
+        sortable_columns = {
+            "sysid": ApiKeyWhitelist.sysid,
+            "account": ApiKeyWhitelist.account,
+            "name": ApiKeyWhitelist.name,
+            "email": ApiKeyWhitelist.email,
+            "status": ApiKeyWhitelist.status,
+            "created_at": ApiKeyWhitelist.created_at,
+            "updated_at": ApiKeyWhitelist.updated_at,
+        }
+        sort_column = sortable_columns.get(filters.sort_by, ApiKeyWhitelist.created_at)
+        sort_dir = "asc" if filters.sort_dir == "asc" else "desc"
+
+        stmt: Select[tuple[ApiKeyWhitelist]] = select(ApiKeyWhitelist)
+        stmt = self._apply_list_filters(stmt, filters)
+        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
+        total = int(self.session.scalar(count_stmt) or 0)
+
+        if sort_dir == "asc":
+            stmt = stmt.order_by(sort_column.asc(), ApiKeyWhitelist.id.asc())
+        else:
+            stmt = stmt.order_by(sort_column.desc(), ApiKeyWhitelist.id.desc())
+
         stmt = stmt.limit(limit).offset(offset)
-        return list(self.session.scalars(stmt).all())
+        return list(self.session.scalars(stmt).all()), total
 
     def get_by_id(self, whitelist_id: str) -> ApiKeyWhitelist | None:
         return self.session.get(ApiKeyWhitelist, whitelist_id)

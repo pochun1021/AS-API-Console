@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
@@ -119,6 +121,16 @@ def create_whitelist(
 )
 def list_whitelists(
     status: str | None = Query(default=None),
+    sysid: int | None = Query(default=None),
+    account: str | None = Query(default=None),
+    name: str | None = Query(default=None),
+    email: str | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    updated_from: datetime | None = Query(default=None),
+    updated_to: datetime | None = Query(default=None),
+    sort_by: str = Query(default="created_at"),
+    sort_dir: str = Query(default="desc"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     current_user: CurrentUser = Depends(get_current_user),
@@ -126,7 +138,21 @@ def list_whitelists(
 ) -> dict:
     _require_admin(current_user)
     service = WhitelistsService(db)
-    return service.list(status=status, page=page, page_size=page_size)
+    return service.list(
+        status=status,
+        sysid=sysid,
+        account=account,
+        name=name,
+        email=email,
+        created_from=created_from,
+        created_to=created_to,
+        updated_from=updated_from,
+        updated_to=updated_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.patch(
