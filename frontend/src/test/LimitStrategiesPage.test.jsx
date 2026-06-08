@@ -19,7 +19,8 @@ test("admin can save zero rate limits", async () => {
     budget_max_budget: "1000",
     budget_duration: "monthly",
     rate_limit_tpm: 0,
-    rate_limit_rpm: 0
+    rate_limit_rpm: 0,
+    max_parallel_requests: 0
   }));
 
   setApiProvider({
@@ -27,7 +28,8 @@ test("admin can save zero rate limits", async () => {
       budget_max_budget: "1000",
       budget_duration: "monthly",
       rate_limit_tpm: 10000,
-      rate_limit_rpm: 500
+      rate_limit_rpm: 500,
+      max_parallel_requests: 8
     }),
     updateLimitStrategyConfig
   });
@@ -36,11 +38,14 @@ test("admin can save zero rate limits", async () => {
 
   const tpmInput = await screen.findByLabelText("tpm_limit");
   const rpmInput = screen.getByLabelText("rpm_limit");
+  const maxParallelInput = screen.getByLabelText("max_parallel_requests");
 
   await user.clear(tpmInput);
   await user.type(tpmInput, "0");
   await user.clear(rpmInput);
   await user.type(rpmInput, "0");
+  await user.clear(maxParallelInput);
+  await user.type(maxParallelInput, "0");
   await user.click(screen.getByRole("button", { name: "儲存" }));
 
   expect(updateLimitStrategyConfig).toHaveBeenCalledWith(
@@ -48,7 +53,8 @@ test("admin can save zero rate limits", async () => {
       budget_max_budget: "1000",
       budget_duration: "monthly",
       rate_limit_tpm: 0,
-      rate_limit_rpm: 0
+      rate_limit_rpm: 0,
+      max_parallel_requests: 0
     },
     adminAuth
   );
@@ -63,7 +69,8 @@ test("digits-only fields reject non-ascii numeric input", async () => {
       budget_max_budget: "1000",
       budget_duration: "monthly",
       rate_limit_tpm: 10000,
-      rate_limit_rpm: 500
+      rate_limit_rpm: 500,
+      max_parallel_requests: 0
     }),
     updateLimitStrategyConfig
   });

@@ -14,6 +14,7 @@ class LimitStrategyConfig(Base):
     budget_duration: Mapped[str] = mapped_column(String(20), nullable=False, default="monthly")
     rate_limit_tpm: Mapped[int] = mapped_column(Integer, nullable=False, default=10000)
     rate_limit_rpm: Mapped[int] = mapped_column(Integer, nullable=False, default=500)
+    max_parallel_requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

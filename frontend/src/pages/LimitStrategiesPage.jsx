@@ -38,7 +38,8 @@ export default function LimitStrategiesPage({ auth }) {
     budget_max_budget: "",
     budget_duration: "",
     rate_limit_tpm: "",
-    rate_limit_rpm: ""
+    rate_limit_rpm: "",
+    max_parallel_requests: ""
   });
 
   async function load() {
@@ -50,7 +51,8 @@ export default function LimitStrategiesPage({ auth }) {
         budget_max_budget: String(result.budget_max_budget ?? ""),
         budget_duration: String(result.budget_duration ?? ""),
         rate_limit_tpm: String(result.rate_limit_tpm ?? ""),
-        rate_limit_rpm: String(result.rate_limit_rpm ?? "")
+        rate_limit_rpm: String(result.rate_limit_rpm ?? ""),
+        max_parallel_requests: String(result.max_parallel_requests ?? "")
       });
     } catch (e) {
       setError(normalizeApiError(e, t("limit_strategy_load_failed")));
@@ -88,7 +90,15 @@ export default function LimitStrategiesPage({ auth }) {
     try {
       const rateLimitTpm = parseRateLimitInput(form.rate_limit_tpm);
       const rateLimitRpm = parseRateLimitInput(form.rate_limit_rpm);
-      if (rateLimitTpm === null || rateLimitRpm === null || Number.isNaN(rateLimitTpm) || Number.isNaN(rateLimitRpm)) {
+      const maxParallelRequests = parseRateLimitInput(form.max_parallel_requests);
+      if (
+        rateLimitTpm === null ||
+        rateLimitRpm === null ||
+        maxParallelRequests === null ||
+        Number.isNaN(rateLimitTpm) ||
+        Number.isNaN(rateLimitRpm) ||
+        Number.isNaN(maxParallelRequests)
+      ) {
         setBanner(t("apply_error_rate_limit_required"));
         return;
       }
@@ -101,7 +111,8 @@ export default function LimitStrategiesPage({ auth }) {
         budget_max_budget: normalizedBudget,
         budget_duration: String(form.budget_duration).trim(),
         rate_limit_tpm: rateLimitTpm,
-        rate_limit_rpm: rateLimitRpm
+        rate_limit_rpm: rateLimitRpm,
+        max_parallel_requests: maxParallelRequests
       };
       await apiClient.updateLimitStrategyConfig(payload, auth);
       setBanner(t("limit_strategy_updated_done"));
@@ -173,6 +184,14 @@ export default function LimitStrategiesPage({ auth }) {
                   helperText={t("limit_strategy_rpm_helper")}
                   inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
                   onChange={handleDigitsChange("rate_limit_rpm")}
+                  onPaste={handleDigitsPaste}
+                />
+                <TextField
+                  label={t("apply_max_parallel_requests")}
+                  value={form.max_parallel_requests}
+                  helperText={t("limit_strategy_max_parallel_requests_helper")}
+                  inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
+                  onChange={handleDigitsChange("max_parallel_requests")}
                   onPaste={handleDigitsPaste}
                 />
               </Box>

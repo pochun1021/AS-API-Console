@@ -46,6 +46,7 @@ LIMIT_STRATEGY_DEFAULTS = {
     "budget_duration": "monthly",
     "rate_limit_tpm": 10000,
     "rate_limit_rpm": 500,
+    "max_parallel_requests": 0,
 }
 
 
@@ -61,6 +62,7 @@ class IssuanceConfigValues:
     budget_duration: str
     tpm_limit: int
     rpm_limit: int
+    max_parallel_requests: int
 
 
 def _hash_key(plaintext: str) -> str:
@@ -257,6 +259,7 @@ class ApiKeysService:
                 budget_duration=config.budget_duration,
                 tpm_limit=config.tpm_limit,
                 rpm_limit=config.rpm_limit,
+                max_parallel_requests=config.max_parallel_requests,
                 issued_at=issued_at,
                 expires_at=expires_at,
             )
@@ -301,17 +304,19 @@ class ApiKeysService:
         budget_duration = (config.budget_duration or "").strip()
         tpm_limit = config.rate_limit_tpm
         rpm_limit = config.rate_limit_rpm
+        max_parallel_requests = config.max_parallel_requests
         if not max_budget or not budget_duration:
             raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "budget config is incomplete", 409)
-        if tpm_limit is None or rpm_limit is None:
+        if tpm_limit is None or rpm_limit is None or max_parallel_requests is None:
             raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "rate limit config is incomplete", 409)
-        if int(tpm_limit) < 0 or int(rpm_limit) < 0:
+        if int(tpm_limit) < 0 or int(rpm_limit) < 0 or int(max_parallel_requests) < 0:
             raise ApiError("ISSUANCE_CONFIG_INCOMPLETE", "rate limit config is incomplete", 409)
         return IssuanceConfigValues(
             max_budget=max_budget,
             budget_duration=budget_duration,
             tpm_limit=int(tpm_limit),
             rpm_limit=int(rpm_limit),
+            max_parallel_requests=int(max_parallel_requests),
         )
 
     def _build_provider_payload(
@@ -327,6 +332,7 @@ class ApiKeysService:
             "duration": _to_provider_duration(duration_months),
             "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
             "rpm_limit": _to_provider_rate_limit(config.rpm_limit),
+            "max_parallel_requests": config.max_parallel_requests,
             "team_id": self._require_provider_team_id(),
             "key_alias": key_alias,
             "key_type": "llm_api",
@@ -347,6 +353,7 @@ class ApiKeysService:
             "duration": _to_provider_duration(duration_months),
             "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
             "rpm_limit": _to_provider_rate_limit(config.rpm_limit),
+            "max_parallel_requests": config.max_parallel_requests,
             "team_id": self._require_provider_team_id(),
             "key_type": "llm_api",
         }
@@ -444,6 +451,7 @@ class ApiKeysService:
             budget_duration=LIMIT_STRATEGY_DEFAULTS["budget_duration"],
             rate_limit_tpm=LIMIT_STRATEGY_DEFAULTS["rate_limit_tpm"],
             rate_limit_rpm=LIMIT_STRATEGY_DEFAULTS["rate_limit_rpm"],
+            max_parallel_requests=LIMIT_STRATEGY_DEFAULTS["max_parallel_requests"],
             created_at=now,
             updated_at=now,
         )
@@ -459,6 +467,7 @@ class ApiKeysService:
             "budget_duration": config.budget_duration,
             "rate_limit_tpm": config.rate_limit_tpm,
             "rate_limit_rpm": config.rate_limit_rpm,
+            "max_parallel_requests": config.max_parallel_requests,
         }
 
     def update_limit_strategy_config(self, current_user: CurrentUser, payload: dict) -> dict:
@@ -471,9 +480,13 @@ class ApiKeysService:
         budget_duration = str(payload.get("budget_duration") or "").strip()
         rate_limit_tpm = parse_ascii_digits(field_name="rate_limit_tpm", value=payload.get("rate_limit_tpm"))
         rate_limit_rpm = parse_ascii_digits(field_name="rate_limit_rpm", value=payload.get("rate_limit_rpm"))
+        max_parallel_requests = parse_ascii_digits(
+            field_name="max_parallel_requests",
+            value=payload.get("max_parallel_requests"),
+        )
         if not budget_max_budget or not budget_duration:
             raise ApiError("VALIDATION_ERROR", "budget config is required", 422)
-        if rate_limit_tpm < 0 or rate_limit_rpm < 0:
+        if rate_limit_tpm < 0 or rate_limit_rpm < 0 or max_parallel_requests < 0:
             raise ApiError("VALIDATION_ERROR", "rate limit config is required", 422)
         config = self.session.get(LimitStrategyConfig, LIMIT_STRATEGY_CONFIG_ID)
         now = datetime.now(UTC)
@@ -484,6 +497,7 @@ class ApiKeysService:
                 budget_duration=LIMIT_STRATEGY_DEFAULTS["budget_duration"],
                 rate_limit_tpm=LIMIT_STRATEGY_DEFAULTS["rate_limit_tpm"],
                 rate_limit_rpm=LIMIT_STRATEGY_DEFAULTS["rate_limit_rpm"],
+                max_parallel_requests=LIMIT_STRATEGY_DEFAULTS["max_parallel_requests"],
                 created_at=now,
                 updated_at=now,
             )
@@ -491,16 +505,21 @@ class ApiKeysService:
         config.budget_duration = budget_duration
         config.rate_limit_tpm = rate_limit_tpm
         config.rate_limit_rpm = rate_limit_rpm
+        config.max_parallel_requests = max_parallel_requests
         config.updated_at = now
         if self._provider_operates_remotely():
             try:
                 self.provider_client.update_team_limits(
                     {
                         "team_id": self._require_provider_team_id(),
-                        "max_budget": float(config.budget_max_budget),
-                        "budget_duration": _to_provider_budget_duration(config.budget_duration),
-                        "tpm_limit": _to_provider_rate_limit(config.rate_limit_tpm),
-                        "rpm_limit": _to_provider_rate_limit(config.rate_limit_rpm),
+                        "all_keys_in_team": True,
+                        "update_fields": {
+                            "max_budget": float(config.budget_max_budget),
+                            "budget_duration": _to_provider_budget_duration(config.budget_duration),
+                            "tpm_limit": _to_provider_rate_limit(config.rate_limit_tpm),
+                            "rpm_limit": _to_provider_rate_limit(config.rate_limit_rpm),
+                            "max_parallel_requests": config.max_parallel_requests,
+                        },
                     }
                 )
             except ProviderBadRequestError as exc:
@@ -514,6 +533,7 @@ class ApiKeysService:
             "budget_duration": config.budget_duration,
             "rate_limit_tpm": config.rate_limit_tpm,
             "rate_limit_rpm": config.rate_limit_rpm,
+            "max_parallel_requests": config.max_parallel_requests,
         }
 
     def list_keys(
@@ -730,12 +750,14 @@ class ApiKeysService:
             and application.budget_duration is not None
             and application.tpm_limit is not None
             and application.rpm_limit is not None
+            and application.max_parallel_requests is not None
         ):
             return IssuanceConfigValues(
                 max_budget=str(application.max_budget),
                 budget_duration=str(application.budget_duration),
                 tpm_limit=int(application.tpm_limit),
                 rpm_limit=int(application.rpm_limit),
+                max_parallel_requests=int(application.max_parallel_requests),
             )
         return self._get_limit_strategy_values()
 
@@ -850,6 +872,7 @@ class ApiKeysService:
                 budget_duration=config.budget_duration,
                 tpm_limit=config.tpm_limit,
                 rpm_limit=config.rpm_limit,
+                max_parallel_requests=config.max_parallel_requests,
                 issued_at=now,
                 expires_at=_calc_expiration(now, source_app.duration_months),
             )

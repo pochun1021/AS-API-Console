@@ -31,6 +31,7 @@ def main() -> int:
         "max_budget": 0.01,
         "tpm_limit": 1,
         "rpm_limit": 1,
+        "max_parallel_requests": 0,
         "budget_duration": "30d",
         "key_type": "llm_api"
     }

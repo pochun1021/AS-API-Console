@@ -205,4 +205,4 @@ class ProviderClient:
         return self._perform_request(path="/key/block", payload=payload)
 
     def update_team_limits(self, payload: dict) -> ProviderMutationResult:
-        return self._perform_request(path="/team/update", payload=payload)
+        return self._perform_request(path="/team/key/bulk_update", payload=payload)

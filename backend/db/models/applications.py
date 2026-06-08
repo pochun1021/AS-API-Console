@@ -25,6 +25,7 @@ class ApiKeyApplication(Base):
     budget_duration: Mapped[str | None] = mapped_column(String(20), nullable=True)
     tpm_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rpm_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_parallel_requests: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

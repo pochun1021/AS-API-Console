@@ -146,6 +146,7 @@ class ProviderLifecycleTester:
             "duration": _provider_duration(duration_months),
             "tpm_limit": self.tpm_limit,
             "rpm_limit": self.rpm_limit,
+            "max_parallel_requests": 0,
             "team_id": self.team_id,
             "key_alias": alias,
             "key_type": "llm_api",
@@ -159,6 +160,7 @@ class ProviderLifecycleTester:
             "duration": _provider_duration(duration_months),
             "tpm_limit": self.tpm_limit,
             "rpm_limit": self.rpm_limit,
+            "max_parallel_requests": 0,
             "team_id": self.team_id,
             "key_type": "llm_api",
         }
@@ -225,14 +227,18 @@ class ProviderLifecycleTester:
 
             team_payload = {
                 "team_id": self.team_id,
-                "tpm_limit": self.tpm_limit + 1,
-                "rpm_limit": self.rpm_limit + 1,
-                "max_budget": round(self.max_budget + 0.01, 4),
-                "budget_duration": "30d",
+                "all_keys_in_team": True,
+                "update_fields": {
+                    "tpm_limit": self.tpm_limit + 1,
+                    "rpm_limit": self.rpm_limit + 1,
+                    "max_budget": round(self.max_budget + 0.01, 4),
+                    "budget_duration": "30d",
+                    "max_parallel_requests": 0,
+                },
             }
             self._request(
                 step="update team limits",
-                path="/team/update",
+                path="/team/key/bulk_update",
                 payload=team_payload,
             )
         except ProviderLifecycleError as exc:

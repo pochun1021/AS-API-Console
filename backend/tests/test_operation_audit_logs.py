@@ -321,6 +321,7 @@ def test_limit_strategy_config_update_logs_success_and_failure(client, admin_hea
         "budget_duration": "weekly",
         "rate_limit_tpm": 12000,
         "rate_limit_rpm": 600,
+        "max_parallel_requests": 4,
     }
     ok = client.patch(
         api_path("/limit-strategy-config"),
@@ -344,6 +345,7 @@ def test_limit_strategy_config_update_logs_success_and_failure(client, admin_hea
             "budget_duration": "monthly",
             "rate_limit_tpm": 10000,
             "rate_limit_rpm": 500,
+            "max_parallel_requests": 0,
         },
     )
     assert fail.status_code == 422
@@ -360,6 +362,7 @@ def test_limit_strategy_config_update_logs_success_and_failure(client, admin_hea
     assert success_meta["budget_duration"] == "weekly"
     assert success_meta["rate_limit_tpm"] == 12000
     assert success_meta["rate_limit_rpm"] == 600
+    assert success_meta["max_parallel_requests"] == 4
 
     assert forbidden_row.result == "failure"
     assert forbidden_row.error_code == "FORBIDDEN"
@@ -376,6 +379,7 @@ def test_limit_strategy_get_returns_defaults_when_row_is_missing(client, admin_h
         "budget_duration": "monthly",
         "rate_limit_tpm": 10000,
         "rate_limit_rpm": 500,
+        "max_parallel_requests": 0,
     }
     assert _count_limit_strategy_config() == 0
 
@@ -389,6 +393,7 @@ def test_limit_strategy_patch_upserts_missing_row(client, admin_headers):
         "budget_duration": "weekly",
         "rate_limit_tpm": 13000,
         "rate_limit_rpm": 700,
+        "max_parallel_requests": 6,
     }
     resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
     assert resp.status_code == 200
@@ -402,6 +407,7 @@ def test_limit_strategy_patch_accepts_zero_rate_limits(client, admin_headers):
         "budget_duration": "weekly",
         "rate_limit_tpm": 0,
         "rate_limit_rpm": 0,
+        "max_parallel_requests": 0,
     }
     resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
     assert resp.status_code == 200
@@ -455,6 +461,7 @@ def test_limit_strategy_patch_syncs_provider_team_update(client, admin_headers, 
         "budget_duration": "weekly",
         "rate_limit_tpm": 13000,
         "rate_limit_rpm": 700,
+        "max_parallel_requests": 0,
     }
     captured_payload: dict = {}
 
@@ -474,10 +481,14 @@ def test_limit_strategy_patch_syncs_provider_team_update(client, admin_headers, 
         assert resp.status_code == 200
         assert captured_payload == {
             "team_id": "team-001",
-            "max_budget": 3000.0,
-            "budget_duration": "7d",
-            "tpm_limit": 13000,
-            "rpm_limit": 700,
+            "all_keys_in_team": True,
+            "update_fields": {
+                "max_budget": 3000.0,
+                "budget_duration": "7d",
+                "tpm_limit": 13000,
+                "rpm_limit": 700,
+                "max_parallel_requests": 0,
+            },
         }
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
@@ -491,12 +502,15 @@ def test_limit_strategy_patch_requires_team_id_before_provider_call(client, admi
         "budget_duration": "weekly",
         "rate_limit_tpm": 13000,
         "rate_limit_rpm": 700,
+        "max_parallel_requests": 0,
     }
     _delete_limit_strategy_config()
 
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
     monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
     get_settings.cache_clear()
+    settings = get_settings().model_copy(update={"provider_team_id": ""})
+    monkeypatch.setattr("app.services.api_keys_service.get_settings", lambda: settings)
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
 
     provider_called = {"count": 0}
@@ -524,6 +538,7 @@ def test_limit_strategy_patch_rejects_non_ascii_digits_payload(client, admin_hea
         "budget_duration": "weekly",
         "rate_limit_tpm": "1e3",
         "rate_limit_rpm": 500,
+        "max_parallel_requests": "１２",
     }
     resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
     assert resp.status_code == 422
