@@ -75,7 +75,6 @@ test("operation audit filters send full server-side query params", async () => {
   await user.type(screen.getByLabelText("操作者帳號"), "john");
   await user.click(screen.getByLabelText("目標類型"));
   await user.click(await screen.findByRole("option", { name: "whitelist" }));
-  await user.type(screen.getByLabelText("錯誤碼"), "VALID");
   await user.click(await screen.findByRole("columnheader", { name: "操作者" }));
 
   await waitFor(() => {
@@ -85,7 +84,6 @@ test("operation audit filters send full server-side query params", async () => {
         action: "update",
         actor_account: "john",
         target_type: "whitelist",
-        error_code: "VALID",
         sort_by: "actor_account",
         sort_dir: "asc"
       }),
@@ -106,8 +104,7 @@ test("login audit filters send full server-side query params", async () => {
   await user.type(screen.getByLabelText("帳號"), "jane");
   await user.type(screen.getByLabelText("SysID"), "123");
   await user.type(screen.getByLabelText("角色"), "user");
-  await user.type(screen.getByLabelText("Request ID"), "001");
-  await user.click(await screen.findByRole("columnheader", { name: "Provider" }));
+  await user.click(await screen.findByRole("columnheader", { name: "帳號" }));
 
   await waitFor(() => {
     expect(spy).toHaveBeenLastCalledWith(
@@ -115,8 +112,7 @@ test("login audit filters send full server-side query params", async () => {
         account: "jane",
         sysid: "123",
         role: "user",
-        request_id: "001",
-        sort_by: "provider",
+        sort_by: "account",
         sort_dir: "asc"
       }),
       adminAuth

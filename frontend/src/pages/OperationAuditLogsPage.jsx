@@ -94,7 +94,6 @@ export default function OperationAuditLogsPage({ auth }) {
   const [operationResult, setOperationResult] = useState("");
   const [operationActorAccount, setOperationActorAccount] = useState("");
   const [operationTargetType, setOperationTargetType] = useState("");
-  const [operationErrorCode, setOperationErrorCode] = useState("");
   const [operationSortModel, setOperationSortModel] = useState([{ field: "created_at", sort: "desc" }]);
   const [operationLoading, setOperationLoading] = useState(true);
   const [operationError, setOperationError] = useState("");
@@ -106,13 +105,10 @@ export default function OperationAuditLogsPage({ auth }) {
   const [loginPageSize, setLoginPageSize] = useState(10);
   const [loginFromDate, setLoginFromDate] = useState(hot.from);
   const [loginToDate, setLoginToDate] = useState(hot.to);
-  const [loginProvider, setLoginProvider] = useState("");
   const [loginResult, setLoginResult] = useState("");
   const [loginAccount, setLoginAccount] = useState("");
   const [loginSysid, setLoginSysid] = useState("");
   const [loginRole, setLoginRole] = useState("");
-  const [loginErrorCode, setLoginErrorCode] = useState("");
-  const [loginRequestId, setLoginRequestId] = useState("");
   const [loginSortModel, setLoginSortModel] = useState([{ field: "created_at", sort: "desc" }]);
   const [loginLoading, setLoginLoading] = useState(true);
   const [loginError, setLoginError] = useState("");
@@ -125,20 +121,16 @@ export default function OperationAuditLogsPage({ auth }) {
     setOperationResult("");
     setOperationActorAccount("");
     setOperationTargetType("");
-    setOperationErrorCode("");
     setOperationPage(0);
   }
 
   function clearLoginFilters() {
     setLoginFromDate(hot.from);
     setLoginToDate(hot.to);
-    setLoginProvider("");
     setLoginResult("");
     setLoginAccount("");
     setLoginSysid("");
     setLoginRole("");
-    setLoginErrorCode("");
-    setLoginRequestId("");
     setLoginPage(0);
   }
 
@@ -203,7 +195,6 @@ export default function OperationAuditLogsPage({ auth }) {
             result: operationResult || undefined,
             actor_account: operationActorAccount || undefined,
             target_type: operationTargetType || undefined,
-            error_code: operationErrorCode || undefined,
             sort_by: operationSortFields.has(operationSortModel[0]?.field) ? operationSortModel[0].field : "created_at",
             sort_dir: operationSortModel[0]?.sort === "asc" ? "asc" : "desc",
           },
@@ -229,7 +220,6 @@ export default function OperationAuditLogsPage({ auth }) {
     auth,
     operationAction,
     operationActorAccount,
-    operationErrorCode,
     operationEventType,
     operationFromDate,
     operationPage,
@@ -264,13 +254,10 @@ export default function OperationAuditLogsPage({ auth }) {
             page_size: loginPageSize,
             from: loginFromDate || undefined,
             to: loginToDate || undefined,
-            provider: loginProvider || undefined,
             result: loginResult || undefined,
             account: loginAccount || undefined,
             sysid: loginSysid.trim() ? loginSysid.trim() : undefined,
             role: loginRole || undefined,
-            error_code: loginErrorCode || undefined,
-            request_id: loginRequestId || undefined,
             sort_by: loginSortFields.has(loginSortModel[0]?.field) ? loginSortModel[0].field : "created_at",
             sort_dir: loginSortModel[0]?.sort === "asc" ? "asc" : "desc",
           },
@@ -295,12 +282,9 @@ export default function OperationAuditLogsPage({ auth }) {
   }, [
     auth,
     loginAccount,
-    loginErrorCode,
     loginFromDate,
     loginPage,
     loginPageSize,
-    loginProvider,
-    loginRequestId,
     loginResult,
     loginRole,
     loginSortModel,
@@ -416,14 +400,6 @@ export default function OperationAuditLogsPage({ auth }) {
                 </MenuItem>
               ))}
             </TextField>
-            <TextField
-              label={t("auditlogs_error_code")}
-              value={operationErrorCode}
-              onChange={(e) => {
-                setOperationErrorCode(e.target.value);
-                setOperationPage(0);
-              }}
-            />
             <Button variant="outlined" onClick={clearOperationFilters}>
               {t("common_clear")}
             </Button>
@@ -479,14 +455,6 @@ export default function OperationAuditLogsPage({ auth }) {
               }}
             />
             <TextField
-              label={t("loginlogs_provider")}
-              value={loginProvider}
-              onChange={(e) => {
-                setLoginProvider(e.target.value);
-                setLoginPage(0);
-              }}
-            />
-            <TextField
               label={t("loginlogs_account")}
               value={loginAccount}
               onChange={(e) => {
@@ -524,22 +492,6 @@ export default function OperationAuditLogsPage({ auth }) {
               <MenuItem value="success">success</MenuItem>
               <MenuItem value="failure">failure</MenuItem>
             </TextField>
-            <TextField
-              label={t("loginlogs_error_code")}
-              value={loginErrorCode}
-              onChange={(e) => {
-                setLoginErrorCode(e.target.value);
-                setLoginPage(0);
-              }}
-            />
-            <TextField
-              label={t("loginlogs_request_id")}
-              value={loginRequestId}
-              onChange={(e) => {
-                setLoginRequestId(e.target.value);
-                setLoginPage(0);
-              }}
-            />
             <Button variant="outlined" onClick={clearLoginFilters}>
               {t("common_clear")}
             </Button>
