@@ -597,7 +597,7 @@ def test_provider_payload_builder_uses_external_contract():
         "duration": "180d",
         "tpm_limit": 10000,
         "rpm_limit": 500,
-        "max_parallel_requests": 0,
+        "max_parallel_requests": None,
         "team_id": "team-001",
         "key_alias": "for_user1",
         "key_type": "llm_api",
@@ -625,7 +625,31 @@ def test_provider_payload_builder_converts_zero_rate_limits_to_null():
 
     assert payload["tpm_limit"] is None
     assert payload["rpm_limit"] is None
-    assert payload["max_parallel_requests"] == 0
+    assert payload["max_parallel_requests"] is None
+    assert payload["team_id"] == "team-001"
+
+
+def test_provider_update_payload_builder_converts_zero_parallel_limit_to_null():
+    from app.services.api_keys_service import ApiKeysService, IssuanceConfigValues
+    from types import SimpleNamespace
+
+    service = object.__new__(ApiKeysService)
+    service.settings = SimpleNamespace(provider_team_id="team-001")
+
+    payload = service._build_provider_update_payload(
+        plaintext="AS-old",
+        duration_months=1,
+        config=IssuanceConfigValues(
+            max_budget="1000",
+            budget_duration="monthly",
+            tpm_limit=10000,
+            rpm_limit=500,
+            max_parallel_requests=0,
+        ),
+        key_alias="for_user1",
+    )
+
+    assert payload["max_parallel_requests"] is None
     assert payload["team_id"] == "team-001"
 
 

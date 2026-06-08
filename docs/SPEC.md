@@ -506,7 +506,7 @@ Base path：`/main/api/v1`
   - `duration` 由 `duration_months` 映射：`1->30d`、`6->180d`、`12->360d`
   - 本地 `expires_at` 也需沿用同一 fixed-day 規則，不得再使用曆月位移算法
   - 若全域設定中的 `tpm_limit` 或 `rpm_limit` 為 `0`，送往 provider 時需轉為 `null`，表示不限制
-  - `max_parallel_requests` 預設為 `0`，表示不限制，送往 provider 時需維持 `0`，不得轉為 `null`
+  - `max_parallel_requests` 預設為 `0`，表示不限制；本地設定維持 `0`，送往 provider 時需轉為 `null`
   - `team_id` 固定使用 `PROVIDER_TEAM_ID`
   - `key_alias` 預設先送 `for_{owner_account}`；若 provider 回 `400`，系統需自動依序重試 `for_{owner_account}_v2`、`_v3` ...，成功後將最終 alias 寫回本地 `api_keys.key_alias`
   - 目前不送 `budget_limits`
@@ -525,7 +525,7 @@ Base path：`/main/api/v1`
   - `budget_duration`：重置週期（`daily|weekly|monthly`）。
   - `tpm_limit`：每分鐘 Token 數限制；允許 `0`，表示送往 provider 時轉為 `null`（不限制）。
   - `rpm_limit`：每分鐘請求數限制；允許 `0`，表示送往 provider 時轉為 `null`（不限制）。
-  - `max_parallel_requests`：最大平行請求數限制；允許 `0`，表示不限制，送往 provider 時維持 `0`。
+  - `max_parallel_requests`：最大平行請求數限制；允許 `0`，表示不限制，本地設定維持 `0`，送往 provider 時轉為 `null`。
 - 每把 API Key 需同時套用 `budget`、`rate_limit` 與 `max_parallel_requests` 設定；不提供二選一模式。
 - 一般使用者不可查看或修改金鑰條件設定。
 - 系統需透過 migration 預先補齊 `global-limit-strategy-config` 預設資料列（`1000/monthly/10000/500/0`）。
@@ -541,7 +541,7 @@ Base path：`/main/api/v1`
     "budget_duration": "7d",
     "tpm_limit": 13000,
     "rpm_limit": 700,
-    "max_parallel_requests": 0
+    "max_parallel_requests": null
   }
 }
 ```
@@ -967,7 +967,7 @@ Base path：`/main/api/v1`
 13. `extend`、`revoke` 若需舊明文 key，後端必須從 `key_ciphertext` 解密，且明文只可在服務記憶體中短暫使用；不得出現在 DB、log、audit log、exception message。`renew` 不得依賴舊明文 key。
 14. 若 provider timeout/5xx、明確拒絕、缺少密文材料、解密失敗或回應不完整，本地不得先改動狀態或有效期限，並需回傳對應錯誤。
 15. 若部署使用 local provider adapter 作為開發/測試替身，仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
-16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_parallel_requests`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地 `expires_at` 也需使用相同的 `30|180|360` 天 fixed-day 規則計算，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 需送 `null`、`max_parallel_requests=0` 需原樣送 `0`，且不得送 `models` 或 `budget_limits`。
+16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_parallel_requests`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地 `expires_at` 也需使用相同的 `30|180|360` 天 fixed-day 規則計算，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 與 `max_parallel_requests` 需送 `null`，且不得送 `models` 或 `budget_limits`。
 17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`update` 用於 extend 或 alias 同步時可帶 `key_alias`；`active` key extend 時 `duration` 需送累計總天數，`expired` key extend 時 `duration` 只送本次展延天數；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
 18. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 

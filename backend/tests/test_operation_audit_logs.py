@@ -487,7 +487,7 @@ def test_limit_strategy_patch_syncs_provider_team_update(client, admin_headers, 
                 "budget_duration": "7d",
                 "tpm_limit": 13000,
                 "rpm_limit": 700,
-                "max_parallel_requests": 0,
+                "max_parallel_requests": None,
             },
         }
     finally:

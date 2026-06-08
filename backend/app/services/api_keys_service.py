@@ -124,6 +124,10 @@ def _to_provider_rate_limit(limit: int) -> int | None:
     return None if limit == 0 else limit
 
 
+def _to_provider_max_parallel_requests(limit: int) -> int | None:
+    return None if limit == 0 else limit
+
+
 def _effective_status(*, status: str, expires_at: datetime) -> str:
     expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
     if status == "active" and expires_at_utc < datetime.now(UTC):
@@ -304,7 +308,7 @@ class ApiKeysService:
             "duration": _to_provider_duration(duration_months),
             "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
             "rpm_limit": _to_provider_rate_limit(config.rpm_limit),
-            "max_parallel_requests": config.max_parallel_requests,
+            "max_parallel_requests": _to_provider_max_parallel_requests(config.max_parallel_requests),
             "team_id": self._require_provider_team_id(),
             "key_alias": key_alias,
             "key_type": "llm_api",
@@ -325,7 +329,7 @@ class ApiKeysService:
             "duration": _to_provider_duration(duration_months),
             "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
             "rpm_limit": _to_provider_rate_limit(config.rpm_limit),
-            "max_parallel_requests": config.max_parallel_requests,
+            "max_parallel_requests": _to_provider_max_parallel_requests(config.max_parallel_requests),
             "team_id": self._require_provider_team_id(),
             "key_type": "llm_api",
         }
@@ -490,7 +494,7 @@ class ApiKeysService:
                             "budget_duration": _to_provider_budget_duration(config.budget_duration),
                             "tpm_limit": _to_provider_rate_limit(config.rate_limit_tpm),
                             "rpm_limit": _to_provider_rate_limit(config.rate_limit_rpm),
-                            "max_parallel_requests": config.max_parallel_requests,
+                            "max_parallel_requests": _to_provider_max_parallel_requests(config.max_parallel_requests),
                         },
                     }
                 )

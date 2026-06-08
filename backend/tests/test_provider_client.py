@@ -138,14 +138,14 @@ def test_update_team_limits_posts_to_team_bulk_update(monkeypatch: pytest.Monkey
     monkeypatch.setattr("app.services.provider_client.build_safe_httpx_client", lambda **kwargs: fake_client)
 
     result = client.update_team_limits(
-        {"team_id": "team-1", "all_keys_in_team": True, "update_fields": {"tpm_limit": 10000, "max_parallel_requests": 0}}
+        {"team_id": "team-1", "all_keys_in_team": True, "update_fields": {"tpm_limit": 10000, "max_parallel_requests": None}}
     )
 
     assert result.success is True
     assert fake_client.calls == [
         {
             "url": "/team/key/bulk_update",
-            "json": {"team_id": "team-1", "all_keys_in_team": True, "update_fields": {"tpm_limit": 10000, "max_parallel_requests": 0}},
+            "json": {"team_id": "team-1", "all_keys_in_team": True, "update_fields": {"tpm_limit": 10000, "max_parallel_requests": None}},
             "headers": {
                 "Content-Type": "application/json",
                 "Authorization": "Bearer secret-token",
