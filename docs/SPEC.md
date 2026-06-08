@@ -68,6 +68,7 @@
   - 對 `active` key 成功 extend 後：`application_date` 維持原始申請日；`duration_months` 為目前這把 key 已累計生效的總月數（原申請月數 + 每次成功 extend 的月數）；`expires_at` 為目前有效到期時間。
   - 對 `expired` key 成功 extend 後：`application_date` 改為本次 extend 當日；`duration_months` 改為本次 extend 選擇的月數；`expires_at` 以本次 extend 成功當下為基準計算新的有效到期時間。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
+- 日期區間篩選 UI 需使用 Date Range Picker，並以雙月曆（開始/結束）呈現 `application_date` 與 `expires_at` 的區間選擇。
 - 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示系統產生 alias（初始為 `for_{owner_account}`，若 provider 回報衝突則自動改為 `for_{owner_account}_vN`）。管理者手動輸入時僅允許中英文、數字、`_`、`-`，不得包含空白或其他符號。
 - 操作：
   - 對 `active` key 顯示「停用」與「展延（extend）」按鈕。
@@ -91,8 +92,12 @@
 
 ### 4) Whitelist Admin Page（特殊人員名單管理頁）
 - 可用 `account`、`name` 查詢使用者後加入特殊人員名單。
-- 名單表格與查詢候選表格屬於 `local-full-dataset table`：目前可保留前端 local sorting/filter/pagination。
+- 名單表格屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
+- 查詢候選表格屬於 `local-full-dataset table`：目前可保留前端 local sorting/filter/pagination。
 - 可查詢特殊人員名單與狀態，列表需顯示 `account`、`name`、`email`。
+- 名單表格支援 `status`、`sysid`、`account`、`name`、`email`、`created_at`、`updated_at` 的 server-side 篩選；其中 `status`、`sysid` 為 exact match，`account`、`name`、`email` 為 case-insensitive `contains`，時間欄位為區間查詢。
+- `created_at`、`updated_at` 的日期區間篩選 UI 需使用 Date Range Picker，並以雙月曆（開始/結束）呈現。
+- 名單表格預設排序為 `created_at desc`；`note` 與 `actions` 欄位不得提供誤導使用者的前端 filter/sort UI。
 - 可停用/啟用特殊人員名單條目。
 - 可刪除特殊人員名單條目（實體刪除）。
 - `note` / 備註欄位需支援中英文、數字、空白、`_`、`-`，且不得因前端驗證破壞中文輸入法組字。
@@ -179,8 +184,8 @@
   - 日期欄位僅允許區間查詢，使用 `from/to` 或 `<field>_from/<field>_to`；不得把 DataGrid 原生日期 operator 直接暴露成公開 API。
   - 數字/識別碼欄位（如 `sysid`）僅允許 exact match。
 - 本 repo 現階段 Data Table 分類如下：
-  - `server-side table`：`My API Keys Page`、`Admin Dashboard Page`、`Operation Audit Logs Page`、`Auth Audit Logs Page`
-  - `local-full-dataset table`：`Whitelist Admin Page`、`Admin List Page`、`Institute View Page`
+  - `server-side table`：`My API Keys Page`、`Whitelist Admin Page`、`Admin Dashboard Page`、`Operation Audit Logs Page`、`Auth Audit Logs Page`
+  - `local-full-dataset table`：`Admin List Page`、`Institute View Page`
 
 ## 功能需求
 ### Must Have（MVP）
@@ -366,7 +371,6 @@ Base path：`/main/api/v1`
 - `dev/test` 可透過 `ALLOW_HEADER_AUTH=true` 啟用 header auth 供開發與測試使用。
 - 所有 `POST`、`PATCH` 端點需驗證 `X-CSRF-Token` 與 session 內 token 一致；header auth 模式除外。
 - 所有清單查詢 `page_size` 上限為 `100`。
-- 稽核與統計查詢的 `from/to` 視窗上限為 `31` 天。
 - `GET /main/api/v1/users?q=...` 查詢字串上限為 `100` 字元。
 - `POST /main/api/v1/api-keys/{id}/reveal` 回應需帶 `Cache-Control: no-store`。
 - 非 `dev/test` 環境之外部整合 URL 必須為 `https`，且不得解析到 loopback / private / link-local 位址。
@@ -671,7 +675,7 @@ Base path：`/main/api/v1`
 
 ### 5) 特殊人員名單管理 API（沿用受保護路徑）
 - `POST /main/api/v1/whitelists`：新增特殊人員名單（需帶 `sysid`、`account`、`name`、`email`）
-- `GET /main/api/v1/whitelists`：查詢特殊人員名單列表
+- `GET /main/api/v1/whitelists`：查詢特殊人員名單列表，需支援 `page`、`page_size`、`status`、`sysid`、`account`、`name`、`email`、`created_from`、`created_to`、`updated_from`、`updated_to`、`sort_by`、`sort_dir`
 - `PATCH /main/api/v1/whitelists/{id}`：更新狀態（`active/inactive`）與備註
 - `DELETE /main/api/v1/whitelists/{id}`：刪除特殊人員名單條目（實體刪除）
 - 規則：僅 `admin` 可使用。
@@ -949,7 +953,7 @@ Base path：`/main/api/v1`
 54. `GET /main/api/v1/users` 與 `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`limit-strategy-config`、`institutes/sync` 等關鍵操作 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`；failure 事件另需提供可供管理者除錯的 `error_detail` 與 `request_id`。其中 `GET /main/api/v1/users` 需以 `lookup_context` 區分 `proxy_application|admin_create|whitelist_create` 用途。
 55. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證；`metadata_json` 與 `error_detail` 僅允許白名單安全內容，不得包含 stack trace、SQL、完整第三方 payload。若 audit 寫入失敗，不得改變主流程成功或失敗語意。
 56. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 僅 `admin` 可使用；未提供 `from/to` 時預設回傳最近 7 天熱資料，結果依 `created_at desc` 排序，並支援分頁與既定篩選條件。
-57. `GET /main/api/v1/api-keys/statistics/users`、`GET /main/api/v1/operation-audit-logs`、`GET /main/api/v1/auth-audit-logs` 的 `from/to` 查詢區間不得超過 `31` 天；`GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
+57. `GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
 58. 對所有 `server-side table` 頁面，前端 DataGrid 欄位篩選不得只作用於當前頁 rows；`items`、`total`、頁數、排序與篩選結果都必須來自完整資料集的後端查詢。
 59. `GET /main/api/v1/api-keys` 的 `owner_account`、`owner_name`、`key_alias` 篩選需採 case-insensitive `contains`；`application_date_from/application_date_to` 與 `expires_from/expires_to` 需分別正確套用到 `application_date` 與 `expires_at`；`sort_by/sort_dir` 僅允許既定白名單欄位與 `asc|desc`。
 60. `GET /main/api/v1/api-keys/statistics/users` 的 `q` 僅作全域搜尋；`owner_account`、`owner_name`、`owner_email`、`owner_department` 欄位篩選需彼此獨立且採 case-insensitive `contains`；切換圖表與表格視圖時查詢口徑需保持一致。
