@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
+import DateRangeFilterField from "../components/DateRangeFilterField";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { COMPACT_MAIN_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
@@ -22,6 +22,38 @@ function defaultHotRange() {
 
 const TAB_OPERATION = "operation";
 const TAB_LOGIN = "login";
+const OPERATION_EVENT_TYPE_OPTIONS = [
+  "api_key",
+  "api_key_application",
+  "admin_management",
+  "institute_sync",
+  "limit_strategy_config",
+  "user_lookup",
+  "whitelist",
+];
+const OPERATION_ACTION_OPTIONS = [
+  "admin_create",
+  "create",
+  "delete",
+  "disable",
+  "enable",
+  "extend",
+  "proxy_application",
+  "renew",
+  "revoke",
+  "sync",
+  "update",
+  "whitelist_create",
+];
+const OPERATION_TARGET_TYPE_OPTIONS = [
+  "admin",
+  "api_key",
+  "api_key_application",
+  "institute",
+  "limit_strategy_config",
+  "user_search",
+  "whitelist",
+];
 
 const operationSortFields = new Set([
   "created_at",
@@ -62,7 +94,6 @@ export default function OperationAuditLogsPage({ auth }) {
   const [operationResult, setOperationResult] = useState("");
   const [operationActorAccount, setOperationActorAccount] = useState("");
   const [operationTargetType, setOperationTargetType] = useState("");
-  const [operationTargetId, setOperationTargetId] = useState("");
   const [operationErrorCode, setOperationErrorCode] = useState("");
   const [operationSortModel, setOperationSortModel] = useState([{ field: "created_at", sort: "desc" }]);
   const [operationLoading, setOperationLoading] = useState(true);
@@ -85,6 +116,31 @@ export default function OperationAuditLogsPage({ auth }) {
   const [loginSortModel, setLoginSortModel] = useState([{ field: "created_at", sort: "desc" }]);
   const [loginLoading, setLoginLoading] = useState(true);
   const [loginError, setLoginError] = useState("");
+
+  function clearOperationFilters() {
+    setOperationFromDate(hot.from);
+    setOperationToDate(hot.to);
+    setOperationEventType("");
+    setOperationAction("");
+    setOperationResult("");
+    setOperationActorAccount("");
+    setOperationTargetType("");
+    setOperationErrorCode("");
+    setOperationPage(0);
+  }
+
+  function clearLoginFilters() {
+    setLoginFromDate(hot.from);
+    setLoginToDate(hot.to);
+    setLoginProvider("");
+    setLoginResult("");
+    setLoginAccount("");
+    setLoginSysid("");
+    setLoginRole("");
+    setLoginErrorCode("");
+    setLoginRequestId("");
+    setLoginPage(0);
+  }
 
   const operationColumns = useMemo(
     () => [
@@ -147,7 +203,6 @@ export default function OperationAuditLogsPage({ auth }) {
             result: operationResult || undefined,
             actor_account: operationActorAccount || undefined,
             target_type: operationTargetType || undefined,
-            target_id: operationTargetId || undefined,
             error_code: operationErrorCode || undefined,
             sort_by: operationSortFields.has(operationSortModel[0]?.field) ? operationSortModel[0].field : "created_at",
             sort_dir: operationSortModel[0]?.sort === "asc" ? "asc" : "desc",
@@ -181,7 +236,6 @@ export default function OperationAuditLogsPage({ auth }) {
     operationPageSize,
     operationResult,
     operationSortModel,
-    operationTargetId,
     operationTargetType,
     operationToDate,
     t
@@ -275,38 +329,54 @@ export default function OperationAuditLogsPage({ auth }) {
       {activeTab === TAB_OPERATION ? (
         <>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
-            <DatePicker
+            <DateRangeFilterField
               label={t("auditlogs_from")}
-              value={operationFromDate ? dayjs(operationFromDate) : null}
-              onChange={(value) => {
-                setOperationFromDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
-                setOperationPage(0);
-              }}
-            />
-            <DatePicker
-              label={t("auditlogs_to")}
-              value={operationToDate ? dayjs(operationToDate) : null}
-              onChange={(value) => {
-                setOperationToDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
+              fromValue={operationFromDate}
+              toValue={operationToDate}
+              startLabel={t("auditlogs_from")}
+              endLabel={t("auditlogs_to")}
+              clearLabel={t("common_clear")}
+              closeLabel={t("common_close")}
+              onChange={({ from, to }) => {
+                setOperationFromDate(from);
+                setOperationToDate(to);
                 setOperationPage(0);
               }}
             />
             <TextField
+              select
               label={t("auditlogs_event_type")}
               value={operationEventType}
               onChange={(e) => {
                 setOperationEventType(e.target.value);
                 setOperationPage(0);
               }}
-            />
+              sx={{ minWidth: 180 }}
+            >
+              <MenuItem value="">{t("auditlogs_result_all")}</MenuItem>
+              {OPERATION_EVENT_TYPE_OPTIONS.map((value) => (
+                <MenuItem key={value} value={value}>
+                  {value}
+                </MenuItem>
+              ))}
+            </TextField>
             <TextField
+              select
               label={t("auditlogs_action")}
               value={operationAction}
               onChange={(e) => {
                 setOperationAction(e.target.value);
                 setOperationPage(0);
               }}
-            />
+              sx={{ minWidth: 180 }}
+            >
+              <MenuItem value="">{t("auditlogs_result_all")}</MenuItem>
+              {OPERATION_ACTION_OPTIONS.map((value) => (
+                <MenuItem key={value} value={value}>
+                  {value}
+                </MenuItem>
+              ))}
+            </TextField>
             <TextField
               select
               label={t("auditlogs_result")}
@@ -330,21 +400,22 @@ export default function OperationAuditLogsPage({ auth }) {
               }}
             />
             <TextField
+              select
               label={t("auditlogs_target_type")}
               value={operationTargetType}
               onChange={(e) => {
                 setOperationTargetType(e.target.value);
                 setOperationPage(0);
               }}
-            />
-            <TextField
-              label={t("auditlogs_target_id")}
-              value={operationTargetId}
-              onChange={(e) => {
-                setOperationTargetId(e.target.value);
-                setOperationPage(0);
-              }}
-            />
+              sx={{ minWidth: 180 }}
+            >
+              <MenuItem value="">{t("auditlogs_result_all")}</MenuItem>
+              {OPERATION_TARGET_TYPE_OPTIONS.map((value) => (
+                <MenuItem key={value} value={value}>
+                  {value}
+                </MenuItem>
+              ))}
+            </TextField>
             <TextField
               label={t("auditlogs_error_code")}
               value={operationErrorCode}
@@ -353,6 +424,9 @@ export default function OperationAuditLogsPage({ auth }) {
                 setOperationPage(0);
               }}
             />
+            <Button variant="outlined" onClick={clearOperationFilters}>
+              {t("common_clear")}
+            </Button>
           </Stack>
 
           {operationLoading ? <LoadingBlock text={t("auditlogs_loading")} /> : null}
@@ -390,19 +464,17 @@ export default function OperationAuditLogsPage({ auth }) {
       {activeTab === TAB_LOGIN ? (
         <>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
-            <DatePicker
+            <DateRangeFilterField
               label={t("auditlogs_from")}
-              value={loginFromDate ? dayjs(loginFromDate) : null}
-              onChange={(value) => {
-                setLoginFromDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
-                setLoginPage(0);
-              }}
-            />
-            <DatePicker
-              label={t("auditlogs_to")}
-              value={loginToDate ? dayjs(loginToDate) : null}
-              onChange={(value) => {
-                setLoginToDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
+              fromValue={loginFromDate}
+              toValue={loginToDate}
+              startLabel={t("auditlogs_from")}
+              endLabel={t("auditlogs_to")}
+              clearLabel={t("common_clear")}
+              closeLabel={t("common_close")}
+              onChange={({ from, to }) => {
+                setLoginFromDate(from);
+                setLoginToDate(to);
                 setLoginPage(0);
               }}
             />
@@ -468,6 +540,9 @@ export default function OperationAuditLogsPage({ auth }) {
                 setLoginPage(0);
               }}
             />
+            <Button variant="outlined" onClick={clearLoginFilters}>
+              {t("common_clear")}
+            </Button>
           </Stack>
 
           {loginLoading ? <LoadingBlock text={t("loginlogs_loading")} /> : null}

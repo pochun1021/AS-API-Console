@@ -14,5 +14,6 @@ export const compactGridSx = {
 export const compactGridProps = {
   density: "standard",
   rowHeight: 57,
-  columnHeaderHeight: 57
+  columnHeaderHeight: 57,
+  disableColumnFilter: true
 };

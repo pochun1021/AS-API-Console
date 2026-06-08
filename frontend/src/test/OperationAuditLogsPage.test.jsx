@@ -68,18 +68,23 @@ test("operation audit filters send full server-side query params", async () => {
   renderPage(<OperationAuditLogsPage auth={adminAuth} />);
 
   expect(await screen.findByText("操作稽核 Log")).toBeInTheDocument();
-  await user.type(screen.getByLabelText("動作"), "up");
+  await user.click(screen.getByLabelText("事件類型"));
+  await user.click(await screen.findByRole("option", { name: "whitelist" }));
+  await user.click(screen.getByLabelText("動作"));
+  await user.click(await screen.findByRole("option", { name: "update" }));
   await user.type(screen.getByLabelText("操作者帳號"), "john");
-  await user.type(screen.getByLabelText("目標 ID"), "wl");
+  await user.click(screen.getByLabelText("目標類型"));
+  await user.click(await screen.findByRole("option", { name: "whitelist" }));
   await user.type(screen.getByLabelText("錯誤碼"), "VALID");
   await user.click(await screen.findByRole("columnheader", { name: "操作者" }));
 
   await waitFor(() => {
     expect(spy).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        action: "up",
+        event_type: "whitelist",
+        action: "update",
         actor_account: "john",
-        target_id: "wl",
+        target_type: "whitelist",
         error_code: "VALID",
         sort_by: "actor_account",
         sort_dir: "asc"
