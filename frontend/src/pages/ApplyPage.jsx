@@ -159,10 +159,10 @@ export default function ApplyPage({ auth }) {
     setTargetProfile(null);
   };
 
-  async function lookupTargetIdentity() {
+  async function lookupTargetIdentity(rawAccount = targetIdentity.account) {
     if (!(auth.role === "admin" && proxyEnabled)) return;
 
-    const keyword = targetIdentity.account.trim();
+    const keyword = String(rawAccount || "").trim();
     setLookupError("");
     setTargetProfile(null);
     setCandidateItems([]);
@@ -343,7 +343,7 @@ export default function ApplyPage({ auth }) {
                     label={isZh ? "帳號" : "Account"}
                     value={auth.role === "admin" && proxyEnabled ? targetIdentity.account : auth.account}
                     onChange={auth.role === "admin" && proxyEnabled ? onTargetChange("account") : undefined}
-                    onBlur={auth.role === "admin" && proxyEnabled ? lookupTargetIdentity : undefined}
+                    onBlur={auth.role === "admin" && proxyEnabled ? (event) => lookupTargetIdentity(event.target.value) : undefined}
                     InputProps={{
                       readOnly: !(auth.role === "admin" && proxyEnabled),
                       endAdornment: auth.role === "admin" && proxyEnabled && lookupLoading ? <CircularProgress size={18} /> : null

@@ -232,7 +232,7 @@ test("admin proxy mode sends target_identity", async () => {
   await user.type(accountInput, "target.user");
   await user.tab();
   await waitFor(() => {
-    expect(searchUsers).toHaveBeenCalledWith("target.user", adminAuth);
+    expect(searchUsers).toHaveBeenCalledWith("target.user", adminAuth, { lookup_context: "proxy_application" });
   });
   await user.type(screen.getByLabelText("用途"), "proxy apply");
   await user.click(screen.getByRole("button", { name: "送出申請" }));
@@ -243,6 +243,24 @@ test("admin proxy mode sends target_identity", async () => {
   expect(createApplication.mock.calls[0][0].target_identity).toEqual({
     account: "target.user"
   });
+});
+
+test("proxy lookup uses latest blur value on first blur", async () => {
+  const searchUsers = vi.fn().mockResolvedValue({
+    items: [{ id: "u1", account: "target.user", name: "Target User", email: "target.user@company.com", department: "02", sysid: 9999 }]
+  });
+  setApiProvider({ searchUsers, createApplication: vi.fn() });
+  renderPage(<ApplyPage auth={adminAuth} />);
+
+  fireEvent.click(screen.getByRole("radio", { name: "協助他人申請" }));
+  const accountInput = screen.getByLabelText("帳號");
+  fireEvent.change(accountInput, { target: { value: "target.user" } });
+  fireEvent.blur(accountInput, { target: { value: "target.user" } });
+
+  await waitFor(() => {
+    expect(searchUsers).toHaveBeenCalledWith("target.user", adminAuth, { lookup_context: "proxy_application" });
+  });
+  expect(await screen.findByDisplayValue("Target User")).toBeInTheDocument();
 });
 
 test("proxy account blur auto-fills identity fields", async () => {
