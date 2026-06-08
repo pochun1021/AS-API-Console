@@ -22,6 +22,7 @@ describe("App login-denied flow", () => {
     getCurrentUser: vi.fn(),
     getLocalePreference: vi.fn(),
     updateLocalePreference: vi.fn(),
+    listModels: vi.fn(),
     logout: vi.fn()
   };
 
@@ -29,6 +30,7 @@ describe("App login-denied flow", () => {
     provider.getCurrentUser.mockReset();
     provider.getLocalePreference.mockReset();
     provider.updateLocalePreference.mockReset();
+    provider.listModels.mockReset();
     provider.logout.mockReset();
     setApiProvider(provider);
     vi.spyOn(navigation, "redirectToLogin").mockImplementation(() => {});
@@ -58,5 +60,27 @@ describe("App login-denied flow", () => {
       expect(provider.getCurrentUser).toHaveBeenCalledTimes(1);
       expect(navigation.redirectToLogin).toHaveBeenCalledTimes(1);
     });
+  });
+
+  test("shared /models route renders for non-admin user", async () => {
+    provider.getCurrentUser.mockResolvedValueOnce({
+      account: "user1",
+      name: "User One",
+      email: "user1@example.com",
+      department: "IT",
+      sysid: 2001,
+      role: "user"
+    });
+    provider.getLocalePreference.mockResolvedValueOnce({ preferred_locale: "zh-TW" });
+    provider.listModels.mockResolvedValueOnce({
+      items: [{ id: "gpt-4o-mini", label: "gpt-4o-mini" }],
+      total: 1,
+      fetched_at: "2026-06-05T12:00:00Z"
+    });
+
+    renderApp("/models");
+
+    expect(await screen.findByRole("heading", { name: "Models" })).toBeInTheDocument();
+    expect(await screen.findByText("gpt-4o-mini")).toBeInTheDocument();
   });
 });

@@ -89,6 +89,7 @@ export ENV_FILE=/home/app/config/.env
 - `API_KEY_ENCRYPTION_SECRET`：必填（正式環境），用於 API key 密文加解密的主密鑰來源
 - `API_KEY_KEK_VERSION`：可選，金鑰版本標記（預設 `v1`）
 - `PROVIDER_BASE_URL`：可選，外部 key provider base URL（例如 `https://provider.internal`）；系統會用於 `POST /key/generate`、`/key/update`、`/key/block`、`/team/key/bulk_update`
+- `GET /main/api/v1/models` 在 `APP_ENV=dev/test` 會直接回內建測試資料 `gpt-4o`、`gpt-4o-mini`；`APP_ENV=prod` 才會讀取 provider `/models`
 - `PROVIDER_MASTER_KEY`：可選，provider Bearer token 值；系統會送出 `Authorization: Bearer ${PROVIDER_MASTER_KEY}`
 - `PROVIDER_TEAM_ID`：external provider mode 必填；create/renew 的 `POST /key/generate` payload 與 `PATCH /main/api/v1/limit-strategy-config` 對應的 `POST /team/key/bulk_update` payload 都會帶此值。若缺少此設定，系統需 fail fast，且不得呼叫 provider
 - `PROVIDER_TIMEOUT_SECONDS`：可選，provider timeout 秒數（預設 `3.0`）

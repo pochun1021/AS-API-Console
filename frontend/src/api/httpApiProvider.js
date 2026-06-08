@@ -201,6 +201,10 @@ export const httpApiProvider = {
     return request(apiPath("/institutes"), { auth });
   },
 
+  listModels(auth) {
+    return request(apiPath("/models"), { auth });
+  },
+
   syncInstitutes(auth) {
     return request(apiPath("/institutes/sync"), { method: "POST", auth });
   },

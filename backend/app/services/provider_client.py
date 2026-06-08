@@ -193,6 +193,47 @@ class ProviderClient:
             operation_id=operation_id,
         )
 
+    def _perform_read_request(self, *, path: str) -> object:
+        if not self.is_configured():
+            raise ProviderUnavailableError("provider is not configured")
+
+        if self.debug_logging:
+            logger.info(
+                "provider request",
+                extra={
+                    "provider_path": path,
+                    "payload_keys": [],
+                    "timeout_seconds": self.timeout_seconds,
+                },
+            )
+
+        try:
+            with build_safe_httpx_client(timeout_seconds=self.timeout_seconds, base_url=self.base_url) as client:
+                resp = client.get(
+                    path,
+                    headers={
+                        "Authorization": f"Bearer {self.master_key}",
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.HTTPStatusError as exc:
+            response_payload: object = {}
+            try:
+                response_payload = exc.response.json() if exc.response is not None else {}
+            except Exception:  # noqa: BLE001
+                response_payload = {}
+            status_code = exc.response.status_code if exc.response is not None else 0
+            self._log_response(path=path, status_code=status_code, payload=response_payload)
+            if 400 <= status_code < 500:
+                raise ProviderBadRequestError(f"provider rejected request: {status_code}") from exc
+            raise ProviderUnavailableError(f"provider unavailable: {status_code}") from exc
+        except (httpx.RequestError, json.JSONDecodeError) as exc:
+            raise ProviderUnavailableError("provider unavailable") from exc
+
+        self._log_response(path=path, status_code=resp.status_code, payload=data)
+        return data
+
     def generate_key(self, payload: dict) -> ProviderGenerateResult:
         result = self._perform_request(path="/key/generate", payload=payload, require_plaintext=True)
         assert isinstance(result, ProviderGenerateResult)
@@ -206,3 +247,6 @@ class ProviderClient:
 
     def update_team_limits(self, payload: dict) -> ProviderMutationResult:
         return self._perform_request(path="/team/key/bulk_update", payload=payload)
+
+    def list_models(self) -> object:
+        return self._perform_read_request(path="/models")

@@ -11,6 +11,7 @@ import AdminPage from "./pages/AdminPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import LimitStrategiesPage from "./pages/LimitStrategiesPage";
 import InstituteViewPage from "./pages/InstituteViewPage";
+import ModelsPage from "./pages/ModelsPage";
 import OperationAuditLogsPage from "./pages/OperationAuditLogsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 import { redirectToLogin } from "./utils/navigation";
@@ -126,6 +127,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/apply" replace />} />
         <Route path="/apply" element={<ApplyPage auth={auth} />} />
         <Route path="/api-keys" element={<MyApiKeysPage auth={auth} />} />
+        <Route path="/models" element={<ModelsPage auth={auth} />} />
         <Route
           path="/whitelists"
           element={

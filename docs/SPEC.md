@@ -152,6 +152,9 @@
 - `user` 與 `admin` 都可使用。
 - 頁面需在主導覽列提供 `Models` 入口。
 - 資料來源僅 `GET /main/api/v1/models`。
+- `GET /main/api/v1/models` 成功回應固定為 `{ items, total, fetched_at }`，其中 `items[*]` 僅包含 normalized `{ id, label }`。
+- `APP_ENV=dev/test` 時，`GET /main/api/v1/models` 直接回系統內建測試資料：`gpt-4o`、`gpt-4o-mini`；`APP_ENV=prod` 才讀取 provider `/models`。
+- 若 provider `/models` timeout、回 `5xx`、或成功但 payload 無法辨識，後端需統一回 `503 PROVIDER_UNAVAILABLE`，不得透出 provider 原始 payload/error shape。
 - 頁面 mount 時需自動查詢一次模型清單。
 - 頁面停留期間需每 `15` 分鐘自動刷新一次。
 - 頁面需提供手動重新整理按鈕，且與自動刷新共用同一個 `load()` 流程。

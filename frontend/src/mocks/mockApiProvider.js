@@ -10,6 +10,23 @@ const mockInstitutes = [
   { inst_code: "04", inst_name: "資料平台", abb_inst_name: "資料平台", einst_name: "Data Platform", division: "2" },
   { inst_code: "05", inst_name: "營運處", abb_inst_name: "營運處", einst_name: "Operations", division: "3" }
 ];
+const initialModelsPayload = {
+  data: [
+    {
+      id: "gpt-4o",
+      object: "model",
+      created: 1677610602,
+      owned_by: "openai"
+    },
+    {
+      id: "gpt-4o-mini",
+      object: "model",
+      created: 1677610602,
+      owned_by: "openai"
+    }
+  ],
+  object: "list"
+};
 
 const initialApiKeys = [
   {
@@ -296,6 +313,10 @@ const initialUsers = [
 let apiKeys = initialApiKeys.map((item) => ({ ...item }));
 let whitelists = initialWhitelists.map((item) => ({ ...item }));
 let users = initialUsers.map((item) => ({ ...item }));
+let modelsPayload = {
+  data: initialModelsPayload.data.map((item) => ({ ...item })),
+  object: initialModelsPayload.object
+};
 let limitStrategyConfig = {
   budget_max_budget: "1000",
   budget_duration: "monthly",
@@ -1046,6 +1067,23 @@ export const mockApiProvider = {
     return { items: mockInstitutes, total: mockInstitutes.length };
   },
 
+  async listModels(auth) {
+    await delay();
+    if (!auth?.account) {
+      throw createError("UNAUTHORIZED", "unauthorized", 401);
+    }
+    const items = (modelsPayload.data || [])
+      .map((item) => String(item?.id || "").trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .map((id) => ({ id, label: id }));
+    return {
+      items,
+      total: items.length,
+      fetched_at: new Date().toISOString()
+    };
+  },
+
   async syncInstitutes(auth) {
     await delay();
     ensureAdmin(auth);
@@ -1269,6 +1307,10 @@ export const mockApiProvider = {
     apiKeys = initialApiKeys.map((item) => ({ ...item }));
     whitelists = initialWhitelists.map((item) => ({ ...item }));
     users = initialUsers.map((item) => ({ ...item }));
+    modelsPayload = {
+      data: initialModelsPayload.data.map((item) => ({ ...item })),
+      object: initialModelsPayload.object
+    };
     limitStrategyConfig = {
       budget_max_budget: "1000",
       budget_duration: "monthly",
