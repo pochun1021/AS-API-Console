@@ -1,4 +1,8 @@
-from pydantic import BaseModel
+from datetime import datetime
+
+from pydantic import BaseModel, field_serializer
+
+from app.schemas.datetime_serializers import serialize_utc_datetime
 
 
 class UserListItemResponse(BaseModel):
@@ -14,6 +18,22 @@ class UserListItemResponse(BaseModel):
 
 class UserListResponse(BaseModel):
     items: list[UserListItemResponse]
+    total: int
+
+
+class AdminListItemResponse(UserListItemResponse):
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer("created_at", "updated_at")
+    def serialize_datetimes(self, value: datetime) -> str:
+        return serialize_utc_datetime(value)
+
+
+class AdminListResponse(BaseModel):
+    items: list[AdminListItemResponse]
+    page: int
+    page_size: int
     total: int
 
 

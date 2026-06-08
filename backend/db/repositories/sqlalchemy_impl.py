@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date, datetime, timezone
 from uuid import uuid4
 
@@ -10,6 +12,7 @@ from db.models.applications import ApiKeyApplication
 from db.models.whitelist import ApiKeyWhitelist
 from db.repositories.interfaces import ApiKeyRepository, WhitelistRepository
 from db.repositories.types import (
+    AdminListFilter,
     ApiKeyAliasUpdateInput,
     ApiKeyCreateInput,
     ApiKeyDetail,
@@ -53,14 +56,59 @@ class SQLAlchemyAdminRepository:
         stmt = select(Admin).where(where_clause).limit(limit)
         return list(self.session.scalars(stmt).all())
 
-    def list_all(self, limit: int = 100, offset: int = 0) -> list[Admin]:
-        stmt = (
-            select(Admin)
-            .order_by(Admin.status.asc(), Admin.updated_at.desc(), Admin.created_at.desc(), Admin.id.desc())
-            .limit(limit)
-            .offset(offset)
-        )
-        return list(self.session.scalars(stmt).all())
+    @staticmethod
+    def _apply_list_filters(stmt: Select, filters: AdminListFilter) -> Select:
+        if filters.status:
+            stmt = stmt.where(Admin.status == filters.status)
+        if filters.sysid is not None:
+            stmt = stmt.where(Admin.id == filters.sysid)
+        if filters.account:
+            stmt = stmt.where(_contains_ci(Admin.account, filters.account))
+        if filters.name:
+            stmt = stmt.where(_contains_ci(Admin.name, filters.name))
+        if filters.email:
+            stmt = stmt.where(_contains_ci(Admin.email, filters.email))
+        if filters.created_from:
+            stmt = stmt.where(Admin.created_at >= filters.created_from)
+        if filters.created_to:
+            stmt = stmt.where(Admin.created_at <= filters.created_to)
+        if filters.updated_from:
+            stmt = stmt.where(Admin.updated_at >= filters.updated_from)
+        if filters.updated_to:
+            stmt = stmt.where(Admin.updated_at <= filters.updated_to)
+        return stmt
+
+    def list(
+        self,
+        filters: AdminListFilter,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[Admin], int]:
+        sortable_columns = {
+            "sysid": Admin.id,
+            "account": Admin.account,
+            "name": Admin.name,
+            "email": Admin.email,
+            "status": Admin.status,
+            "created_at": Admin.created_at,
+            "updated_at": Admin.updated_at,
+        }
+        sort_column = sortable_columns.get(filters.sort_by, Admin.created_at)
+        sort_dir = "asc" if filters.sort_dir == "asc" else "desc"
+
+        stmt: Select[tuple[Admin]] = select(Admin)
+        stmt = self._apply_list_filters(stmt, filters)
+        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
+        total = int(self.session.scalar(count_stmt) or 0)
+
+        if sort_dir == "asc":
+            stmt = stmt.order_by(sort_column.asc(), Admin.id.asc())
+        else:
+            stmt = stmt.order_by(sort_column.desc(), Admin.id.desc())
+
+        stmt = stmt.limit(limit).offset(offset)
+        return list(self.session.scalars(stmt).all()), total
 
     def list_active_emails(self) -> list[str]:
         stmt = select(Admin.email).where(Admin.status == "active")

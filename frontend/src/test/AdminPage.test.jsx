@@ -1,5 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import { vi } from "vitest";
 import AdminPage from "../pages/AdminPage";
 import { mockApiProvider } from "../mocks/mockApiProvider";
 
@@ -7,128 +10,102 @@ const adminAuth = {
   account: "john.admin",
   name: "John Admin",
   email: "john.admin@company.com",
-  department: "Security",
+  department: "03",
   sysid: 1,
   role: "admin"
 };
 
-const userAuth = {
-  account: "jane.doe",
-  name: "Jane Doe",
-  email: "jane.doe@company.com",
-  department: "Platform Engineering",
-  sysid: 123,
-  role: "user"
-};
+function renderPage(ui) {
+  return render(
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      {ui}
+    </LocalizationProvider>
+  );
+}
 
-const delegatedAdminAuth = {
-  account: "ops.admin",
-  name: "Ops Admin",
-  email: "ops.admin@company.com",
-  department: "Security",
-  sysid: 999,
-  role: "admin"
-};
+async function setDateRange(triggerLabel, startLabel, endLabel, startValue, endValue) {
+  await userEvent.setup().click(screen.getByLabelText(triggerLabel));
+  if (startValue != null) {
+    fireEvent.change(screen.getByLabelText(startLabel), { target: { value: startValue } });
+  }
+  if (endValue != null) {
+    fireEvent.change(screen.getByLabelText(endLabel), { target: { value: endValue } });
+  }
+}
 
 beforeEach(() => {
   mockApiProvider.resetForTests();
 });
 
-async function openSearchDialog(user) {
-  await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
-  return screen.findByRole("dialog", { name: "查詢人員" });
-}
-
-test("admin can search users and enable admin role", async () => {
+test("admin list sends custom filter params without DataGrid filter model", async () => {
   const user = userEvent.setup();
-  render(<AdminPage auth={adminAuth} />);
+  const spy = vi.spyOn(mockApiProvider, "listAdmins");
+  renderPage(<AdminPage auth={adminAuth} />);
 
   expect(await screen.findByText("管理者名單")).toBeInTheDocument();
-  const searchDialog = await openSearchDialog(user);
-  expect(within(searchDialog).getByText("可用帳號 / 姓名查詢")).toBeInTheDocument();
-  await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "alice");
-  await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
-  const aliceCell = await within(searchDialog).findByText("Alice Wang");
-  const aliceRow = aliceCell.closest('[role="row"]');
-  await user.click(within(aliceRow).getByRole("button", { name: "加入管理者" }));
-  expect(await screen.findByText("Alice Wang 已加入管理者權限。")).toBeInTheDocument();
+  await user.type(screen.getByLabelText("SysID"), "1");
+  await user.type(screen.getByLabelText("帳號"), "john");
+  await user.type(screen.getByLabelText("姓名"), "John");
+  await user.type(screen.getByLabelText("Email"), "admin");
+  await user.click(screen.getByLabelText("狀態"));
+  await user.click(screen.getByRole("option", { name: "啟用中" }));
+  await setDateRange("建立時間", "建立時間（起）", "建立時間（迄）", "2026-06-01", "2026-06-30");
+  await setDateRange("更新時間", "更新時間（起）", "更新時間（迄）", "2026-06-01", "2026-06-30");
+
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sysid: 1,
+        account: "john",
+        name: "John",
+        email: "admin",
+        status: "active",
+        created_from: "2026-05-31T16:00:00.000Z",
+        created_to: "2026-06-30T15:59:59.999Z",
+        updated_from: "2026-05-31T16:00:00.000Z",
+        updated_to: "2026-06-30T15:59:59.999Z",
+      }),
+      adminAuth
+    );
+  });
 });
 
-test("self admin cannot disable self", async () => {
-  render(<AdminPage auth={adminAuth} />);
-  const johnCell = await screen.findByText("John Admin");
-  const johnRow = johnCell.closest('[role="row"]');
-  expect(within(johnRow).getByRole("button", { name: "停用管理者" })).toBeDisabled();
-});
-
-test("admin list only shows admins and can disable other admin", async () => {
+test("clear filters button resets admin list filters", async () => {
   const user = userEvent.setup();
-  render(<AdminPage auth={delegatedAdminAuth} />);
+  const spy = vi.spyOn(mockApiProvider, "listAdmins");
+  renderPage(<AdminPage auth={adminAuth} />);
 
-  expect(screen.queryByText("Alice Wang")).not.toBeInTheDocument();
-  expect(await screen.findByText("John Admin")).toBeInTheDocument();
+  expect(await screen.findByText("管理者名單")).toBeInTheDocument();
+  const clearButton = screen.getByRole("button", { name: "清除篩選" });
+  expect(clearButton).toBeDisabled();
 
-  await user.click(screen.getByRole("button", { name: "開啟新增管理者查詢" }));
-  const searchDialog = await screen.findByRole("dialog", { name: "查詢人員" });
-  await user.type(within(searchDialog).getByLabelText("查詢關鍵字"), "jane");
-  await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
-  const janeCell = await within(searchDialog).findByText("Jane Doe");
-  const janeRow = janeCell.closest('[role="row"]');
-  await user.click(within(janeRow).getByRole("button", { name: "加入管理者" }));
-  await user.click(within(searchDialog).getByRole("button", { name: "關閉" }));
-  expect(await screen.findByText("Jane Doe 已加入管理者權限。")).toBeInTheDocument();
+  await user.type(screen.getByLabelText("帳號"), "john");
 
-  const johnCell = await screen.findByText("John Admin");
-  const johnRow = johnCell.closest('[role="row"]');
-  await user.click(within(johnRow).getByRole("button", { name: "停用管理者" }));
-  expect(await screen.findByText("確認停用管理者")).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "確認停用" }));
-  expect(await screen.findByText("已停用管理者權限。")).toBeInTheDocument();
-  expect(await screen.findByText("John Admin")).toBeInTheDocument();
-  expect(await screen.findByText("已停用")).toBeInTheDocument();
-});
+  await waitFor(() => {
+    expect(clearButton).toBeEnabled();
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ account: "john" }),
+      adminAuth
+    );
+  });
 
-test.each([
-  {
-    name: "admin can search users by account",
-    query: "john.admin",
-    submit: async (user, dialog) => {
-      await user.click(within(dialog).getByRole("button", { name: "查詢人員" }));
-    },
-    expectedText: "john.admin",
-  },
-  {
-    name: "admin can search users by pressing enter in dialog input",
-    query: "alice",
-    submit: async (user, dialog) => {
-      await user.type(within(dialog).getByLabelText("查詢關鍵字"), "{enter}");
-    },
-    expectedText: "Alice Wang",
-  },
-])("$name", async ({ query, submit, expectedText }) => {
-  const user = userEvent.setup();
-  render(<AdminPage auth={adminAuth} />);
+  await user.click(clearButton);
 
-  const searchDialog = await openSearchDialog(user);
-  const queryInput = within(searchDialog).getByLabelText("查詢關鍵字");
-  await user.type(queryInput, query);
-  await submit(user, searchDialog);
-
-  expect(await within(searchDialog).findByText(expectedText)).toBeInTheDocument();
-});
-
-test("search dialog resets keyword and results after close", async () => {
-  const user = userEvent.setup();
-  render(<AdminPage auth={adminAuth} />);
-
-  const firstDialog = await openSearchDialog(user);
-  await user.type(within(firstDialog).getByLabelText("查詢關鍵字"), "alice");
-  await user.click(within(firstDialog).getByRole("button", { name: "查詢人員" }));
-  expect(await within(firstDialog).findByText("Alice Wang")).toBeInTheDocument();
-  await user.click(within(firstDialog).getByRole("button", { name: "關閉" }));
-  await screen.findByRole("button", { name: "開啟新增管理者查詢" });
-
-  const secondDialog = await openSearchDialog(user);
-  expect(within(secondDialog).getByLabelText("查詢關鍵字")).toHaveValue("");
-  expect(within(secondDialog).queryByText("Alice Wang")).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByLabelText("帳號")).toHaveValue("");
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: undefined,
+        sysid: undefined,
+        account: undefined,
+        name: undefined,
+        email: undefined,
+        created_from: undefined,
+        created_to: undefined,
+        updated_from: undefined,
+        updated_to: undefined,
+      }),
+      adminAuth
+    );
+  });
 });

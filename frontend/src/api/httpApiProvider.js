@@ -176,8 +176,25 @@ export const httpApiProvider = {
     return request(`${apiPath("/auth-audit-logs")}?${query.toString()}`, { auth });
   },
 
-  listAdmins(auth) {
-    return request(apiPath("/admins"), { auth });
+  async listAdmins(paramsOrAuth, maybeAuth) {
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
+    const query = new URLSearchParams();
+    if (params.page) query.set("page", String(params.page));
+    if (params.page_size) query.set("page_size", String(params.page_size));
+    if (params.status) query.set("status", params.status);
+    if (params.sysid != null) query.set("sysid", String(params.sysid));
+    if (params.account) query.set("account", params.account);
+    if (params.name) query.set("name", params.name);
+    if (params.email) query.set("email", params.email);
+    if (params.created_from) query.set("created_from", params.created_from);
+    if (params.created_to) query.set("created_to", params.created_to);
+    if (params.updated_from) query.set("updated_from", params.updated_from);
+    if (params.updated_to) query.set("updated_to", params.updated_to);
+    if (params.sort_by) query.set("sort_by", params.sort_by);
+    if (params.sort_dir) query.set("sort_dir", params.sort_dir);
+    return request(`${apiPath("/admins")}?${query.toString()}`, { auth });
   },
 
   listInstitutes(auth) {

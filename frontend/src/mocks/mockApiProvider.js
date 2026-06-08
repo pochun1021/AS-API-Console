@@ -470,7 +470,9 @@ function mapUserForAdminPage(user) {
     name: user.name,
     email: user.email,
     department: user.department || "",
-    status: user.status || "active"
+    status: user.status || "active",
+    created_at: user.created_at || new Date().toISOString(),
+    updated_at: user.updated_at || user.created_at || new Date().toISOString()
   };
 }
 
@@ -1005,10 +1007,34 @@ export const mockApiProvider = {
     return { items: items.map(mapUserForAdminPage) };
   },
 
-  async listAdmins(auth) {
+  async listAdmins(paramsOrAuth, maybeAuth) {
     await delay();
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
     ensureAdmin(auth);
-    return { items: users.filter((item) => item.role === "admin").map(mapUserForAdminPage) };
+    const normalizedSysid = String(params.sysid || "").trim();
+    const parsedSysid = normalizedSysid && isAsciiDigits(normalizedSysid) ? Number(normalizedSysid) : null;
+    const filtered = users
+      .filter((item) => item.role === "admin")
+      .map(mapUserForAdminPage)
+      .filter((item) => {
+        if (params.status && item.status !== params.status) return false;
+        if (parsedSysid != null && item.sysid !== parsedSysid) return false;
+        if (params.account && !containsCI(item.account, params.account)) return false;
+        if (params.name && !containsCI(item.name, params.name)) return false;
+        if (params.email && !containsCI(item.email, params.email)) return false;
+        if (params.created_from && item.created_at < params.created_from) return false;
+        if (params.created_to && item.created_at > params.created_to) return false;
+        if (params.updated_from && item.updated_at < params.updated_from) return false;
+        if (params.updated_to && item.updated_at > params.updated_to) return false;
+        return true;
+      });
+
+    const sortField = params.sort_by || "created_at";
+    const sortDir = params.sort_dir || "desc";
+    const sorted = [...filtered].sort((a, b) => compareValues(a[sortField], b[sortField], sortDir));
+    return paginateItems(sorted, params);
   },
 
   async listInstitutes(auth) {

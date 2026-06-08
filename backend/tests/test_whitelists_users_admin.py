@@ -318,9 +318,44 @@ def test_admins_list_reads_db_when_persnl_unavailable(client, admin_headers, mon
     assert admins.status_code == 200
     payload = admins.json()
     assert payload["total"] >= 2
-    by_id = {item["id"]: item for item in payload["items"]}
-    assert by_id["1001"]["status"] == "active"
-    assert by_id["7003"]["status"] == "inactive"
+    assert payload["page"] == 1
+    assert payload["page_size"] == 20
+    assert "created_at" in payload["items"][0]
+    assert "updated_at" in payload["items"][0]
+
+
+def test_admins_list_supports_server_side_filters_sort_and_total(client):
+    alpha_headers = build_headers(role="admin", account="alpha.ops", email="alpha.ops@example.com", sysid=8101)
+    bravo_headers = build_headers(role="admin", account="bravo.ops", email="bravo.ops@example.com", sysid=8102)
+    charlie_headers = build_headers(role="admin", account="charlie.user", email="charlie.user@example.com", sysid=8103)
+
+    assert client.get(api_path("/api-keys"), headers=alpha_headers).status_code == 200
+    assert client.get(api_path("/api-keys"), headers=bravo_headers).status_code == 200
+    assert client.get(api_path("/api-keys"), headers=charlie_headers).status_code == 200
+    assert client.post(api_path("/admins/8103/disable"), headers=alpha_headers).status_code == 200
+
+    filtered = client.get(
+        api_path("/admins?account=ops&status=active&sort_by=sysid&sort_dir=asc&page=1&page_size=1"),
+        headers=alpha_headers,
+    )
+    assert filtered.status_code == 200
+    body = filtered.json()
+    assert body["total"] == 2
+    assert body["page"] == 1
+    assert body["page_size"] == 1
+    assert [item["sysid"] for item in body["items"]] == [8101]
+
+    next_page = client.get(
+        api_path("/admins?account=ops&status=active&sort_by=sysid&sort_dir=asc&page=2&page_size=1"),
+        headers=alpha_headers,
+    )
+    assert next_page.status_code == 200
+    assert [item["sysid"] for item in next_page.json()["items"]] == [8102]
+
+    inactive = client.get(api_path("/admins?status=inactive&sysid=8103"), headers=alpha_headers)
+    assert inactive.status_code == 200
+    assert inactive.json()["total"] == 1
+    assert inactive.json()["items"][0]["sysid"] == 8103
 
 
 def test_list_institutes_returns_active_only(client, admin_headers):

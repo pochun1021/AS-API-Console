@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  MenuItem,
   Stack,
   TextField,
   Tooltip,
@@ -24,9 +25,12 @@ import { DataGrid } from "@mui/x-data-grid";
 import { useTheme } from "@mui/material/styles";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
+import DateRangeFilterField from "../components/DateRangeFilterField";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { COMPACT_DIALOG_PAGE_SIZE_OPTIONS, COMPACT_LOCAL_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
+import { formatDateTimeInTaipei } from "../utils/datetime";
+import { buildTaipeiDateTimeRange, getServerSort } from "../utils/serverDataGrid";
 
 const actionCellSx = {
   display: "flex",
@@ -41,6 +45,19 @@ const actionCellSx = {
 export default function AdminPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [sortModel, setSortModel] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sysidFilter, setSysidFilter] = useState("");
+  const [accountFilter, setAccountFilter] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [emailFilter, setEmailFilter] = useState("");
+  const [createdDateFrom, setCreatedDateFrom] = useState("");
+  const [createdDateTo, setCreatedDateTo] = useState("");
+  const [updatedDateFrom, setUpdatedDateFrom] = useState("");
+  const [updatedDateTo, setUpdatedDateTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [banner, setBanner] = useState("");
@@ -53,6 +70,17 @@ export default function AdminPage({ auth }) {
   const [searchMessage, setSearchMessage] = useState("");
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
+  const hasActiveFilters = Boolean(
+    statusFilter ||
+      sysidFilter.trim() ||
+      accountFilter.trim() ||
+      nameFilter.trim() ||
+      emailFilter.trim() ||
+      createdDateFrom ||
+      createdDateTo ||
+      updatedDateFrom ||
+      updatedDateTo
+  );
 
   function closeSearchDialog() {
     setSearchDialogOpen(false);
@@ -66,13 +94,51 @@ export default function AdminPage({ auth }) {
     setLoading(true);
     setError("");
     try {
-      const response = await apiClient.listAdmins(auth);
+      const createdRange = buildTaipeiDateTimeRange(createdDateFrom, createdDateTo);
+      const updatedRange = buildTaipeiDateTimeRange(updatedDateFrom, updatedDateTo);
+      const sort = getServerSort(sortModel, { field: "created_at", sort: "desc" });
+      const normalizedSysid = sysidFilter.trim();
+      const parsedSysid = /^\d+$/.test(normalizedSysid) ? Number(normalizedSysid) : undefined;
+      const response = await apiClient.listAdmins(
+        {
+          page: page + 1,
+          page_size: pageSize,
+          status: statusFilter || undefined,
+          sysid: parsedSysid,
+          account: accountFilter.trim() || undefined,
+          name: nameFilter.trim() || undefined,
+          email: emailFilter.trim() || undefined,
+          created_from: createdRange.from || undefined,
+          created_to: createdRange.to || undefined,
+          updated_from: updatedRange.from || undefined,
+          updated_to: updatedRange.to || undefined,
+          sort_by: sort.field,
+          sort_dir: sort.sort,
+        },
+        auth
+      );
       setItems(response.items);
+      setTotal(response.total || 0);
     } catch (e) {
       setError(normalizeApiError(e, t("admin_load_failed")));
+      setItems([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
+  }
+
+  function clearFilters() {
+    setStatusFilter("");
+    setSysidFilter("");
+    setAccountFilter("");
+    setNameFilter("");
+    setEmailFilter("");
+    setCreatedDateFrom("");
+    setCreatedDateTo("");
+    setUpdatedDateFrom("");
+    setUpdatedDateTo("");
+    setPage(0);
   }
 
   async function search() {
@@ -143,26 +209,26 @@ export default function AdminPage({ auth }) {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [page, pageSize, sortModel, statusFilter, sysidFilter, accountFilter, nameFilter, emailFilter, createdDateFrom, createdDateTo, updatedDateFrom, updatedDateTo]);
 
   const currentUserBySysid = useMemo(
     () => items.find((item) => item.sysid === auth.sysid),
     [items, auth.sysid]
   );
-  const adminItems = items;
   const adminStatusById = useMemo(() => new Map(items.map((item) => [item.id, item.status])), [items]);
 
   const adminColumns = useMemo(
     () => [
-      { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140 },
-      { field: "account", headerName: t("common_account"), flex: 1, minWidth: 140 },
-      { field: "name", headerName: t("common_name"), flex: 1, minWidth: 140 },
-      { field: "email", headerName: t("common_email"), flex: 1.5, minWidth: 220 },
+      { field: "sysid", headerName: "SysID", flex: 1, minWidth: 140, filterable: false },
+      { field: "account", headerName: t("common_account"), flex: 1, minWidth: 140, filterable: false },
+      { field: "name", headerName: t("common_name"), flex: 1, minWidth: 140, filterable: false },
+      { field: "email", headerName: t("common_email"), flex: 1.5, minWidth: 220, filterable: false },
       {
         field: "status",
         headerName: t("common_status"),
         flex: 0.8,
         minWidth: 120,
+        filterable: false,
         renderCell: (params) => (
           <Chip
             size="small"
@@ -170,6 +236,22 @@ export default function AdminPage({ auth }) {
             label={params.value === "active" ? t("admin_status_active") : t("admin_status_inactive")}
           />
         )
+      },
+      {
+        field: "created_at",
+        headerName: t("common_created_at"),
+        flex: 1.4,
+        minWidth: 180,
+        filterable: false,
+        valueFormatter: (value) => formatDateTimeInTaipei(value, { locale })
+      },
+      {
+        field: "updated_at",
+        headerName: t("common_updated_at"),
+        flex: 1.4,
+        minWidth: 180,
+        filterable: false,
+        valueFormatter: (value) => formatDateTimeInTaipei(value, { locale })
       },
       {
         field: "actions",
@@ -190,11 +272,11 @@ export default function AdminPage({ auth }) {
                   <Tooltip title={locale === "zh-TW" ? "啟用管理者" : t("common_enable")}>
                     <IconButton
                       aria-label={locale === "zh-TW" ? "啟用管理者" : t("common_enable")}
-                    size="small"
-                    onClick={async () => {
-                      await reactivate(params.row.id, params.row.name);
-                    }}
-                  >
+                      size="small"
+                      onClick={async () => {
+                        await reactivate(params.row.id, params.row.name);
+                      }}
+                    >
                       <AddIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
@@ -216,11 +298,11 @@ export default function AdminPage({ auth }) {
                       aria-label={locale === "zh-TW" ? "停用管理者" : t("common_disable")}
                       size="small"
                       color="warning"
-                    onClick={() => setPendingRevokeUser({ id: params.row.id, name: params.row.name })}
-                    disabled={isSelf}
-                  >
-                    <DoNotDisturbIcon fontSize="small" />
-                  </IconButton>
+                      onClick={() => setPendingRevokeUser({ id: params.row.id, name: params.row.name })}
+                      disabled={isSelf}
+                    >
+                      <DoNotDisturbIcon fontSize="small" />
+                    </IconButton>
                 </span>
               </Tooltip>
               )}
@@ -295,32 +377,128 @@ export default function AdminPage({ auth }) {
       <Typography variant="h4">{t("admin_title")}</Typography>
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
-      <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-        <Button
-          variant="outlined"
-          startIcon={<AddIcon />}
-          aria-label="開啟新增管理者查詢"
-          sx={{ backgroundColor: "transparent" }}
-          onClick={() => setSearchDialogOpen(true)}
+      <Stack direction={{ xs: "column", md: "row" }} spacing={2} useFlexGap flexWrap="wrap" alignItems={{ xs: "stretch", md: "center" }}>
+        <TextField
+          label="SysID"
+          value={sysidFilter}
+          onChange={(event) => {
+            setSysidFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 160 }}
+        />
+        <TextField
+          label={t("common_account")}
+          value={accountFilter}
+          onChange={(event) => {
+            setAccountFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label={t("common_name")}
+          value={nameFilter}
+          onChange={(event) => {
+            setNameFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label={t("common_email")}
+          value={emailFilter}
+          onChange={(event) => {
+            setEmailFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 220 }}
+        />
+        <TextField
+          select
+          label={t("common_status")}
+          value={statusFilter}
+          onChange={(event) => {
+            setStatusFilter(event.target.value);
+            setPage(0);
+          }}
+          sx={{ minWidth: 180 }}
         >
-          {t("common_add")}
+          <MenuItem value="">{locale === "zh-TW" ? "全部狀態" : "All statuses"}</MenuItem>
+          <MenuItem value="active">{t("admin_status_active")}</MenuItem>
+          <MenuItem value="inactive">{t("admin_status_inactive")}</MenuItem>
+        </TextField>
+        <DateRangeFilterField
+          label={t("admin_filter_created_range")}
+          fromValue={createdDateFrom}
+          toValue={createdDateTo}
+          startLabel={t("admin_filter_created_from")}
+          endLabel={t("admin_filter_created_to")}
+          clearLabel={t("common_clear")}
+          closeLabel={t("common_close")}
+          onChange={({ from, to }) => {
+            setCreatedDateFrom(from);
+            setCreatedDateTo(to);
+            setPage(0);
+          }}
+        />
+        <DateRangeFilterField
+          label={t("admin_filter_updated_range")}
+          fromValue={updatedDateFrom}
+          toValue={updatedDateTo}
+          startLabel={t("admin_filter_updated_from")}
+          endLabel={t("admin_filter_updated_to")}
+          clearLabel={t("common_clear")}
+          closeLabel={t("common_close")}
+          onChange={({ from, to }) => {
+            setUpdatedDateFrom(from);
+            setUpdatedDateTo(to);
+            setPage(0);
+          }}
+        />
+        <Button variant="outlined" onClick={clearFilters} disabled={!hasActiveFilters} sx={{ minHeight: 56 }}>
+          {t("mykeys_clear_filters")}
         </Button>
-      </Box>
+        <Box sx={{ ml: { md: "auto" } }}>
+          <Button
+            variant="outlined"
+            startIcon={<AddIcon />}
+            aria-label="開啟新增管理者查詢"
+            sx={{ backgroundColor: "transparent", minHeight: 56, alignSelf: { xs: "stretch", md: "center" } }}
+            onClick={() => setSearchDialogOpen(true)}
+          >
+            {t("common_add")}
+          </Button>
+        </Box>
+      </Stack>
 
       <Card sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <CardContent sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
           {loading ? <LoadingBlock text={t("admin_loading")} /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
-          {!loading && !error && adminItems.length === 0 ? <EmptyBlock text={t("admin_empty")} /> : null}
-          {!loading && !error && adminItems.length > 0 ? (
+          {!loading && !error && items.length === 0 ? <EmptyBlock text={t("admin_empty")} /> : null}
+          {!loading && !error && items.length > 0 ? (
             <Box sx={{ flex: 1, minHeight: 0 }}>
               <DataGrid
                 sx={compactGridSx}
-                rows={adminItems}
+                rows={items}
                 columns={adminColumns}
                 getRowId={(row) => row.id}
+                paginationMode="server"
+                sortingMode="server"
+                rowCount={total}
+                paginationModel={{ page, pageSize }}
+                onPaginationModelChange={(model) => {
+                  setPage(model.page);
+                  setPageSize(model.pageSize);
+                }}
+                sortModel={sortModel}
+                onSortModelChange={(model) => {
+                  setSortModel(model);
+                  setPage(0);
+                }}
+                disableColumnFilter
                 pageSizeOptions={COMPACT_LOCAL_PAGE_SIZE_OPTIONS}
-                initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
                 disableRowSelectionOnClick
                 {...compactGridProps}
                 localeText={gridLocaleText}

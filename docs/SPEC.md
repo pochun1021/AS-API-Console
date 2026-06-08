@@ -105,9 +105,13 @@
 
 ### 5) Admin List Page（管理者名單頁）
 - 僅 `admin` 可使用。
-- 名單表格與查詢候選表格屬於 `local-full-dataset table`：目前可保留前端 local sorting/filter/pagination。
-- 列表僅顯示目前已啟用管理權限（`role=admin`）的人員。
+- 名單表格屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
+- 查詢候選表格屬於 `local-full-dataset table`：目前可保留前端 local sorting/filter/pagination。
+- 列表需顯示全部管理者名單（來源 `admins`，含 `active`、`inactive`），不得只顯示啟用中資料。
 - 列表需顯示管理者狀態（`active`/`inactive`），停用後不得自動從名單移除。
+- 名單表格支援 `status`、`sysid`、`account`、`name`、`email`、`created_at`、`updated_at` 的 server-side 篩選；其中 `status`、`sysid` 為 exact match，`account`、`name`、`email` 為 case-insensitive `contains`，時間欄位為區間查詢。
+- `created_at`、`updated_at` 的日期區間篩選 UI 需使用 Date Range Picker，並以雙月曆（開始/結束）呈現。
+- 名單表格預設排序為 `created_at desc`；`actions` 欄位不得提供誤導使用者的前端 filter/sort UI。
 - 可用 `account`、`name` 查詢使用者。
 - 可啟用一般使用者的管理者權限（對應 `enable`）。
 - 可停用其他管理者的管理者權限（對應 `disable`）。
@@ -709,7 +713,9 @@ Base path：`/main/api/v1`
   - 僅 `admin` 可使用。
   - 資料來源為本地 DB `admins`（含 `active`、`inactive`）。
   - 不得在此 API 路徑呼叫 Persnl SOAP。
-- 回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`、`status`。
+- 需支援 `page`、`page_size`、`status`、`sysid`、`account`、`name`、`email`、`created_from`、`created_to`、`updated_from`、`updated_to`、`sort_by`、`sort_dir`。
+- `status`、`sysid` 為 exact match；`account`、`name`、`email` 為 case-insensitive `contains`；時間欄位為區間查詢。
+- 回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`、`status`、`created_at`、`updated_at`。
 
 ### 5-2) 目前使用者語言偏好 API
 - `GET /main/api/v1/users/preferences/locale`

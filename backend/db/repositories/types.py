@@ -153,3 +153,18 @@ class WhitelistListFilter:
     updated_to: datetime | None = None
     sort_by: str = "created_at"
     sort_dir: str = "desc"
+
+
+@dataclass(slots=True)
+class AdminListFilter:
+    status: str | None = None
+    sysid: int | None = None
+    account: str | None = None
+    name: str | None = None
+    email: str | None = None
+    created_from: datetime | None = None
+    created_to: datetime | None = None
+    updated_from: datetime | None = None
+    updated_to: datetime | None = None
+    sort_by: str = "created_at"
+    sort_dir: str = "desc"
