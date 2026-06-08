@@ -285,6 +285,7 @@ Security validation：
   - baseline scanners: `Bandit`, `pip-audit`, `npm audit`, `gitleaks`, `Trivy`
   - extended SAST: `Semgrep`
   - API dynamic validation: `Schemathesis` + custom API DAST smoke
+- Any automated PR merge flow must wait for reported PR checks to finish and pass before merging; the duplicate `push` run on `main` is not a reason to skip a still-running `pull_request` check.
 - Test-only session bootstrap endpoint `POST /main/test/session-login` is available only when `APP_ENV=test`; it is intended for CI / automated API security validation, not for production use.
 
 ## 規格文件

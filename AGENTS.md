@@ -63,6 +63,11 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - Security scan workflow uses:
   - `pull_request` (runs on PR open/sync/reopen)
   - `push` on `main` (runs again after PR merge)
+- Any agent-driven PR merge flow, including `$pr-merge-close-branch`, must verify PR checks immediately before merge:
+  - if at least one PR check/status exists, wait until no check is `pending`, `queued`, or `in_progress`
+  - merge is allowed only after all required checks succeed
+  - if any required check fails, or mergeability/review requirements are not satisfied, stop and report blockers instead of merging
+  - do not treat a still-running `pull_request` workflow as ignorable just because a post-merge `push` workflow will run again on `main`
 - If a workflow should run only after merge, use:
   - `pull_request` with `types: [closed]` and condition `github.event.pull_request.merged == true`
   - or `push` to target branch only.
