@@ -3,6 +3,8 @@
 ## 專案簡介
 AS API Console 是一套 API Key 申請與管理系統，提供從申請、核發、查詢到停用的完整流程。系統以「研究人員名單（職稱代碼）」與「特殊人員名單（原白名單）」做資格檢查，申請成功後即時核發並一次性顯示明文 API Key，一般使用者僅可查看本人紀錄，並可自行停用已生效 Key。API key lifecycle 採 external provider 為主權威，本地僅保存 encrypted secret material（`key_hash`、`key_ciphertext`、`key_kek_version`）。
 
+目前已登入的 `user` 與 `admin` 也可從 `Models` 頁查看 provider 提供的可用模型清單；詳細契約與頁面行為以 `docs/SPEC.md` 為準。
+
 ## 技術棧
 - Backend
   - Python `>=3.12,<3.14`

@@ -148,6 +148,18 @@
 - 頁面需顯示 `total` 與列表資料，欄位至少包含：`inst_code`、`inst_name`、`abb_inst_name`、`einst_name`、`division`。
 - 需提供 Loading、Empty、Error（含重試）狀態。
 
+### 6-2) Models Page（可用模型清單頁）
+- `user` 與 `admin` 都可使用。
+- 頁面需在主導覽列提供 `Models` 入口。
+- 資料來源僅 `GET /main/api/v1/models`。
+- 頁面 mount 時需自動查詢一次模型清單。
+- 頁面停留期間需每 `15` 分鐘自動刷新一次。
+- 頁面需提供手動重新整理按鈕，且與自動刷新共用同一個 `load()` 流程。
+- 第一版僅顯示基本模型清單，不顯示 metadata、access groups、team/global 切換或其他進階資訊。
+- 第一版列表以 Data Table 呈現，僅需一欄 `Model`，顯示 `label`。
+- 頁面需提供 Loading、Empty、Error（含 Retry）狀態。
+- 頁面 unmount 時需清除 refresh timer，避免重複請求。
+
 ### 8) Key Condition Page（金鑰條件管理頁）
 - 僅 `admin` 可使用。
 - 以獨立頁面管理金鑰條件模板（查詢、新增、編輯）。
@@ -781,6 +793,34 @@ Base path：`/main/api/v1`
 }
 ```
 
+### 5-3-0) 可用模型清單查詢 API
+- `GET /main/api/v1/models`
+- 用途：提供已登入使用者查看目前 provider 提供的全域模型清單。
+- 規則：
+  - `user` 與 `admin` 都可使用。
+  - 後端需代理 provider `GET /models`。
+  - 本次固定查詢全域模型清單，不帶 `team_id`。
+  - 不得傳送 `include_metadata`、`include_model_access_groups`、`only_model_access_groups`。
+  - 若 provider 回傳 OpenAI-style `data` 陣列，需取每筆 `id` 作為 `id` 與 `label`。
+  - 若 provider 回傳字串陣列，需將每個字串映射為 `{ id, label }`。
+  - 需去除空值、以 `id` 去重，並依字母排序後回傳。
+  - 若 provider 成功但無有效模型，回傳空清單。
+  - 若 provider timeout 或 `5xx`，回傳 `503 PROVIDER_UNAVAILABLE`。
+  - 若 provider payload 無法辨識，需回傳受控錯誤，不得洩漏原始 payload。
+- Response（200）：
+```json
+{
+  "items": [
+    {
+      "id": "gpt-4o-mini",
+      "label": "gpt-4o-mini"
+    }
+  ],
+  "total": 1,
+  "fetched_at": "2026-06-05T12:00:00Z"
+}
+```
+
 ### 5-3-1) 單位主檔手動同步 API
 - `POST /main/api/v1/institutes/sync`
 - 用途：供管理者在「單位代碼資料檢視」頁手動觸發單位主檔同步（後端呼叫 `Persnl.getInstitutes` 並同步本地 DB）。
@@ -967,26 +1007,31 @@ Base path：`/main/api/v1`
 44. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳系統產生 alias。`admin` 可透過 `PATCH /main/api/v1/api-keys/{id}` 更新 alias，`user` 呼叫需回傳 `403`，重複 alias 需回傳 `409 KEY_ALIAS_DUPLICATE`；external provider mode 下 alias 更新需同步 provider 狀態。
 45. 限制策略設定僅 `admin` 可讀取與更新；`budget_duration` 僅允許 `daily|weekly|monthly`，管理端顯示映射需為 `1天|7天|30天`，且每把 API Key 的限制策略需同時包含 `budget`、`rate_limit` 與 `max_parallel_requests`，其中 `max_parallel_requests` 預設 `0` 代表不限制；不得提供 pending 補發端點或 `issuance_mode` 二選一模式。
 46. `admin` 可於 `/institute-view` 查看 `active` institutes 清單與 `total`，並可手動觸發同步；若 Persnl SOAP 不可用，`POST /main/api/v1/institutes/sync` 需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
+47. `user` 與 `admin` 都需可從主導覽列進入 `Models` 頁，且 `GET /main/api/v1/models` 需允許兩種角色成功呼叫。
+48. `GET /main/api/v1/models` 遇到 provider OpenAI-style `data` 陣列時，需正規化為 `{ id, label }` 清單；provider 回傳字串陣列時也需正規化成功，並去除空值、去重與依字母排序。
+49. `GET /main/api/v1/models` 若 provider timeout 或 `5xx`，需回傳 `503 PROVIDER_UNAVAILABLE`；若 provider payload 無法辨識，需走受控錯誤流程，且不得洩漏原始 payload。
+50. `Models` 頁在 mount 時需自動查詢一次；手動重新整理與每 `15` 分鐘自動刷新需重用同一查詢流程；頁面離開時需清除 timer。
+51. `Models` 頁需正確呈現 Loading、Empty、Error、Retry 狀態；第一版列表僅顯示一欄 `Model`，內容來自 API 回傳的 `label`。
 
 ### OAuth、Session 與語系
-47. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。`GET /main/auth/callback` 成功時需建立 session 並 redirect `/main/`，失敗時需回錯且寫入 failure audit。
-48. 正式環境不得接受 header auth 作為正式認證來源；僅 `dev/test` 可啟用。OAuth 成功登入寫入的角色需固定為 `user`，且流程不得落地 access token、refresh token、password 或 client secret。
-49. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。登入資格判斷需遵循 `active whitelist(sysid)` 或 `active admins(id=sysid)`，否則才比對 `LOGIN_ALLOWED_TITLE_CODES`；若同時命中 `active whitelist` 與 `active admins`，最終角色仍以 `admin` 為準。
-50. `/main/login-denied` 必須是公開頁；登入失敗導向 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 時，使用者需可直接看到拒絕說明與返回登入操作，且不依賴 `GET /main/api/v1/users/me` 成功。
-51. `GET /main/api/v1/users/me` 需回傳目前使用者資料與 `csrf_token`；所有 `POST/PATCH` 端點在 session auth 模式下，缺少或錯誤 `X-CSRF-Token` 時需回傳 `403 FORBIDDEN`。
-52. 系統語言僅支援 `zh-TW`、`en`；DB 無偏好時，系統語言命中 `zh*` 顯示中文、命中 `en*` 顯示英文，其他語系 fallback 為英文，並需立即寫回 DB 作為初始偏好。
-53. `GET /main/api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 僅允許 `zh-TW|en`，成功後可立即由 `GET` 讀回。手動切換語言後，重新登入需沿用 DB 偏好，且導覽列、頁標題、按鈕、錯誤/提示訊息與 DataGrid locale 文案需隨語言切換更新。
+52. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。`GET /main/auth/callback` 成功時需建立 session 並 redirect `/main/`，失敗時需回錯且寫入 failure audit。
+53. 正式環境不得接受 header auth 作為正式認證來源；僅 `dev/test` 可啟用。OAuth 成功登入寫入的角色需固定為 `user`，且流程不得落地 access token、refresh token、password 或 client secret。
+54. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。登入資格判斷需遵循 `active whitelist(sysid)` 或 `active admins(id=sysid)`，否則才比對 `LOGIN_ALLOWED_TITLE_CODES`；若同時命中 `active whitelist` 與 `active admins`，最終角色仍以 `admin` 為準。
+55. `/main/login-denied` 必須是公開頁；登入失敗導向 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 時，使用者需可直接看到拒絕說明與返回登入操作，且不依賴 `GET /main/api/v1/users/me` 成功。
+56. `GET /main/api/v1/users/me` 需回傳目前使用者資料與 `csrf_token`；所有 `POST/PATCH` 端點在 session auth 模式下，缺少或錯誤 `X-CSRF-Token` 時需回傳 `403 FORBIDDEN`。
+57. 系統語言僅支援 `zh-TW`、`en`；DB 無偏好時，系統語言命中 `zh*` 顯示中文、命中 `en*` 顯示英文，其他語系 fallback 為英文，並需立即寫回 DB 作為初始偏好。
+58. `GET /main/api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 僅允許 `zh-TW|en`，成功後可立即由 `GET` 讀回。手動切換語言後，重新登入需沿用 DB 偏好，且導覽列、頁標題、按鈕、錯誤/提示訊息與 DataGrid locale 文案需隨語言切換更新。
 
 ### 稽核、查詢限制與安全邊界
-54. `GET /main/api/v1/users` 與 `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`limit-strategy-config`、`institutes/sync` 等關鍵操作 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`；failure 事件另需提供可供管理者除錯的 `error_detail` 與 `request_id`。其中 `GET /main/api/v1/users` 需以 `lookup_context` 區分 `proxy_application|admin_create|whitelist_create` 用途。
-55. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證；`metadata_json` 與 `error_detail` 僅允許白名單安全內容，不得包含 stack trace、SQL、完整第三方 payload。若 audit 寫入失敗，不得改變主流程成功或失敗語意。
-56. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 僅 `admin` 可使用；未提供 `from/to` 時預設回傳最近 7 天熱資料，結果依 `created_at desc` 排序，並支援分頁與既定篩選條件。
-57. `GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
-58. 對所有 `server-side table` 頁面，前端 DataGrid 欄位篩選不得只作用於當前頁 rows；`items`、`total`、頁數、排序與篩選結果都必須來自完整資料集的後端查詢。
-59. `GET /main/api/v1/api-keys` 的 `owner_account`、`owner_name`、`key_alias` 篩選需採 case-insensitive `contains`；`application_date_from/application_date_to` 與 `expires_from/expires_to` 需分別正確套用到 `application_date` 與 `expires_at`；`sort_by/sort_dir` 僅允許既定白名單欄位與 `asc|desc`。
-60. `GET /main/api/v1/api-keys/statistics/users` 的 `q` 僅作全域搜尋；`owner_account`、`owner_name`、`owner_email`、`owner_department` 欄位篩選需彼此獨立且採 case-insensitive `contains`；切換圖表與表格視圖時查詢口徑需保持一致。
-61. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 需支援欄位級 server-side sorting/filtering；若某欄位未支援後端 query contract，對應前端欄位必須禁用 filter 或 sort，不得回退成 local table 行為。
-62. 關鍵操作稽核功能、申請人識別欄位調整、統計與 lifecycle 擴充，均不得改動既有受保護 API 路徑與角色模型（`user|admin`）；若需擴充對外 error response，僅允許增加相容性的 optional 欄位（如 `error.details`），不得破壞既有 `error.code` / `error.message` 契約或既有 success response shape。
+59. `GET /main/api/v1/users` 與 `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`limit-strategy-config`、`institutes/sync` 等關鍵操作 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`；failure 事件另需提供可供管理者除錯的 `error_detail` 與 `request_id`。其中 `GET /main/api/v1/users` 需以 `lookup_context` 區分 `proxy_application|admin_create|whitelist_create` 用途。
+60. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證；`metadata_json` 與 `error_detail` 僅允許白名單安全內容，不得包含 stack trace、SQL、完整第三方 payload。若 audit 寫入失敗，不得改變主流程成功或失敗語意。
+61. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 僅 `admin` 可使用；未提供 `from/to` 時預設回傳最近 7 天熱資料，結果依 `created_at desc` 排序，並支援分頁與既定篩選條件。
+62. `GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
+63. 對所有 `server-side table` 頁面，前端 DataGrid 欄位篩選不得只作用於當前頁 rows；`items`、`total`、頁數、排序與篩選結果都必須來自完整資料集的後端查詢。
+64. `GET /main/api/v1/api-keys` 的 `owner_account`、`owner_name`、`key_alias` 篩選需採 case-insensitive `contains`；`application_date_from/application_date_to` 與 `expires_from/expires_to` 需分別正確套用到 `application_date` 與 `expires_at`；`sort_by/sort_dir` 僅允許既定白名單欄位與 `asc|desc`。
+65. `GET /main/api/v1/api-keys/statistics/users` 的 `q` 僅作全域搜尋；`owner_account`、`owner_name`、`owner_email`、`owner_department` 欄位篩選需彼此獨立且採 case-insensitive `contains`；切換圖表與表格視圖時查詢口徑需保持一致。
+66. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 需支援欄位級 server-side sorting/filtering；若某欄位未支援後端 query contract，對應前端欄位必須禁用 filter 或 sort，不得回退成 local table 行為。
+67. 關鍵操作稽核功能、申請人識別欄位調整、統計、`GET /main/api/v1/models` 與 lifecycle 擴充，均不得改動既有受保護 API 路徑與角色模型（`user|admin`）；若需擴充對外 error response，僅允許增加相容性的 optional 欄位（如 `error.details`），不得破壞既有 `error.code` / `error.message` 契約或既有 success response shape。
 
 ## Roadmap
 ### Phase 1：Foundation
