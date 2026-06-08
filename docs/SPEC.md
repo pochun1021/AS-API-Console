@@ -125,14 +125,18 @@
 - 以 Data Table 呈現每位申請人的統計資料，欄位至少包含：`account`、`name`、`email`、`total_applications`、`active_count`、`revoked_count`、`expired_count`、`last_applied_at`。
 - 表格查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；欄位 filter 不得退化成單純前端本頁比對。
 - 提供「圖表 / 表格」視圖切換；圖表以長條圖呈現。
+- 篩選欄位（`scope`、日期區間、欄位篩選）僅於表格視圖顯示；切換到圖表視圖時不顯示篩選列，但圖表仍沿用目前查詢口徑。
 - 圖表支援 X 軸切換：`account|department`，Y 軸切換：`total_applications|active_count|revoked_count|expired_count`，與 Top N（`5|10|20`）切換。
 - 圖表 X 軸分類文字需直接顯示在圖下方，不可僅依賴滑鼠 hover tooltip 才能辨識帳號/單位。
 - X 軸刻度文字在圖表視圖中不得被自動省略為僅部分可見（需可直接辨識每個可見柱狀分類）。
 - 支援口徑切換 `scope`：`all|active|revoked|expired`（預設 `all`）。
 - 支援日期區間篩選：`from`、`to`（`YYYY-MM-DD`），統計基準為 `application_date`。
-- 支援 `q`（`account`、`name`、`email`）查詢、分頁與排序。
+- 日期區間篩選 UI 需比照 API Keys 頁使用 Date Range Picker，並以雙月曆（開始/結束）呈現。
+- 支援 `owner_account`、`owner_name`、`owner_email`、`owner_department` 欄位查詢、分頁與排序。
+- `owner_department` 篩選 UI 需使用下拉選單；選項值以單位代碼送出，顯示文字需為「單位代碼 + 單位名稱」。
+- 表格視圖的篩選列需提供「清除篩選」按鈕，可一次重置目前所有篩選欄位並回到第一頁。
 - 預設排序為 `total_applications desc`。
-- 圖表口徑需與目前篩選條件一致（`scope`、`from`、`to`、`q`、`sort`）。
+- 圖表口徑需與目前篩選條件一致（`scope`、`from`、`to`、欄位篩選、`sort`）。
 - 表格中的 `total_applications` 與 `active_count` 需可點擊，並以 Dialog 顯示該申請人的 API Key 明細（僅遮罩 key，不得回傳明文）。
 - Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨目前統計頁日期篩選（`from`、`to`）。
 

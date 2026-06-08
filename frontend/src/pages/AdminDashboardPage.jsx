@@ -24,10 +24,9 @@ import {
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { DataGrid } from "@mui/x-data-grid";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
+import DateRangeFilterField from "../components/DateRangeFilterField";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { COMPACT_MAIN_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
@@ -46,7 +45,7 @@ function formatMaskedKey(value) {
 
 export default function AdminDashboardPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
-  const { formatDepartment } = useDepartmentDisplay(auth);
+  const { departmentOptions, formatDepartment } = useDepartmentDisplay(auth);
   const scopeOptions = ["all", "active", "revoked", "expired"];
   const topNOptions = [5, 10, 20];
   const xAxisOptions = [
@@ -77,7 +76,6 @@ export default function AdminDashboardPage({ auth }) {
   const [scope, setScope] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [q, setQ] = useState("");
   const [sortModel, setSortModel] = useState([{ field: "total_applications", sort: "desc" }]);
   const [ownerAccountFilter, setOwnerAccountFilter] = useState("");
   const [ownerNameFilter, setOwnerNameFilter] = useState("");
@@ -94,6 +92,15 @@ export default function AdminDashboardPage({ auth }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [detailItems, setDetailItems] = useState([]);
+  const hasActiveFilters = Boolean(
+    scope !== "all" ||
+    fromDate ||
+    toDate ||
+    ownerAccountFilter.trim() ||
+    ownerNameFilter.trim() ||
+    ownerEmailFilter.trim() ||
+    ownerDepartmentFilter
+  );
 
   async function openDetailDialog(row, metric) {
     const status = metric === "active_count" ? "active" : undefined;
@@ -132,6 +139,17 @@ export default function AdminDashboardPage({ auth }) {
     setDetailItems([]);
     setDetailError("");
     setDetailLoading(false);
+  }
+
+  function clearFilters() {
+    setScope("all");
+    setFromDate("");
+    setToDate("");
+    setOwnerAccountFilter("");
+    setOwnerNameFilter("");
+    setOwnerEmailFilter("");
+    setOwnerDepartmentFilter("");
+    setPage(0);
   }
 
   const columns = useMemo(
@@ -223,7 +241,6 @@ export default function AdminDashboardPage({ auth }) {
           page: page + 1,
           page_size: pageSize,
           scope,
-          q: q.trim(),
           from: fromDate || undefined,
           to: toDate || undefined,
           owner_account: ownerAccountFilter.trim() || undefined,
@@ -252,7 +269,7 @@ export default function AdminDashboardPage({ auth }) {
 
   useEffect(() => {
     load();
-  }, [fromDate, ownerAccountFilter, ownerDepartmentFilter, ownerEmailFilter, ownerNameFilter, page, pageSize, q, scope, sortModel, toDate]);
+  }, [fromDate, ownerAccountFilter, ownerDepartmentFilter, ownerEmailFilter, ownerNameFilter, page, pageSize, scope, sortModel, toDate]);
 
   if (auth.role !== "admin") {
     return (
@@ -273,88 +290,88 @@ export default function AdminDashboardPage({ auth }) {
         <Tab value="chart" label={t("dashboard_tab_chart")} />
       </Tabs>
 
-      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
-        <TextField
-          select
-          label={t("dashboard_scope")}
-          value={scope}
-          onChange={(event) => {
-            setScope(event.target.value);
-            setPage(0);
-          }}
-          sx={{ minWidth: 180 }}
-        >
-          {scopeOptions.map((option) => (
-            <MenuItem key={option} value={option}>
-              {t(`dashboard_scope_${option}`)}
+      {view === "table" ? (
+        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
+          <TextField
+            select
+            label={t("dashboard_scope")}
+            value={scope}
+            onChange={(event) => {
+              setScope(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          >
+            {scopeOptions.map((option) => (
+              <MenuItem key={option} value={option}>
+                {t(`dashboard_scope_${option}`)}
+              </MenuItem>
+            ))}
+          </TextField>
+          <DateRangeFilterField
+            label={t("dashboard_date_range")}
+            fromValue={fromDate}
+            toValue={toDate}
+            startLabel={t("dashboard_from")}
+            endLabel={t("dashboard_to")}
+            clearLabel={t("common_clear")}
+            closeLabel={t("common_close")}
+            minWidth={260}
+            onChange={({ from, to }) => {
+              setFromDate(from);
+              setToDate(to);
+              setPage(0);
+            }}
+          />
+          <TextField
+            label={t("dashboard_col_owner_account")}
+            value={ownerAccountFilter}
+            onChange={(event) => {
+              setOwnerAccountFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          />
+          <TextField
+            label={t("dashboard_col_owner_name")}
+            value={ownerNameFilter}
+            onChange={(event) => {
+              setOwnerNameFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 180 }}
+          />
+          <TextField
+            label={t("dashboard_col_owner_email")}
+            value={ownerEmailFilter}
+            onChange={(event) => {
+              setOwnerEmailFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 220 }}
+          />
+          <TextField
+            select
+            label={t("dashboard_col_owner_department")}
+            value={ownerDepartmentFilter}
+            onChange={(event) => {
+              setOwnerDepartmentFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ minWidth: 220 }}
+          >
+            <MenuItem value="">{t("dashboard_all_departments")}</MenuItem>
+            {departmentOptions.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+              {option.label}
             </MenuItem>
           ))}
-        </TextField>
-        <DatePicker
-          label={t("dashboard_from")}
-          value={fromDate ? dayjs(fromDate) : null}
-          onChange={(value) => {
-            setFromDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
-            setPage(0);
-          }}
-          slotProps={{ textField: { sx: { minWidth: 180 } } }}
-        />
-        <DatePicker
-          label={t("dashboard_to")}
-          value={toDate ? dayjs(toDate) : null}
-          onChange={(value) => {
-            setToDate(value && value.isValid() ? value.format("YYYY-MM-DD") : "");
-            setPage(0);
-          }}
-          slotProps={{ textField: { sx: { minWidth: 180 } } }}
-        />
-        <TextField
-          label={t("common_keyword")}
-          value={q}
-          onChange={(event) => {
-            setQ(event.target.value);
-            setPage(0);
-          }}
-          placeholder={t("dashboard_keyword_placeholder")}
-          sx={{ minWidth: 260 }}
-        />
-        <TextField
-          label={t("dashboard_col_owner_account")}
-          value={ownerAccountFilter}
-          onChange={(event) => {
-            setOwnerAccountFilter(event.target.value);
-            setPage(0);
-          }}
-          sx={{ minWidth: 180 }}
-        />
-        <TextField
-          label={t("dashboard_col_owner_name")}
-          value={ownerNameFilter}
-          onChange={(event) => {
-            setOwnerNameFilter(event.target.value);
-            setPage(0);
-          }}
-          sx={{ minWidth: 180 }}
-        />
-        <TextField
-          label={t("dashboard_col_owner_email")}
-          value={ownerEmailFilter}
-          onChange={(event) => {
-            setOwnerEmailFilter(event.target.value);
-            setPage(0);
-          }}
-          sx={{ minWidth: 220 }}
-        />
-        <TextField
-          label={t("dashboard_col_owner_department")}
-          value={ownerDepartmentFilter}
-          onChange={(event) => {
-            setOwnerDepartmentFilter(event.target.value);
-            setPage(0);
-          }}
-          sx={{ minWidth: 180 }}
-        />
-      </Stack>
+          </TextField>
+          <Button variant="outlined" onClick={clearFilters} disabled={!hasActiveFilters} sx={{ minHeight: 56 }}>
+            {t("mykeys_clear_filters")}
+          </Button>
+        </Stack>
+      ) : null}
 
       {loading ? <LoadingBlock text={t("dashboard_loading")} /> : null}
       {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
