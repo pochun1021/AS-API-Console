@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { MemoryRouter } from "react-router-dom";
+import { LocaleProvider, useLocale } from "../i18n/locale";
 import { mockApiProvider } from "../mocks/mockApiProvider";
 import MyApiKeysPage from "../pages/MyApiKeysPage";
 
@@ -37,11 +39,24 @@ beforeEach(() => {
   mockApiProvider.resetForTests();
 });
 
-function renderPage(ui) {
+function LocaleSetter({ locale }) {
+  const { setLocale } = useLocale();
+
+  useEffect(() => {
+    setLocale(locale);
+  }, [locale, setLocale]);
+
+  return null;
+}
+
+function renderPage(ui, { locale = "zh-TW" } = {}) {
   return render(
-    <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <MemoryRouter>{ui}</MemoryRouter>
-    </LocalizationProvider>
+    <LocaleProvider>
+      <LocaleSetter locale={locale} />
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <MemoryRouter>{ui}</MemoryRouter>
+      </LocalizationProvider>
+    </LocaleProvider>
   );
 }
 
@@ -74,10 +89,67 @@ test("shows applicant account and name columns for admin list", async () => {
   expect(await screen.findByRole("columnheader", { name: "帳號" })).toBeInTheDocument();
   expect(await screen.findByRole("columnheader", { name: "姓名" })).toBeInTheDocument();
   expect(await screen.findByRole("columnheader", { name: "Key Alias" })).toBeInTheDocument();
+  expect(await screen.findByRole("columnheader", { name: "健康度" })).toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "用量" })).not.toBeInTheDocument();
   expect((await screen.findAllByText("jane.doe")).length).toBeGreaterThan(0);
   expect((await screen.findAllByText("Jane Doe")).length).toBeGreaterThan(0);
   expect(await screen.findByText("ktu")).toBeInTheDocument();
   expect(await screen.findByText("尤凱婷")).toBeInTheDocument();
+});
+
+test("usage popover is opened from actions and shows snapshot details in zh-TW", async () => {
+  const user = userEvent.setup();
+  const rendered = renderPage(<MyApiKeysPage auth={adminAuth} />);
+
+  const usageRow = (await screen.findByText("AS-...mn56")).closest('[data-id="key_002"]');
+  expect(usageRow).toBeTruthy();
+  const usageButton = usageRow?.querySelector('button[aria-label="查看用量"]');
+  expect(usageButton).toBeTruthy();
+  await user.click(usageButton);
+
+  expect(await screen.findByText("用量摘要")).toBeInTheDocument();
+  expect(await screen.findByText((content) => content.includes("850.25 USD"))).toBeInTheDocument();
+  expect(await screen.findByText((content) => content.includes("149.75 USD"))).toBeInTheDocument();
+  expect(await screen.findByText(/額度重置時間: 2026-06-02 16:03:27/)).toBeInTheDocument();
+  expect(await screen.findByText(/最後同步時間: 2026-06-02 16:03:27/)).toBeInTheDocument();
+
+  rendered.unmount();
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
+
+  const unlimitedRow = (await screen.findByText("AS-...ab12")).closest('[data-id="key_003"]');
+  expect(unlimitedRow).toBeTruthy();
+  const unlimitedUsageButton = unlimitedRow?.querySelector('button[aria-label="查看用量"]');
+  expect(unlimitedUsageButton).toBeTruthy();
+  await user.click(unlimitedUsageButton);
+  expect(await screen.findByText((_, element) => element?.textContent === "額度: 無上限")).toBeInTheDocument();
+});
+
+test("usage popover keeps placeholder interaction for unknown snapshot in zh-TW", async () => {
+  const user = userEvent.setup();
+  renderPage(<MyApiKeysPage auth={auth} />);
+
+  expect(await screen.findByText("未知")).toBeInTheDocument();
+  const usageButtons = await screen.findAllByRole("button", { name: "查看用量" });
+  await user.click(usageButtons[0]);
+
+  expect(await screen.findByText("用量摘要")).toBeInTheDocument();
+  expect(await screen.findAllByText("未知")).not.toHaveLength(0);
+  expect(await screen.findByText(/額度重置時間: -/)).toBeInTheDocument();
+});
+
+test("usage and health labels switch to english locale", async () => {
+  const user = userEvent.setup();
+  renderPage(<MyApiKeysPage auth={adminAuth} />, { locale: "en" });
+
+  expect(await screen.findByRole("columnheader", { name: "Health" })).toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "Usage" })).not.toBeInTheDocument();
+
+  const usageButtons = await screen.findAllByRole("button", { name: "View Usage" });
+  await user.click(usageButtons[1]);
+
+  expect(await screen.findByText("Usage Summary")).toBeInTheDocument();
+  expect(await screen.findByText(/Budget reset time: 2026-06-02 16:03:27/)).toBeInTheDocument();
+  expect(await screen.findByText(/Last synced time: 2026-06-02 16:03:27/)).toBeInTheDocument();
 });
 
 test("shows detail in dialog and can revoke active key with confirm", async () => {
@@ -113,7 +185,8 @@ test("admin can edit key alias in list dialog", async () => {
   renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
-  const aliasInput = await screen.findByLabelText("Key Alias");
+  const aliasInput = (await screen.findAllByLabelText("Key Alias")).at(-1);
+  expect(aliasInput).toBeTruthy();
   await user.clear(aliasInput);
   await user.type(aliasInput, "service_ops");
   await user.click(screen.getByRole("button", { name: "儲存" }));
@@ -126,7 +199,8 @@ test("admin sees duplicate prompt when key alias already exists", async () => {
   renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
-  const aliasInput = await screen.findByLabelText("Key Alias");
+  const aliasInput = (await screen.findAllByLabelText("Key Alias")).at(-1);
+  expect(aliasInput).toBeTruthy();
   await user.clear(aliasInput);
   await user.type(aliasInput, "shared_alias");
   await user.click(screen.getByRole("button", { name: "儲存" }));
@@ -138,7 +212,8 @@ test("admin cannot save unsafe key alias", async () => {
   renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
-  const aliasInput = await screen.findByLabelText("Key Alias");
+  const aliasInput = (await screen.findAllByLabelText("Key Alias")).at(-1);
+  expect(aliasInput).toBeTruthy();
   await user.clear(aliasInput);
   await user.type(aliasInput, "foo => bar");
   await user.click(screen.getByRole("button", { name: "儲存" }));
@@ -151,7 +226,8 @@ test("admin cannot save key alias with invalid characters", async () => {
   renderPage(<MyApiKeysPage auth={adminAuth} />);
 
   await user.click((await screen.findAllByRole("button", { name: "編輯 Key Alias" }))[0]);
-  const aliasInput = await screen.findByLabelText("Key Alias");
+  const aliasInput = (await screen.findAllByLabelText("Key Alias")).at(-1);
+  expect(aliasInput).toBeTruthy();
   await user.clear(aliasInput);
   await user.type(aliasInput, "for_john.admin");
   await user.click(screen.getByRole("button", { name: "儲存" }));
@@ -301,8 +377,9 @@ test("renders timestamps in Asia/Taipei on list and detail views", async () => {
   const detailButtons = await screen.findAllByRole("button", { name: "查看詳情" });
   await user.click(detailButtons[2]);
 
-  expect(await screen.findByText("2026-02-10 19:00:00")).toBeInTheDocument();
-  expect(await screen.findByText("2026-03-10 19:00:00")).toBeInTheDocument();
+  expect(await screen.findByText(/起算日期: 2026-02-10/)).toBeInTheDocument();
+  expect(await screen.findByText(/建立時間: 2026-05-02 19:00:00/)).toBeInTheDocument();
+  expect(await screen.findByText(/到期時間: 2026-03-10 19:00:00/)).toBeInTheDocument();
 });
 
 test("list uses server pagination params", async () => {

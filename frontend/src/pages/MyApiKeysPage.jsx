@@ -6,6 +6,7 @@ import AutorenewIcon from "@mui/icons-material/Autorenew";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import CheckIcon from "@mui/icons-material/Check";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import QueryStatsOutlinedIcon from "@mui/icons-material/QueryStatsOutlined";
 import {
   Alert,
   Box,
@@ -26,6 +27,7 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Popover,
   Select
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
@@ -60,9 +62,22 @@ function statusColor(status) {
   return "default";
 }
 
+function healthColor(status) {
+  if (status === "healthy") return "success";
+  if (status === "low_budget") return "warning";
+  if (status === "exhausted") return "error";
+  return "default";
+}
+
 function formatMaskedKey(value) {
   if (!value) return "-";
   return String(value);
+}
+
+function formatUsageNumber(value, { suffix = "", unlimitedText, unknownText } = {}) {
+  if (value == null) return unknownText;
+  if (value === 0 && unlimitedText) return unlimitedText;
+  return `${value}${suffix}`;
 }
 
 async function copyText(text) {
@@ -127,6 +142,8 @@ export default function MyApiKeysPage({ auth }) {
   const [renewCopyError, setRenewCopyError] = useState("");
   const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
   const [actionMenuRow, setActionMenuRow] = useState(null);
+  const [usageAnchorEl, setUsageAnchorEl] = useState(null);
+  const [usageRow, setUsageRow] = useState(null);
   const renewCopyResetTimerRef = useRef(null);
 
   function openActionMenu(event, row) {
@@ -137,6 +154,16 @@ export default function MyApiKeysPage({ auth }) {
   function closeActionMenu() {
     setActionMenuAnchorEl(null);
     setActionMenuRow(null);
+  }
+
+  function openUsagePopover(event, row) {
+    setUsageAnchorEl(event.currentTarget);
+    setUsageRow(row);
+  }
+
+  function closeUsagePopover() {
+    setUsageAnchorEl(null);
+    setUsageRow(null);
   }
 
   function clearFilters() {
@@ -388,6 +415,17 @@ export default function MyApiKeysPage({ auth }) {
           renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
         },
         {
+          field: "health_status",
+          headerName: t("mykeys_col_health"),
+          flex: 1,
+          minWidth: 130,
+          sortable: false,
+          filterable: false,
+          renderCell: (params) => (
+            <Chip size="small" label={t(`mykeys_health_${params.value}`)} color={healthColor(params.value)} />
+          )
+        },
+        {
           field: "expires_at",
           headerName: t("mykeys_col_expires_at"),
           type: "dateTime",
@@ -405,7 +443,7 @@ export default function MyApiKeysPage({ auth }) {
           valueFormatter: (value) => formatMaskedKey(value),
           sortable: false,
           filterable: false
-        }
+        },
       ];
 
       if (auth.role === "admin") {
@@ -439,13 +477,22 @@ export default function MyApiKeysPage({ auth }) {
         filterable: false,
         align: "left",
         headerAlign: "left",
-        flex: 1,
-        minWidth: 160,
+        flex: 1.3,
+        minWidth: 210,
         renderCell: (params) => (
           <Box sx={actionCellSx}>
             <Tooltip title={t("mykeys_view_detail")}>
               <IconButton aria-label={t("mykeys_view_detail")} size="small" onClick={() => openDetail(params.row.id)}>
                 <VisibilityIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={t("mykeys_view_usage")}>
+              <IconButton
+                aria-label={t("mykeys_view_usage")}
+                size="small"
+                onClick={(event) => openUsagePopover(event, params.row)}
+              >
+                <QueryStatsOutlinedIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             {auth.role === "admin" ? (
@@ -663,6 +710,56 @@ export default function MyApiKeysPage({ auth }) {
           </MenuItem>
         ) : null}
       </Menu>
+
+      <Popover
+        open={Boolean(usageAnchorEl && usageRow)}
+        anchorEl={usageAnchorEl}
+        onClose={closeUsagePopover}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        transformOrigin={{ vertical: "top", horizontal: "left" }}
+      >
+        <Stack spacing={1.25} sx={{ p: 2, minWidth: 280, maxWidth: 360 }}>
+          <Typography variant="subtitle1">{t("mykeys_usage_title")}</Typography>
+          <Typography variant="body2">
+            {t("mykeys_usage_spend")}: {formatUsageNumber(usageRow?.usage_summary?.spend, { suffix: " USD", unknownText: t("mykeys_usage_unknown") })}
+          </Typography>
+          <Typography variant="body2">
+            {t("mykeys_usage_budget")}: {formatUsageNumber(usageRow?.usage_summary?.max_budget, {
+              suffix: " USD",
+              unlimitedText: t("mykeys_usage_unlimited"),
+              unknownText: t("mykeys_usage_unknown"),
+            })}
+          </Typography>
+          <Typography variant="body2">
+            {t("mykeys_usage_remaining")}: {formatUsageNumber(usageRow?.usage_summary?.remaining_budget, {
+              suffix: " USD",
+              unlimitedText: t("mykeys_usage_unlimited"),
+              unknownText: t("mykeys_usage_unknown"),
+            })}
+          </Typography>
+          <Typography variant="body2">
+            {t("mykeys_usage_tpm")}: {formatUsageNumber(usageRow?.usage_summary?.tpm_limit, {
+              unlimitedText: t("mykeys_usage_unlimited"),
+              unknownText: t("mykeys_usage_unknown"),
+            })}
+          </Typography>
+          <Typography variant="body2">
+            {t("mykeys_usage_rpm")}: {formatUsageNumber(usageRow?.usage_summary?.rpm_limit, {
+              unlimitedText: t("mykeys_usage_unlimited"),
+              unknownText: t("mykeys_usage_unknown"),
+            })}
+          </Typography>
+          <Typography variant="body2">
+            {t("mykeys_usage_budget_reset_at")}: {formatDateTimeInTaipei(usageRow?.usage_summary?.budget_reset_at, { locale, fallback: "-" })}
+          </Typography>
+          <Typography variant="body2">
+            {t("mykeys_usage_synced_at")}: {formatDateTimeInTaipei(usageRow?.usage_summary?.synced_at, {
+              locale,
+              fallback: t("mykeys_usage_unknown"),
+            })}
+          </Typography>
+        </Stack>
+      </Popover>
 
       <Dialog open={Boolean(pendingRevokeId)} onClose={() => setPendingRevokeId("")}>
         <DialogTitle>{t("mykeys_dialog_revoke_title")}</DialogTitle>

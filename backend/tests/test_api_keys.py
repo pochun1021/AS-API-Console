@@ -101,6 +101,67 @@ def _set_key_owner_snapshot(key_id: str, *, name: str | None = None, department:
         )
 
 
+def _set_key_usage_snapshot(
+    key_id: str,
+    *,
+    usage_spend: str | None,
+    usage_budget_reset_at: datetime | None,
+    usage_synced_at: datetime | None,
+) -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE api_keys
+                SET usage_spend = :usage_spend,
+                    usage_budget_reset_at = :usage_budget_reset_at,
+                    usage_synced_at = :usage_synced_at
+                WHERE id = :key_id
+                """
+            ),
+            {
+                "usage_spend": usage_spend,
+                "usage_budget_reset_at": usage_budget_reset_at,
+                "usage_synced_at": usage_synced_at,
+                "key_id": key_id,
+            },
+        )
+
+
+def _set_application_limits(
+    key_id: str,
+    *,
+    max_budget: str | None = None,
+    tpm_limit: int | None = None,
+    rpm_limit: int | None = None,
+) -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE api_key_applications a
+                JOIN api_keys k ON k.application_id = a.id
+                SET a.max_budget = COALESCE(:max_budget, a.max_budget),
+                    a.tpm_limit = COALESCE(:tpm_limit, a.tpm_limit),
+                    a.rpm_limit = COALESCE(:rpm_limit, a.rpm_limit)
+                WHERE k.id = :key_id
+                """
+            ),
+            {
+                "max_budget": max_budget,
+                "tpm_limit": tpm_limit,
+                "rpm_limit": rpm_limit,
+                "key_id": key_id,
+            },
+        )
+
+
 def _set_key_secret_material(key_id: str, *, key_ciphertext: str | None, key_kek_version: str | None) -> None:
     settings = get_settings()
     db_url = settings.test_database_url or settings.database_url
@@ -265,7 +326,85 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert len(item["masked_key"]) == 10
     assert "expiration_notice_sent_at" in item
     assert "extend_eligible" in item
+    assert item["health_status"] == "unknown"
+    assert item["usage_summary"] == {
+        "spend": None,
+        "max_budget": 1000.0,
+        "remaining_budget": None,
+        "tpm_limit": 10000,
+        "rpm_limit": 500,
+        "budget_reset_at": None,
+        "synced_at": None,
+    }
     _assert_utc_datetime_string(item["expires_at"])
+
+
+def test_list_api_keys_returns_usage_summary_and_low_budget_health(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+    synced_at = datetime.now(UTC).replace(microsecond=0)
+    budget_reset_at = synced_at + timedelta(days=7)
+    _set_key_usage_snapshot(
+        key_id,
+        usage_spend="850.25",
+        usage_budget_reset_at=budget_reset_at,
+        usage_synced_at=synced_at,
+    )
+
+    listed = client.get(_api("/api-keys"), headers=user_headers)
+
+    assert listed.status_code == 200
+    item = listed.json()["items"][0]
+    assert item["health_status"] == "low_budget"
+    assert item["usage_summary"]["spend"] == 850.25
+    assert item["usage_summary"]["max_budget"] == 1000.0
+    assert item["usage_summary"]["remaining_budget"] == 149.75
+    assert item["usage_summary"]["tpm_limit"] == 10000
+    assert item["usage_summary"]["rpm_limit"] == 500
+    _assert_utc_datetime_string(item["usage_summary"]["budget_reset_at"])
+    _assert_utc_datetime_string(item["usage_summary"]["synced_at"])
+
+
+def test_list_api_keys_unlimited_budget_stays_healthy_and_zero_remaining(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+    synced_at = datetime.now(UTC).replace(microsecond=0)
+    _set_application_limits(key_id, max_budget="0", tpm_limit=0, rpm_limit=0)
+    _set_key_usage_snapshot(
+        key_id,
+        usage_spend="9999.99",
+        usage_budget_reset_at=None,
+        usage_synced_at=synced_at,
+    )
+
+    listed = client.get(_api("/api-keys"), headers=user_headers)
+
+    assert listed.status_code == 200
+    item = listed.json()["items"][0]
+    assert item["health_status"] == "healthy"
+    assert item["usage_summary"] == {
+        "spend": 9999.99,
+        "max_budget": 0.0,
+        "remaining_budget": 0.0,
+        "tpm_limit": 0,
+        "rpm_limit": 0,
+        "budget_reset_at": None,
+        "synced_at": synced_at.isoformat().replace("+00:00", "Z"),
+    }
 
 
 def test_application_rejects_unsafe_purpose(client, admin_headers, user_headers):

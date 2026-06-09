@@ -37,9 +37,15 @@ const initialApiKeys = [
     duration_months: 6,
     purpose: "integration test for platform service",
     department: "02",
-    created_at: new Date().toISOString(),
+    created_at: "2026-06-04T09:00:00.000Z",
     expires_at: daysFromNow(14),
     expiration_notice_sent_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    max_budget: "1000",
+    tpm_limit: 10000,
+    rpm_limit: 500,
+    usage_spend: null,
+    usage_budget_reset_at: null,
+    usage_synced_at: null,
     owner_account: "jane.doe",
     owner_name: "Jane Doe",
     renewed_to_key_id: null
@@ -53,9 +59,15 @@ const initialApiKeys = [
     duration_months: 1,
     purpose: "legacy integration",
     department: "02",
-    created_at: new Date().toISOString(),
+    created_at: "2026-06-03T09:00:00.000Z",
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
     expiration_notice_sent_at: null,
+    max_budget: "1000",
+    tpm_limit: 10000,
+    rpm_limit: 500,
+    usage_spend: 850.25,
+    usage_budget_reset_at: "2026-06-02T08:03:27.000Z",
+    usage_synced_at: "2026-06-02T08:03:27.000Z",
     owner_account: "jane.doe",
     owner_name: "Jane Doe",
     renewed_to_key_id: null
@@ -68,9 +80,15 @@ const initialApiKeys = [
     duration_months: 12,
     purpose: "admin automation",
     department: "03",
-    created_at: new Date().toISOString(),
+    created_at: "2026-06-02T09:00:00.000Z",
     expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
     expiration_notice_sent_at: null,
+    max_budget: "0",
+    tpm_limit: 0,
+    rpm_limit: 0,
+    usage_spend: 9999.99,
+    usage_budget_reset_at: null,
+    usage_synced_at: "2026-06-02T08:03:27.000Z",
     owner_account: "john.admin",
     owner_name: "John Admin",
     renewed_to_key_id: null
@@ -156,7 +174,7 @@ const initialApiKeys = [
     duration_months: 6,
     purpose: "dev.user local integration test",
     department: "02",
-    created_at: "2026-05-01T02:15:00.000Z",
+    created_at: "2026-05-04T02:15:00.000Z",
     expires_at: daysFromNow(45),
     expiration_notice_sent_at: null,
     owner_account: "dev.user",
@@ -171,7 +189,7 @@ const initialApiKeys = [
     duration_months: 1,
     purpose: "dev.user revoke flow test",
     department: "02",
-    created_at: "2026-04-18T07:20:00.000Z",
+    created_at: "2026-05-03T07:20:00.000Z",
     expires_at: "2026-05-18T07:20:00.000Z",
     expiration_notice_sent_at: null,
     owner_account: "dev.user",
@@ -186,7 +204,7 @@ const initialApiKeys = [
     duration_months: 1,
     purpose: "dev.user expiry scenario",
     department: "02",
-    created_at: "2026-02-10T11:00:00.000Z",
+    created_at: "2026-05-02T11:00:00.000Z",
     expires_at: "2026-03-10T11:00:00.000Z",
     expiration_notice_sent_at: null,
     owner_account: "dev.user",
@@ -201,7 +219,7 @@ const initialApiKeys = [
     duration_months: 1,
     purpose: "dev.user near expiry scenario",
     department: "02",
-    created_at: new Date().toISOString(),
+    created_at: "2026-05-01T09:00:00.000Z",
     expires_at: daysFromNow(14),
     expiration_notice_sent_at: null,
     owner_account: "dev.user",
@@ -512,6 +530,54 @@ function compareValues(a, b, sortDir = "asc") {
     : String(b || "").localeCompare(String(a || ""));
 }
 
+function parseBudget(value) {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function roundMoney(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function buildUsageSummary(item) {
+  const maxBudget = parseBudget(item.max_budget);
+  let remainingBudget = null;
+  if (maxBudget != null && item.usage_spend != null) {
+    remainingBudget = maxBudget === 0 ? 0 : roundMoney(Math.max(maxBudget - item.usage_spend, 0));
+  }
+  return {
+    spend: item.usage_spend == null ? null : roundMoney(item.usage_spend),
+    max_budget: maxBudget,
+    remaining_budget: remainingBudget,
+    tpm_limit: item.tpm_limit ?? null,
+    rpm_limit: item.rpm_limit ?? null,
+    budget_reset_at: item.usage_budget_reset_at ?? null,
+    synced_at: item.usage_synced_at ?? null,
+  };
+}
+
+function deriveHealthStatus(usageSummary) {
+  if (usageSummary.synced_at == null || usageSummary.max_budget == null || usageSummary.remaining_budget == null) {
+    return "unknown";
+  }
+  if (usageSummary.max_budget === 0) return "healthy";
+  if (usageSummary.remaining_budget <= 0) return "exhausted";
+  if (usageSummary.remaining_budget <= usageSummary.max_budget * 0.2) return "low_budget";
+  return "healthy";
+}
+
+function decorateApiKey(item, auth) {
+  const usageSummary = buildUsageSummary(item);
+  return {
+    ...item,
+    key_alias: normalizeAlias(item),
+    extend_eligible: isExtendEligible(item, auth),
+    health_status: deriveHealthStatus(usageSummary),
+    usage_summary: usageSummary,
+  };
+}
+
 function paginateItems(items, params, defaultPageSize = 20) {
   const page = Number(params?.page || 1);
   const pageSize = Number(params?.page_size || defaultPageSize);
@@ -625,6 +691,12 @@ export const mockApiProvider = {
         created_at: now.toISOString(),
         expires_at: expires.toISOString(),
         expiration_notice_sent_at: null,
+        max_budget: limitStrategyConfig.budget_max_budget,
+        tpm_limit: limitStrategyConfig.rate_limit_tpm,
+        rpm_limit: limitStrategyConfig.rate_limit_rpm,
+        usage_spend: null,
+        usage_budget_reset_at: null,
+        usage_synced_at: null,
         owner_account: auth.account,
         owner_name: auth.name,
         renewed_to_key_id: null
@@ -717,7 +789,7 @@ export const mockApiProvider = {
     const start = (page - 1) * pageSize;
     const paged = items.slice(start, start + pageSize);
     return {
-      items: paged.map((item) => ({ ...item, key_alias: normalizeAlias(item), extend_eligible: isExtendEligible(item, auth) })),
+      items: paged.map((item) => decorateApiKey(item, auth)),
       page,
       page_size: pageSize,
       total: items.length
@@ -803,7 +875,7 @@ export const mockApiProvider = {
       throw createError("KEY_NOT_OWNED_BY_USER", "key is not owned by user", 403);
     }
 
-    return { item: { ...target, key_alias: normalizeAlias(target), extend_eligible: isExtendEligible(target, auth) } };
+    return { item: decorateApiKey(target, auth) };
   },
 
   async updateApiKey(id, payload, auth) {

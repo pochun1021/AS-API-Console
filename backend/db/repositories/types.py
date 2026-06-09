@@ -52,6 +52,12 @@ class ApiKeyListItem:
     owner_name: str
     expires_at: datetime
     expiration_notice_sent_at: datetime | None
+    max_budget: str | None
+    tpm_limit: int | None
+    rpm_limit: int | None
+    usage_spend: float | None
+    usage_budget_reset_at: datetime | None
+    usage_synced_at: datetime | None
 
 
 @dataclass(slots=True)

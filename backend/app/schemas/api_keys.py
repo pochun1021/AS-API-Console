@@ -46,6 +46,21 @@ class ApplicationCreateResponse(BaseModel):
 
 
 class ApiKeyListItemResponse(BaseModel):
+    class UsageSummaryResponse(BaseModel):
+        spend: float | None = None
+        max_budget: float | None = None
+        remaining_budget: float | None = None
+        tpm_limit: int | None = None
+        rpm_limit: int | None = None
+        budget_reset_at: datetime | None = None
+        synced_at: datetime | None = None
+
+        @field_serializer("budget_reset_at", "synced_at")
+        def serialize_usage_datetimes(self, value: datetime | None) -> str | None:
+            if value is None:
+                return None
+            return serialize_utc_datetime(value)
+
     id: str
     status: str
     masked_key: str
@@ -55,6 +70,8 @@ class ApiKeyListItemResponse(BaseModel):
     owner_account: str
     owner_name: str
     expires_at: datetime
+    health_status: str
+    usage_summary: UsageSummaryResponse
     expiration_notice_sent_at: datetime | None = None
     extend_eligible: bool = False
 

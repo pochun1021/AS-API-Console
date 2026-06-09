@@ -4,6 +4,7 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
 
@@ -153,6 +154,62 @@ def _is_extend_eligible(
     if status == "expired":
         return True
     return _is_active_key_near_expiry(expires_at=expires_at)
+
+
+def _parse_optional_budget(value: str | None) -> float | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    try:
+        return float(Decimal(normalized))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _round_money(value: float) -> float:
+    return float(Decimal(str(value)).quantize(Decimal("0.01")))
+
+
+def _build_usage_summary(
+    *,
+    max_budget_raw: str | None,
+    tpm_limit: int | None,
+    rpm_limit: int | None,
+    spend: float | None,
+    budget_reset_at: datetime | None,
+    synced_at: datetime | None,
+) -> dict:
+    max_budget = _parse_optional_budget(max_budget_raw)
+    remaining_budget: float | None = None
+    if max_budget is not None and spend is not None:
+        remaining_budget = 0.0 if max_budget == 0 else _round_money(max(max_budget - spend, 0.0))
+
+    return {
+        "spend": _round_money(spend) if spend is not None else None,
+        "max_budget": max_budget,
+        "remaining_budget": remaining_budget,
+        "tpm_limit": tpm_limit,
+        "rpm_limit": rpm_limit,
+        "budget_reset_at": budget_reset_at,
+        "synced_at": synced_at,
+    }
+
+
+def _derive_health_status(usage_summary: dict) -> str:
+    synced_at = usage_summary.get("synced_at")
+    max_budget = usage_summary.get("max_budget")
+    remaining_budget = usage_summary.get("remaining_budget")
+    if synced_at is None or max_budget is None or remaining_budget is None:
+        return "unknown"
+    if max_budget == 0:
+        return "healthy"
+    if remaining_budget <= 0:
+        return "exhausted"
+    if remaining_budget <= max_budget * 0.2:
+        return "low_budget"
+    return "healthy"
 
 
 class ApiKeysService:
@@ -581,7 +638,7 @@ class ApiKeysService:
 
         return {
             "items": [
-                {
+                (lambda usage_summary: {
                     "id": item.id,
                     "status": _effective_status(status=item.status, expires_at=item.expires_at),
                     "masked_key": item.masked_key,
@@ -591,12 +648,23 @@ class ApiKeysService:
                     "owner_account": item.owner_account,
                     "owner_name": item.owner_name,
                     "expires_at": item.expires_at,
+                    "health_status": _derive_health_status(usage_summary),
+                    "usage_summary": usage_summary,
                     "expiration_notice_sent_at": item.expiration_notice_sent_at,
                     "extend_eligible": _is_extend_eligible(
                         status=_effective_status(status=item.status, expires_at=item.expires_at),
                         expires_at=item.expires_at,
                     ),
-                }
+                })(
+                    _build_usage_summary(
+                        max_budget_raw=item.max_budget,
+                        tpm_limit=item.tpm_limit,
+                        rpm_limit=item.rpm_limit,
+                        spend=item.usage_spend,
+                        budget_reset_at=item.usage_budget_reset_at,
+                        synced_at=item.usage_synced_at,
+                    )
+                )
                 for item in items
             ],
             "page": page,

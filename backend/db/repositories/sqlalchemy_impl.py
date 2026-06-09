@@ -436,6 +436,12 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
                     owner_name=row.ApiKeyApplication.name,
                     expires_at=row.ApiKeyApplication.expires_at,
                     expiration_notice_sent_at=row.ApiKey.expiration_notice_sent_at,
+                    max_budget=row.ApiKeyApplication.max_budget,
+                    tpm_limit=row.ApiKeyApplication.tpm_limit,
+                    rpm_limit=row.ApiKeyApplication.rpm_limit,
+                    usage_spend=float(row.ApiKey.usage_spend) if row.ApiKey.usage_spend is not None else None,
+                    usage_budget_reset_at=row.ApiKey.usage_budget_reset_at,
+                    usage_synced_at=row.ApiKey.usage_synced_at,
                 )
                 for row in rows
             ],
