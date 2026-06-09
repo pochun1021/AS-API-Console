@@ -37,3 +37,4 @@ class ApiKey(Base):
     )
 
     application: Mapped["ApiKeyApplication"] = relationship(back_populates="api_key")
+    usage_snapshots: Mapped[list["ApiKeyUsageSnapshot"]] = relationship(back_populates="api_key")

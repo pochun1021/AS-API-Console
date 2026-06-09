@@ -125,7 +125,7 @@ export ENV_FILE=/home/app/config/.env
 - `OAUTH_SCOPE`：可選，OAuth scope（預設 `basic`）
 - `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：`APP_ENV=dev/test` 使用 `/main/login` bypass 時建立 session 身分所需欄位
 - `DEV_LOGIN_ROLE`：可選，`APP_ENV=dev/test` bypass 身分角色（僅允許 `user` 或 `admin`，預設 `user`）
-- `SCHEDULER_LOG_ROOT`：可選，排程腳本日誌根目錄（預設 `/home/app/log`，實際會寫入子目錄如 `sync_expired_api_keys/`、`send_expiration_reminders/`）
+- `SCHEDULER_LOG_ROOT`：可選，排程腳本日誌根目錄（預設 `/home/app/log`，實際會寫入子目錄如 `sync_api_key_usage/`、`sync_expired_api_keys/`、`send_expiration_reminders/`）
 - `MAIL_ENABLED`：可選，是否啟用 Email 發送（預設 `false`）
 - `MAIL_SERVER` / `MAIL_PORT`：可選，SMTP 主機與連接埠
 - `MAIL_USERNAME` / `MAIL_PASSWORD`：可選，SMTP 認證資訊
@@ -230,6 +230,26 @@ ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run
 - 預設建議頻率：每日 `00:10`。
 - 正式部署排程設定請見 `docs/deploy-ubuntu-nginx.md`（systemd timer 與 cron 兩種方案）。
 - 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 第 16 節為準。
+
+## API Key Usage 同步排程
+- 目的：每 `5` 分鐘用 `key_alias` 向 provider `/spend/logs/v2` 拉取 `active` keys 的 spend logs，將成功紀錄聚合後寫入本地最新快取與歷史表 `api_key_usage_snapshots`。
+- 聚合規則：只累計 `status=success` 的 logs；`failure` logs 不納入 `usage_summary.spend`。
+- 內建腳本：
+```bash
+cd backend
+ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh
+```
+- 參數範例：
+```bash
+cd backend
+ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh --batch-size 200
+ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh --dry-run
+```
+- 執行日誌：
+  - 會寫入專案根目錄 `log/sync_api_key_usage/`。
+  - 依 `Asia/Taipei` 日期切日，每日一檔：`YYYY-MM-DD.log`。
+- 預設建議頻率：每 `5` 分鐘一次。
+- 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 對應 usage sync 章節為準。
 
 ## API Key 多段式到期提醒排程
 - 目的：針對即將於 `30`、`14`、`7`、`3`、`1` 天後到期的 `active` API Key 寄送提醒信給申請者本人，提醒正確剩餘天數、到期時間與可展延。

@@ -1,6 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
+from urllib.parse import urlencode
 
 import httpx
 
@@ -193,15 +194,21 @@ class ProviderClient:
             operation_id=operation_id,
         )
 
-    def _perform_read_request(self, *, path: str) -> object:
+    def _perform_read_request(self, *, path: str, query: dict[str, object] | None = None) -> object:
         if not self.is_configured():
             raise ProviderUnavailableError("provider is not configured")
+
+        request_path = path
+        if query:
+            filtered_query = {key: value for key, value in query.items() if value is not None}
+            if filtered_query:
+                request_path = f"{path}?{urlencode(filtered_query)}"
 
         if self.debug_logging:
             logger.info(
                 "provider request",
                 extra={
-                    "provider_path": path,
+                    "provider_path": request_path,
                     "payload_keys": [],
                     "timeout_seconds": self.timeout_seconds,
                 },
@@ -210,7 +217,7 @@ class ProviderClient:
         try:
             with build_safe_httpx_client(timeout_seconds=self.timeout_seconds, base_url=self.base_url) as client:
                 resp = client.get(
-                    path,
+                    request_path,
                     headers={
                         "Authorization": f"Bearer {self.master_key}",
                     },
@@ -224,14 +231,14 @@ class ProviderClient:
             except Exception:  # noqa: BLE001
                 response_payload = {}
             status_code = exc.response.status_code if exc.response is not None else 0
-            self._log_response(path=path, status_code=status_code, payload=response_payload)
+            self._log_response(path=request_path, status_code=status_code, payload=response_payload)
             if 400 <= status_code < 500:
                 raise ProviderBadRequestError(f"provider rejected request: {status_code}") from exc
             raise ProviderUnavailableError(f"provider unavailable: {status_code}") from exc
         except (httpx.RequestError, json.JSONDecodeError) as exc:
             raise ProviderUnavailableError("provider unavailable") from exc
 
-        self._log_response(path=path, status_code=resp.status_code, payload=data)
+        self._log_response(path=request_path, status_code=resp.status_code, payload=data)
         return data
 
     def generate_key(self, payload: dict) -> ProviderGenerateResult:
@@ -250,3 +257,6 @@ class ProviderClient:
 
     def list_models(self) -> object:
         return self._perform_read_request(path="/models")
+
+    def list_spend_logs(self, query: dict[str, object]) -> object:
+        return self._perform_read_request(path="/spend/logs/v2", query=query)

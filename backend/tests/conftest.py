@@ -41,8 +41,8 @@ def client() -> Generator[TestClient, None, None]:
 
     engine = create_engine(db_url, future=True)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=Session)
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.drop_all(bind=engine, checkfirst=True)
+    Base.metadata.create_all(bind=engine, checkfirst=True)
 
     def override_get_db() -> Generator[Session, None, None]:
         db = TestingSessionLocal()
@@ -54,7 +54,7 @@ def client() -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
         yield test_client
-    Base.metadata.drop_all(bind=engine)
+    Base.metadata.drop_all(bind=engine, checkfirst=True)
     app.dependency_overrides.clear()
 
 

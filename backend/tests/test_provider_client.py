@@ -28,6 +28,10 @@ class _FakeClient:
         self.calls.append({"url": url, "json": json, "headers": headers})
         return self._response
 
+    def get(self, url: str, *, headers: dict[str, str]) -> httpx.Response:
+        self.calls.append({"url": url, "headers": headers})
+        return self._response
+
 
 def _response(payload: object, *, status_code: int = 200) -> httpx.Response:
     request = httpx.Request("POST", "https://provider.internal/test")
@@ -148,6 +152,33 @@ def test_update_team_limits_posts_to_team_bulk_update(monkeypatch: pytest.Monkey
             "json": {"team_id": "team-1", "all_keys_in_team": True, "update_fields": {"tpm_limit": 10000, "max_parallel_requests": None}},
             "headers": {
                 "Content-Type": "application/json",
+                "Authorization": "Bearer secret-token",
+            },
+        }
+    ]
+
+
+def test_list_spend_logs_uses_query_params(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _build_client(monkeypatch)
+    fake_client = _FakeClient(_response({"data": [], "total": 0, "page": 1, "page_size": 100, "total_pages": 0}))
+    monkeypatch.setattr("app.services.provider_client.build_safe_httpx_client", lambda **kwargs: fake_client)
+
+    payload = client.list_spend_logs(
+        {
+            "key_alias": "for_user1",
+            "status_filter": "success",
+            "page": 1,
+            "page_size": 100,
+            "sort_by": "startTime",
+            "sort_order": "desc",
+        }
+    )
+
+    assert payload == {"data": [], "total": 0, "page": 1, "page_size": 100, "total_pages": 0}
+    assert fake_client.calls == [
+        {
+            "url": "/spend/logs/v2?key_alias=for_user1&status_filter=success&page=1&page_size=100&sort_by=startTime&sort_order=desc",
+            "headers": {
                 "Authorization": "Bearer secret-token",
             },
         }

@@ -531,6 +531,91 @@ sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/backend && ENV_FILE=/hom
 sudo -u asapic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
+## 16A. API Key Usage Sync 排程部署
+
+usage sync 採本地 snapshot 歷史表策略：
+- 對外列表與 health status 讀取本地最新 snapshot，不在 request path 即時打 provider。
+- 透過排程執行 `backend/scripts/run_usage_sync.sh`，每 `5` 分鐘以 `key_alias` 查 provider `/spend/logs/v2` 並寫回本地。
+
+### 16A.1 方案 A（建議）：systemd timer
+
+建立 `/etc/systemd/system/as-api-usage-sync.service`：
+```ini
+[Unit]
+Description=AS API Console API Key Usage Sync
+After=network.target mariadb.service
+
+[Service]
+Type=oneshot
+User=asapic
+Group=asapic
+WorkingDirectory=/home/app/AS-API-Console/backend
+Environment=ENV_FILE=/home/app/config/.env
+ExecStart=/home/app/AS-API-Console/backend/scripts/run_usage_sync.sh
+```
+
+建立 `/etc/systemd/system/as-api-usage-sync.timer`：
+```ini
+[Unit]
+Description=Run API key usage sync every 5 minutes
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=as-api-usage-sync.service
+
+[Install]
+WantedBy=timers.target
+```
+
+啟用與驗證：
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now as-api-usage-sync.timer
+sudo systemctl list-timers as-api-usage-sync.timer --all
+sudo systemctl status as-api-usage-sync.timer --no-pager
+```
+
+手動觸發與看 log：
+```bash
+sudo systemctl start as-api-usage-sync.service
+sudo journalctl -u as-api-usage-sync.service -n 200 --no-pager
+sudo -u asapic tail -n 100 /home/app/log/sync_api_key_usage/$(TZ=Asia/Taipei date +%F).log
+```
+
+### 16A.2 方案 B：cron
+
+以 `asapic` 使用者設定 crontab：
+```bash
+sudo -u asapic crontab -e
+```
+
+加入：
+```cron
+*/5 * * * * ENV_FILE=/home/app/config/.env /home/app/AS-API-Console/backend/scripts/run_usage_sync.sh
+```
+
+檢查：
+```bash
+sudo -u asapic crontab -l
+sudo -u asapic tail -n 100 /home/app/log/sync_api_key_usage/$(TZ=Asia/Taipei date +%F).log
+```
+
+### 16A.3 驗證清單（建議）
+1. 檢查排程已啟用：
+```bash
+sudo systemctl list-timers as-api-usage-sync.timer --all
+sudo -u asapic crontab -l
+```
+2. 手動 dry-run：
+```bash
+sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/backend && ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh --dry-run'
+```
+3. 檢查當日日誌：
+```bash
+sudo -u asapic tail -n 100 /home/app/log/sync_api_key_usage/$(TZ=Asia/Taipei date +%F).log
+```
+
 ## 17. 單位主檔同步排程部署
 
 單位主檔同步採背景差異同步模式：
