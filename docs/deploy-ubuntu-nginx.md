@@ -224,7 +224,17 @@ sudo journalctl -u as-api-console -n 200 --no-pager
 
 ## 10. 設定 Nginx 反向代理
 
-建立 `/etc/nginx/sites-available/as-api-console`：
+先建立共用安全標頭 snippet `/etc/nginx/snippets/as-api-console-security-headers.conf`：
+
+```nginx
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "no-referrer" always;
+add_header Strict-Transport-Security "max-age=15768000" always;
+add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.ascs.sinica.edu.tw; manifest-src 'self'; upgrade-insecure-requests" always;
+```
+
+再建立 `/etc/nginx/sites-available/as-api-console`：
 
 ```nginx
 server {
@@ -233,6 +243,7 @@ server {
     server_name api.ascs.sinica.edu.tw;
 
     client_max_body_size 20m;
+    include /etc/nginx/snippets/as-api-console-security-headers.conf;
 
     location /main/ {
         proxy_pass http://127.0.0.1:8000;
@@ -258,6 +269,7 @@ sudo systemctl reload nginx
 ```bash
 curl -I http://api.ascs.sinica.edu.tw/main/
 curl -I http://api.ascs.sinica.edu.tw/main/docs
+curl -I http://api.ascs.sinica.edu.tw/main/ | rg -i 'content-security-policy|x-frame-options|strict-transport-security'
 ```
 
 ## 11. 申請 Let's Encrypt 憑證（HTTPS）
@@ -266,7 +278,7 @@ curl -I http://api.ascs.sinica.edu.tw/main/docs
 sudo certbot --nginx -d api.ascs.sinica.edu.tw
 ```
 
-憑證安裝後，請再次確認 `443` 的 `/main/` 反向代理仍指向 backend `127.0.0.1:8000`（避免誤導到前端 dev server）：
+憑證安裝後，請再次確認 `443` 的 `/main/` 反向代理仍指向 backend `127.0.0.1:8000`（避免誤導到前端 dev server），且 `443` 的 server block 也有 `include /etc/nginx/snippets/as-api-console-security-headers.conf;`：
 ```bash
 sudo nginx -T | sed -n '/server_name api.ascs.sinica.edu.tw/,/}/p'
 ```
@@ -275,6 +287,8 @@ sudo nginx -T | sed -n '/server_name api.ascs.sinica.edu.tw/,/}/p'
 ```bash
 curl -I https://api.ascs.sinica.edu.tw/main/
 curl -I https://api.ascs.sinica.edu.tw/main/docs
+curl -I https://api.ascs.sinica.edu.tw/main/ | rg -i 'content-security-policy|x-frame-options|strict-transport-security'
+curl -I https://api.ascs.sinica.edu.tw/main/assets/index-*.js | rg -i 'content-security-policy'
 ```
 
 測試續約：
@@ -287,6 +301,7 @@ sudo certbot renew --dry-run
 - `https://api.ascs.sinica.edu.tw/main/` 可開啟前端
 - `https://api.ascs.sinica.edu.tw/main/docs` 可開啟 OpenAPI
 - `https://api.ascs.sinica.edu.tw/main/login` 可進入 OAuth 流程
+- `curl -I https://api.ascs.sinica.edu.tw/main/` 可看到完整 `Content-Security-Policy`，而非只有 `upgrade-insecure-requests`
 - `sudo systemctl status as-api-console` 為 `active (running)`
 - `sudo systemctl status nginx` 為 `active (running)`
 - `sudo certbot renew --dry-run` 成功
@@ -426,6 +441,37 @@ sudo nginx -t
 sudo systemctl reload nginx
 curl -kI https://api.ascs.sinica.edu.tw/main/
 curl -kI https://api.ascs.sinica.edu.tw/main/docs
+```
+
+### 14.6 CSP 掃描顯示缺少必要指令
+
+症狀：
+- 弱點掃描顯示「從 CSP 中缺少必要的指令」
+- `/main/` 或 `/main/assets/*.js` 的回應只看到 `Content-Security-Policy: upgrade-insecure-requests`
+
+定位步驟：
+```bash
+curl -kI https://api.ascs.sinica.edu.tw/main/
+curl -kI https://api.ascs.sinica.edu.tw/main/assets/index-<hash>.js
+sudo nginx -T | sed -n '/server_name api.ascs.sinica.edu.tw/,/}/p'
+sudo rg -n "Content-Security-Policy|as-api-console-security-headers" /etc/nginx
+```
+
+常見原因：
+- 只在某一個 server block 設定 CSP，導致 `80` 與 `443` 行為不一致
+- Certbot 改寫 `443` server block 後，漏掉共用 security headers snippet
+- 只保留 `upgrade-insecure-requests`，沒有 `default-src`、`script-src`、`style-src` 等主要 directive
+
+修復方式：
+- 確認 `80` 與 `443` 的站台設定都 `include /etc/nginx/snippets/as-api-console-security-headers.conf;`
+- 重新載入 Nginx 並再次檢查 response headers
+
+套用後驗證：
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+curl -kI https://api.ascs.sinica.edu.tw/main/ | rg -i 'content-security-policy|x-frame-options|strict-transport-security'
+curl -kI https://api.ascs.sinica.edu.tw/main/assets/index-<hash>.js | rg -i 'content-security-policy'
 ```
 
 ## 15. 安全建議（正式環境）
