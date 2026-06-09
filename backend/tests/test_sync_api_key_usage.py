@@ -16,7 +16,7 @@ def _fetch_usage_snapshot_rows(key_id: str) -> list[dict]:
         rows = conn.execute(
             text(
                 """
-                SELECT api_key_id, spend, budget_reset_at, synced_at
+                SELECT api_key_id, spend, prompt_tokens, completion_tokens, total_tokens, budget_reset_at, synced_at
                 FROM api_key_usage_snapshots
                 WHERE api_key_id = :key_id
                 ORDER BY synced_at DESC
@@ -72,12 +72,18 @@ def test_usage_sync_script_records_snapshot_history(client, admin_headers, user_
                     {
                         "status": "success",
                         "spend": 0.009805,
+                        "prompt_tokens": 123,
+                        "completion_tokens": 45,
+                        "total_tokens": 168,
                         "startTime": synced_at.isoformat(),
                         "endTime": synced_at.isoformat(),
                     },
                     {
                         "status": "failure",
                         "spend": 99.0,
+                        "prompt_tokens": 999,
+                        "completion_tokens": 999,
+                        "total_tokens": 1998,
                         "startTime": synced_at.isoformat(),
                         "endTime": synced_at.isoformat(),
                     },
@@ -102,6 +108,9 @@ def test_usage_sync_script_records_snapshot_history(client, admin_headers, user_
     rows = _fetch_usage_snapshot_rows(key_id)
     assert len(rows) == 1
     assert float(rows[0]["spend"]) == 0.0098
+    assert rows[0]["prompt_tokens"] == 123
+    assert rows[0]["completion_tokens"] == 45
+    assert rows[0]["total_tokens"] == 168
     assert rows[0]["budget_reset_at"].replace(tzinfo=UTC) == budget_reset_at
     assert rows[0]["synced_at"].replace(tzinfo=UTC) == synced_at
 

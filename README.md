@@ -233,7 +233,7 @@ ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run
 
 ## API Key Usage 同步排程
 - 目的：每 `5` 分鐘用 `key_alias` 向 provider `/spend/logs/v2` 拉取 `active` keys 的 spend logs，將成功紀錄聚合後寫入本地最新快取與歷史表 `api_key_usage_snapshots`。
-- 聚合規則：只累計 `status=success` 的 logs；`failure` logs 不納入 `usage_summary.spend`。
+- 聚合規則：只累計 `status=success` 的 logs；`failure` logs 不納入 `usage_summary.spend`，也不納入 `prompt_tokens`、`completion_tokens`、`total_tokens` 歷史快照。
 - 內建腳本：
 ```bash
 cd backend

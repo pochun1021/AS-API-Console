@@ -312,6 +312,15 @@ ORDER BY synced_at DESC
 LIMIT 20;
 "
 ```
+如需確認 token 歷史快照，可改查：
+```bash
+mariadb -h <host> -u <user> -p as_api_console -e "
+SELECT api_key_id, spend, prompt_tokens, completion_tokens, total_tokens, budget_reset_at, synced_at
+FROM api_key_usage_snapshots
+ORDER BY synced_at DESC
+LIMIT 20;
+"
+```
 
 ### 3) 檢查回填結果
 ```bash

@@ -571,7 +571,7 @@ Base path：`/main/api/v1`
 - 到期口徑：`expires_at` 早於查詢當下（UTC）且原始狀態為 `active` 時，API 對外狀態需視為 `expired`（即使 DB 原始欄位尚未同步更新）。
 - Usage summary 與 health status 需使用本地週期性同步/快取資料；此列表端點不得對每列即時呼叫外部 provider 取 usage。
 - usage snapshot 需落地保存於獨立歷史表 `api_key_usage_snapshots`；`GET /main/api/v1/api-keys` 與相關健康度判定一律以每把 key 最新一筆 snapshot 為準，不得依賴前端即時查 provider。
-- usage snapshot 歷史表最少需保存：`api_key_id`、`spend`、`budget_reset_at`、`synced_at`；既有 `api_keys.usage_*` 欄位可作為最新快取鏡像，但不得作為唯一歷史來源。
+- usage snapshot 歷史表最少需保存：`api_key_id`、`spend`、`prompt_tokens`、`completion_tokens`、`total_tokens`、`budget_reset_at`、`synced_at`；既有 `api_keys.usage_*` 欄位可作為最新快取鏡像，但不得作為唯一歷史來源。
 - usage 同步以 `key_alias` 作為 provider `/spend/logs/v2` 查詢鍵；若本地 `key_alias` 為空，需以系統預設 alias `for_{owner_account}` 查詢。
 - usage 同步時僅累計 provider spend logs 中 `status=success` 的紀錄；`failure` 紀錄不得計入 `spend`。
 - usage 同步排程預設每 `5` 分鐘執行一次，僅同步目前 `active` keys；若 provider 查詢失敗，不得中斷其他 keys 的同步。
@@ -691,6 +691,7 @@ Base path：`/main/api/v1`
 - 目的：週期性自 provider `/spend/logs/v2` 同步每把 `active` API Key 的最新 usage snapshot，供列表 `Usage` / `Health` 顯示使用。
 - 查詢鍵：以本地 `key_alias` 查 provider；若本地未存 alias，需以系統預設 alias `for_{owner_account}` 查詢。
 - 聚合規則：只累計 `status=success` 的 spend logs；`spend` 為同一 alias 目前查詢範圍內成功紀錄的加總。`failure` logs 僅供維運排查，不得寫入 usage snapshot。
+- token 聚合規則：`prompt_tokens`、`completion_tokens`、`total_tokens` 皆只累計 `status=success` 的 spend logs；若單筆 log 缺少個別 token 欄位，該欄位以 `0` 累計，不得因缺欄中止整把 key 的 snapshot 寫入。
 - 落地規則：每次同步都需寫入 `api_key_usage_snapshots` 新歷史列，並可同步覆寫 `api_keys.usage_spend`、`usage_budget_reset_at`、`usage_synced_at` 作為最新快取鏡像。
 - 最新值規則：對外 API 讀取 usage 時，需以 `api_key_usage_snapshots` 中該 key `synced_at` 最新的一筆為準；若無歷史列，才可 fallback 既有 `api_keys.usage_*` 欄位。
 - 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每 `5` 分鐘執行一次。

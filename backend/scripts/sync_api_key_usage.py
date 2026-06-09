@@ -67,6 +67,14 @@ def _round_money(value: float) -> float:
     return float(Decimal(str(value)).quantize(Decimal("0.0001")))
 
 
+def _coerce_int(value: object) -> int:
+    try:
+        normalized = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return normalized if normalized >= 0 else 0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync API key usage snapshots from provider spend logs.")
     parser.add_argument("--batch-size", type=int, default=100, help="Maximum active keys to sync per run (default: 100).")
@@ -97,10 +105,13 @@ def _coerce_datetime(value: object) -> datetime | None:
         return None
 
 
-def _fetch_spend_snapshot(provider_client: ProviderClient, *, key_alias: str) -> tuple[float, datetime | None]:
+def _fetch_spend_snapshot(provider_client: ProviderClient, *, key_alias: str) -> tuple[float, int, int, int, datetime | None]:
     page = 1
     total_pages = 1
     total_spend = Decimal("0")
+    prompt_tokens = 0
+    completion_tokens = 0
+    total_tokens = 0
     budget_reset_at: datetime | None = None
 
     while page <= total_pages:
@@ -131,9 +142,12 @@ def _fetch_spend_snapshot(provider_client: ProviderClient, *, key_alias: str) ->
                 total_spend += Decimal(str(record.get("spend") or 0))
             except Exception:  # noqa: BLE001
                 continue
+            prompt_tokens += _coerce_int(record.get("prompt_tokens"))
+            completion_tokens += _coerce_int(record.get("completion_tokens"))
+            total_tokens += _coerce_int(record.get("total_tokens"))
         page += 1
 
-    return _round_money(float(total_spend)), budget_reset_at
+    return _round_money(float(total_spend)), prompt_tokens, completion_tokens, total_tokens, budget_reset_at
 
 
 def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = None) -> int:
@@ -146,7 +160,10 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
     updated = 0
     for candidate in candidates:
         try:
-            spend, budget_reset_at = _fetch_spend_snapshot(provider_client, key_alias=candidate.key_alias)
+            spend, prompt_tokens, completion_tokens, total_tokens, budget_reset_at = _fetch_spend_snapshot(
+                provider_client,
+                key_alias=candidate.key_alias,
+            )
         except (ProviderUnavailableError, ProviderBadRequestError) as exc:
             if logger is not None:
                 logger.warning(
@@ -163,6 +180,9 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
                     id=str(uuid4()),
                     api_key_id=candidate.key_id,
                     spend=spend,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
                     budget_reset_at=budget_reset_at,
                     synced_at=now,
                     created_at=now,
