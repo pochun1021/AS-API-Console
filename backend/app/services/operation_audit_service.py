@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
 from app.core.errors import ApiError
+from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.models.operation_audit_logs import OperationAuditLog
 
 ALLOWED_METADATA_KEYS = {
@@ -61,6 +62,8 @@ def summarize_operation_audit_error(exc: Exception) -> str:
         return exc.message
     if isinstance(exc, HTTPException):
         return str(exc.detail)
+    if isinstance(exc, PersnlSoapUnavailableError):
+        return str(exc)
     return f"{type(exc).__name__}: unexpected internal failure"
 
 

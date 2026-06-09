@@ -1,11 +1,14 @@
 
-from datetime import datetime
+from datetime import datetime, timezone
 import json
+
+import pytest
 
 from tests.conftest import api_path, build_headers
 from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.session import get_db
 from db.models.institute import Institute
+from db.models.institute_sync_control import InstituteSyncControl
 from db.models.operation_audit_logs import OperationAuditLog
 
 
@@ -373,29 +376,33 @@ def test_admins_list_supports_server_side_filters_sort_and_total(client):
 
 def test_list_institutes_returns_active_only(client, admin_headers):
     override_get_db = client.app.dependency_overrides[get_db]
-    db = next(override_get_db())
-    db.add(
-        Institute(
-            inst_code="01",
-            inst_name="院本部",
-            abb_inst_name="院本部",
-            einst_name="HQ",
-            division="1",
-            status="active",
+    db_gen = override_get_db()
+    db = next(db_gen)
+    try:
+        db.add(
+            Institute(
+                inst_code="01",
+                inst_name="院本部",
+                abb_inst_name="院本部",
+                einst_name="HQ",
+                division="1",
+                status="active",
+            )
         )
-    )
-    db.add(
-        Institute(
-            inst_code="99",
-            inst_name="停用單位",
-            abb_inst_name="停用",
-            einst_name="Inactive",
-            division="9",
-            status="inactive",
+        db.add(
+            Institute(
+                inst_code="99",
+                inst_name="停用單位",
+                abb_inst_name="停用",
+                einst_name="Inactive",
+                division="9",
+                status="inactive",
+            )
         )
-    )
-    db.commit()
-    db.close()
+        db.commit()
+    finally:
+        db.close()
+        db_gen.close()
 
     resp = client.get(api_path("/institutes"), headers=admin_headers)
     assert resp.status_code == 200
@@ -447,3 +454,123 @@ def test_sync_institutes_returns_503_when_soap_unavailable(client, admin_headers
     resp = client.post(api_path("/institutes/sync"), headers=admin_headers)
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
+
+
+def test_get_institute_sync_status_requires_admin(client, user_headers):
+    resp = client.get(api_path("/institutes/sync-status"), headers=user_headers)
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_get_institute_sync_status_returns_idle_defaults(client, admin_headers):
+    resp = client.get(api_path("/institutes/sync-status"), headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "status": "idle",
+        "retry_after_seconds": 0,
+        "next_allowed_at": None,
+    }
+
+
+def test_sync_institutes_success_sets_cooldown_and_retry_after(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.get_institutes",
+        lambda self: [
+            {
+                "instCode": "01",
+                "instName": "院本部",
+                "abb_instName": "院本部",
+                "einstName": "HQ",
+                "division": "1",
+            }
+        ],
+    )
+
+    first = client.post(api_path("/institutes/sync"), headers=admin_headers)
+    assert first.status_code == 200
+
+    second = client.post(api_path("/institutes/sync"), headers=admin_headers)
+    assert second.status_code == 429
+    payload = second.json()
+    assert payload["error"]["code"] == "INSTITUTE_SYNC_COOLDOWN"
+    assert payload["retry_after_seconds"] > 0
+    assert payload["next_allowed_at"]
+    assert second.headers["Retry-After"] == str(payload["retry_after_seconds"])
+
+    status = client.get(api_path("/institutes/sync-status"), headers=admin_headers)
+    assert status.status_code == 200
+    assert status.json()["status"] == "idle"
+    assert status.json()["retry_after_seconds"] > 0
+    assert status.json()["next_allowed_at"]
+
+
+def test_sync_institutes_soap_failure_sets_short_cooldown(client, admin_headers, monkeypatch):
+    def raise_unavailable(self):
+        raise PersnlSoapUnavailableError("down")
+
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.get_institutes",
+        raise_unavailable,
+    )
+
+    first = client.post(api_path("/institutes/sync"), headers=admin_headers)
+    assert first.status_code == 503
+    assert first.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
+
+    second = client.post(api_path("/institutes/sync"), headers=admin_headers)
+    assert second.status_code == 429
+    payload = second.json()
+    assert payload["error"]["code"] == "INSTITUTE_SYNC_COOLDOWN"
+    assert 1 <= payload["retry_after_seconds"] <= 60
+
+
+def test_sync_institutes_rejects_when_running(client, admin_headers):
+    override_get_db = client.app.dependency_overrides[get_db]
+    db_gen = override_get_db()
+    db = next(db_gen)
+    try:
+        now = datetime.now(timezone.utc)
+        db.merge(
+            InstituteSyncControl(
+                id=1,
+                status="running",
+                last_result=None,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+        db_gen.close()
+
+    resp = client.post(api_path("/institutes/sync"), headers=admin_headers)
+    assert resp.status_code == 429
+    assert resp.json()["error"]["code"] == "INSTITUTE_SYNC_IN_PROGRESS"
+
+
+def test_sync_institutes_unexpected_error_releases_running_state(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.get_institutes",
+        lambda self: [],
+    )
+
+    def boom(self, remote_institutes, dry_run=False):  # noqa: ANN001
+        raise RuntimeError("unexpected failure")
+
+    monkeypatch.setattr("app.services.institute_sync_service.InstituteSyncService.sync", boom)
+
+    with pytest.raises(RuntimeError, match="unexpected failure"):
+        client.post(api_path("/institutes/sync"), headers=admin_headers)
+
+    override_get_db = client.app.dependency_overrides[get_db]
+    db_gen = override_get_db()
+    db = next(db_gen)
+    try:
+        row = db.get(InstituteSyncControl, 1)
+        assert row is not None
+        assert row.status == "idle"
+        assert row.cooldown_until is not None
+    finally:
+        db.close()
+        db_gen.close()

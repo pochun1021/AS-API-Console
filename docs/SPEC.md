@@ -148,6 +148,11 @@
 - 清單查詢模式屬於 `local-full-dataset table`：頁面一次載入完整資料後，可保留前端 local sorting/filter/pagination。
 - 頁面需顯示 `total` 與列表資料，欄位至少包含：`inst_code`、`inst_name`、`abb_inst_name`、`einst_name`、`division`。
 - 需提供 Loading、Empty、Error（含重試）狀態。
+- 頁面需提供手動同步操作，觸發 `POST /main/api/v1/institutes/sync`。
+- 前端需保留既有頁內 `syncing` 防重送保護；若 API 回 `429 INSTITUTE_SYNC_IN_PROGRESS`，需明確提示同步已在進行中。
+- 若 API 回 `429 INSTITUTE_SYNC_COOLDOWN`，前端需使用 API 回傳的 `retry_after_seconds` 啟動倒數，顯示剩餘冷卻時間，並於倒數期間停用同步按鈕。
+- 冷卻倒數顯示格式需支援 `X 分 Y 秒`；剩餘不足 1 分鐘時可僅顯示秒數。
+- 因 `429 INSTITUTE_SYNC_IN_PROGRESS` 或 `429 INSTITUTE_SYNC_COOLDOWN` 被拒絕時，前端不得重新載入 institute 列表。
 
 ### 6-2) Models Page（可用模型清單頁）
 - `user` 與 `admin` 都可使用。
@@ -209,8 +214,8 @@
   - 日期欄位僅允許區間查詢，使用 `from/to` 或 `<field>_from/<field>_to`；不得把 DataGrid 原生日期 operator 直接暴露成公開 API。
   - 數字/識別碼欄位（如 `sysid`）僅允許 exact match。
 - 本 repo 現階段 Data Table 分類如下：
-  - `server-side table`：`My API Keys Page`、`Whitelist Admin Page`、`Admin Dashboard Page`、`Operation Audit Logs Page`、`Auth Audit Logs Page`
-  - `local-full-dataset table`：`Admin List Page`、`Institute View Page`
+  - `server-side table`：`My API Keys Page`、`Whitelist Admin Page`、`Admin List Page`（管理者名單主表格）、`Admin Dashboard Page`、`Operation Audit Logs Page`、`Auth Audit Logs Page`
+  - `local-full-dataset table`：`Admin List Page`（新增管理者查詢候選表格）、`Institute View Page`
 
 ## 功能需求
 ### Must Have（MVP）
@@ -737,7 +742,7 @@ Base path：`/main/api/v1`
   - 不論 `q` 值內容為何，資料來源皆為 Persnl SOAP（`PERSNL_SOAP_URL`）。
   - 回傳欄位至少包含 `id`、`sysid`、`account`、`name`、`email`、`department`（對應單位代碼 `instCode`）、`status`。
   - 成功與失敗皆需寫入 `operation_audit_logs`；`event_type=user_lookup`、`action=lookup_context`、`target_type=user_search`、`target_id` 為 trim 後查詢關鍵字。
-- 單位主檔同步：`Persnl.getInstitutes` 僅供背景同步作業使用（首次入庫 + 後續排程差異同步），不得放在此 API 請求路徑中每次即時呼叫。
+- 單位主檔同步：`Persnl.getInstitutes` 供背景同步作業與受控手動同步使用；除 `POST /main/api/v1/institutes/sync` 與既定背景同步流程外，不得在其他查詢 API 請求路徑中即時呼叫。
 - 錯誤回應：
   - `403 FORBIDDEN`：非 `admin`
   - `422 VALIDATION_ERROR`：`q` 不合法
@@ -831,8 +836,32 @@ Base path：`/main/api/v1`
 - 規則：
   - 僅 `admin` 可使用。
   - 需通過 CSRF 驗證與 admin mutation rate limit。
+  - 全域同時間僅允許一個手動同步請求執行；只有取得執行權的請求可呼叫 `Persnl.getInstitutes`。
+  - 手動同步控制狀態需為 DB 持久化狀態，至少可表達：`status(idle|running)`、`last_result`、`last_started_at`、`last_finished_at`、`cooldown_until`。
+  - 若已有其他手動同步處於 `running`，需回傳 `429 INSTITUTE_SYNC_IN_PROGRESS`。
+  - 若目前時間早於 `cooldown_until`，需回傳 `429 INSTITUTE_SYNC_COOLDOWN`。
+  - `429` 回應需包含至少以下 machine-readable 欄位，供前端顯示冷卻資訊：`retry_after_seconds`、`next_allowed_at`。
   - 成功時需回傳同步統計：`fetched_count`、`inserted_count`、`updated_count`、`unchanged_count`、`deactivated_count`。
+  - 成功回應 shape 維持不變，不新增其他必要欄位。
+  - 成功完成後需進入全域 cooldown；目前 cooldown 常數先寫死：成功 `15` 分鐘、失敗 `1` 分鐘。
+  - Persnl SOAP timeout/5xx 或內部例外結束時，都必須釋放 `running` 狀態，避免控制狀態卡死。
   - Persnl SOAP timeout/5xx 時回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
+
+### 5-3-2) 單位主檔同步狀態查詢 API
+- `GET /main/api/v1/institutes/sync-status`
+- 用途：供「單位代碼資料檢視」頁初始化手動同步按鈕狀態與 cooldown 倒數。
+- 規則：
+  - 僅 `admin` 可使用。
+  - 回傳目前手動同步控制狀態。
+  - 當無 cooldown 生效時，`retry_after_seconds` 回傳 `0`，`next_allowed_at` 回傳 `null`。
+- Response（200）：
+```json
+{
+  "status": "idle",
+  "retry_after_seconds": 0,
+  "next_allowed_at": null
+}
+```
 
 ### 6) 管理者啟用/停用 API
 - `PUT /main/api/v1/admins/{id}`：新增指定使用者管理者身分（建立後狀態為 `active`）
@@ -1009,6 +1038,8 @@ Base path：`/main/api/v1`
 44. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳系統產生 alias。`admin` 可透過 `PATCH /main/api/v1/api-keys/{id}` 更新 alias，`user` 呼叫需回傳 `403`，重複 alias 需回傳 `409 KEY_ALIAS_DUPLICATE`；external provider mode 下 alias 更新需同步 provider 狀態。
 45. 限制策略設定僅 `admin` 可讀取與更新；`budget_duration` 僅允許 `daily|weekly|monthly`，管理端顯示映射需為 `1天|7天|30天`，且每把 API Key 的限制策略需同時包含 `budget`、`rate_limit` 與 `max_parallel_requests`，其中 `max_parallel_requests` 預設 `0` 代表不限制；不得提供 pending 補發端點或 `issuance_mode` 二選一模式。
 46. `admin` 可於 `/institute-view` 查看 `active` institutes 清單與 `total`，並可手動觸發同步；若 Persnl SOAP 不可用，`POST /main/api/v1/institutes/sync` 需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
+46A. `POST /main/api/v1/institutes/sync` 需具備全域 single-flight 與 cooldown 保護：同時間只允許一個手動同步執行；執行中需回 `429 INSTITUTE_SYNC_IN_PROGRESS`，冷卻中需回 `429 INSTITUTE_SYNC_COOLDOWN`，且 `429` 回應至少包含 `retry_after_seconds` 與 `next_allowed_at`。成功後冷卻 `15` 分鐘，失敗後冷卻 `1` 分鐘；成功回應 shape 仍僅包含既有同步統計欄位。
+46B. `GET /main/api/v1/institutes/sync-status` 需回傳 DB 持久化的手動同步狀態，供前端重新整理頁面後立即恢復 cooldown 倒數與按鈕 disable 狀態。
 47. `user` 與 `admin` 都需可從主導覽列進入 `Models` 頁，且 `GET /main/api/v1/models` 需允許兩種角色成功呼叫。
 48. `GET /main/api/v1/models` 遇到 provider OpenAI-style `data` 陣列時，需正規化為 `{ id, label }` 清單；provider 回傳字串陣列時也需正規化成功，並去除空值、去重與依字母排序。
 49. `GET /main/api/v1/models` 若 provider timeout 或 `5xx`，需回傳 `503 PROVIDER_UNAVAILABLE`；若 provider payload 無法辨識，需走受控錯誤流程，且不得洩漏原始 payload。
@@ -1042,7 +1073,6 @@ Base path：`/main/api/v1`
 - 建立基本錯誤處理與日誌
 
 ### Phase 2：MVP API
-- 完成特殊人員名單管理 API（沿用 `/main/api/v1/whitelists*` 路徑；新增、查詢、停用/啟用）
 - 完成特殊人員名單管理 API（沿用 `/main/api/v1/whitelists*` 路徑；新增、查詢、停用/啟用、刪除）
 - 完成申請核發、本人清單查詢、本人單筆查詢、本人停用 API
 - 完成管理端查詢/撤銷 API

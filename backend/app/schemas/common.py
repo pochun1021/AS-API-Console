@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -9,3 +11,5 @@ class ErrorDetailResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorDetailResponse
+    retry_after_seconds: int | None = None
+    next_allowed_at: datetime | None = None
