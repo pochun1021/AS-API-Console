@@ -276,6 +276,52 @@ tail -n 50 ../log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 sudo -u asapic tail -n 50 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei date +%F).log
 ```
 
+## API Key Usage Snapshot 同步
+
+### 1) 執行 usage sync 腳本
+```bash
+cd backend
+ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh
+```
+
+先看 dry-run：
+```bash
+cd backend
+ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh --dry-run
+```
+
+### 2) 檢查排程日誌
+- 日誌目錄：專案根目錄 `log/sync_api_key_usage/`
+- 切日規則：`Asia/Taipei` 時區
+- 檔名規則：每日一檔 `YYYY-MM-DD.log`
+- 觀察最新輸出：
+```bash
+tail -n 50 ../log/sync_api_key_usage/$(TZ=Asia/Taipei date +%F).log
+```
+- 部署環境路徑範例（專案位於 `/home/app/AS-API-Console`）：
+```bash
+sudo -u asapic tail -n 50 /home/app/log/sync_api_key_usage/$(TZ=Asia/Taipei date +%F).log
+```
+
+### 3) 檢查最新 snapshot 與歷史
+```bash
+mariadb -h <host> -u <user> -p as_api_console -e "
+SELECT api_key_id, spend, budget_reset_at, synced_at
+FROM api_key_usage_snapshots
+ORDER BY synced_at DESC
+LIMIT 20;
+"
+```
+如需確認 token 歷史快照，可改查：
+```bash
+mariadb -h <host> -u <user> -p as_api_console -e "
+SELECT api_key_id, spend, prompt_tokens, completion_tokens, total_tokens, budget_reset_at, synced_at
+FROM api_key_usage_snapshots
+ORDER BY synced_at DESC
+LIMIT 20;
+"
+```
+
 ### 3) 檢查回填結果
 ```bash
 mariadb -h <host> -u <user> -p as_api_console -e "

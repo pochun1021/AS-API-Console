@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -29,8 +29,12 @@ class ApiKey(Base):
     security_level: Mapped[str] = mapped_column(String(20), default="high", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     expiration_notice_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    usage_spend: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    usage_budget_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    usage_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     application: Mapped["ApiKeyApplication"] = relationship(back_populates="api_key")
+    usage_snapshots: Mapped[list["ApiKeyUsageSnapshot"]] = relationship(back_populates="api_key")

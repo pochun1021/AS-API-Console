@@ -62,7 +62,17 @@
 
 ### 2) My API Keys Page（一般使用者我的紀錄頁）
 - 顯示範圍：僅本人帳號歷史紀錄（`active|revoked|expired`）；若舊 key 已被 renew，對一般使用者隱藏。
-- 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key（`APP_ENV=prod` 為 `sk-...` + 後 4 碼；`dev/test` 為 `AS-...` + 後 4 碼）。
+- 顯示欄位：申請日期、生效時長、狀態、Health、到期時間、遮罩 key、操作（其中包含 Usage icon；`APP_ENV=prod` 為 `sk-...` + 後 4 碼；`dev/test` 為 `AS-...` + 後 4 碼）。
+- `Health` 欄位為目前 quota 健康度摘要，僅允許 `healthy|low_budget|exhausted|unknown` 四種狀態；可使用獨立文案與顏色呈現，但不得把健康度語意塞回 Usage icon。
+- `Usage` 明細入口需放在操作區，並使用中性、非 color-coded 的 icon；不得以 icon 顏色取代 `Health` 欄位。
+- 點擊 `Usage` icon 需開啟 popover；popover 需顯示 `spend`、`max_budget`、`remaining_budget`、`tpm_limit`、`rpm_limit`、`budget_reset_at`、`synced_at`。
+- `Usage` popover 在 `max_budget > 0` 時，需額外顯示 budget progress bar；若 `spend` 缺值則以前端 `0` 顯示，並以 `spend / max_budget` 呈現已使用比例，同步顯示已使用百分比、`used / budget` 數值與剩餘百分比。
+- 當 `Usage` popover 已顯示 budget progress bar 時，不需再重複顯示獨立的 `spend`、`max_budget`、`remaining_budget` 三行文字；`Unlimited` 或其他未顯示 progress bar 的情況才保留這三行文字摘要。
+- 當剩餘額度比例 `<= 20%` 時，budget progress bar 需改用警示樣式並顯示明確警示文案；此提示僅屬視覺警示，不得阻擋任何操作。
+- 列表不得額外展開成 `spend / budget / TPM / RPM` 多個 raw numeric 欄位，避免表格過度擁擠。
+- 若某筆資料缺少 usage snapshot，該列仍需顯示可點擊的 `Usage` icon；`Health` 顯示 `Unknown`，popover 內各欄位顯示 `Unknown` 或 `-`。
+- 當 `max_budget=0` 或 `tpm_limit=0` 或 `rpm_limit=0` 時，前端需視為 unlimited，顯示 `Unlimited`，不得顯示為 `0` 的有限額度/速率。
+- `Unlimited`（`max_budget=0`）在 `Usage` popover 內不得渲染百分比 progress bar，需改以純文字狀態呈現；若 `max_budget > 0` 但缺少 usage snapshot 或 `spend`，仍需顯示 progress bar，並以前端 `0%` / `0 / budget` 呈現。
 - 清單查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
 - 時間欄位語意：
   - 對 `active` key 成功 extend 後：`application_date` 維持原始申請日；`duration_months` 為目前這把 key 已累計生效的總月數（原申請月數 + 每次成功 extend 的月數）；`expires_at` 為目前有效到期時間。
@@ -559,6 +569,12 @@ Base path：`/main/api/v1`
 - 規則：`user` 僅回傳 auth 使用者本人的資料；`admin` 可查全部資料。
 - 查詢模式：此端點為 `server-side table` contract，前端欄位排序、分頁與篩選都必須由此端點對完整資料集處理。
 - 到期口徑：`expires_at` 早於查詢當下（UTC）且原始狀態為 `active` 時，API 對外狀態需視為 `expired`（即使 DB 原始欄位尚未同步更新）。
+- Usage summary 與 health status 需使用本地週期性同步/快取資料；此列表端點不得對每列即時呼叫外部 provider 取 usage。
+- usage snapshot 需落地保存於獨立歷史表 `api_key_usage_snapshots`；`GET /main/api/v1/api-keys` 與相關健康度判定一律以每把 key 最新一筆 snapshot 為準，不得依賴前端即時查 provider。
+- usage snapshot 歷史表最少需保存：`api_key_id`、`spend`、`prompt_tokens`、`completion_tokens`、`total_tokens`、`budget_reset_at`、`synced_at`；既有 `api_keys.usage_*` 欄位可作為最新快取鏡像，但不得作為唯一歷史來源。
+- usage 同步以 `key_alias` 作為 provider `/spend/logs/v2` 查詢鍵；若本地 `key_alias` 為空，需以系統預設 alias `for_{owner_account}` 查詢。
+- usage 同步時僅累計 provider spend logs 中 `status=success` 的紀錄；`failure` 紀錄不得計入 `spend`。
+- usage 同步排程預設每 `5` 分鐘執行一次，僅同步目前 `active` keys；若 provider 查詢失敗，不得中斷其他 keys 的同步。
 - 讀取欄位語意：
   - 對 `active` key 或由 `active` key extend 後的資料：`application_date` 為原始申請日；`duration_months` 為目前此 key 已累計生效的總月數（非最近一次 extend request 值）；`expires_at` 為目前有效到期時間。
   - 對由 `expired` key extend 後的資料：`application_date` 為本次重新起算日；`duration_months` 為本次展延月數；`expires_at` 為該次重新起算後的有效到期時間。
@@ -581,7 +597,17 @@ Base path：`/main/api/v1`
       "key_alias": "for_jane.doe_v2",
       "owner_account": "jane.doe",
       "owner_name": "Jane Doe",
-      "expires_at": "..."
+      "expires_at": "...",
+      "health_status": "healthy",
+      "usage_summary": {
+        "spend": 200.0,
+        "max_budget": 1000.0,
+        "remaining_budget": 800.0,
+        "tpm_limit": 10000,
+        "rpm_limit": 500,
+        "budget_reset_at": "...",
+        "synced_at": "..."
+      }
     }
   ],
   "page": 1,
@@ -589,6 +615,19 @@ Base path：`/main/api/v1`
   "total": 1
 }
 ```
+- `health_status` allowed: `healthy|low_budget|exhausted|unknown`
+- `usage_summary` 欄位語意：
+  - `spend`：目前 snapshot 記錄的已花費金額（USD）；未知時為 `null`
+  - `max_budget`：目前 key 的總額度（USD）；`0` 表示 unlimited；未知時為 `null`
+  - `remaining_budget`：由後端以 `max(max_budget - spend, 0)` 計算；`0` 可表示 exhausted，也可在 `max_budget=0` 時表示 unlimited；未知時為 `null`
+  - `tpm_limit`、`rpm_limit`：目前 key 的速率限制；`0` 表示 unlimited；未知時為 `null`
+  - `budget_reset_at`：provider/batch snapshot 對應的下次額度重置時間；未知時為 `null`
+  - `synced_at`：本地 usage snapshot 最後同步時間；未知時為 `null`
+- `health_status` 判定規則：
+  - `unknown`：缺少 usage snapshot，或缺少足以判定健康度的必要資料
+  - `exhausted`：`max_budget > 0` 且 `remaining_budget <= 0`
+  - `low_budget`：`max_budget > 0` 且 `0 < remaining_budget <= 20% of max_budget`
+  - `healthy`：其餘已可判定的情況；`max_budget=0`（unlimited）且 snapshot 存在時也屬於 `healthy`
 - `total` 定義為符合目前篩選條件的總筆數（非當頁 `items` 長度）。
 
 ### 2-1) 查詢每位使用者 API Key 申請統計（Admin Dashboard）
@@ -647,6 +686,20 @@ Base path：`/main/api/v1`
 - 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每日 `00:10` 執行。
 - 失敗容錯：排程失敗不得影響查詢/統計/renew 的到期口徑正確性（仍以 effective status 判斷）。
 - 稽核與維運：排程需輸出執行時間、更新筆數、錯誤訊息，供維運追蹤。
+
+### 3-2) 背景同步（API Key Usage Snapshot）
+- 目的：週期性自 provider `/spend/logs/v2` 同步每把 `active` API Key 的最新 usage snapshot，供列表 `Usage` / `Health` 顯示使用。
+- 查詢鍵：以本地 `key_alias` 查 provider；若本地未存 alias，需以系統預設 alias `for_{owner_account}` 查詢。
+- 聚合規則：只累計 `status=success` 的 spend logs；`spend` 為同一 alias 目前查詢範圍內成功紀錄的加總。`failure` logs 僅供維運排查，不得寫入 usage snapshot。
+- token 聚合規則：`prompt_tokens`、`completion_tokens`、`total_tokens` 皆只累計 `status=success` 的 spend logs；若單筆 log 缺少個別 token 欄位，該欄位以 `0` 累計，不得因缺欄中止整把 key 的 snapshot 寫入。
+- 落地規則：每次同步都需寫入 `api_key_usage_snapshots` 新歷史列，並可同步覆寫 `api_keys.usage_spend`、`usage_budget_reset_at`、`usage_synced_at` 作為最新快取鏡像。
+- 最新值規則：對外 API 讀取 usage 時，需以 `api_key_usage_snapshots` 中該 key `synced_at` 最新的一筆為準；若無歷史列，才可 fallback 既有 `api_keys.usage_*` 欄位。
+- 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每 `5` 分鐘執行一次。
+- 容錯：
+  - 單把 key provider 查詢失敗時，需記錄錯誤並繼續同步其他 keys。
+  - 若某把 key 查無 spend logs，仍需寫入 `synced_at` 對應的 snapshot，`spend` 可為 `0`，`budget_reset_at` 可為 `null`。
+  - provider timeout、5xx、payload 無法辨識時，不得覆蓋該 key 既有最新成功 snapshot。
+- 稽核與維運：排程需輸出執行時間、處理 key 數、成功/失敗 key 數、寫入 snapshot 筆數與錯誤訊息，供維運追蹤。
 
 ### 4) 停用 API Key
 - `POST /main/api/v1/api-keys/{id}/revoke`
@@ -1063,6 +1116,9 @@ Base path：`/main/api/v1`
 63. 對所有 `server-side table` 頁面，前端 DataGrid 欄位篩選不得只作用於當前頁 rows；`items`、`total`、頁數、排序與篩選結果都必須來自完整資料集的後端查詢。
 64. `GET /main/api/v1/api-keys` 的 `owner_account`、`owner_name`、`key_alias` 篩選需採 case-insensitive `contains`；`application_date_from/application_date_to` 與 `expires_from/expires_to` 需分別正確套用到 `application_date` 與 `expires_at`；`sort_by/sort_dir` 僅允許既定白名單欄位與 `asc|desc`。
 65. `GET /main/api/v1/api-keys/statistics/users` 的 `q` 僅作全域搜尋；`owner_account`、`owner_name`、`owner_email`、`owner_department` 欄位篩選需彼此獨立且採 case-insensitive `contains`；切換圖表與表格視圖時查詢口徑需保持一致。
+65A. `GET /main/api/v1/api-keys` 每筆資料需回傳 `health_status` 與 `usage_summary`；`health_status` 僅允許 `healthy|low_budget|exhausted|unknown`，且需由後端依 snapshot 與額度計算，不得要求前端自行重算。
+65B. `usage_summary.remaining_budget` 不得為負值；`max_budget=0`、`tpm_limit=0`、`rpm_limit=0` 代表 unlimited，對外仍維持 `0`，由前端顯示 `Unlimited`。
+65C. `GET /main/api/v1/api-keys` 缺少 usage snapshot 時，`health_status` 需回傳 `unknown`，`usage_summary.synced_at` 需為 `null`，但前端仍需保留可開啟的 Usage popover。
 66. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 需支援欄位級 server-side sorting/filtering；若某欄位未支援後端 query contract，對應前端欄位必須禁用 filter 或 sort，不得回退成 local table 行為。
 67. 關鍵操作稽核功能、申請人識別欄位調整、統計、`GET /main/api/v1/models` 與 lifecycle 擴充，均不得改動既有受保護 API 路徑與角色模型（`user|admin`）；若需擴充對外 error response，僅允許增加相容性的 optional 欄位（如 `error.details`），不得破壞既有 `error.code` / `error.message` 契約或既有 success response shape。
 

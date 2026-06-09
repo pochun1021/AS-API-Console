@@ -190,10 +190,12 @@ alembic current
 
 log "Checking and updating crontab entries"
 EXPIRE_JOB="10 0 * * * ENV_FILE=${RESOLVED_ENV_FILE_PATH} ${APP_DIR}/backend/scripts/run_expire_sync.sh"
+USAGE_JOB="*/5 * * * * ENV_FILE=${RESOLVED_ENV_FILE_PATH} ${APP_DIR}/backend/scripts/run_usage_sync.sh"
 INSTITUTE_JOB="20 0 * * * cd ${APP_DIR}/backend && ENV_FILE=${RESOLVED_ENV_FILE_PATH} . .venv/bin/activate && ENV_FILE=${RESOLVED_ENV_FILE_PATH} python scripts/sync_institutes.py"
 REMINDER_JOB="30 0 * * * ENV_FILE=${RESOLVED_ENV_FILE_PATH} ${APP_DIR}/backend/scripts/run_expiration_reminder.sh"
 
 LEGACY_EXPIRE_JOB="10 0 * * * ${APP_DIR}/backend/scripts/run_expire_sync.sh"
+LEGACY_USAGE_JOB="*/5 * * * * ${APP_DIR}/backend/scripts/run_usage_sync.sh"
 LEGACY_INSTITUTE_JOB="20 0 * * * cd ${APP_DIR}/backend && . .venv/bin/activate && python scripts/sync_institutes.py"
 LEGACY_REMINDER_JOB="30 0 * * * ${APP_DIR}/backend/scripts/run_expiration_reminder.sh"
 
@@ -231,10 +233,12 @@ replace_legacy_job() {
 }
 
 replace_legacy_job "$LEGACY_EXPIRE_JOB" "$EXPIRE_JOB"
+replace_legacy_job "$LEGACY_USAGE_JOB" "$USAGE_JOB"
 replace_legacy_job "$LEGACY_INSTITUTE_JOB" "$INSTITUTE_JOB"
 replace_legacy_job "$LEGACY_REMINDER_JOB" "$REMINDER_JOB"
 
 ensure_job "$EXPIRE_JOB"
+ensure_job "$USAGE_JOB"
 ensure_job "$INSTITUTE_JOB"
 ensure_job "$REMINDER_JOB"
 

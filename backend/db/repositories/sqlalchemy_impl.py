@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Select, case, func, literal, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Select, and_, case, func, literal, select
+from sqlalchemy.orm import Session, aliased
 
+from db.models.api_key_usage_snapshots import ApiKeyUsageSnapshot
 from db.models.admins import Admin
 from db.models.api_keys import ApiKey
 from db.models.applications import ApiKeyApplication
@@ -377,9 +378,26 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             else_=ApiKey.status,
         ).label("effective_status")
         effective_key_alias = func.coalesce(ApiKey.key_alias, literal("for_") + ApiKeyApplication.account).label("effective_key_alias")
+        latest_snapshot = aliased(ApiKeyUsageSnapshot)
+        latest_snapshot_at_subquery = (
+            select(
+                ApiKeyUsageSnapshot.api_key_id.label("api_key_id"),
+                func.max(ApiKeyUsageSnapshot.synced_at).label("latest_synced_at"),
+            )
+            .group_by(ApiKeyUsageSnapshot.api_key_id)
+            .subquery()
+        )
         base_stmt = (
-            select(ApiKey, ApiKeyApplication, effective_status, effective_key_alias)
+            select(ApiKey, ApiKeyApplication, latest_snapshot, effective_status, effective_key_alias)
             .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
+            .outerjoin(latest_snapshot_at_subquery, latest_snapshot_at_subquery.c.api_key_id == ApiKey.id)
+            .outerjoin(
+                latest_snapshot,
+                and_(
+                    latest_snapshot.api_key_id == latest_snapshot_at_subquery.c.api_key_id,
+                    latest_snapshot.synced_at == latest_snapshot_at_subquery.c.latest_synced_at,
+                ),
+            )
         )
         if requester_role == "user":
             base_stmt = base_stmt.where(ApiKeyApplication.account == requester_account)
@@ -423,8 +441,10 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
 
         stmt = base_stmt.order_by(*order_by).limit(limit).offset(offset)
         rows = self.session.execute(stmt).all()
-        return (
-            [
+        items: list[ApiKeyListItem] = []
+        for row in rows:
+            snapshot = row[2]
+            items.append(
                 ApiKeyListItem(
                     id=row.ApiKey.id,
                     status=row.effective_status,
@@ -436,11 +456,23 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
                     owner_name=row.ApiKeyApplication.name,
                     expires_at=row.ApiKeyApplication.expires_at,
                     expiration_notice_sent_at=row.ApiKey.expiration_notice_sent_at,
+                    max_budget=row.ApiKeyApplication.max_budget,
+                    tpm_limit=row.ApiKeyApplication.tpm_limit,
+                    rpm_limit=row.ApiKeyApplication.rpm_limit,
+                    usage_spend=(
+                        float(snapshot.spend)
+                        if snapshot is not None and snapshot.spend is not None
+                        else (float(row.ApiKey.usage_spend) if row.ApiKey.usage_spend is not None else None)
+                    ),
+                    usage_budget_reset_at=(
+                        snapshot.budget_reset_at if snapshot is not None else row.ApiKey.usage_budget_reset_at
+                    ),
+                    usage_synced_at=(
+                        snapshot.synced_at if snapshot is not None else row.ApiKey.usage_synced_at
+                    ),
                 )
-                for row in rows
-            ],
-            total,
-        )
+            )
+        return (items, total)
 
     def get_key_detail(self, key_id: str, requester_role: str, requester_account: str) -> ApiKeyDetail | None:
         now_utc = datetime.now(timezone.utc)

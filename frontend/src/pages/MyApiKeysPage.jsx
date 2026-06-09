@@ -6,6 +6,7 @@ import AutorenewIcon from "@mui/icons-material/Autorenew";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import CheckIcon from "@mui/icons-material/Check";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import QueryStatsOutlinedIcon from "@mui/icons-material/QueryStatsOutlined";
 import {
   Alert,
   Box,
@@ -22,10 +23,12 @@ import {
   Tooltip,
   Typography,
   Button,
+  LinearProgress,
   Menu,
   MenuItem,
   FormControl,
   InputLabel,
+  Popover,
   Select
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
@@ -60,9 +63,50 @@ function statusColor(status) {
   return "default";
 }
 
+function healthColor(status) {
+  if (status === "healthy") return "success";
+  if (status === "low_budget") return "warning";
+  if (status === "exhausted") return "error";
+  return "default";
+}
+
 function formatMaskedKey(value) {
   if (!value) return "-";
   return String(value);
+}
+
+function formatUsageNumber(value, { suffix = "", unlimitedText, unknownText } = {}) {
+  if (value == null) return unknownText;
+  if (value === 0 && unlimitedText) return unlimitedText;
+  return `${value}${suffix}`;
+}
+
+function formatPercent(value, digits = 0) {
+  if (!Number.isFinite(value)) return null;
+  const factor = 10 ** digits;
+  const rounded = Math.round((value + Number.EPSILON) * factor) / factor;
+  return rounded.toFixed(digits).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+}
+
+function buildBudgetProgress(usageSummary) {
+  const maxBudget = usageSummary?.max_budget;
+  if (maxBudget == null || maxBudget <= 0) {
+    return null;
+  }
+
+  const spend = Math.max(usageSummary?.spend ?? 0, 0);
+  const remainingBudget = Math.max(usageSummary?.remaining_budget ?? (maxBudget - spend), 0);
+  const usedRatio = Math.min(Math.max(spend / maxBudget, 0), 1);
+  const remainingRatio = Math.min(Math.max(remainingBudget / maxBudget, 0), 1);
+  return {
+    value: usedRatio * 100,
+    usedPercentLabel: formatPercent(usedRatio * 100, 0),
+    remainingPercentLabel: formatPercent(remainingRatio * 100, 2),
+    spendLabel: formatPercent(spend, 2),
+    budgetLabel: formatPercent(maxBudget, 2),
+    isLowBudget: remainingRatio <= 0.2,
+    isExhausted: remainingRatio <= 0,
+  };
 }
 
 async function copyText(text) {
@@ -127,7 +171,10 @@ export default function MyApiKeysPage({ auth }) {
   const [renewCopyError, setRenewCopyError] = useState("");
   const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
   const [actionMenuRow, setActionMenuRow] = useState(null);
+  const [usageAnchorEl, setUsageAnchorEl] = useState(null);
+  const [usageRow, setUsageRow] = useState(null);
   const renewCopyResetTimerRef = useRef(null);
+  const isMountedRef = useRef(true);
 
   function openActionMenu(event, row) {
     setActionMenuAnchorEl(event.currentTarget);
@@ -137,6 +184,16 @@ export default function MyApiKeysPage({ auth }) {
   function closeActionMenu() {
     setActionMenuAnchorEl(null);
     setActionMenuRow(null);
+  }
+
+  function openUsagePopover(event, row) {
+    setUsageAnchorEl(event.currentTarget);
+    setUsageRow(row);
+  }
+
+  function closeUsagePopover() {
+    setUsageAnchorEl(null);
+    setUsageRow(null);
   }
 
   function clearFilters() {
@@ -152,6 +209,7 @@ export default function MyApiKeysPage({ auth }) {
   }
 
   async function load() {
+    if (!isMountedRef.current) return;
     setLoading(true);
     setError("");
     try {
@@ -175,13 +233,16 @@ export default function MyApiKeysPage({ auth }) {
         },
         auth
       );
+      if (!isMountedRef.current) return;
       setItems(response.items || []);
       setTotal(response.total || 0);
     } catch (e) {
+      if (!isMountedRef.current) return;
       setError(normalizeApiError(e, t("mykeys_load_failed")));
       setItems([]);
       setTotal(0);
     } finally {
+      if (!isMountedRef.current) return;
       setLoading(false);
     }
   }
@@ -353,6 +414,7 @@ export default function MyApiKeysPage({ auth }) {
   ]);
 
   useEffect(() => () => {
+    isMountedRef.current = false;
     if (renewCopyResetTimerRef.current) clearTimeout(renewCopyResetTimerRef.current);
   }, []);
 
@@ -388,6 +450,17 @@ export default function MyApiKeysPage({ auth }) {
           renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
         },
         {
+          field: "health_status",
+          headerName: t("mykeys_col_health"),
+          flex: 1,
+          minWidth: 130,
+          sortable: false,
+          filterable: false,
+          renderCell: (params) => (
+            <Chip size="small" label={t(`mykeys_health_${params.value}`)} color={healthColor(params.value)} />
+          )
+        },
+        {
           field: "expires_at",
           headerName: t("mykeys_col_expires_at"),
           type: "dateTime",
@@ -405,7 +478,7 @@ export default function MyApiKeysPage({ auth }) {
           valueFormatter: (value) => formatMaskedKey(value),
           sortable: false,
           filterable: false
-        }
+        },
       ];
 
       if (auth.role === "admin") {
@@ -439,13 +512,22 @@ export default function MyApiKeysPage({ auth }) {
         filterable: false,
         align: "left",
         headerAlign: "left",
-        flex: 1,
-        minWidth: 160,
+        flex: 1.3,
+        minWidth: 210,
         renderCell: (params) => (
           <Box sx={actionCellSx}>
             <Tooltip title={t("mykeys_view_detail")}>
               <IconButton aria-label={t("mykeys_view_detail")} size="small" onClick={() => openDetail(params.row.id)}>
                 <VisibilityIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={t("mykeys_view_usage")}>
+              <IconButton
+                aria-label={t("mykeys_view_usage")}
+                size="small"
+                onClick={(event) => openUsagePopover(event, params.row)}
+              >
+                <QueryStatsOutlinedIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             {auth.role === "admin" ? (
@@ -492,6 +574,7 @@ export default function MyApiKeysPage({ auth }) {
     || ownerNameFilter.trim()
     || keyAliasFilter.trim()
   );
+  const usageProgress = buildBudgetProgress(usageRow?.usage_summary);
 
   return (
     <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
@@ -663,6 +746,89 @@ export default function MyApiKeysPage({ auth }) {
           </MenuItem>
         ) : null}
       </Menu>
+
+      <Popover
+        open={Boolean(usageAnchorEl && usageRow)}
+        anchorEl={usageAnchorEl}
+        onClose={closeUsagePopover}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        transformOrigin={{ vertical: "top", horizontal: "left" }}
+      >
+        <Stack spacing={1.25} sx={{ p: 2, minWidth: 280, maxWidth: 360 }}>
+          <Typography variant="subtitle1">{t("mykeys_usage_title")}</Typography>
+          {usageProgress ? (
+            <Stack spacing={0.75}>
+              <Typography variant="body2">{t("mykeys_usage_budget_progress")}</Typography>
+              <LinearProgress
+                aria-label={t("mykeys_usage_budget_progress")}
+                variant="determinate"
+                value={usageProgress.value}
+                color={usageProgress.isExhausted ? "error" : usageProgress.isLowBudget ? "warning" : "success"}
+                sx={{ height: 8, borderRadius: 999 }}
+              />
+              <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Typography variant="caption">
+                  {t("mykeys_usage_used_percent", {
+                    percent: usageProgress.usedPercentLabel,
+                    used: usageProgress.spendLabel,
+                    budget: usageProgress.budgetLabel,
+                  })}
+                </Typography>
+                <Typography variant="caption">
+                  {t("mykeys_usage_remaining_percent", { percent: usageProgress.remainingPercentLabel })}
+                </Typography>
+              </Stack>
+              {usageProgress.isLowBudget ? (
+                <Typography variant="caption" color={usageProgress.isExhausted ? "error.main" : "warning.main"}>
+                  {t("mykeys_usage_low_budget_warning")}
+                </Typography>
+              ) : null}
+            </Stack>
+          ) : null}
+          {!usageProgress ? (
+            <>
+              <Typography variant="body2">
+                {t("mykeys_usage_spend")}: {formatUsageNumber(usageRow?.usage_summary?.spend, { suffix: " USD", unknownText: t("mykeys_usage_unknown") })}
+              </Typography>
+              <Typography variant="body2">
+                {t("mykeys_usage_budget")}: {formatUsageNumber(usageRow?.usage_summary?.max_budget, {
+                  suffix: " USD",
+                  unlimitedText: t("mykeys_usage_unlimited"),
+                  unknownText: t("mykeys_usage_unknown"),
+                })}
+              </Typography>
+              <Typography variant="body2">
+                {t("mykeys_usage_remaining")}: {formatUsageNumber(usageRow?.usage_summary?.remaining_budget, {
+                  suffix: " USD",
+                  unlimitedText: t("mykeys_usage_unlimited"),
+                  unknownText: t("mykeys_usage_unknown"),
+                })}
+              </Typography>
+            </>
+          ) : null}
+          <Typography variant="body2">
+            {t("mykeys_usage_tpm")}: {formatUsageNumber(usageRow?.usage_summary?.tpm_limit, {
+              unlimitedText: t("mykeys_usage_unlimited"),
+              unknownText: t("mykeys_usage_unknown"),
+            })}
+          </Typography>
+          <Typography variant="body2">
+            {t("mykeys_usage_rpm")}: {formatUsageNumber(usageRow?.usage_summary?.rpm_limit, {
+              unlimitedText: t("mykeys_usage_unlimited"),
+              unknownText: t("mykeys_usage_unknown"),
+            })}
+          </Typography>
+          <Typography variant="body2">
+            {t("mykeys_usage_budget_reset_at")}: {formatDateTimeInTaipei(usageRow?.usage_summary?.budget_reset_at, { locale, fallback: "-" })}
+          </Typography>
+          <Typography variant="body2">
+            {t("mykeys_usage_synced_at")}: {formatDateTimeInTaipei(usageRow?.usage_summary?.synced_at, {
+              locale,
+              fallback: t("mykeys_usage_unknown"),
+            })}
+          </Typography>
+        </Stack>
+      </Popover>
 
       <Dialog open={Boolean(pendingRevokeId)} onClose={() => setPendingRevokeId("")}>
         <DialogTitle>{t("mykeys_dialog_revoke_title")}</DialogTitle>
