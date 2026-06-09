@@ -18,7 +18,13 @@ function buildHeaders(auth, method) {
 
 function mapErrorPayload(status, body) {
   if (body?.error?.code && body?.error?.message) {
-    return body;
+    return {
+      ...body,
+      retry_after_seconds:
+        typeof body?.retry_after_seconds === "number" ? body.retry_after_seconds : undefined,
+      next_allowed_at:
+        typeof body?.next_allowed_at === "string" ? body.next_allowed_at : undefined
+    };
   }
 
   return {
@@ -59,6 +65,7 @@ async function request(path, { method = "GET", auth, body } = {}) {
     const error = new Error(data?.error?.message || "請求失敗");
     error.status = response.status;
     error.payload = mapErrorPayload(response.status, data);
+    error.retryAfter = response.headers.get("retry-after");
     throw error;
   }
 
@@ -199,6 +206,10 @@ export const httpApiProvider = {
 
   listInstitutes(auth) {
     return request(apiPath("/institutes"), { auth });
+  },
+
+  getInstituteSyncStatus(auth) {
+    return request(apiPath("/institutes/sync-status"), { auth });
   },
 
   listModels(auth) {

@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.models.operation_audit_logs import OperationAuditLog
 from tests.conftest import api_path, build_headers
 
@@ -371,6 +372,71 @@ def test_limit_strategy_config_update_logs_success_and_failure(client, admin_hea
 def test_limit_strategy_get_returns_defaults_when_row_is_missing(client, admin_headers):
     _delete_limit_strategy_config()
     assert _count_limit_strategy_config() == 0
+
+
+def test_institute_sync_logs_success_and_cooldown_failure(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.get_institutes",
+        lambda self: [
+            {
+                "instCode": "01",
+                "instName": "院本部",
+                "abb_instName": "院本部",
+                "einstName": "HQ",
+                "division": "1",
+            }
+        ],
+    )
+
+    ok = client.post(api_path("/institutes/sync"), headers={**admin_headers, "x-request-id": "req-inst-sync-ok"})
+    assert ok.status_code == 200
+
+    cooldown = client.post(api_path("/institutes/sync"), headers={**admin_headers, "x-request-id": "req-inst-sync-cooldown"})
+    assert cooldown.status_code == 429
+
+    logs = _query_logs("institute_sync", "sync")
+    by_request = {row.request_id: row for row in logs}
+
+    success_row = by_request["req-inst-sync-ok"]
+    assert success_row.result == "success"
+    success_meta = json.loads(success_row.metadata_json or "{}")
+    assert success_meta["fetched_count"] == 1
+    assert success_meta["inserted_count"] == 1
+
+    cooldown_row = by_request["req-inst-sync-cooldown"]
+    assert cooldown_row.result == "failure"
+    assert cooldown_row.error_code == "INSTITUTE_SYNC_COOLDOWN"
+    assert cooldown_row.error_detail == "institute sync is cooling down"
+
+
+def test_institute_sync_logs_in_progress_and_soap_failure(client, admin_headers, monkeypatch):
+    engine = create_engine(get_settings().test_database_url or get_settings().database_url, future=True)
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO institute_sync_control (id, status, created_at, updated_at) VALUES (1, 'running', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"))
+
+    in_progress = client.post(api_path("/institutes/sync"), headers={**admin_headers, "x-request-id": "req-inst-sync-running"})
+    assert in_progress.status_code == 429
+
+    def raise_unavailable(self):
+        raise PersnlSoapUnavailableError("down")
+
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.get_institutes",
+        raise_unavailable,
+    )
+
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE institute_sync_control SET status = 'idle', cooldown_until = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = 1"))
+
+    unavailable = client.post(api_path("/institutes/sync"), headers={**admin_headers, "x-request-id": "req-inst-sync-soap"})
+    assert unavailable.status_code == 503
+
+    logs = _query_logs("institute_sync", "sync")
+    by_request = {row.request_id: row for row in logs}
+    assert by_request["req-inst-sync-running"].error_code == "INSTITUTE_SYNC_IN_PROGRESS"
+    assert by_request["req-inst-sync-running"].error_detail == "institute sync already in progress"
+    assert by_request["req-inst-sync-soap"].error_code == "SOAP_SERVICE_UNAVAILABLE"
+    assert by_request["req-inst-sync-soap"].error_detail == "down"
 
     resp = client.get(api_path("/limit-strategy-config"), headers=admin_headers)
     assert resp.status_code == 200

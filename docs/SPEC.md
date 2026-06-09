@@ -847,6 +847,22 @@ Base path：`/main/api/v1`
   - Persnl SOAP timeout/5xx 或內部例外結束時，都必須釋放 `running` 狀態，避免控制狀態卡死。
   - Persnl SOAP timeout/5xx 時回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 
+### 5-3-2) 單位主檔同步狀態查詢 API
+- `GET /main/api/v1/institutes/sync-status`
+- 用途：供「單位代碼資料檢視」頁初始化手動同步按鈕狀態與 cooldown 倒數。
+- 規則：
+  - 僅 `admin` 可使用。
+  - 回傳目前手動同步控制狀態。
+  - 當無 cooldown 生效時，`retry_after_seconds` 回傳 `0`，`next_allowed_at` 回傳 `null`。
+- Response（200）：
+```json
+{
+  "status": "idle",
+  "retry_after_seconds": 0,
+  "next_allowed_at": null
+}
+```
+
 ### 6) 管理者啟用/停用 API
 - `PUT /main/api/v1/admins/{id}`：新增指定使用者管理者身分（建立後狀態為 `active`）
 - `POST /main/api/v1/admins/{id}/enable`：啟用指定使用者管理者身分
@@ -1023,6 +1039,7 @@ Base path：`/main/api/v1`
 45. 限制策略設定僅 `admin` 可讀取與更新；`budget_duration` 僅允許 `daily|weekly|monthly`，管理端顯示映射需為 `1天|7天|30天`，且每把 API Key 的限制策略需同時包含 `budget`、`rate_limit` 與 `max_parallel_requests`，其中 `max_parallel_requests` 預設 `0` 代表不限制；不得提供 pending 補發端點或 `issuance_mode` 二選一模式。
 46. `admin` 可於 `/institute-view` 查看 `active` institutes 清單與 `total`，並可手動觸發同步；若 Persnl SOAP 不可用，`POST /main/api/v1/institutes/sync` 需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 46A. `POST /main/api/v1/institutes/sync` 需具備全域 single-flight 與 cooldown 保護：同時間只允許一個手動同步執行；執行中需回 `429 INSTITUTE_SYNC_IN_PROGRESS`，冷卻中需回 `429 INSTITUTE_SYNC_COOLDOWN`，且 `429` 回應至少包含 `retry_after_seconds` 與 `next_allowed_at`。成功後冷卻 `15` 分鐘，失敗後冷卻 `1` 分鐘；成功回應 shape 仍僅包含既有同步統計欄位。
+46B. `GET /main/api/v1/institutes/sync-status` 需回傳 DB 持久化的手動同步狀態，供前端重新整理頁面後立即恢復 cooldown 倒數與按鈕 disable 狀態。
 47. `user` 與 `admin` 都需可從主導覽列進入 `Models` 頁，且 `GET /main/api/v1/models` 需允許兩種角色成功呼叫。
 48. `GET /main/api/v1/models` 遇到 provider OpenAI-style `data` 陣列時，需正規化為 `{ id, label }` 清單；provider 回傳字串陣列時也需正規化成功，並去除空值、去重與依字母排序。
 49. `GET /main/api/v1/models` 若 provider timeout 或 `5xx`，需回傳 `503 PROVIDER_UNAVAILABLE`；若 provider payload 無法辨識，需走受控錯誤流程，且不得洩漏原始 payload。

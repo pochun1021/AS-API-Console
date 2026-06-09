@@ -6,7 +6,8 @@ from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.core.security import csrf_protected, enforce_rate_limit
 from app.schemas.common import ErrorResponse
-from app.schemas.institutes import InstituteListResponse, InstituteSyncResponse
+from app.schemas.institutes import InstituteListResponse, InstituteSyncResponse, InstituteSyncStatusResponse
+from app.services.institute_sync_control_service import InstituteSyncControlService
 from app.services.institute_sync_service import InstituteSyncService
 from app.services.institutes_service import InstitutesService
 from app.services.operation_audit_service import (
@@ -36,12 +37,31 @@ def list_institutes(
     return service.list_active()
 
 
+@router.get(
+    "/institutes/sync-status",
+    response_model=InstituteSyncStatusResponse,
+    responses={403: {"model": ErrorResponse, "description": "Admin role is required"}},
+)
+def get_institute_sync_status(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _require_admin(current_user)
+    status = InstituteSyncControlService(db).get_status()
+    return {
+        "status": status.status,
+        "retry_after_seconds": status.retry_after_seconds,
+        "next_allowed_at": status.next_allowed_at,
+    }
+
+
 @router.post(
     "/institutes/sync",
     response_model=InstituteSyncResponse,
     dependencies=[Depends(csrf_protected), enforce_rate_limit("institutes-sync", settings.admin_mutation_rate_limit)],
     responses={
         403: {"model": ErrorResponse, "description": "CSRF token is invalid or admin role is required"},
+        429: {"model": ErrorResponse, "description": "Institute sync is in progress or cooling down"},
         503: {"model": ErrorResponse, "description": "SOAP service is unavailable"},
     },
 )
@@ -55,11 +75,18 @@ def sync_institutes(
     event_type = "institute_sync"
     action = "sync"
     target_type = "institute"
+    control = InstituteSyncControlService(db)
+    sync_acquired = False
     try:
         _require_admin(current_user)
+        control.acquire()
+        sync_acquired = True
         remote_institutes = request.app.state.persnl_soap_service.get_institutes()
         result = InstituteSyncService(db).sync(remote_institutes, dry_run=False)
     except ApiError as exc:
+        if sync_acquired and exc.code not in {"INSTITUTE_SYNC_IN_PROGRESS", "INSTITUTE_SYNC_COOLDOWN"}:
+            db.rollback()
+            control.finish(result_code=exc.code, success=False)
         audit.log(
             event_type=event_type,
             action=action,
@@ -72,6 +99,9 @@ def sync_institutes(
         )
         raise
     except PersnlSoapUnavailableError as exc:
+        if sync_acquired:
+            db.rollback()
+            control.finish(result_code="SOAP_SERVICE_UNAVAILABLE", success=False)
         audit.log(
             event_type=event_type,
             action=action,
@@ -84,6 +114,9 @@ def sync_institutes(
         )
         raise ApiError("SOAP_SERVICE_UNAVAILABLE", "soap service unavailable", 503) from exc
     except Exception as exc:
+        if sync_acquired:
+            db.rollback()
+            control.finish(result_code="INTERNAL_ERROR", success=False)
         audit.log(
             event_type=event_type,
             action=action,
@@ -96,6 +129,7 @@ def sync_institutes(
         )
         raise
 
+    control.finish(result_code="success", success=True)
     payload = {
         "fetched_count": result.fetched_count,
         "inserted_count": result.inserted_count,
