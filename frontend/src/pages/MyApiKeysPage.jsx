@@ -23,6 +23,7 @@ import {
   Tooltip,
   Typography,
   Button,
+  LinearProgress,
   Menu,
   MenuItem,
   FormControl,
@@ -78,6 +79,34 @@ function formatUsageNumber(value, { suffix = "", unlimitedText, unknownText } = 
   if (value == null) return unknownText;
   if (value === 0 && unlimitedText) return unlimitedText;
   return `${value}${suffix}`;
+}
+
+function formatPercent(value, digits = 0) {
+  if (!Number.isFinite(value)) return null;
+  const factor = 10 ** digits;
+  const rounded = Math.round((value + Number.EPSILON) * factor) / factor;
+  return rounded.toFixed(digits).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+}
+
+function buildBudgetProgress(usageSummary) {
+  const maxBudget = usageSummary?.max_budget;
+  if (maxBudget == null || maxBudget <= 0) {
+    return null;
+  }
+
+  const spend = Math.max(usageSummary?.spend ?? 0, 0);
+  const remainingBudget = Math.max(usageSummary?.remaining_budget ?? (maxBudget - spend), 0);
+  const usedRatio = Math.min(Math.max(spend / maxBudget, 0), 1);
+  const remainingRatio = Math.min(Math.max(remainingBudget / maxBudget, 0), 1);
+  return {
+    value: usedRatio * 100,
+    usedPercentLabel: formatPercent(usedRatio * 100, 0),
+    remainingPercentLabel: formatPercent(remainingRatio * 100, 2),
+    spendLabel: formatPercent(spend, 2),
+    budgetLabel: formatPercent(maxBudget, 2),
+    isLowBudget: remainingRatio <= 0.2,
+    isExhausted: remainingRatio <= 0,
+  };
 }
 
 async function copyText(text) {
@@ -145,6 +174,7 @@ export default function MyApiKeysPage({ auth }) {
   const [usageAnchorEl, setUsageAnchorEl] = useState(null);
   const [usageRow, setUsageRow] = useState(null);
   const renewCopyResetTimerRef = useRef(null);
+  const isMountedRef = useRef(true);
 
   function openActionMenu(event, row) {
     setActionMenuAnchorEl(event.currentTarget);
@@ -179,6 +209,7 @@ export default function MyApiKeysPage({ auth }) {
   }
 
   async function load() {
+    if (!isMountedRef.current) return;
     setLoading(true);
     setError("");
     try {
@@ -202,13 +233,16 @@ export default function MyApiKeysPage({ auth }) {
         },
         auth
       );
+      if (!isMountedRef.current) return;
       setItems(response.items || []);
       setTotal(response.total || 0);
     } catch (e) {
+      if (!isMountedRef.current) return;
       setError(normalizeApiError(e, t("mykeys_load_failed")));
       setItems([]);
       setTotal(0);
     } finally {
+      if (!isMountedRef.current) return;
       setLoading(false);
     }
   }
@@ -380,6 +414,7 @@ export default function MyApiKeysPage({ auth }) {
   ]);
 
   useEffect(() => () => {
+    isMountedRef.current = false;
     if (renewCopyResetTimerRef.current) clearTimeout(renewCopyResetTimerRef.current);
   }, []);
 
@@ -539,6 +574,7 @@ export default function MyApiKeysPage({ auth }) {
     || ownerNameFilter.trim()
     || keyAliasFilter.trim()
   );
+  const usageProgress = buildBudgetProgress(usageRow?.usage_summary);
 
   return (
     <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
@@ -720,23 +756,56 @@ export default function MyApiKeysPage({ auth }) {
       >
         <Stack spacing={1.25} sx={{ p: 2, minWidth: 280, maxWidth: 360 }}>
           <Typography variant="subtitle1">{t("mykeys_usage_title")}</Typography>
-          <Typography variant="body2">
-            {t("mykeys_usage_spend")}: {formatUsageNumber(usageRow?.usage_summary?.spend, { suffix: " USD", unknownText: t("mykeys_usage_unknown") })}
-          </Typography>
-          <Typography variant="body2">
-            {t("mykeys_usage_budget")}: {formatUsageNumber(usageRow?.usage_summary?.max_budget, {
-              suffix: " USD",
-              unlimitedText: t("mykeys_usage_unlimited"),
-              unknownText: t("mykeys_usage_unknown"),
-            })}
-          </Typography>
-          <Typography variant="body2">
-            {t("mykeys_usage_remaining")}: {formatUsageNumber(usageRow?.usage_summary?.remaining_budget, {
-              suffix: " USD",
-              unlimitedText: t("mykeys_usage_unlimited"),
-              unknownText: t("mykeys_usage_unknown"),
-            })}
-          </Typography>
+          {usageProgress ? (
+            <Stack spacing={0.75}>
+              <Typography variant="body2">{t("mykeys_usage_budget_progress")}</Typography>
+              <LinearProgress
+                aria-label={t("mykeys_usage_budget_progress")}
+                variant="determinate"
+                value={usageProgress.value}
+                color={usageProgress.isExhausted ? "error" : usageProgress.isLowBudget ? "warning" : "success"}
+                sx={{ height: 8, borderRadius: 999 }}
+              />
+              <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Typography variant="caption">
+                  {t("mykeys_usage_used_percent", {
+                    percent: usageProgress.usedPercentLabel,
+                    used: usageProgress.spendLabel,
+                    budget: usageProgress.budgetLabel,
+                  })}
+                </Typography>
+                <Typography variant="caption">
+                  {t("mykeys_usage_remaining_percent", { percent: usageProgress.remainingPercentLabel })}
+                </Typography>
+              </Stack>
+              {usageProgress.isLowBudget ? (
+                <Typography variant="caption" color={usageProgress.isExhausted ? "error.main" : "warning.main"}>
+                  {t("mykeys_usage_low_budget_warning")}
+                </Typography>
+              ) : null}
+            </Stack>
+          ) : null}
+          {!usageProgress ? (
+            <>
+              <Typography variant="body2">
+                {t("mykeys_usage_spend")}: {formatUsageNumber(usageRow?.usage_summary?.spend, { suffix: " USD", unknownText: t("mykeys_usage_unknown") })}
+              </Typography>
+              <Typography variant="body2">
+                {t("mykeys_usage_budget")}: {formatUsageNumber(usageRow?.usage_summary?.max_budget, {
+                  suffix: " USD",
+                  unlimitedText: t("mykeys_usage_unlimited"),
+                  unknownText: t("mykeys_usage_unknown"),
+                })}
+              </Typography>
+              <Typography variant="body2">
+                {t("mykeys_usage_remaining")}: {formatUsageNumber(usageRow?.usage_summary?.remaining_budget, {
+                  suffix: " USD",
+                  unlimitedText: t("mykeys_usage_unlimited"),
+                  unknownText: t("mykeys_usage_unknown"),
+                })}
+              </Typography>
+            </>
+          ) : null}
           <Typography variant="body2">
             {t("mykeys_usage_tpm")}: {formatUsageNumber(usageRow?.usage_summary?.tpm_limit, {
               unlimitedText: t("mykeys_usage_unlimited"),

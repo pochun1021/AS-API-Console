@@ -66,9 +66,13 @@
 - `Health` 欄位為目前 quota 健康度摘要，僅允許 `healthy|low_budget|exhausted|unknown` 四種狀態；可使用獨立文案與顏色呈現，但不得把健康度語意塞回 Usage icon。
 - `Usage` 明細入口需放在操作區，並使用中性、非 color-coded 的 icon；不得以 icon 顏色取代 `Health` 欄位。
 - 點擊 `Usage` icon 需開啟 popover；popover 需顯示 `spend`、`max_budget`、`remaining_budget`、`tpm_limit`、`rpm_limit`、`budget_reset_at`、`synced_at`。
+- `Usage` popover 在 `max_budget > 0` 時，需額外顯示 budget progress bar；若 `spend` 缺值則以前端 `0` 顯示，並以 `spend / max_budget` 呈現已使用比例，同步顯示已使用百分比、`used / budget` 數值與剩餘百分比。
+- 當 `Usage` popover 已顯示 budget progress bar 時，不需再重複顯示獨立的 `spend`、`max_budget`、`remaining_budget` 三行文字；`Unlimited` 或其他未顯示 progress bar 的情況才保留這三行文字摘要。
+- 當剩餘額度比例 `<= 20%` 時，budget progress bar 需改用警示樣式並顯示明確警示文案；此提示僅屬視覺警示，不得阻擋任何操作。
 - 列表不得額外展開成 `spend / budget / TPM / RPM` 多個 raw numeric 欄位，避免表格過度擁擠。
 - 若某筆資料缺少 usage snapshot，該列仍需顯示可點擊的 `Usage` icon；`Health` 顯示 `Unknown`，popover 內各欄位顯示 `Unknown` 或 `-`。
 - 當 `max_budget=0` 或 `tpm_limit=0` 或 `rpm_limit=0` 時，前端需視為 unlimited，顯示 `Unlimited`，不得顯示為 `0` 的有限額度/速率。
+- `Unlimited`（`max_budget=0`）在 `Usage` popover 內不得渲染百分比 progress bar，需改以純文字狀態呈現；若 `max_budget > 0` 但缺少 usage snapshot 或 `spend`，仍需顯示 progress bar，並以前端 `0%` / `0 / budget` 呈現。
 - 清單查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
 - 時間欄位語意：
   - 對 `active` key 成功 extend 後：`application_date` 維持原始申請日；`duration_months` 為目前這把 key 已累計生效的總月數（原申請月數 + 每次成功 extend 的月數）；`expires_at` 為目前有效到期時間。

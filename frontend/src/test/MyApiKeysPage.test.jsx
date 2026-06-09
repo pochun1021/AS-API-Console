@@ -108,8 +108,13 @@ test("usage popover is opened from actions and shows snapshot details in zh-TW",
   await user.click(usageButton);
 
   expect(await screen.findByText("用量摘要")).toBeInTheDocument();
-  expect(await screen.findByText((content) => content.includes("850.25 USD"))).toBeInTheDocument();
-  expect(await screen.findByText((content) => content.includes("149.75 USD"))).toBeInTheDocument();
+  expect(await screen.findByRole("progressbar", { name: "額度使用進度" })).toBeInTheDocument();
+  expect(await screen.findByText("85% 已使用 (850.25 / 1000 USD)")).toBeInTheDocument();
+  expect(await screen.findByText("剩餘 14.98%")).toBeInTheDocument();
+  expect(await screen.findByText("剩餘額度偏低")).toBeInTheDocument();
+  expect(screen.queryByText((_, element) => element?.textContent === "已用額度: 850.25 USD")).not.toBeInTheDocument();
+  expect(screen.queryByText((_, element) => element?.textContent === "額度: 1000 USD")).not.toBeInTheDocument();
+  expect(screen.queryByText((_, element) => element?.textContent === "剩餘額度: 149.75 USD")).not.toBeInTheDocument();
   expect(await screen.findByText(/額度重置時間: 2026-06-02 16:03:27/)).toBeInTheDocument();
   expect(await screen.findByText(/最後同步時間: 2026-06-02 16:03:27/)).toBeInTheDocument();
 
@@ -122,6 +127,7 @@ test("usage popover is opened from actions and shows snapshot details in zh-TW",
   expect(unlimitedUsageButton).toBeTruthy();
   await user.click(unlimitedUsageButton);
   expect(await screen.findByText((_, element) => element?.textContent === "額度: 無上限")).toBeInTheDocument();
+  expect(screen.queryByRole("progressbar", { name: "額度使用進度" })).not.toBeInTheDocument();
 });
 
 test("usage popover keeps placeholder interaction for unknown snapshot in zh-TW", async () => {
@@ -133,6 +139,12 @@ test("usage popover keeps placeholder interaction for unknown snapshot in zh-TW"
   await user.click(usageButtons[0]);
 
   expect(await screen.findByText("用量摘要")).toBeInTheDocument();
+  expect(await screen.findByRole("progressbar", { name: "額度使用進度" })).toBeInTheDocument();
+  expect(await screen.findByText("0% 已使用 (0 / 1000 USD)")).toBeInTheDocument();
+  expect(await screen.findByText("剩餘 100%")).toBeInTheDocument();
+  expect(screen.queryByText((_, element) => element?.textContent === "已用額度: 未知")).not.toBeInTheDocument();
+  expect(screen.queryByText((_, element) => element?.textContent === "額度: 1000 USD")).not.toBeInTheDocument();
+  expect(screen.queryByText((_, element) => element?.textContent === "剩餘額度: 未知")).not.toBeInTheDocument();
   expect(await screen.findAllByText("未知")).not.toHaveLength(0);
   expect(await screen.findByText(/額度重置時間: -/)).toBeInTheDocument();
 });
@@ -148,6 +160,13 @@ test("usage and health labels switch to english locale", async () => {
   await user.click(usageButtons[1]);
 
   expect(await screen.findByText("Usage Summary")).toBeInTheDocument();
+  expect(await screen.findByRole("progressbar", { name: "Budget usage progress" })).toBeInTheDocument();
+  expect(await screen.findByText("85% used (850.25 / 1000 USD)")).toBeInTheDocument();
+  expect(await screen.findByText("14.98% remaining")).toBeInTheDocument();
+  expect(await screen.findByText("Budget running low")).toBeInTheDocument();
+  expect(screen.queryByText((_, element) => element?.textContent === "Spend: 850.25 USD")).not.toBeInTheDocument();
+  expect(screen.queryByText((_, element) => element?.textContent === "Budget: 1000 USD")).not.toBeInTheDocument();
+  expect(screen.queryByText((_, element) => element?.textContent === "Remaining: 149.75 USD")).not.toBeInTheDocument();
   expect(await screen.findByText(/Budget reset time: 2026-06-02 16:03:27/)).toBeInTheDocument();
   expect(await screen.findByText(/Last synced time: 2026-06-02 16:03:27/)).toBeInTheDocument();
 });

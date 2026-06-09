@@ -374,6 +374,10 @@ export const messages = {
     mykeys_usage_synced_at: "最後同步時間",
     mykeys_usage_unknown: "未知",
     mykeys_usage_unlimited: "無上限",
+    mykeys_usage_budget_progress: "額度使用進度",
+    mykeys_usage_used_percent: "{percent}% 已使用 ({used} / {budget} USD)",
+    mykeys_usage_remaining_percent: "剩餘 {percent}%",
+    mykeys_usage_low_budget_warning: "剩餘額度偏低",
   },
   en: {
     nav_apply: "Apply",
@@ -752,5 +756,9 @@ export const messages = {
     mykeys_usage_synced_at: "Last synced time",
     mykeys_usage_unknown: "Unknown",
     mykeys_usage_unlimited: "Unlimited",
+    mykeys_usage_budget_progress: "Budget usage progress",
+    mykeys_usage_used_percent: "{percent}% used ({used} / {budget} USD)",
+    mykeys_usage_remaining_percent: "{percent}% remaining",
+    mykeys_usage_low_budget_warning: "Budget running low",
   },
 };
