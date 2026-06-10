@@ -55,6 +55,7 @@ class ApiKeyListItem:
     max_budget: str | None
     tpm_limit: int | None
     rpm_limit: int | None
+    max_parallel_requests: int | None
     usage_spend: float | None
     usage_budget_reset_at: datetime | None
     usage_synced_at: datetime | None

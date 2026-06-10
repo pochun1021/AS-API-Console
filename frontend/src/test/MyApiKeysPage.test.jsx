@@ -115,6 +115,7 @@ test("usage popover is opened from actions and shows snapshot details in zh-TW",
   expect(screen.queryByText((_, element) => element?.textContent === "已用額度: 850.25 USD")).not.toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "額度: 1000 USD")).not.toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "剩餘額度: 149.75 USD")).not.toBeInTheDocument();
+  expect(await screen.findByText("最大平行請求數: 無上限")).toBeInTheDocument();
   expect(await screen.findByText(/額度重置時間: 2026-06-02 16:03:27/)).toBeInTheDocument();
   expect(await screen.findByText(/最後同步時間: 2026-06-02 16:03:27/)).toBeInTheDocument();
 
@@ -127,6 +128,7 @@ test("usage popover is opened from actions and shows snapshot details in zh-TW",
   expect(unlimitedUsageButton).toBeTruthy();
   await user.click(unlimitedUsageButton);
   expect(await screen.findByText((_, element) => element?.textContent === "額度: 無上限")).toBeInTheDocument();
+  expect(await screen.findByText("最大平行請求數: 無上限")).toBeInTheDocument();
   expect(screen.queryByRole("progressbar", { name: "額度使用進度" })).not.toBeInTheDocument();
 });
 
@@ -145,6 +147,7 @@ test("usage popover keeps placeholder interaction for unknown snapshot in zh-TW"
   expect(screen.queryByText((_, element) => element?.textContent === "已用額度: 未知")).not.toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "額度: 1000 USD")).not.toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "剩餘額度: 未知")).not.toBeInTheDocument();
+  expect(await screen.findByText("最大平行請求數: 無上限")).toBeInTheDocument();
   expect(await screen.findAllByText("未知")).not.toHaveLength(0);
   expect(await screen.findByText(/額度重置時間: -/)).toBeInTheDocument();
 });
@@ -167,6 +170,7 @@ test("usage and health labels switch to english locale", async () => {
   expect(screen.queryByText((_, element) => element?.textContent === "Spend: 850.25 USD")).not.toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "Budget: 1000 USD")).not.toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "Remaining: 149.75 USD")).not.toBeInTheDocument();
+  expect(await screen.findByText("Max parallel requests: Unlimited")).toBeInTheDocument();
   expect(await screen.findByText(/Budget reset time: 2026-06-02 16:03:27/)).toBeInTheDocument();
   expect(await screen.findByText(/Last synced time: 2026-06-02 16:03:27/)).toBeInTheDocument();
 });

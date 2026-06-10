@@ -52,6 +52,7 @@ class ApiKeyListItemResponse(BaseModel):
         remaining_budget: float | None = None
         tpm_limit: int | None = None
         rpm_limit: int | None = None
+        max_parallel_requests: int | None = None
         budget_reset_at: datetime | None = None
         synced_at: datetime | None = None
 

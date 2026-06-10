@@ -361,6 +361,7 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
         "remaining_budget": None,
         "tpm_limit": 10000,
         "rpm_limit": 500,
+        "max_parallel_requests": 0,
         "budget_reset_at": None,
         "synced_at": None,
     }
@@ -396,6 +397,7 @@ def test_list_api_keys_returns_usage_summary_and_low_budget_health(client, admin
     assert item["usage_summary"]["remaining_budget"] == 149.75
     assert item["usage_summary"]["tpm_limit"] == 10000
     assert item["usage_summary"]["rpm_limit"] == 500
+    assert item["usage_summary"]["max_parallel_requests"] == 0
     _assert_utc_datetime_string(item["usage_summary"]["budget_reset_at"])
     _assert_utc_datetime_string(item["usage_summary"]["synced_at"])
 
@@ -431,9 +433,44 @@ def test_list_api_keys_prefers_latest_usage_snapshot_history(client, admin_heade
     item = listed.json()["items"][0]
     assert item["usage_summary"]["spend"] == 12.34
     assert item["usage_summary"]["remaining_budget"] == 987.66
+    assert item["usage_summary"]["max_parallel_requests"] == 0
     assert item["health_status"] == "healthy"
     _assert_utc_datetime_string(item["usage_summary"]["budget_reset_at"])
     _assert_utc_datetime_string(item["usage_summary"]["synced_at"])
+
+
+def test_list_api_keys_uses_current_limit_strategy_config_for_usage_rate_limits(
+    client, admin_headers, user_headers
+):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+    )
+    assert create_resp.status_code == 201
+
+    update_resp = client.patch(
+        _api("/limit-strategy-config"),
+        headers=admin_headers,
+        json={
+            "budget_max_budget": "1000",
+            "budget_duration": "monthly",
+            "rate_limit_tpm": 43210,
+            "rate_limit_rpm": 321,
+            "max_parallel_requests": 12,
+        },
+    )
+    assert update_resp.status_code == 200
+
+    listed = client.get(_api("/api-keys"), headers=user_headers)
+
+    assert listed.status_code == 200
+    item = listed.json()["items"][0]
+    assert item["usage_summary"]["tpm_limit"] == 43210
+    assert item["usage_summary"]["rpm_limit"] == 321
+    assert item["usage_summary"]["max_parallel_requests"] == 12
 
 
 def test_list_api_keys_unlimited_budget_stays_healthy_and_zero_remaining(client, admin_headers, user_headers):
@@ -466,6 +503,7 @@ def test_list_api_keys_unlimited_budget_stays_healthy_and_zero_remaining(client,
         "remaining_budget": 0.0,
         "tpm_limit": 0,
         "rpm_limit": 0,
+        "max_parallel_requests": 0,
         "budget_reset_at": None,
         "synced_at": synced_at.isoformat().replace("+00:00", "Z"),
     }

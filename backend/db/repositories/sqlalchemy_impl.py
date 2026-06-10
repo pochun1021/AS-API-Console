@@ -459,6 +459,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
                     max_budget=row.ApiKeyApplication.max_budget,
                     tpm_limit=row.ApiKeyApplication.tpm_limit,
                     rpm_limit=row.ApiKeyApplication.rpm_limit,
+                    max_parallel_requests=row.ApiKeyApplication.max_parallel_requests,
                     usage_spend=(
                         float(snapshot.spend)
                         if snapshot is not None and snapshot.spend is not None

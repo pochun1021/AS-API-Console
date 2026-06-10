@@ -177,6 +177,7 @@ def _build_usage_summary(
     max_budget_raw: str | None,
     tpm_limit: int | None,
     rpm_limit: int | None,
+    max_parallel_requests: int | None,
     spend: float | None,
     budget_reset_at: datetime | None,
     synced_at: datetime | None,
@@ -192,6 +193,7 @@ def _build_usage_summary(
         "remaining_budget": remaining_budget,
         "tpm_limit": tpm_limit,
         "rpm_limit": rpm_limit,
+        "max_parallel_requests": max_parallel_requests,
         "budget_reset_at": budget_reset_at,
         "synced_at": synced_at,
     }
@@ -635,6 +637,7 @@ class ApiKeysService:
             limit=page_size,
             offset=offset,
         )
+        limit_config = self._get_limit_strategy_config_for_issuance()
 
         return {
             "items": [
@@ -658,8 +661,9 @@ class ApiKeysService:
                 })(
                     _build_usage_summary(
                         max_budget_raw=item.max_budget,
-                        tpm_limit=item.tpm_limit,
-                        rpm_limit=item.rpm_limit,
+                        tpm_limit=limit_config.rate_limit_tpm,
+                        rpm_limit=limit_config.rate_limit_rpm,
+                        max_parallel_requests=limit_config.max_parallel_requests,
                         spend=item.usage_spend,
                         budget_reset_at=item.usage_budget_reset_at,
                         synced_at=item.usage_synced_at,

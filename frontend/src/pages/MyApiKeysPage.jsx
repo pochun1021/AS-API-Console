@@ -819,6 +819,12 @@ export default function MyApiKeysPage({ auth }) {
             })}
           </Typography>
           <Typography variant="body2">
+            {t("mykeys_usage_max_parallel_requests")}: {formatUsageNumber(usageRow?.usage_summary?.max_parallel_requests, {
+              unlimitedText: t("mykeys_usage_unlimited"),
+              unknownText: t("mykeys_usage_unknown"),
+            })}
+          </Typography>
+          <Typography variant="body2">
             {t("mykeys_usage_budget_reset_at")}: {formatDateTimeInTaipei(usageRow?.usage_summary?.budget_reset_at, { locale, fallback: "-" })}
           </Typography>
           <Typography variant="body2">
