@@ -723,7 +723,7 @@ sudo -u asapic crontab -e
 
 加入：
 ```cron
-20 0 * * * cd /home/app/AS-API-Console/backend && ENV_FILE=/home/app/config/.env /home/app/AS-API-Console/backend/.venv/bin/python scripts/sync_institutes.py
+20 0 * * * ENV_FILE=/home/app/config/.env /home/app/AS-API-Console/backend/scripts/run_institute_sync.sh
 ```
 
 檢查：

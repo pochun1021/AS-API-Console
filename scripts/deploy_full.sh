@@ -191,12 +191,12 @@ alembic current
 log "Checking and updating crontab entries"
 EXPIRE_JOB="10 0 * * * ENV_FILE=${RESOLVED_ENV_FILE_PATH} ${APP_DIR}/backend/scripts/run_expire_sync.sh"
 USAGE_JOB="*/5 * * * * ENV_FILE=${RESOLVED_ENV_FILE_PATH} ${APP_DIR}/backend/scripts/run_usage_sync.sh"
-INSTITUTE_JOB="20 0 * * * cd ${APP_DIR}/backend && ENV_FILE=${RESOLVED_ENV_FILE_PATH} . .venv/bin/activate && ENV_FILE=${RESOLVED_ENV_FILE_PATH} python scripts/sync_institutes.py"
+INSTITUTE_JOB="20 0 * * * ENV_FILE=${RESOLVED_ENV_FILE_PATH} ${APP_DIR}/backend/scripts/run_institute_sync.sh"
 REMINDER_JOB="30 0 * * * ENV_FILE=${RESOLVED_ENV_FILE_PATH} ${APP_DIR}/backend/scripts/run_expiration_reminder.sh"
 
 LEGACY_EXPIRE_JOB="10 0 * * * ${APP_DIR}/backend/scripts/run_expire_sync.sh"
 LEGACY_USAGE_JOB="*/5 * * * * ${APP_DIR}/backend/scripts/run_usage_sync.sh"
-LEGACY_INSTITUTE_JOB="20 0 * * * cd ${APP_DIR}/backend && . .venv/bin/activate && python scripts/sync_institutes.py"
+LEGACY_INSTITUTE_JOB="20 0 * * * ${APP_DIR}/backend/scripts/run_institute_sync.sh"
 LEGACY_REMINDER_JOB="30 0 * * * ${APP_DIR}/backend/scripts/run_expiration_reminder.sh"
 
 CURRENT_CRON="$(sudo -u "$DEPLOY_USER" crontab -l 2>/dev/null || true)"
