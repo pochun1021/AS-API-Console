@@ -1,15 +1,20 @@
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from alembic.config import Config
+from alembic import command
 
-from db.base import Base
-from db import models  # noqa: F401
-from db.session import engine
+# Add parent directory to sys.path to allow imports
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def main() -> None:
-    Base.metadata.create_all(bind=engine)
+    # Set up Alembic configuration pointing to the 'test_db' section
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("name", "test_db")
+    
+    # Run migrations to head
+    command.upgrade(alembic_cfg, "head")
 
 
 if __name__ == "__main__":
