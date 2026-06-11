@@ -966,7 +966,14 @@ export default function MyApiKeysPage({ auth }) {
             </Stack>
           ) : null}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          {detailItem?.status === "active" ? (
+            <Box sx={{ mr: "auto" }}>
+              <Button color="warning" variant="contained" onClick={() => setPendingRevokeId(detailItem.id)}>
+                停用金鑰
+              </Button>
+            </Box>
+          ) : null}
           <Button onClick={closeDetail}>{locale === "zh-TW" ? "關閉" : "Close"}</Button>
           {auth.role === "admin" && detailItem ? (
             <Button
@@ -975,11 +982,6 @@ export default function MyApiKeysPage({ auth }) {
               onClick={() => saveAlias(detailItem.id, detailAliasValue)}
             >
               {t("mykeys_save_key_alias")}
-            </Button>
-          ) : null}
-          {detailItem?.status === "active" ? (
-            <Button color="warning" variant="contained" onClick={() => setPendingRevokeId(detailItem.id)}>
-              停用金鑰
             </Button>
           ) : null}
         </DialogActions>

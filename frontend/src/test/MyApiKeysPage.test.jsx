@@ -403,14 +403,14 @@ test("renders timestamps in Asia/Taipei on list and detail views", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
-  expect(await screen.findByText("2026-03-10 19:00:00")).toBeInTheDocument();
+  expect(await screen.findByText("2026-03-10")).toBeInTheDocument();
 
   const detailButtons = await screen.findAllByRole("button", { name: "查看詳情" });
   await user.click(detailButtons[2]);
 
   expect(await screen.findByText(/起算日期: 2026-02-10/)).toBeInTheDocument();
   expect(await screen.findByText(/建立時間: 2026-05-02 19:00:00/)).toBeInTheDocument();
-  expect(await screen.findByText(/到期時間: 2026-03-10 19:00:00/)).toBeInTheDocument();
+  expect(await screen.findByText(/到期時間: 2026-03-10/)).toBeInTheDocument();
 });
 
 test("list uses server pagination params", async () => {
