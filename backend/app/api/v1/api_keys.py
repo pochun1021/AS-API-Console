@@ -357,8 +357,8 @@ def renew_api_key(
 )
 def extend_api_key(
     key_id: str,
-    payload: ExtendRequest,
     request: Request,
+    payload: ExtendRequest | None = None,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -369,7 +369,7 @@ def extend_api_key(
     target_type = "api_key"
     service = ApiKeysService(db)
     try:
-        result = service.extend_key(current_user=current_user, key_id=key_id, duration_months=payload.duration_months)
+        result = service.extend_key(current_user=current_user, key_id=key_id)
     except ApiError as exc:
         db.rollback()
         audit.log(
@@ -382,7 +382,7 @@ def extend_api_key(
             target_type=target_type,
             target_id=key_id,
             context=context,
-            metadata={"key_id": key_id, "duration_months": payload.duration_months},
+            metadata={"key_id": key_id},
         )
         raise
     except Exception as exc:
@@ -397,7 +397,7 @@ def extend_api_key(
             target_type=target_type,
             target_id=key_id,
             context=context,
-            metadata={"key_id": key_id, "duration_months": payload.duration_months},
+            metadata={"key_id": key_id},
         )
         raise
     audit.log(
@@ -411,7 +411,6 @@ def extend_api_key(
         metadata={
             "key_id": result["id"],
             "status": result["status"],
-            "duration_months": payload.duration_months,
             "provider_request_id": result.get("provider_request_id"),
             "provider_operation_id": result.get("provider_operation_id"),
         },

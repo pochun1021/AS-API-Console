@@ -317,7 +317,7 @@ test("renewed key dialog stays open on backdrop click and escape", async () => {
   });
 });
 
-test("user can extend active key with selected duration", async () => {
+test("user can extend active key with original duration", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={auth} />);
 
@@ -325,17 +325,16 @@ test("user can extend active key with selected duration", async () => {
   await user.click(moreActionButtons[0]);
   await user.click(await screen.findByRole("menuitem", { name: "展延金鑰" }));
   expect(await screen.findByText("確認展延")).toBeInTheDocument();
-  await user.selectOptions(screen.getByLabelText("展延時長"), "12");
   await user.click(screen.getByRole("button", { name: "確認" }));
   expect(await screen.findByText("金鑰已展延。")).toBeInTheDocument();
   expect(screen.queryByRole("dialog", { name: "確認展延" })).not.toBeInTheDocument();
 
   const detailButtons = await screen.findAllByRole("button", { name: "查看詳情" });
   await user.click(detailButtons[0]);
-  expect(await screen.findByText("目前生效時長: 18 個月")).toBeInTheDocument();
+  expect(await screen.findByText("目前生效時長: 12 個月")).toBeInTheDocument();
 });
 
-test("extending an expired key resets start date and duration in detail view", async () => {
+test("extending an expired key keeps original start date and reuses original duration", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
@@ -345,7 +344,6 @@ test("extending an expired key resets start date and duration in detail view", a
   expect(expiredRowActionButton).toBeTruthy();
   await user.click(expiredRowActionButton);
   await user.click(await screen.findByRole("menuitem", { name: "展延金鑰" }));
-  await user.selectOptions(screen.getByLabelText("展延時長"), "6");
   await user.click(screen.getByRole("button", { name: "確認" }));
   expect(await screen.findByText("金鑰已展延。")).toBeInTheDocument();
 
@@ -355,7 +353,7 @@ test("extending an expired key resets start date and duration in detail view", a
   expect(expiredRowDetailButton).toBeTruthy();
   await user.click(expiredRowDetailButton);
   expect(await screen.findByText("起算日期: 2026-02-10")).toBeInTheDocument();
-  expect(await screen.findByText("目前生效時長: 7 個月")).toBeInTheDocument();
+  expect(await screen.findByText("目前生效時長: 2 個月")).toBeInTheDocument();
 });
 
 test.each([

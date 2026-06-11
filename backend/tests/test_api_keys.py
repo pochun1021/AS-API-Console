@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
-from app.services.api_keys_service import _extended_expires_at, _remaining_days_until_expiry
+from app.services.api_keys_service import _extended_expires_at, _provider_total_days_for_expiration
 from db.repositories.types import AuthIdentity
 from tests.conftest import api_path as _api, build_headers
 
@@ -160,19 +160,24 @@ def _insert_key_usage_snapshot_history(
         )
 
 
-def test_extend_uses_utc_date_diff_for_remaining_days():
-    now = datetime(2026, 6, 11, 0, 30, 0, tzinfo=UTC)
-    expires_at = datetime(2026, 7, 4, 23, 30, 0, tzinfo=UTC)
+def test_extend_uses_original_duration_base_and_application_date_offset():
+    application_date = date(2026, 6, 1)
+    issued_at = datetime(2026, 6, 1, 0, 30, 0, tzinfo=UTC)
+    now = datetime(2026, 6, 10, 12, 0, 0, tzinfo=UTC)
 
-    remaining_days = _remaining_days_until_expiry(expires_at=expires_at, now=now)
     extended_expires_at = _extended_expires_at(
-        expires_at=expires_at,
-        extension_duration_months=1,
+        application_date=application_date,
+        issued_at=issued_at,
+        original_duration_months=1,
         now=now,
     )
+    provider_duration_days = _provider_total_days_for_expiration(
+        application_date=application_date,
+        expires_at=extended_expires_at,
+    )
 
-    assert remaining_days == 23
-    assert extended_expires_at == datetime(2026, 8, 3, 0, 30, 0, tzinfo=UTC)
+    assert extended_expires_at == datetime(2026, 7, 10, 0, 30, 0, tzinfo=UTC)
+    assert provider_duration_days == 39
 
 
 def _set_application_limits(
@@ -345,7 +350,8 @@ def _fetch_application_row_for_key(key_id: str) -> dict:
             text(
                 """
                 SELECT a.id, a.account, a.name, a.email, a.department, a.sysid, a.is_proxy_submission,
-                       a.proxy_operator_account, a.application_date, a.duration_months, a.issued_at, a.expires_at, a.status
+                       a.proxy_operator_account, a.application_date, a.duration_months, a.original_duration_months,
+                       a.issued_at, a.expires_at, a.status
                 FROM api_key_applications a
                 JOIN api_keys k ON k.application_id = a.id
                 WHERE k.id = :key_id
@@ -1424,14 +1430,14 @@ def test_provider_mutation_payloads_use_key_field_and_shared_contract(client, ad
         assert "api_key_plaintext" not in captured_generate_payload
 
         _set_expiration_notice_sent_at(renewed_key_id, datetime.now(UTC))
-        extend = client.post(_api(f"/api-keys/{renewed_key_id}/extend"), headers=user, json={"duration_months": 6})
+        extend = client.post(_api(f"/api-keys/{renewed_key_id}/extend"), headers=user, json={})
         assert extend.status_code == 200
         assert captured_update_payload["key"] == renewed_plaintext
         renewed_issued_at = datetime.fromisoformat(str(renewed_application["issued_at"]).replace("Z", "+00:00"))
         if renewed_issued_at.tzinfo is None:
             renewed_issued_at = renewed_issued_at.replace(tzinfo=UTC)
         assert renewed_expires_at - renewed_issued_at == timedelta(days=30)
-        assert captured_update_payload["duration"] == "210d"
+        assert captured_update_payload["duration"] == "30d"
         assert captured_update_payload["key_alias"] == f"for_{user['x-account']}"
         assert captured_update_payload["key_type"] == "llm_api"
         assert captured_update_payload["team_id"] == "team-001"
@@ -1476,7 +1482,7 @@ def test_extend_sends_latest_key_alias_to_provider(client, admin_headers, monkey
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
     monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _capture_update_payload)
     try:
-        extend = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
+        extend = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={})
         assert extend.status_code == 200
         assert captured_update_payload["key_alias"] == "custom_admin_alias"
 
@@ -1494,10 +1500,11 @@ def test_extend_sends_total_days_from_original_start_to_provider(client, admin_h
 
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user["x-sysid"])
+    application_date = date.today() - timedelta(days=9)
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(date.today()), "duration_months": 6, "purpose": "extend expired duration"},
+        json={"application_date": str(application_date), "duration_months": 1, "purpose": "extend original duration"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
@@ -1507,16 +1514,16 @@ def test_extend_sends_total_days_from_original_start_to_provider(client, admin_h
         captured_update_payload.update(payload)
         return SimpleNamespace(request_id=None, operation_id=None)
 
-    _set_key_expires_at_past(key_id)
     monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
     monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
     get_settings.cache_clear()
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
     monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _capture_update_payload)
     try:
-        extend = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 1})
+        extend = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={})
         assert extend.status_code == 200
-        assert captured_update_payload["duration"] == "30d"
+        assert captured_update_payload["duration"] == "39d"
+        assert extend.json()["expires_at"].startswith(str(application_date + timedelta(days=39)))
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
@@ -1695,56 +1702,57 @@ def test_extend_active_and_expired_keys_anytime_for_user_and_admin(client, admin
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
     _set_key_expires_at_offset_days(key_id, days=31)
 
-    allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
+    allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={})
     assert allowed.status_code == 200
     assert allowed.json()["status"] == "active"
     _assert_utc_datetime_string(allowed.json()["expires_at"])
     assert _fetch_key_notice_state(key_id)["expiration_notice_sent_at"] is None
     active_extended = _fetch_application_row_for_key(key_id)
     assert str(active_extended["application_date"]) == original_application_date
-    assert active_extended["duration_months"] == 7
+    assert active_extended["original_duration_months"] == 1
+    assert active_extended["duration_months"] == 2
 
     active_listed = client.get(_api("/api-keys"), headers=user)
     assert active_listed.status_code == 200
     assert active_listed.json()["items"][0]["application_date"] == original_application_date
-    assert active_listed.json()["items"][0]["duration_months"] == 7
+    assert active_listed.json()["items"][0]["duration_months"] == 2
 
     active_detail = client.get(_api(f"/api-keys/{key_id}"), headers=user)
     assert active_detail.status_code == 200
     assert active_detail.json()["application_date"] == original_application_date
-    assert active_detail.json()["duration_months"] == 7
+    assert active_detail.json()["duration_months"] == 2
 
-    allowed_admin = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={"duration_months": 1})
+    allowed_admin = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={})
     assert allowed_admin.status_code == 200
     assert allowed_admin.json()["status"] == "active"
 
     _set_key_expires_at_past(key_id)
-    user_expired_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 1})
+    user_expired_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={})
     assert user_expired_allowed.status_code == 200
     assert user_expired_allowed.json()["status"] == "active"
     _assert_utc_datetime_string(user_expired_allowed.json()["expires_at"])
     expired_extended = _fetch_application_row_for_key(key_id)
     assert str(expired_extended["application_date"]) == original_application_date
-    assert expired_extended["duration_months"] == 9
+    assert expired_extended["duration_months"] == 4
 
     expired_listed = client.get(_api("/api-keys"), headers=user)
     assert expired_listed.status_code == 200
     assert expired_listed.json()["items"][0]["application_date"] == original_application_date
-    assert expired_listed.json()["items"][0]["duration_months"] == 9
+    assert expired_listed.json()["items"][0]["duration_months"] == 4
 
     expired_detail = client.get(_api(f"/api-keys/{key_id}"), headers=user)
     assert expired_detail.status_code == 200
     assert expired_detail.json()["application_date"] == original_application_date
-    assert expired_detail.json()["duration_months"] == 9
+    assert expired_detail.json()["duration_months"] == 4
 
     _set_key_expires_at_past(key_id)
-    admin_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={"duration_months": 1})
+    admin_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={})
     assert admin_allowed.status_code == 200
     assert admin_allowed.json()["status"] == "active"
     _assert_utc_datetime_string(admin_allowed.json()["expires_at"])
     admin_extended = _fetch_application_row_for_key(key_id)
     assert str(admin_extended["application_date"]) == original_application_date
-    assert admin_extended["duration_months"] == 10
+    assert admin_extended["duration_months"] == 5
 
 
 def test_extend_provider_unavailable_does_not_change_expiration(client, admin_headers, monkeypatch):
@@ -1772,7 +1780,7 @@ def test_extend_provider_unavailable_does_not_change_expiration(client, admin_he
         lambda self, payload: (_ for _ in ()).throw(ProviderUnavailableError("provider unavailable")),
     )
     try:
-        resp = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
+        resp = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={})
         assert resp.status_code == 503
         assert resp.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
         after = _fetch_key_status_row(key_id)
@@ -1833,7 +1841,7 @@ def test_provider_operations_require_secret_material_before_calling_provider(cli
         assert revoke.status_code == 409
         assert revoke.json()["error"]["code"] == "KEY_NOT_REVEALABLE"
 
-        extend = client.post(_api(f"/api-keys/{active_key_id}/extend"), headers=user, json={"duration_months": 1})
+        extend = client.post(_api(f"/api-keys/{active_key_id}/extend"), headers=user, json={})
         assert extend.status_code == 409
         assert extend.json()["error"]["code"] == "KEY_NOT_REVEALABLE"
 

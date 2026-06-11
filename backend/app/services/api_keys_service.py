@@ -154,29 +154,40 @@ def _is_extend_eligible(
     return status in {"active", "expired"}
 
 
-def _remaining_days_until_expiry(*, expires_at: datetime, now: datetime) -> int:
-    expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
-    remaining_days = (expires_at_utc.date() - now.date()).days
-    return max(remaining_days, 0)
+def _normalized_utc_datetime(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
-def _provider_total_days_from_start(
+def _base_expires_at(
     *,
     application_date: date,
-    expires_at: datetime,
-    extension_duration_months: int = 0,
-    now: datetime,
-) -> int:
-    elapsed_days = max((now.date() - application_date).days, 0)
-    remaining_days = _remaining_days_until_expiry(expires_at=expires_at, now=now)
-    extension_days = _duration_days(extension_duration_months) if extension_duration_months > 0 else 0
-    total_days = elapsed_days + remaining_days + extension_days
+    original_duration_months: int,
+    issued_at: datetime,
+) -> datetime:
+    issued_at_utc = _normalized_utc_datetime(issued_at)
+    base_date = application_date + timedelta(days=_duration_days(original_duration_months))
+    return datetime.combine(base_date, issued_at_utc.timetz())
+
+
+def _provider_total_days_for_expiration(*, application_date: date, expires_at: datetime) -> int:
+    expires_at_utc = _normalized_utc_datetime(expires_at)
+    total_days = (expires_at_utc.date() - application_date).days
     return max(total_days, 1)
 
 
-def _extended_expires_at(*, expires_at: datetime, extension_duration_months: int, now: datetime) -> datetime:
-    remaining_days = _remaining_days_until_expiry(expires_at=expires_at, now=now)
-    return now + timedelta(days=remaining_days + _duration_days(extension_duration_months))
+def _extended_expires_at(
+    *,
+    application_date: date,
+    issued_at: datetime,
+    original_duration_months: int,
+    now: datetime,
+) -> datetime:
+    extension_offset_days = max((now.date() - application_date).days, 0)
+    return _base_expires_at(
+        application_date=application_date,
+        original_duration_months=original_duration_months,
+        issued_at=issued_at,
+    ) + timedelta(days=extension_offset_days)
 
 
 def _parse_optional_budget(value: str | None) -> float | None:
@@ -324,6 +335,7 @@ class ApiKeysService:
                 proxy_operator_account=current_user.account if is_proxy_submission else None,
                 application_date=application_date,
                 duration_months=duration_months,
+                original_duration_months=duration_months,
                 purpose=normalized_purpose,
                 max_budget=config.max_budget,
                 budget_duration=config.budget_duration,
@@ -677,6 +689,7 @@ class ApiKeysService:
                     "key_alias": item.key_alias or _default_alias(item.owner_account),
                     "application_date": item.application_date,
                     "duration_months": item.duration_months,
+                    "original_duration_months": item.original_duration_months,
                     "owner_account": item.owner_account,
                     "owner_name": item.owner_name,
                     "expires_at": item.expires_at,
@@ -726,6 +739,7 @@ class ApiKeysService:
             "department": scoped.department,
             "application_date": scoped.application_date,
             "duration_months": scoped.duration_months,
+            "original_duration_months": scoped.original_duration_months,
             "created_at": scoped.created_at,
             "expires_at": scoped.expires_at,
             "expiration_notice_sent_at": scoped.expiration_notice_sent_at,
@@ -758,10 +772,9 @@ class ApiKeysService:
             plaintext = self._decrypt_key_for_provider(key)
             config = self._get_provider_update_config_for_application(application)
             try:
-                provider_duration_days = _provider_total_days_from_start(
+                provider_duration_days = _provider_total_days_for_expiration(
                     application_date=application.application_date,
                     expires_at=application.expires_at,
-                    now=datetime.now(UTC),
                 )
                 self.provider_client.update_key(
                     self._build_provider_update_payload(
@@ -935,6 +948,7 @@ class ApiKeysService:
                 proxy_operator_account=current_user.account if is_proxy_submission else None,
                 application_date=date.today(),
                 duration_months=source_app.duration_months,
+                original_duration_months=source_app.duration_months,
                 purpose=source_app.purpose,
                 max_budget=config.max_budget,
                 budget_duration=config.budget_duration,
@@ -962,10 +976,7 @@ class ApiKeysService:
             **provider_metadata,
         }
 
-    def extend_key(self, current_user: CurrentUser, key_id: str, duration_months: int) -> dict:
-        if duration_months not in {1, 6, 12}:
-            raise ApiError("VALIDATION_ERROR", "duration_months must be one of 1, 6, 12", 422)
-
+    def extend_key(self, current_user: CurrentUser, key_id: str) -> dict:
         exists = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
         if exists is None:
             raise ApiError("VALIDATION_ERROR", "key not found", 404)
@@ -980,17 +991,16 @@ class ApiKeysService:
             raise ApiError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409)
         now = datetime.now(UTC)
         next_application_date = source_app.application_date
-        next_duration_months = source_app.duration_months + duration_months
+        next_duration_months = source_app.duration_months + source_app.original_duration_months
         next_expires_at = _extended_expires_at(
-            expires_at=source_app.expires_at,
-            extension_duration_months=duration_months,
+            application_date=source_app.application_date,
+            issued_at=source_app.issued_at,
+            original_duration_months=source_app.original_duration_months,
             now=now,
         )
-        provider_duration_days = _provider_total_days_from_start(
+        provider_duration_days = _provider_total_days_for_expiration(
             application_date=source_app.application_date,
-            expires_at=source_app.expires_at,
-            extension_duration_months=duration_months,
-            now=now,
+            expires_at=next_expires_at,
         )
 
         provider_metadata: dict = {}

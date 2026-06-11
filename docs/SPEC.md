@@ -86,7 +86,7 @@
   - 對 `expired` key 顯示「展延（extend）」按鈕（icon + 文字）。
   - 對 `revoked` key 顯示「續發（renew）」按鈕（icon + 文字）。
   - `active|expired` key 一律顯示展延按鈕；前端不得再以「距離到期 30 天內」作為顯示或送出限制。
-  - extend 需以 Dialog 讓使用者選擇 `duration_months=1|6|12` 後送出。
+  - extend 需以確認 Dialog 送出，不再提供 `duration_months` 選單；每次 extend 一律沿用該 key 的 `original_duration_months` 作為本次展延基數。
   - renew 會建立新 key，來源 key 對 `user` 列表需隱藏。
   - extend 會沿用原 key，只延長有效期限。
 
@@ -307,6 +307,7 @@
 - `department` (string, required)
 - `application_date` (date, required)
 - `duration_months` (int, required, allowed: `1|6|12`)
+- `original_duration_months` (int, required；保存原始申請時長，供 extend 基數計算使用)
 - `purpose` (string, required)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `issued_at` (datetime)
@@ -321,6 +322,7 @@
   - application ownership 以申請人快照欄位（`account`、`name`、`email`、`department`、`sysid`）為準
   - `application_date` 初次核發時為原始申請日期；同一把 key 後續每次 extend 成功後皆維持原值
   - `duration_months` 代表此把 key 累計申請的總月數（原申請月數 + 每次成功 extend 的月數），為業務顯示欄位，不等同 provider `duration` 傳值
+  - `original_duration_months` 為內部計算欄位，需保存初次核發時的原始申請時長；後續 extend 不得改寫，供 `original_duration_days` 推導使用
   - `expires_at` 為目前有效到期時間；extend 時需先以 `application_date + original_duration_days` 計算基準到期日，其中 `original_duration_days` 由原始申請時長映射為 `30|180|360` 天，再以 `extension_offset_days = (extend_action_date - application_date).days` 推導 `new_expires_at = base_expires_at + extension_offset_days days`。例如 2026-06-01 申請 1 個月、基準到期日 2026-07-01，若於 2026-06-10 extend，則新到期日應為 2026-07-10。
   - `is_proxy_submission = false` 時，`proxy_operator_account = NULL`
   - `is_proxy_submission = true` 時，`proxy_operator_account` 需記錄實際代送的 `admin account`
@@ -728,19 +730,17 @@ Base path：`/main/api/v1`
 - `POST /main/api/v1/api-keys/{id}/extend`
 - Request：
 ```json
-{
-  "duration_months": 1
-}
+{}
 ```
 - 規則：
   - `user` 僅可展延本人 `active|expired` key；`admin` 可展延任意 `active|expired` key。
-  - `duration_months` 僅允許 `1|6|12`。
-  - request 的 `duration_months` 代表「本次 extend 要增加的月數」；成功後讀取 API 的 `duration_months` 則代表此把 key 累計申請的總月數，兩者不得混淆。
+  - extend request 不再接收 `duration_months`；每次 extend 一律沿用該 key 初次核發時保存的 `original_duration_months` 作為本次展延時長。
+  - 成功後讀取 API 的 `duration_months` 仍代表此把 key 累計申請的總月數；每次 extend 需累加 `original_duration_months`，而非使用者輸入值。
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
   - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
   - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format；`duration` 一律需送「從原始 `application_date` 起算到新 `expires_at` 的總天數」，計算式為 `provider_duration_days = (new_expires_at.date() - application_date).days`，並以 `"{provider_duration_days}d"` 傳送。
   - extend 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫回原 key。
-  - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`），並累加 application 的 `duration_months`。
+  - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`），並以 `original_duration_months` 累加 application 的 `duration_months`。
   - 新的 `expires_at` 一律以原始申請週期為基數推導：先計算 `base_expires_at = application_date + original_duration_days`，其中 `original_duration_days` 由原始申請時長映射為 `30|180|360` 天；再以 `extension_offset_days = (extend_action_date - application_date).days` 推導 `new_expires_at = base_expires_at + extension_offset_days days`。不得再使用剩餘天數補差，也不得從當下重新起算。
   - extend 不得改寫 `application_date`；該欄位持續代表原始申請日。
   - extend 成功後，後續到期提醒需以新的 `expires_at` 重新啟動完整 `30|14|7|3|1` 通知週期。
@@ -1062,6 +1062,7 @@ Base path：`/main/api/v1`
 25. 一般使用者僅可續發本人 `revoked` key；續發 `active|expired` key 時需回傳 `KEY_NOT_RENEWABLE`，且同一把舊 key 不得重複續發，重複續發需回傳 `KEY_ALREADY_RENEWED`。
 26. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時需回傳 `KEY_NOT_EXTENDABLE`。`active|expired` key 皆可隨時展延。extend 成功後：
   - `application_date` 維持原申請日，讀取 API 的 `duration_months` 改為累計總月數。
+  - extend request 不再由使用者選擇月數；每次展延固定沿用該 key 的 `original_duration_months`。
   - `expires_at` 需以原始申請週期為基數推導：`base_expires_at = application_date + original_duration_days`，`new_expires_at = base_expires_at + (extend_action_date - application_date).days`。
   - provider `duration` 需送從原始 `application_date` 起算到新 `expires_at` 的總天數，不得直接等同本地 `duration_months`，也不得再使用 `remaining_days` 模型。
 27. `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm`、`max_parallel_requests` 僅接受 ASCII `0-9`；非數字字元、空字串、科學記號、小數、負號、全形數字與混合字串不得通過前端送出，也不得通過後端 API 驗證。

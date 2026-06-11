@@ -971,7 +971,7 @@ export const mockApiProvider = {
     };
   },
 
-  async extendApiKey(id, payload, auth) {
+  async extendApiKey(id, auth) {
     await delay();
     const target = findApiKeyById(id);
     if (!target) {
@@ -983,20 +983,20 @@ export const mockApiProvider = {
     if (!["active", "expired"].includes(target.status)) {
       throw createError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409);
     }
-    const durationMonths = Number(payload?.duration_months);
-    if (![1, 6, 12].includes(durationMonths)) {
-      throw createError("VALIDATION_ERROR", "duration_months must be one of 1, 6, 12", 422);
-    }
     if (target.renewed_to_key_id) {
       throw createError("KEY_ALREADY_RENEWED", "key already renewed", 409);
     }
 
-    const now = new Date();
-    const currentExpiresAt = new Date(target.expires_at);
-    const remainingDays = Math.max(Math.floor((currentExpiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)), 0);
-    const extensionDays = durationMonths * 30;
-    const expires = new Date(now.getTime() + (remainingDays + extensionDays) * 24 * 60 * 60 * 1000);
-    target.duration_months += durationMonths;
+    const originalDurationMonths = Number(target.original_duration_months ?? target.duration_months);
+    const baseExpires = new Date(target.created_at);
+    baseExpires.setUTCDate(baseExpires.getUTCDate() + originalDurationMonths * 30);
+    const extensionOffsetDays = Math.max(
+      Math.floor((Date.now() - new Date(target.application_date).getTime()) / (1000 * 60 * 60 * 24)),
+      0
+    );
+    const expires = new Date(baseExpires.getTime() + extensionOffsetDays * 24 * 60 * 60 * 1000);
+    target.original_duration_months = originalDurationMonths;
+    target.duration_months += originalDurationMonths;
     target.expires_at = expires.toISOString();
     target.status = "active";
     target.expiration_notice_sent_at = null;
