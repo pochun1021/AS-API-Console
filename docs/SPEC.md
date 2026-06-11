@@ -75,8 +75,8 @@
 - `Unlimited`（`max_budget=0`）在 `Usage` popover 內不得渲染百分比 progress bar，需改以純文字狀態呈現；若 `max_budget > 0` 但缺少 usage snapshot 或 `spend`，仍需顯示 progress bar，並以前端 `0%` / `0 / budget` 呈現。
 - 清單查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
 - 時間欄位語意：
-  - 對 `active` key 成功 extend 後：`application_date` 維持此把 key 的原始申請日；`duration_months` 為此把 key 累計申請的總月數（原申請月數 + 每次成功 extend 的月數），僅作業務顯示用途，不等同 provider `duration` 實際傳值；`expires_at` 為目前有效到期時間。
-  - 對 `expired` key 成功 extend 後：`application_date` 需同步改寫為本次展延當日，代表新的起算日；`duration_months` 仍為此把 key 累計申請的總月數；`expires_at` 需以新的 `application_date` 重新起算。
+  - 對 `active` key 成功 extend 後：`application_date` 維持此把 key 的原始申請日；`duration_months` 為此把 key 在目前有效週期內的累計申請總月數（原申請月數 + 每次成功 extend 的月數），僅作業務顯示用途，不等同 provider `duration` 實際傳值；`expires_at` 為目前有效到期時間。
+  - 對 `expired` key 成功 extend 後：`application_date` 需同步改寫為本次展延當日，代表新的起算日；`duration_months` 也需同步重置為 `original_duration_months`，代表新的有效週期時長；`expires_at` 需以新的 `application_date` 重新起算。
   - `expires_at` 一律採 fixed-day 規則計算：`1|6|12` 個月分別視為 `30|180|360` 天。初次核發時以 `application_date + original_duration_days` 取得基準到期日。後續 extend 時：
     - `active` key：以 `extend_action_date` 相對於 `application_date` 的天數位移推導新的 `expires_at`。例如 2026-06-01 申請 1 個月，基準到期日為 2026-07-01；若於 2026-06-10 extend，新的到期日為 2026-07-10。
     - `expired` key：以展延當日作為新的 `application_date` 重新起算。例如原始 key 已過期，若於 2026-08-10 對原始時長 1 個月的 key 執行 extend，新的 `application_date` 應改為 2026-08-10，新的 `expires_at` 應為 2026-09-09。
@@ -97,8 +97,8 @@
 - 顯示完整申請資訊與狀態。
 - 顯示欄位至少包含：申請日期、生效時長、用途（`purpose`）、單位（`department`）、建立時間、到期時間、遮罩 key。
 - 詳情視窗需沿用 API 時間欄位語意，不得把曾展延 key 的 `application_date`、`duration_months`、`expires_at` 顯示成彼此矛盾的資訊：
-  - 對 `active` key extend 後，沿用原始申請日與累計總月數。
-  - 對 `expired` key extend 後，需顯示更新後的 `application_date`（即展延當日）與累計總月數。
+  - 對 `active` key extend 後，沿用原始申請日與目前有效週期內的累計總月數。
+  - 對 `expired` key extend 後，需顯示更新後的 `application_date`（即展延當日）與重置後的 `duration_months`（即 `original_duration_months`）。
 - 一般使用者僅可查本人資料。
 - 一般使用者可停用本人 `active` key。
 - 一般查詢/詳情不可再次顯示 key 明文（僅受控 reveal 流程可回取）。
@@ -325,7 +325,7 @@
 - 欄位語意：
   - application ownership 以申請人快照欄位（`account`、`name`、`email`、`department`、`sysid`）為準
   - `application_date` 初次核發時為原始申請日期；對 `active` key extend 成功後維持原值，對 `expired` key extend 成功後需改寫為本次展延當日，作為新的起算日
-  - `duration_months` 代表此把 key 累計申請的總月數（原申請月數 + 每次成功 extend 的月數），為業務顯示欄位，不等同 provider `duration` 傳值
+  - `duration_months` 為業務顯示欄位，不等同 provider `duration` 傳值；對 `active` key extend 採目前有效週期內累加（原申請月數 + 每次成功 extend 的月數），對 `expired` key extend 成功後需重置為 `original_duration_months`
   - `original_duration_months` 為內部計算欄位，需保存初次核發時的原始申請時長；後續 extend 不得改寫，供 `original_duration_days` 推導使用
   - `expires_at` 為目前有效到期時間；extend 時需依 key 是否已 expired 分流計算：
     - `active` key：先以 `application_date + original_duration_days` 計算基準到期日，其中 `original_duration_days` 由原始申請時長映射為 `30|180|360` 天，再以 `extension_offset_days = (extend_action_date - application_date).days` 推導 `new_expires_at = base_expires_at + extension_offset_days days`
@@ -585,8 +585,8 @@ Base path：`/main/api/v1`
 - usage 同步排程預設每 `5` 分鐘執行一次，僅同步目前 `active` keys；若 provider 查詢失敗，不得中斷其他 keys 的同步。
 - 讀取欄位語意：
 - 對曾 extend 的 key：
-  - `active` key：`application_date` 為原始申請日；`duration_months` 為目前此 key 已累計申請的總月數（非最近一次 extend request 值，也不等同 provider `duration` 天數）；`expires_at` 為目前有效到期時間。
-  - `expired` key 若已成功 extend：`application_date` 需改為最近一次使其重新生效的展延當日；`duration_months` 仍為目前此 key 已累計申請的總月數；`expires_at` 為重新起算後的目前有效到期時間。
+  - `active` key：`application_date` 為原始申請日；`duration_months` 為目前此 key 在有效週期內已累計申請的總月數（非最近一次 extend request 值，也不等同 provider `duration` 天數）；`expires_at` 為目前有效到期時間。
+  - `expired` key 若已成功 extend：`application_date` 需改為最近一次使其重新生效的展延當日；`duration_months` 需重置為 `original_duration_months`；`expires_at` 為重新起算後的目前有效到期時間。
 - Query：`page`, `page_size`, `status`, `owner_account`, `owner_name`, `key_alias`, `application_date_from`, `application_date_to`, `expires_from`, `expires_to`, `sort_by`, `sort_dir`
   - `page_size` 定義為每頁顯示筆數（非全量上限）。
   - `status` 為 exact match，allowed: `active|revoked|expired`
@@ -680,8 +680,8 @@ Base path：`/main/api/v1`
 - 到期口徑：`expires_at` 早於查詢當下（UTC）且原始狀態為 `active` 時，API 對外狀態需視為 `expired`。
 - 讀取欄位語意：
 - 對曾 extend 的 key：
-  - `active` key：`application_date` 為原始申請日；`duration_months` 為目前此 key 已累計申請的總月數（原申請月數 + 每次成功 extend 的月數）；`expires_at` 為目前有效到期時間。
-  - `expired` key 若已成功 extend：`application_date` 需改為最近一次使其重新生效的展延當日；`duration_months` 仍為目前此 key 已累計申請的總月數；`expires_at` 為重新起算後的目前有效到期時間。
+  - `active` key：`application_date` 為原始申請日；`duration_months` 為目前此 key 在有效週期內已累計申請的總月數（原申請月數 + 每次成功 extend 的月數）；`expires_at` 為目前有效到期時間。
+  - `expired` key 若已成功 extend：`application_date` 需改為最近一次使其重新生效的展延當日；`duration_months` 需重置為 `original_duration_months`；`expires_at` 為重新起算後的目前有效到期時間。
 - 回傳 `key_alias`；若資料未設定則回傳系統產生 alias（初始為 `for_{owner_account}`，若 provider 衝突則可能為 `for_{owner_account}_vN`）。
 - 回傳可包含申請人識別欄位 `owner_account`、`owner_name`（供管理者辨識申請來源）。
 - 回傳應包含 `purpose` 供詳情頁顯示；若歷史資料未留存用途，前端顯示 `-`。
@@ -745,7 +745,9 @@ Base path：`/main/api/v1`
 - 規則：
   - `user` 僅可展延本人 `active|expired` key；`admin` 可展延任意 `active|expired` key。
   - extend request 不再接收 `duration_months`；每次 extend 一律沿用該 key 初次核發時保存的 `original_duration_months` 作為本次展延時長。
-  - 成功後讀取 API 的 `duration_months` 仍代表此把 key 累計申請的總月數；每次 extend 需累加 `original_duration_months`，而非使用者輸入值。
+  - 成功後讀取 API 的 `duration_months` 需依 key 狀態分流：
+    - `active` key：在目前有效週期內累加 `original_duration_months`
+    - `expired` key：重置為 `original_duration_months`
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
   - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
   - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format；`duration` 需送「目前有效起算日到新 `expires_at` 的總天數」：
@@ -753,7 +755,9 @@ Base path：`/main/api/v1`
     - `expired` key：先將 `application_date` 改寫為 `extend_action_date`，再以 `provider_duration_days = (new_expires_at.date() - application_date).days`
     - provider 請求仍需以 `"{provider_duration_days}d"` 傳送。
   - extend 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫回原 key。
-  - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`），並以 `original_duration_months` 累加 application 的 `duration_months`。
+  - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`）：
+    - `active` key：以 `original_duration_months` 累加 application 的 `duration_months`
+    - `expired` key：將 application 的 `duration_months` 重置為 `original_duration_months`
   - 新的 `expires_at` 需依 key 狀態分流：
     - `active` key：以原始申請週期為基數推導。先計算 `base_expires_at = application_date + original_duration_days`，其中 `original_duration_days` 由原始申請時長映射為 `30|180|360` 天；再以 `extension_offset_days = (extend_action_date - application_date).days` 推導 `new_expires_at = base_expires_at + extension_offset_days days`。不得再使用剩餘天數補差，也不得從當下重新起算。
     - `expired` key：需以展延當日重新起算。provider 成功後必須同步將 `application_date` 改寫為 `extend_action_date`，並以 `new_expires_at = application_date + original_duration_days` 重新計算；此規則需保留於 application row，作為後續展延與 provider `duration` 的新基準。
@@ -1069,14 +1073,14 @@ Base path：`/main/api/v1`
 19. `user` 登入後只能看到自己的全部歷史紀錄；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料，且每筆至少需能辨識 `owner_account`、`owner_name`。
 19. 一般查詢僅能看到 `masked_key`（`APP_ENV=prod` 為 `sk-...XXXX`；`dev/test` 為 `AS-...XXXX`），不得看到明文；清單頁不得顯示建立時間，建立時間僅顯示於單筆詳情視窗。frontend 不得自行把 API 回傳的 `masked_key` 補成 `AS-...`。
 20. 單筆詳情需顯示 `purpose`、`department`；若無資料需顯示 `-`。
-21. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 的 `application_date`、`duration_months`、`expires_at` 語意需一致：對 `active` extend key，`application_date` 為原始申請日；對 `expired` 後再 extend 的 key，`application_date` 為最近一次使其重新生效的展延當日；兩者的 `duration_months` 都為累計總月數，`expires_at` 為目前有效到期時間。frontend 清單與詳情不得把曾展延 key 顯示成互相矛盾的時間資訊。
+21. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 的 `application_date`、`duration_months`、`expires_at` 語意需一致：對 `active` extend key，`application_date` 為原始申請日、`duration_months` 為目前有效週期內的累計總月數；對 `expired` 後再 extend 的 key，`application_date` 為最近一次使其重新生效的展延當日、`duration_months` 需重置為 `original_duration_months`；兩者的 `expires_at` 都為目前有效到期時間。frontend 清單與詳情不得把曾展延 key 顯示成互相矛盾的時間資訊。
 22. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 的到期口徑需以 `expires_at` 即時計算；原始狀態為 `active` 且已過期者，對外需顯示為 `expired`。
 23. 即使 expired 回填排程停用或失敗，清單、詳情與統計 API 仍需依 effective status 正確呈現 `expired`；回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked`。
 24. 一般使用者可停用本人 `active` key；停用非本人 key 時需回傳 `KEY_NOT_OWNED_BY_USER` / `403`，停用非 `active` key 時需回傳 `KEY_NOT_ACTIVE`。
 25. 一般使用者僅可續發本人 `revoked` key；續發 `active|expired` key 時需回傳 `KEY_NOT_RENEWABLE`，且同一把舊 key 不得重複續發，重複續發需回傳 `KEY_ALREADY_RENEWED`。
 26. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時需回傳 `KEY_NOT_EXTENDABLE`。`active|expired` key 皆可隨時展延。extend 成功後：
-  - `active` key：`application_date` 維持原申請日，讀取 API 的 `duration_months` 改為累計總月數。
-  - `expired` key：`application_date` 需同步改寫為展延當日，並將該次改寫保留在 application row，作為新的起算日；讀取 API 的 `duration_months` 仍為累計總月數。
+  - `active` key：`application_date` 維持原申請日，讀取 API 的 `duration_months` 改為目前有效週期內的累計總月數。
+  - `expired` key：`application_date` 需同步改寫為展延當日，並將該次改寫保留在 application row，作為新的起算日；`duration_months` 也需同步重置為 `original_duration_months`。
   - extend request 不再由使用者選擇月數；每次展延固定沿用該 key 的 `original_duration_months`。
   - `active` key 的 `expires_at` 需以原始申請週期為基數推導：`base_expires_at = application_date + original_duration_days`，`new_expires_at = base_expires_at + (extend_action_date - application_date).days`。
   - `expired` key 的 `expires_at` 需以展延當日重新起算：先將 `application_date = extend_action_date`，再計算 `new_expires_at = application_date + original_duration_days`。

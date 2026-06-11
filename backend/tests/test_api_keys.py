@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
-from app.services.api_keys_service import _extended_expires_at, _provider_total_days_for_expiration
+from app.services.api_keys_service import _extended_terms, _provider_total_days_for_expiration
 from db.repositories.types import AuthIdentity
 from tests.conftest import api_path as _api, build_headers
 
@@ -160,24 +160,48 @@ def _insert_key_usage_snapshot_history(
         )
 
 
-def test_extend_uses_original_duration_base_and_application_date_offset():
+def test_extend_active_uses_original_duration_base_and_application_date_offset():
     application_date = date(2026, 6, 1)
     issued_at = datetime(2026, 6, 1, 0, 30, 0, tzinfo=UTC)
     now = datetime(2026, 6, 10, 12, 0, 0, tzinfo=UTC)
 
-    extended_expires_at = _extended_expires_at(
+    next_application_date, extended_expires_at = _extended_terms(
         application_date=application_date,
         issued_at=issued_at,
         original_duration_months=1,
         now=now,
+        reset_application_date=False,
     )
     provider_duration_days = _provider_total_days_for_expiration(
-        application_date=application_date,
+        application_date=next_application_date,
         expires_at=extended_expires_at,
     )
 
+    assert next_application_date == date(2026, 6, 1)
     assert extended_expires_at == datetime(2026, 7, 10, 0, 30, 0, tzinfo=UTC)
     assert provider_duration_days == 39
+
+
+def test_extend_expired_resets_application_date_and_duration_base():
+    application_date = date(2026, 6, 1)
+    issued_at = datetime(2026, 6, 1, 0, 30, 0, tzinfo=UTC)
+    now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
+
+    next_application_date, extended_expires_at = _extended_terms(
+        application_date=application_date,
+        issued_at=issued_at,
+        original_duration_months=1,
+        now=now,
+        reset_application_date=True,
+    )
+    provider_duration_days = _provider_total_days_for_expiration(
+        application_date=next_application_date,
+        expires_at=extended_expires_at,
+    )
+
+    assert next_application_date == date(2026, 8, 10)
+    assert extended_expires_at == datetime(2026, 9, 9, 0, 30, 0, tzinfo=UTC)
+    assert provider_duration_days == 30
 
 
 def _set_application_limits(
@@ -1530,6 +1554,45 @@ def test_extend_sends_total_days_from_original_start_to_provider(client, admin_h
         get_settings.cache_clear()
 
 
+def test_extend_expired_resets_application_date_and_sends_reset_duration_to_provider(client, admin_headers, monkeypatch):
+    from app.core.config import get_settings
+
+    user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
+    _create_whitelist(client, admin_headers, user["x-sysid"])
+    original_application_date = date.today() - timedelta(days=40)
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user,
+        json={"application_date": str(original_application_date), "duration_months": 1, "purpose": "extend expired reset"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
+    _set_key_expires_at_past(key_id)
+    captured_update_payload: dict = {}
+
+    def _capture_update_payload(self, payload):
+        captured_update_payload.update(payload)
+        return SimpleNamespace(request_id=None, operation_id=None)
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.update_key", _capture_update_payload)
+    try:
+        extend = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={})
+        assert extend.status_code == 200
+        updated_application = _fetch_application_row_for_key(key_id)
+        expected_application_date = date.today()
+        assert updated_application["application_date"] == expected_application_date
+        assert captured_update_payload["duration"] == "30d"
+        assert extend.json()["expires_at"].startswith(str(expected_application_date + timedelta(days=30)))
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
+
+
 def test_create_application_retries_key_alias_with_version_suffix(client, admin_headers, monkeypatch):
     from app.core.config import get_settings
     from app.services.provider_client import ProviderBadRequestError, ProviderGenerateResult
@@ -1732,18 +1795,19 @@ def test_extend_active_and_expired_keys_anytime_for_user_and_admin(client, admin
     assert user_expired_allowed.json()["status"] == "active"
     _assert_utc_datetime_string(user_expired_allowed.json()["expires_at"])
     expired_extended = _fetch_application_row_for_key(key_id)
-    assert str(expired_extended["application_date"]) == original_application_date
-    assert expired_extended["duration_months"] == 4
+    expired_application_date = str(date.today())
+    assert str(expired_extended["application_date"]) == expired_application_date
+    assert expired_extended["duration_months"] == 1
 
     expired_listed = client.get(_api("/api-keys"), headers=user)
     assert expired_listed.status_code == 200
-    assert expired_listed.json()["items"][0]["application_date"] == original_application_date
-    assert expired_listed.json()["items"][0]["duration_months"] == 4
+    assert expired_listed.json()["items"][0]["application_date"] == expired_application_date
+    assert expired_listed.json()["items"][0]["duration_months"] == 1
 
     expired_detail = client.get(_api(f"/api-keys/{key_id}"), headers=user)
     assert expired_detail.status_code == 200
-    assert expired_detail.json()["application_date"] == original_application_date
-    assert expired_detail.json()["duration_months"] == 4
+    assert expired_detail.json()["application_date"] == expired_application_date
+    assert expired_detail.json()["duration_months"] == 1
 
     _set_key_expires_at_past(key_id)
     admin_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={})
@@ -1751,8 +1815,8 @@ def test_extend_active_and_expired_keys_anytime_for_user_and_admin(client, admin
     assert admin_allowed.json()["status"] == "active"
     _assert_utc_datetime_string(admin_allowed.json()["expires_at"])
     admin_extended = _fetch_application_row_for_key(key_id)
-    assert str(admin_extended["application_date"]) == original_application_date
-    assert admin_extended["duration_months"] == 5
+    assert str(admin_extended["application_date"]) == expired_application_date
+    assert admin_extended["duration_months"] == 1
 
 
 def test_extend_provider_unavailable_does_not_change_expiration(client, admin_headers, monkeypatch):

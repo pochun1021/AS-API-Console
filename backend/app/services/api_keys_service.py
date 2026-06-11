@@ -175,19 +175,30 @@ def _provider_total_days_for_expiration(*, application_date: date, expires_at: d
     return max(total_days, 1)
 
 
-def _extended_expires_at(
+def _extended_terms(
     *,
     application_date: date,
     issued_at: datetime,
     original_duration_months: int,
     now: datetime,
-) -> datetime:
+    reset_application_date: bool,
+) -> tuple[date, datetime]:
+    if reset_application_date:
+        next_application_date = now.date()
+        return next_application_date, _base_expires_at(
+            application_date=next_application_date,
+            original_duration_months=original_duration_months,
+            issued_at=issued_at,
+        )
+
     extension_offset_days = max((now.date() - application_date).days, 0)
-    return _base_expires_at(
+    next_application_date = application_date
+    next_expires_at = _base_expires_at(
         application_date=application_date,
         original_duration_months=original_duration_months,
         issued_at=issued_at,
     ) + timedelta(days=extension_offset_days)
+    return next_application_date, next_expires_at
 
 
 def _parse_optional_budget(value: str | None) -> float | None:
@@ -990,16 +1001,21 @@ class ApiKeysService:
         if source_effective_status not in {"active", "expired"}:
             raise ApiError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409)
         now = datetime.now(UTC)
-        next_application_date = source_app.application_date
-        next_duration_months = source_app.duration_months + source_app.original_duration_months
-        next_expires_at = _extended_expires_at(
+        reset_application_date = source_effective_status == "expired"
+        next_duration_months = (
+            source_app.original_duration_months
+            if reset_application_date
+            else source_app.duration_months + source_app.original_duration_months
+        )
+        next_application_date, next_expires_at = _extended_terms(
             application_date=source_app.application_date,
             issued_at=source_app.issued_at,
             original_duration_months=source_app.original_duration_months,
             now=now,
+            reset_application_date=reset_application_date,
         )
         provider_duration_days = _provider_total_days_for_expiration(
-            application_date=source_app.application_date,
+            application_date=next_application_date,
             expires_at=next_expires_at,
         )
 
