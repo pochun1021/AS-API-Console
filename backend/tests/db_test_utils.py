@@ -11,6 +11,8 @@ from app.core.config import get_settings
 
 _DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 _WORKER_ENV = "PYTEST_XDIST_WORKER"
+
+
 def _base_test_database_url() -> str | None:
     settings = get_settings()
     return settings.test_database_url or settings.database_url
@@ -54,12 +56,18 @@ def ensure_worker_test_database() -> str | None:
     if not db_url:
         return None
 
+    worker = worker_id()
+    if not worker:
+        return db_url
+
     base_url = _base_test_database_url() or db_url
     target_url = make_url(db_url)
     base_engine_url = make_url(base_url)
     database = target_url.database
     if not database:
-        raise ValueError("test database URL must include a database name")
+        raise RuntimeError(
+            "Parallel pytest workers require TEST_DATABASE_URL/TEST_DB_* to include a base test database name."
+        )
     if not _DB_NAME_RE.match(database):
         raise ValueError(f"unsafe database name for test database: {database}")
 
@@ -72,7 +80,7 @@ def ensure_worker_test_database() -> str | None:
             raise RuntimeError(
                 "Failed to create worker test database. "
                 "Parallel pytest workers require the TEST_DATABASE_URL/TEST_DB_* credentials "
-                f"to connect to the base test database and CREATE DATABASE `{database}`."
+                f"to connect to the base test database and have CREATE DATABASE permission for `{database}`."
             ) from exc
     finally:
         engine.dispose()

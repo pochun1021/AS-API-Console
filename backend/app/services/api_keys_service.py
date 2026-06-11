@@ -49,7 +49,6 @@ LIMIT_STRATEGY_DEFAULTS = {
     "max_parallel_requests": 0,
 }
 
-
 @dataclass(slots=True)
 class Pagination:
     page: int = 1
@@ -257,7 +256,6 @@ def _derive_health_status(usage_summary: dict) -> str:
     if remaining_budget <= max_budget * 0.2:
         return "low_budget"
     return "healthy"
-
 
 class ApiKeysService:
     def __init__(self, session: Session) -> None:
@@ -691,11 +689,22 @@ class ApiKeysService:
             offset=offset,
         )
         limit_config = self._get_limit_strategy_config_for_issuance()
-        return {
-            "items": [
-                (lambda usage_summary: {
+        response_items = []
+        for item in items:
+            effective_status = _effective_status(status=item.status, expires_at=item.expires_at)
+            usage_summary = _build_usage_summary(
+                max_budget_raw=item.max_budget,
+                tpm_limit=limit_config.rate_limit_tpm,
+                rpm_limit=limit_config.rate_limit_rpm,
+                max_parallel_requests=limit_config.max_parallel_requests,
+                spend=item.usage_spend,
+                budget_reset_at=item.usage_budget_reset_at,
+                synced_at=item.usage_synced_at,
+            )
+            response_items.append(
+                {
                     "id": item.id,
-                    "status": _effective_status(status=item.status, expires_at=item.expires_at),
+                    "status": effective_status,
                     "masked_key": item.masked_key,
                     "key_alias": item.key_alias or _default_alias(item.owner_account),
                     "application_date": item.application_date,
@@ -708,22 +717,13 @@ class ApiKeysService:
                     "usage_summary": usage_summary,
                     "expiration_notice_sent_at": item.expiration_notice_sent_at,
                     "extend_eligible": _is_extend_eligible(
-                        status=_effective_status(status=item.status, expires_at=item.expires_at),
+                        status=effective_status,
                         expires_at=item.expires_at,
                     ),
-                })(
-                    _build_usage_summary(
-                        max_budget_raw=item.max_budget,
-                        tpm_limit=limit_config.rate_limit_tpm,
-                        rpm_limit=limit_config.rate_limit_rpm,
-                        max_parallel_requests=limit_config.max_parallel_requests,
-                        spend=item.usage_spend,
-                        budget_reset_at=item.usage_budget_reset_at,
-                        synced_at=item.usage_synced_at,
-                    )
-                )
-                for item in items
-            ],
+                }
+            )
+        return {
+            "items": response_items,
             "page": page,
             "page_size": page_size,
             "total": total,
@@ -821,6 +821,7 @@ class ApiKeysService:
             "department": updated.department,
             "application_date": updated.application_date,
             "duration_months": updated.duration_months,
+            "original_duration_months": updated.original_duration_months,
             "created_at": updated.created_at,
             "expires_at": updated.expires_at,
         }

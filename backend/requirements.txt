@@ -9,6 +9,7 @@ itsdangerous>=2.2.0
 mariadb>=1.1.14
 pydantic-settings>=2.11.0
 pytest>=8.4.2
+pytest-xdist>=3.8.0
 sqlalchemy>=2.0.44
 uvicorn>=0.38.0
 zeep>=4.3.2

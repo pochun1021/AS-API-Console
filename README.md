@@ -100,7 +100,8 @@ export ENV_FILE=/home/app/config/.env
 - 建議命名規則：`TEST_DB_USER` 與 `TEST_DB_NAME` 使用相同名稱（例如都用 `as_api_console_test`）
 - `TEST_DATABASE_URL`：僅測試（pytest）使用；若提供會覆蓋 `TEST_DB_*` 組合結果
 - 啟用 `pytest-xdist` 平行測試時，測試基礎設施會依 worker 自動改寫為獨立 DB：例如基底 `as_api_console_test` 會分流成 `as_api_console_test_gw0`、`as_api_console_test_gw1`；各 worker 啟動時會自動 `CREATE DATABASE IF NOT EXISTS`
-- 若要使用上述平行測試模式，`TEST_DATABASE_URL` / `TEST_DB_*` 對應的資料庫帳號需能連到基底 test DB，並具備建立 worker DB 的權限
+- 若要使用上述平行測試模式，需先安裝 `pytest-xdist`，且 `TEST_DATABASE_URL` / `TEST_DB_*` 對應的資料庫帳號需能連到基底 test DB，並具備建立 worker DB 的 `CREATE DATABASE` 權限
+- 若缺少上述權限，`uv run pytest -n auto` 會在 worker DB 準備階段直接失敗；這屬測試環境阻塞，不會自動降級回共用 DB 或序列模式
 - `LOGIN_ALLOWED_TITLE_CODES`：可選，登入資格補充放行職稱代碼清單（逗號分隔，例如 `A01,A02,A03,A06,A11,A15,A1A,A1I,B01,B02,B03,B03,B04,B11,B12,B13,B14,B21`；解析時會做 `trim + upper`，空值略過且重複值去重）
 - `PERSNL_SOAP_URL`：可選，Persnl SOAP runtime endpoint（設定時會優先作為實際呼叫位址）
 - `PERSNL_SOAP_WSDL_URL`：可選，Persnl SOAP WSDL URL（設定後可使用 WSDL client）
@@ -317,6 +318,7 @@ uv run pytest
 cd backend
 uv run pytest -n auto
 ```
+前提：已安裝 `pytest-xdist`，且 `TEST_DATABASE_URL` / `TEST_DB_*` 對應帳號具備 worker DB 建立權限。
 若環境沒有 `uv`：
 ```bash
 cd backend
