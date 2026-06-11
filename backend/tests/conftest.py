@@ -12,12 +12,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
 
-from app.main import app
 from app.core.config import get_settings
 from app.core.security import rate_limiter
 from db.base import Base
 from db import models  # noqa: F401
 from db.session import get_db
+from tests.db_test_utils import configure_worker_test_database_env, ensure_worker_test_database
+
+configure_worker_test_database_env()
+get_settings.cache_clear()
+
+from app.main import app
 
 API_BASE = "/main/api/v1"
 
@@ -30,6 +35,12 @@ def api_path(path: str) -> str:
 def disable_provider_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: False)
     rate_limiter.reset()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def prepare_worker_test_database() -> Generator[None, None, None]:
+    ensure_worker_test_database()
+    yield
 
 
 @pytest.fixture()
