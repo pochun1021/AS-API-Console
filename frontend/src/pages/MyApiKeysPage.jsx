@@ -37,7 +37,7 @@ import { normalizeApiError } from "../api/errors";
 import DateRangeFilterField from "../components/DateRangeFilterField";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
-import { formatDateTimeInTaipei, isWithinThirtyDaysBeforeExpiration } from "../utils/datetime";
+import { formatDateInTaipei, formatDateTimeInTaipei } from "../utils/datetime";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 import { validatePersistedText } from "../utils/inputValidation";
 import {
@@ -130,8 +130,13 @@ function handlePersistentDialogClose(reason, closeDialog) {
 
 function canShowExtendAction(item) {
   if (!item || !["active", "expired"].includes(item.status)) return false;
-  if (item.status === "expired") return true;
-  return isWithinThirtyDaysBeforeExpiration(item.expires_at) && item.extend_eligible === true;
+  return item.extend_eligible === true;
+}
+
+function getExtendDurationLabel(item, t) {
+  const months = Number(item?.original_duration_months ?? item?.duration_months ?? 0);
+  if (!months) return "";
+  return `${months} ${t("mykeys_duration_suffix")}`;
 }
 
 export default function MyApiKeysPage({ auth }) {
@@ -161,7 +166,6 @@ export default function MyApiKeysPage({ auth }) {
   const [pendingRevokeId, setPendingRevokeId] = useState("");
   const [pendingRenewId, setPendingRenewId] = useState("");
   const [pendingExtendId, setPendingExtendId] = useState("");
-  const [extendDurationMonths, setExtendDurationMonths] = useState(6);
   const [pendingAliasEditItem, setPendingAliasEditItem] = useState(null);
   const [aliasInputValue, setAliasInputValue] = useState("");
   const [aliasSaving, setAliasSaving] = useState(false);
@@ -175,6 +179,7 @@ export default function MyApiKeysPage({ auth }) {
   const [usageRow, setUsageRow] = useState(null);
   const renewCopyResetTimerRef = useRef(null);
   const isMountedRef = useRef(true);
+  const pendingExtendItem = items.find((item) => item.id === pendingExtendId) || null;
 
   function openActionMenu(event, row) {
     setActionMenuAnchorEl(event.currentTarget);
@@ -280,10 +285,10 @@ export default function MyApiKeysPage({ auth }) {
     }
   }
 
-  async function extend(id, durationMonths) {
+  async function extend(id) {
     setBanner("");
     try {
-      await apiClient.extendApiKey(id, { duration_months: durationMonths }, auth);
+      await apiClient.extendApiKey(id, auth);
       setBanner(t("mykeys_extend_done"));
       await load();
       if (detailOpen && detailId === id) {
@@ -468,7 +473,7 @@ export default function MyApiKeysPage({ auth }) {
           minWidth: 180,
           filterable: false,
           valueGetter: (value) => (value ? new Date(value) : null),
-          renderCell: (params) => formatDateTimeInTaipei(params.row.expires_at, { locale })
+          renderCell: (params) => formatDateInTaipei(params.row.expires_at, { locale })
         },
         {
           field: "masked_key",
@@ -737,7 +742,6 @@ export default function MyApiKeysPage({ auth }) {
               closeActionMenu();
               if (targetId) {
                 setPendingExtendId(targetId);
-                setExtendDurationMonths(6);
               }
             }}
           >
@@ -875,18 +879,10 @@ export default function MyApiKeysPage({ auth }) {
         <DialogTitle>{t("mykeys_dialog_extend_title")}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 0.5, minWidth: 260 }}>
-            <Typography>{t("mykeys_dialog_extend_body")}</Typography>
-            <TextField
-              select
-              label={t("mykeys_dialog_extend_duration_label")}
-              value={String(extendDurationMonths)}
-              onChange={(e) => setExtendDurationMonths(Number(e.target.value))}
-              SelectProps={{ native: true }}
-            >
-              <option value="1">{`1 ${t("mykeys_duration_suffix")}`}</option>
-              <option value="6">{`6 ${t("mykeys_duration_suffix")}`}</option>
-              <option value="12">{`12 ${t("mykeys_duration_suffix")}`}</option>
-            </TextField>
+            <Typography>
+              {t("mykeys_dialog_extend_body")}
+              {getExtendDurationLabel(pendingExtendItem, t) ? `（${getExtendDurationLabel(pendingExtendItem, t)}）` : ""}
+            </Typography>
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -894,9 +890,8 @@ export default function MyApiKeysPage({ auth }) {
           <Button
             onClick={async () => {
               const targetId = pendingExtendId;
-              const months = extendDurationMonths;
               setPendingExtendId("");
-              await extend(targetId, months);
+              await extend(targetId);
             }}
           >
             {locale === "zh-TW" ? "確認" : "Confirm"}
@@ -954,7 +949,7 @@ export default function MyApiKeysPage({ auth }) {
                 {t("mykeys_detail_masked_key")}: {formatMaskedKey(detailItem.masked_key)}
               </Typography>
               <Typography>{t("mykeys_detail_created_at")}: {formatDateTimeInTaipei(detailItem.created_at, { locale })}</Typography>
-              <Typography>{t("mykeys_detail_expires_at")}: {formatDateTimeInTaipei(detailItem.expires_at, { locale })}</Typography>
+              <Typography>{t("mykeys_detail_expires_at")}: {formatDateInTaipei(detailItem.expires_at, { locale })}</Typography>
               <Typography>{t("mykeys_detail_purpose")}: {detailItem.purpose || "-"}</Typography>
               {auth.role === "admin" ? (
                 <TextField
@@ -967,7 +962,14 @@ export default function MyApiKeysPage({ auth }) {
             </Stack>
           ) : null}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          {detailItem?.status === "active" ? (
+            <Box sx={{ mr: "auto" }}>
+              <Button color="warning" variant="contained" onClick={() => setPendingRevokeId(detailItem.id)}>
+                停用金鑰
+              </Button>
+            </Box>
+          ) : null}
           <Button onClick={closeDetail}>{locale === "zh-TW" ? "關閉" : "Close"}</Button>
           {auth.role === "admin" && detailItem ? (
             <Button
@@ -976,11 +978,6 @@ export default function MyApiKeysPage({ auth }) {
               onClick={() => saveAlias(detailItem.id, detailAliasValue)}
             >
               {t("mykeys_save_key_alias")}
-            </Button>
-          ) : null}
-          {detailItem?.status === "active" ? (
-            <Button color="warning" variant="contained" onClick={() => setPendingRevokeId(detailItem.id)}>
-              停用金鑰
             </Button>
           ) : null}
         </DialogActions>

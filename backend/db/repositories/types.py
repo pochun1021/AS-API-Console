@@ -18,6 +18,7 @@ class ApplicationCreateInput:
     proxy_operator_account: str | None
     application_date: date
     duration_months: int
+    original_duration_months: int
     purpose: str
     max_budget: str | None
     budget_duration: str | None
@@ -48,6 +49,7 @@ class ApiKeyListItem:
     key_alias: str | None
     application_date: date
     duration_months: int
+    original_duration_months: int
     owner_account: str
     owner_name: str
     expires_at: datetime
@@ -87,6 +89,7 @@ class ApiKeyDetail:
     department: str
     application_date: date
     duration_months: int
+    original_duration_months: int
     created_at: datetime
     expires_at: datetime
     expiration_notice_sent_at: datetime | None

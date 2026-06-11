@@ -39,8 +39,10 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 4. Keep changes scoped; do not mix unrelated edits.
 5. For DB migration changes, verify Alembic `revision` naming constraints (length <= 32 chars) and `down_revision` links before validation.
 6. For DB migration changes, run `cd backend && uv run alembic upgrade head` and treat any failure (missing `uv`, env/config issue, DB connectivity issue, or Alembic error) as a blocking error that must be reported.
-7. After any change under `frontend/`, run `npm run build` in `frontend` and report the result.
-8. Report what changed, which spec rules were affected, and any residual risk.
+7. For feature/behavior changes, run at least one small-scope validation that directly exercises the changed area (targeted test, focused manual flow, or similarly scoped check) and report the result.
+8. After any change under `frontend/`, run `npm run build` in `frontend` and report the result.
+9. Do not treat full-suite or whole-repo regression testing as mandatory during implementation work unless the task explicitly requires it; reserve full overall testing for PR merge flow or when risk is unusually high.
+10. Report what changed, which spec rules were affected, what targeted validation was run, and any residual risk.
 
 ## Change Rules
 - Terminology must stay consistent across files (`sysid`, `user/admin`, resource-oriented routes).
@@ -55,15 +57,18 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - No leftover old terms: `subject_type`, `subject_id`, `/api/v1/my/`, `/api/v1/admin/`.
 - `README.md` and `docs/SPEC.md` use consistent route/identity/role wording when touched.
 - Acceptance criteria are updated when behavior or contract changes.
+- If behavior changed, a small-scope validation covering the changed feature has been executed and reported.
 - If Python dependencies changed, ensure `requirements.txt` exists and is updated consistently with `pyproject.toml`.
 - If a migration is added/edited, ensure Alembic `revision` length is <= 32 chars, `down_revision` links correctly, and `cd backend && uv run alembic upgrade head` succeeds.
 - If any files under `frontend/` were modified, `npm run build` has been executed in `frontend` successfully.
+- Full-suite / overall regression testing is deferred to PR merge flow unless the task explicitly required earlier execution.
 
 ## CI / Workflow Trigger Rules
 - Security scan workflow uses:
   - `pull_request` (runs on PR open/sync/reopen)
   - `push` on `main` (runs again after PR merge)
 - Any agent-driven PR merge flow, including `$pr-merge-close-branch`, must verify PR checks immediately before merge:
+  - before merge, run or verify the intended overall test suite / regression checks for the branch if they were intentionally deferred during implementation
   - if at least one PR check/status exists, wait until no check is `pending`, `queued`, or `in_progress`
   - merge is allowed only after all required checks succeed
   - if any required check fails, or mergeability/review requirements are not satisfied, stop and report blockers instead of merging
@@ -72,6 +77,11 @@ If conflicts exist, follow the higher-priority document and report the conflict.
   - `pull_request` with `types: [closed]` and condition `github.event.pull_request.merged == true`
   - or `push` to target branch only.
 - Any workflow trigger change must be documented in this file and in PR description.
+
+## PR Merge Reporting Rules
+- At PR merge time, keep the response minimal.
+- Report only deferred validations, pass/fail status, blockers, and merge readiness.
+- Do not repeat background context, file summaries, or prior implementation details unless they are required to explain a failure.
 
 ## Commit Guidance
 - Use focused commit messages like:

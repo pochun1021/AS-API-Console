@@ -68,6 +68,7 @@ class ApiKeyListItemResponse(BaseModel):
     key_alias: str
     application_date: date
     duration_months: int
+    original_duration_months: int
     owner_account: str
     owner_name: str
     expires_at: datetime
@@ -101,6 +102,7 @@ class ApiKeyDetailResponse(BaseModel):
     department: str
     application_date: date
     duration_months: int
+    original_duration_months: int
     created_at: datetime
     expires_at: datetime
     expiration_notice_sent_at: datetime | None = None
@@ -132,7 +134,7 @@ class RenewResponse(BaseModel):
 
 
 class ExtendRequest(BaseModel):
-    duration_months: int = Field(..., description="allowed: 1, 6, 12")
+    pass
 
 
 class ExtendResponse(BaseModel):
