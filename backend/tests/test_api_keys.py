@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
+from app.services.api_keys_service import _extended_expires_at, _remaining_days_until_expiry
 from db.repositories.types import AuthIdentity
 from tests.conftest import api_path as _api, build_headers
 
@@ -157,6 +158,21 @@ def _insert_key_usage_snapshot_history(
                 "synced_at": synced_at,
             },
         )
+
+
+def test_extend_uses_utc_date_diff_for_remaining_days():
+    now = datetime(2026, 6, 11, 0, 30, 0, tzinfo=UTC)
+    expires_at = datetime(2026, 7, 4, 23, 30, 0, tzinfo=UTC)
+
+    remaining_days = _remaining_days_until_expiry(expires_at=expires_at, now=now)
+    extended_expires_at = _extended_expires_at(
+        expires_at=expires_at,
+        extension_duration_months=1,
+        now=now,
+    )
+
+    assert remaining_days == 23
+    assert extended_expires_at == datetime(2026, 8, 3, 0, 30, 0, tzinfo=UTC)
 
 
 def _set_application_limits(

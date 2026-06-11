@@ -320,7 +320,7 @@
   - application ownership 以申請人快照欄位（`account`、`name`、`email`、`department`、`sysid`）為準
   - `application_date` 初次核發時為原始申請日期；同一把 key 後續每次 extend 成功後皆維持原值
   - `duration_months` 代表此把 key 累計申請的總月數（原申請月數 + 每次成功 extend 的月數），為業務顯示欄位，不等同 provider `duration` 傳值
-  - `expires_at` 為目前有效到期時間；extend 時需以 `remaining_days + extension_days` 重新計算，即 `now + max((old_expires_at - now).days, 0) + duration_months*30 days`
+  - `expires_at` 為目前有效到期時間；extend 時需以 `remaining_days + extension_days` 重新計算，其中 `remaining_days` 以 UTC 日期差計算 `max((old_expires_at.date() - now.date()).days, 0)`，避免剩餘秒數進位造成多一天；例如 2026-06-04 申請 1 個月、原到期日 2026-07-04，若於 2026-06-11 extend 1 個月，新到期日應為 2026-08-03。
   - `is_proxy_submission = false` 時，`proxy_operator_account = NULL`
   - `is_proxy_submission = true` 時，`proxy_operator_account` 需記錄實際代送的 `admin account`
   - 完整操作者身份應透過 `operation_audit_logs` 取得，不重複存放於 application row

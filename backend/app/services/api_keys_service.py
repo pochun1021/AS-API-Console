@@ -1,6 +1,5 @@
 import hashlib
 import logging
-import math
 import re
 import secrets
 from dataclasses import dataclass
@@ -157,10 +156,8 @@ def _is_extend_eligible(
 
 def _remaining_days_until_expiry(*, expires_at: datetime, now: datetime) -> int:
     expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
-    remaining_seconds = (expires_at_utc - now).total_seconds()
-    if remaining_seconds <= 0:
-        return 0
-    return math.ceil(remaining_seconds / 86400)
+    remaining_days = (expires_at_utc.date() - now.date()).days
+    return max(remaining_days, 0)
 
 
 def _provider_total_days_from_start(
