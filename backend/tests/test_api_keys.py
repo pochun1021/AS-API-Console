@@ -190,6 +190,40 @@ def _set_application_limits(
         )
 
 
+def _set_limit_strategy_config(
+    *,
+    budget_max_budget: str,
+    budget_duration: str,
+    rate_limit_tpm: int,
+    rate_limit_rpm: int,
+    max_parallel_requests: int,
+) -> None:
+    settings = get_settings()
+    db_url = settings.test_database_url or settings.database_url
+    engine = create_engine(db_url, future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE limit_strategy_config
+                SET budget_max_budget = :budget_max_budget,
+                    budget_duration = :budget_duration,
+                    rate_limit_tpm = :rate_limit_tpm,
+                    rate_limit_rpm = :rate_limit_rpm,
+                    max_parallel_requests = :max_parallel_requests
+                WHERE id = 'global-limit-strategy-config'
+                """
+            ),
+            {
+                "budget_max_budget": budget_max_budget,
+                "budget_duration": budget_duration,
+                "rate_limit_tpm": rate_limit_tpm,
+                "rate_limit_rpm": rate_limit_rpm,
+                "max_parallel_requests": max_parallel_requests,
+            },
+        )
+
+
 def _set_key_secret_material(key_id: str, *, key_ciphertext: str | None, key_kek_version: str | None) -> None:
     settings = get_settings()
     db_url = settings.test_database_url or settings.database_url
@@ -451,26 +485,30 @@ def test_list_api_keys_uses_current_limit_strategy_config_for_usage_rate_limits(
     )
     assert create_resp.status_code == 201
 
-    update_resp = client.patch(
-        _api("/limit-strategy-config"),
-        headers=admin_headers,
-        json={
-            "budget_max_budget": "1000",
-            "budget_duration": "monthly",
-            "rate_limit_tpm": 43210,
-            "rate_limit_rpm": 321,
-            "max_parallel_requests": 12,
-        },
-    )
-    assert update_resp.status_code == 200
+    try:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=43210,
+            rate_limit_rpm=321,
+            max_parallel_requests=12,
+        )
 
-    listed = client.get(_api("/api-keys"), headers=user_headers)
+        listed = client.get(_api("/api-keys"), headers=user_headers)
 
-    assert listed.status_code == 200
-    item = listed.json()["items"][0]
-    assert item["usage_summary"]["tpm_limit"] == 43210
-    assert item["usage_summary"]["rpm_limit"] == 321
-    assert item["usage_summary"]["max_parallel_requests"] == 12
+        assert listed.status_code == 200
+        item = listed.json()["items"][0]
+        assert item["usage_summary"]["tpm_limit"] == 43210
+        assert item["usage_summary"]["rpm_limit"] == 321
+        assert item["usage_summary"]["max_parallel_requests"] == 12
+    finally:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+        )
 
 
 def test_list_api_keys_unlimited_budget_stays_healthy_and_zero_remaining(client, admin_headers, user_headers):
@@ -484,29 +522,45 @@ def test_list_api_keys_unlimited_budget_stays_healthy_and_zero_remaining(client,
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
     synced_at = datetime.now(UTC).replace(microsecond=0)
-    _set_application_limits(key_id, max_budget="0", tpm_limit=0, rpm_limit=0)
-    _set_key_usage_snapshot(
-        key_id,
-        usage_spend="9999.99",
-        usage_budget_reset_at=None,
-        usage_synced_at=synced_at,
-    )
+    _set_application_limits(key_id, max_budget="0")
+    try:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=0,
+            rate_limit_rpm=0,
+            max_parallel_requests=0,
+        )
+        _set_key_usage_snapshot(
+            key_id,
+            usage_spend="9999.99",
+            usage_budget_reset_at=None,
+            usage_synced_at=synced_at,
+        )
 
-    listed = client.get(_api("/api-keys"), headers=user_headers)
+        listed = client.get(_api("/api-keys"), headers=user_headers)
 
-    assert listed.status_code == 200
-    item = listed.json()["items"][0]
-    assert item["health_status"] == "healthy"
-    assert item["usage_summary"] == {
-        "spend": 9999.99,
-        "max_budget": 0.0,
-        "remaining_budget": 0.0,
-        "tpm_limit": 0,
-        "rpm_limit": 0,
-        "max_parallel_requests": 0,
-        "budget_reset_at": None,
-        "synced_at": synced_at.isoformat().replace("+00:00", "Z"),
-    }
+        assert listed.status_code == 200
+        item = listed.json()["items"][0]
+        assert item["health_status"] == "healthy"
+        assert item["usage_summary"] == {
+            "spend": 9999.99,
+            "max_budget": 0.0,
+            "remaining_budget": 0.0,
+            "tpm_limit": 0,
+            "rpm_limit": 0,
+            "max_parallel_requests": 0,
+            "budget_reset_at": None,
+            "synced_at": synced_at.isoformat().replace("+00:00", "Z"),
+        }
+    finally:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+        )
 
 
 def test_application_rejects_unsafe_purpose(client, admin_headers, user_headers):
@@ -1419,7 +1473,7 @@ def test_extend_sends_latest_key_alias_to_provider(client, admin_headers, monkey
         get_settings.cache_clear()
 
 
-def test_extend_expired_key_sends_incremental_duration_to_provider(client, admin_headers, monkeypatch):
+def test_extend_sends_total_days_from_original_start_to_provider(client, admin_headers, monkeypatch):
     from app.core.config import get_settings
 
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
@@ -1612,7 +1666,7 @@ def test_renew_rejects_expired_key_without_calling_provider(client, admin_header
         get_settings.cache_clear()
 
 
-def test_extend_active_keys_must_be_near_expiry_for_user_and_admin(client, admin_headers):
+def test_extend_active_and_expired_keys_anytime_for_user_and_admin(client, admin_headers):
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
     _create_whitelist(client, admin_headers, user["x-sysid"])
     original_application_date = str(date.today())
@@ -1625,15 +1679,6 @@ def test_extend_active_keys_must_be_near_expiry_for_user_and_admin(client, admin
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
     _set_key_expires_at_offset_days(key_id, days=31)
 
-    blocked = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
-    assert blocked.status_code == 409
-    assert blocked.json()["error"]["code"] == "KEY_EXTEND_NOT_NEAR_EXPIRY"
-
-    blocked_admin = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={"duration_months": 6})
-    assert blocked_admin.status_code == 409
-    assert blocked_admin.json()["error"]["code"] == "KEY_EXTEND_NOT_NEAR_EXPIRY"
-
-    _set_key_expires_at_offset_days(key_id, days=30)
     allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 6})
     assert allowed.status_code == 200
     assert allowed.json()["status"] == "active"
@@ -1653,10 +1698,9 @@ def test_extend_active_keys_must_be_near_expiry_for_user_and_admin(client, admin
     assert active_detail.json()["application_date"] == original_application_date
     assert active_detail.json()["duration_months"] == 7
 
-    _set_key_expires_at_offset_days(key_id, days=31)
-    blocked_again = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 1})
-    assert blocked_again.status_code == 409
-    assert blocked_again.json()["error"]["code"] == "KEY_EXTEND_NOT_NEAR_EXPIRY"
+    allowed_admin = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={"duration_months": 1})
+    assert allowed_admin.status_code == 200
+    assert allowed_admin.json()["status"] == "active"
 
     _set_key_expires_at_past(key_id)
     user_expired_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={"duration_months": 1})
@@ -1664,18 +1708,18 @@ def test_extend_active_keys_must_be_near_expiry_for_user_and_admin(client, admin
     assert user_expired_allowed.json()["status"] == "active"
     _assert_utc_datetime_string(user_expired_allowed.json()["expires_at"])
     expired_extended = _fetch_application_row_for_key(key_id)
-    assert str(expired_extended["application_date"]) == str(date.today())
-    assert expired_extended["duration_months"] == 1
+    assert str(expired_extended["application_date"]) == original_application_date
+    assert expired_extended["duration_months"] == 9
 
     expired_listed = client.get(_api("/api-keys"), headers=user)
     assert expired_listed.status_code == 200
-    assert expired_listed.json()["items"][0]["application_date"] == str(date.today())
-    assert expired_listed.json()["items"][0]["duration_months"] == 1
+    assert expired_listed.json()["items"][0]["application_date"] == original_application_date
+    assert expired_listed.json()["items"][0]["duration_months"] == 9
 
     expired_detail = client.get(_api(f"/api-keys/{key_id}"), headers=user)
     assert expired_detail.status_code == 200
-    assert expired_detail.json()["application_date"] == str(date.today())
-    assert expired_detail.json()["duration_months"] == 1
+    assert expired_detail.json()["application_date"] == original_application_date
+    assert expired_detail.json()["duration_months"] == 9
 
     _set_key_expires_at_past(key_id)
     admin_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={"duration_months": 1})
@@ -1683,8 +1727,8 @@ def test_extend_active_keys_must_be_near_expiry_for_user_and_admin(client, admin
     assert admin_allowed.json()["status"] == "active"
     _assert_utc_datetime_string(admin_allowed.json()["expires_at"])
     admin_extended = _fetch_application_row_for_key(key_id)
-    assert str(admin_extended["application_date"]) == str(date.today())
-    assert admin_extended["duration_months"] == 1
+    assert str(admin_extended["application_date"]) == original_application_date
+    assert admin_extended["duration_months"] == 10
 
 
 def test_extend_provider_unavailable_does_not_change_expiration(client, admin_headers, monkeypatch):

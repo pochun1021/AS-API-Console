@@ -337,27 +337,32 @@ test("user can extend active key with selected duration", async () => {
 
 test("extending an expired key resets start date and duration in detail view", async () => {
   const user = userEvent.setup();
-  const today = new Date().toISOString().slice(0, 10);
   renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
-  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
-  await user.click(moreActionButtons[2]);
+  const expiredRow = (await screen.findByText("AS-...du03")).closest('[data-id="key_010"]');
+  expect(expiredRow).toBeTruthy();
+  const expiredRowActionButton = expiredRow?.querySelector('button[aria-label="更多操作"]');
+  expect(expiredRowActionButton).toBeTruthy();
+  await user.click(expiredRowActionButton);
   await user.click(await screen.findByRole("menuitem", { name: "展延金鑰" }));
   await user.selectOptions(screen.getByLabelText("展延時長"), "6");
   await user.click(screen.getByRole("button", { name: "確認" }));
   expect(await screen.findByText("金鑰已展延。")).toBeInTheDocument();
 
-  const detailButtons = await screen.findAllByRole("button", { name: "查看詳情" });
-  await user.click(detailButtons[2]);
-  expect(await screen.findByText(`起算日期: ${today}`)).toBeInTheDocument();
-  expect(await screen.findByText("目前生效時長: 6 個月")).toBeInTheDocument();
+  const updatedExpiredRow = (await screen.findByText("AS-...du03")).closest('[data-id="key_010"]');
+  expect(updatedExpiredRow).toBeTruthy();
+  const expiredRowDetailButton = updatedExpiredRow?.querySelector('button[aria-label="查看詳情"]');
+  expect(expiredRowDetailButton).toBeTruthy();
+  await user.click(expiredRowDetailButton);
+  expect(await screen.findByText("起算日期: 2026-02-10")).toBeInTheDocument();
+  expect(await screen.findByText("目前生效時長: 7 個月")).toBeInTheDocument();
 });
 
 test.each([
   {
-    name: "user cannot see extend action for active key outside near-expiry window",
+    name: "user can see extend action for active key outside near-expiry window",
     buttonIndex: 0,
-    shouldSeeExtend: false,
+    shouldSeeExtend: true,
   },
   {
     name: "user can see extend action for expired key",
@@ -382,13 +387,16 @@ test.each([
   }
 });
 
-test("admin does not see extend action for active key outside near-expiry window", async () => {
+test("admin can see extend action for active key outside near-expiry window", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={adminAuth} />);
 
-  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
-  await user.click(moreActionButtons[1]);
-  expect(screen.queryByRole("menuitem", { name: "展延金鑰" })).not.toBeInTheDocument();
+  const activeRow = (await screen.findByText("AS-...ab12")).closest('[data-id="key_003"]');
+  expect(activeRow).toBeTruthy();
+  const activeRowActionButton = activeRow?.querySelector('button[aria-label="更多操作"]');
+  expect(activeRowActionButton).toBeTruthy();
+  await user.click(activeRowActionButton);
+  expect(await screen.findByRole("menuitem", { name: "展延金鑰" })).toBeInTheDocument();
 });
 
 test("renders timestamps in Asia/Taipei on list and detail views", async () => {

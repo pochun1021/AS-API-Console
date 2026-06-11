@@ -1,4 +1,3 @@
-import { isWithinThirtyDaysBeforeExpiration } from "../utils/datetime";
 import { containsOnlyAllowedPersistedTextCharacters, containsUnsafePersistedText, isAsciiDigits } from "../utils/inputValidation";
 
 const today = new Date().toISOString().slice(0, 10);
@@ -481,9 +480,7 @@ function ensureUniqueAlias(ownerAccount, preferredAlias) {
 }
 
 function isExtendEligible(item, auth) {
-  if (!["active", "expired"].includes(item.status)) return false;
-  if (item.status === "expired") return true;
-  return isWithinThirtyDaysBeforeExpiration(item.expires_at);
+  return ["active", "expired"].includes(item.status);
 }
 
 function findOrCreateUserByAuth(auth) {
@@ -986,9 +983,6 @@ export const mockApiProvider = {
     if (!["active", "expired"].includes(target.status)) {
       throw createError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409);
     }
-    if (target.status === "active" && !isWithinThirtyDaysBeforeExpiration(target.expires_at)) {
-      throw createError("KEY_EXTEND_NOT_NEAR_EXPIRY", "active keys can only be extended within 30 days before expiration", 409);
-    }
     const durationMonths = Number(payload?.duration_months);
     if (![1, 6, 12].includes(durationMonths)) {
       throw createError("VALIDATION_ERROR", "duration_months must be one of 1, 6, 12", 422);
@@ -998,19 +992,12 @@ export const mockApiProvider = {
     }
 
     const now = new Date();
-    if (target.status === "expired") {
-      const expires = new Date(now);
-      expires.setMonth(expires.getMonth() + durationMonths);
-      target.application_date = now.toISOString().slice(0, 10);
-      target.duration_months = durationMonths;
-      target.expires_at = expires.toISOString();
-    } else {
-      const base = new Date(target.expires_at);
-      const expires = new Date(base > now ? base : now);
-      expires.setMonth(expires.getMonth() + durationMonths);
-      target.duration_months += durationMonths;
-      target.expires_at = expires.toISOString();
-    }
+    const currentExpiresAt = new Date(target.expires_at);
+    const remainingDays = Math.max(Math.floor((currentExpiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)), 0);
+    const extensionDays = durationMonths * 30;
+    const expires = new Date(now.getTime() + (remainingDays + extensionDays) * 24 * 60 * 60 * 1000);
+    target.duration_months += durationMonths;
+    target.expires_at = expires.toISOString();
     target.status = "active";
     target.expiration_notice_sent_at = null;
 

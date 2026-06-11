@@ -37,7 +37,7 @@ import { normalizeApiError } from "../api/errors";
 import DateRangeFilterField from "../components/DateRangeFilterField";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
-import { formatDateTimeInTaipei, isWithinThirtyDaysBeforeExpiration } from "../utils/datetime";
+import { formatDateTimeInTaipei } from "../utils/datetime";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 import { validatePersistedText } from "../utils/inputValidation";
 import {
@@ -130,8 +130,7 @@ function handlePersistentDialogClose(reason, closeDialog) {
 
 function canShowExtendAction(item) {
   if (!item || !["active", "expired"].includes(item.status)) return false;
-  if (item.status === "expired") return true;
-  return isWithinThirtyDaysBeforeExpiration(item.expires_at) && item.extend_eligible === true;
+  return item.extend_eligible === true;
 }
 
 export default function MyApiKeysPage({ auth }) {

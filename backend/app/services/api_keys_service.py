@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import math
 import re
 import secrets
 from dataclasses import dataclass
@@ -83,6 +84,12 @@ def _calc_expiration(issued_at: datetime, duration_months: int) -> datetime:
     return issued_at + timedelta(days=duration_months * 30)
 
 
+def _duration_days(duration_months: int) -> int:
+    if duration_months <= 0:
+        raise ValueError("duration_months must be positive")
+    return duration_months * 30
+
+
 def _default_alias(owner_account: str) -> str:
     return f"for_{owner_account}"
 
@@ -116,9 +123,13 @@ def _to_provider_budget_duration(duration: str) -> str:
 
 
 def _to_provider_duration(duration_months: int) -> str:
-    if duration_months <= 0:
-        raise ValueError("duration_months must be positive")
-    return f"{duration_months * 30}d"
+    return f"{_duration_days(duration_months)}d"
+
+
+def _to_provider_duration_days(duration_days: int) -> str:
+    if duration_days <= 0:
+        raise ValueError("duration_days must be positive")
+    return f"{duration_days}d"
 
 
 def _to_provider_rate_limit(limit: int) -> int | None:
@@ -136,24 +147,39 @@ def _effective_status(*, status: str, expires_at: datetime) -> str:
     return status
 
 
-def _is_active_key_near_expiry(*, expires_at: datetime, now: datetime | None = None) -> bool:
-    expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
-    now_utc = now or datetime.now(UTC)
-    if expires_at_utc < now_utc:
-        return False
-    return expires_at_utc - now_utc <= timedelta(days=30)
-
-
 def _is_extend_eligible(
     *,
     status: str,
     expires_at: datetime,
 ) -> bool:
-    if status not in {"active", "expired"}:
-        return False
-    if status == "expired":
-        return True
-    return _is_active_key_near_expiry(expires_at=expires_at)
+    return status in {"active", "expired"}
+
+
+def _remaining_days_until_expiry(*, expires_at: datetime, now: datetime) -> int:
+    expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
+    remaining_seconds = (expires_at_utc - now).total_seconds()
+    if remaining_seconds <= 0:
+        return 0
+    return math.ceil(remaining_seconds / 86400)
+
+
+def _provider_total_days_from_start(
+    *,
+    application_date: date,
+    expires_at: datetime,
+    extension_duration_months: int = 0,
+    now: datetime,
+) -> int:
+    elapsed_days = max((now.date() - application_date).days, 0)
+    remaining_days = _remaining_days_until_expiry(expires_at=expires_at, now=now)
+    extension_days = _duration_days(extension_duration_months) if extension_duration_months > 0 else 0
+    total_days = elapsed_days + remaining_days + extension_days
+    return max(total_days, 1)
+
+
+def _extended_expires_at(*, expires_at: datetime, extension_duration_months: int, now: datetime) -> datetime:
+    remaining_days = _remaining_days_until_expiry(expires_at=expires_at, now=now)
+    return now + timedelta(days=remaining_days + _duration_days(extension_duration_months))
 
 
 def _parse_optional_budget(value: str | None) -> float | None:
@@ -320,6 +346,8 @@ class ApiKeysService:
         self.session.add(application)
         self.session.commit()
 
+        limit_config = self._get_limit_strategy_config_for_issuance()
+
         return {
             "application": {
                 "id": application_id,
@@ -377,15 +405,20 @@ class ApiKeysService:
         self,
         *,
         plaintext: str,
-        duration_months: int,
+        duration_days: int | None = None,
+        duration_months: int | None = None,
         config: IssuanceConfigValues,
         key_alias: str | None = None,
     ) -> dict:
+        if duration_days is None:
+            if duration_months is None:
+                raise ValueError("duration_days or duration_months is required")
+            duration_days = _duration_days(duration_months)
         payload = {
             "key": plaintext,
             "max_budget": float(config.max_budget),
             "budget_duration": _to_provider_budget_duration(config.budget_duration),
-            "duration": _to_provider_duration(duration_months),
+            "duration": _to_provider_duration_days(duration_days),
             "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
             "rpm_limit": _to_provider_rate_limit(config.rpm_limit),
             "max_parallel_requests": _to_provider_max_parallel_requests(config.max_parallel_requests),
@@ -638,7 +671,6 @@ class ApiKeysService:
             offset=offset,
         )
         limit_config = self._get_limit_strategy_config_for_issuance()
-
         return {
             "items": [
                 (lambda usage_summary: {
@@ -729,10 +761,15 @@ class ApiKeysService:
             plaintext = self._decrypt_key_for_provider(key)
             config = self._get_provider_update_config_for_application(application)
             try:
+                provider_duration_days = _provider_total_days_from_start(
+                    application_date=application.application_date,
+                    expires_at=application.expires_at,
+                    now=datetime.now(UTC),
+                )
                 self.provider_client.update_key(
                     self._build_provider_update_payload(
                         plaintext=plaintext,
-                        duration_months=application.duration_months,
+                        duration_days=provider_duration_days,
                         config=config,
                         key_alias=normalized_alias,
                     )
@@ -944,28 +981,20 @@ class ApiKeysService:
         source_effective_status = _effective_status(status=source_key.status, expires_at=source_app.expires_at)
         if source_effective_status not in {"active", "expired"}:
             raise ApiError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409)
-        if source_effective_status == "active" and not _is_active_key_near_expiry(expires_at=source_app.expires_at):
-            raise ApiError(
-                "KEY_EXTEND_NOT_NEAR_EXPIRY",
-                "active keys can only be extended within 30 days before expiration",
-                409,
-            )
         now = datetime.now(UTC)
-        if source_effective_status == "expired":
-            next_application_date = now.date()
-            next_duration_months = duration_months
-            next_expires_at = _calc_expiration(now, duration_months)
-            provider_duration_months = duration_months
-        else:
-            base_time = source_app.expires_at
-            if base_time.tzinfo is None:
-                base_time = base_time.replace(tzinfo=UTC)
-            if base_time < now:
-                base_time = now
-            next_application_date = source_app.application_date
-            next_duration_months = source_app.duration_months + duration_months
-            next_expires_at = _calc_expiration(base_time, duration_months)
-            provider_duration_months = next_duration_months
+        next_application_date = source_app.application_date
+        next_duration_months = source_app.duration_months + duration_months
+        next_expires_at = _extended_expires_at(
+            expires_at=source_app.expires_at,
+            extension_duration_months=duration_months,
+            now=now,
+        )
+        provider_duration_days = _provider_total_days_from_start(
+            application_date=source_app.application_date,
+            expires_at=source_app.expires_at,
+            extension_duration_months=duration_months,
+            now=now,
+        )
 
         provider_metadata: dict = {}
         config = self._get_limit_strategy_values()
@@ -975,7 +1004,7 @@ class ApiKeysService:
                 provider_result = self.provider_client.update_key(
                     self._build_provider_update_payload(
                         plaintext=plaintext,
-                        duration_months=provider_duration_months,
+                        duration_days=provider_duration_days,
                         config=config,
                         key_alias=source_key.key_alias or _default_alias(source_app.account),
                     )
