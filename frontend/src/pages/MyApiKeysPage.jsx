@@ -37,7 +37,7 @@ import { normalizeApiError } from "../api/errors";
 import DateRangeFilterField from "../components/DateRangeFilterField";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
-import { formatDateTimeInTaipei } from "../utils/datetime";
+import { formatDateInTaipei, formatDateTimeInTaipei } from "../utils/datetime";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 import { validatePersistedText } from "../utils/inputValidation";
 import {
@@ -467,7 +467,7 @@ export default function MyApiKeysPage({ auth }) {
           minWidth: 180,
           filterable: false,
           valueGetter: (value) => (value ? new Date(value) : null),
-          renderCell: (params) => formatDateTimeInTaipei(params.row.expires_at, { locale })
+          renderCell: (params) => formatDateInTaipei(params.row.expires_at, { locale })
         },
         {
           field: "masked_key",
@@ -953,7 +953,7 @@ export default function MyApiKeysPage({ auth }) {
                 {t("mykeys_detail_masked_key")}: {formatMaskedKey(detailItem.masked_key)}
               </Typography>
               <Typography>{t("mykeys_detail_created_at")}: {formatDateTimeInTaipei(detailItem.created_at, { locale })}</Typography>
-              <Typography>{t("mykeys_detail_expires_at")}: {formatDateTimeInTaipei(detailItem.expires_at, { locale })}</Typography>
+              <Typography>{t("mykeys_detail_expires_at")}: {formatDateInTaipei(detailItem.expires_at, { locale })}</Typography>
               <Typography>{t("mykeys_detail_purpose")}: {detailItem.purpose || "-"}</Typography>
               {auth.role === "admin" ? (
                 <TextField

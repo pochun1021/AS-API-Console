@@ -77,6 +77,7 @@
 - 時間欄位語意：
   - 對任一 `active|expired` key 成功 extend 後：`application_date` 維持此把 key 的原始申請日；`duration_months` 為此把 key 累計申請的總月數（原申請月數 + 每次成功 extend 的月數），僅作業務顯示用途，不等同 provider `duration` 實際傳值；`expires_at` 為目前有效到期時間。
   - `expires_at` 一律採 fixed-day 規則計算：`1|6|12` 個月分別視為 `30|180|360` 天，直接以生效時刻往後加上對應天數；例如 7/8 生效、1 個月效期時，結束日為 8/7，不得算到 8/8。
+  - 前端在 API Key 清單與詳情顯示 `expires_at` 時，僅顯示 `YYYY-MM-DD` 日期，不顯示時分秒。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
 - 日期區間篩選 UI 需使用 Date Range Picker，並以雙月曆（開始/結束）呈現 `application_date` 與 `expires_at` 的區間選擇。
 - 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示系統產生 alias（初始為 `for_{owner_account}`，若 provider 回報衝突則自動改為 `for_{owner_account}_vN`）。管理者手動輸入時僅允許中英文、數字、`_`、`-`、`、`，不得包含空白或其他符號。
@@ -203,7 +204,7 @@
 - Error（含重試）
 - 列表資料以 Data Table 呈現（支援排序與分頁）；僅「操作」欄位不可排序與不可 filter。
 - Login denied（公開頁）：當 OAuth callback 判定 `LOGIN_NOT_ELIGIBLE` 時，前端需停留於 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 顯示「沒有登入權限」訊息，且不得要求已有 session 才能顯示。
-- 前端所有使用者可見 datetime（如 `created_at`、`updated_at`、`issued_at`、`expires_at` 與稽核 log 時間）需固定顯示為 `Asia/Taipei`；後端 API payload 與業務判定口徑仍維持 UTC。
+- 前端所有使用者可見 datetime（如 `created_at`、`updated_at`、`issued_at` 與稽核 log 時間）需固定顯示為 `Asia/Taipei`；其中 API Key 清單與詳情中的 `expires_at` 僅顯示 `Asia/Taipei` 日期 `YYYY-MM-DD`；後端 API payload 與業務判定口徑仍維持 UTC。
 
 ### 7-1) 共用輸入驗證規則
 - 範圍僅限「會寫入後端並持久化」的欄位；純查詢、篩選、搜尋欄位不適用此規則。

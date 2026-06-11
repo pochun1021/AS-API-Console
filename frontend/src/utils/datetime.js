@@ -38,6 +38,26 @@ export function formatDateTimeInTaipei(value, { locale = "zh-TW", fallback = "-"
     : `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
+export function formatDateInTaipei(value, { locale = "zh-TW", fallback = "-" } = {}) {
+  if (!value) return fallback;
+
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return fallback;
+
+  const parts = new Intl.DateTimeFormat(normalizeLocale(locale), {
+    timeZone: DISPLAY_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(dt);
+
+  const year = getPart(parts, "year");
+  const month = getPart(parts, "month");
+  const day = getPart(parts, "day");
+
+  return `${year}-${month}-${day}`;
+}
+
 export function isWithinThirtyDaysBeforeExpiration(value, now = new Date()) {
   if (!value) return false;
 
