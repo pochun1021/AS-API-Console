@@ -78,6 +78,11 @@ If conflicts exist, follow the higher-priority document and report the conflict.
   - or `push` to target branch only.
 - Any workflow trigger change must be documented in this file and in PR description.
 
+## PR Merge Reporting Rules
+- At PR merge time, keep the response minimal.
+- Report only deferred validations, pass/fail status, blockers, and merge readiness.
+- Do not repeat background context, file summaries, or prior implementation details unless they are required to explain a failure.
+
 ## Commit Guidance
 - Use focused commit messages like:
   - `spec: ...`
