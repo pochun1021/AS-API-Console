@@ -6,14 +6,19 @@ import re
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 
 _DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 _WORKER_ENV = "PYTEST_XDIST_WORKER"
+_BASE_TEST_DB_URL_ENV = "_PYTEST_BASE_TEST_DATABASE_URL"
 
 
 def _base_test_database_url() -> str | None:
+    preserved = os.environ.get(_BASE_TEST_DB_URL_ENV)
+    if preserved:
+        return preserved
     settings = get_settings()
     return settings.test_database_url or settings.database_url
 
@@ -29,19 +34,22 @@ def build_worker_test_database_url(base_url: str, worker: str | None) -> str:
     url = make_url(base_url)
     if not url.database:
         raise ValueError("test database URL must include a database name")
+    if url.database.endswith(f"_{worker}"):
+        return base_url
 
-    return str(url.set(database=f"{url.database}_{worker}"))
+    return url.set(database=f"{url.database}_{worker}").render_as_string(hide_password=False)
 
 
 def configure_worker_test_database_env() -> None:
-    base_url = _base_test_database_url()
-    if not base_url:
-        return
-
     worker = worker_id()
     if not worker:
         return
 
+    base_url = _base_test_database_url()
+    if not base_url:
+        return
+
+    os.environ.setdefault(_BASE_TEST_DB_URL_ENV, base_url)
     os.environ["TEST_DATABASE_URL"] = build_worker_test_database_url(base_url, worker)
     get_settings.cache_clear()
 
@@ -71,7 +79,7 @@ def ensure_worker_test_database() -> str | None:
     if not _DB_NAME_RE.match(database):
         raise ValueError(f"unsafe database name for test database: {database}")
 
-    engine = create_engine(base_engine_url, future=True)
+    engine = create_engine(base_engine_url, future=True, poolclass=NullPool)
     try:
         try:
             with engine.begin() as conn:

@@ -331,10 +331,10 @@ test("user can extend active key with original duration", async () => {
 
   const detailButtons = await screen.findAllByRole("button", { name: "查看詳情" });
   await user.click(detailButtons[0]);
-  expect(await screen.findByText("目前生效時長: 12 個月")).toBeInTheDocument();
+  expect(await screen.findByText("目前生效時長: 6 個月")).toBeInTheDocument();
 });
 
-test("extending an expired key keeps original start date and reuses original duration", async () => {
+test("extending an expired key resets start date and reuses original duration", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
@@ -352,8 +352,9 @@ test("extending an expired key keeps original start date and reuses original dur
   const expiredRowDetailButton = updatedExpiredRow?.querySelector('button[aria-label="查看詳情"]');
   expect(expiredRowDetailButton).toBeTruthy();
   await user.click(expiredRowDetailButton);
-  expect(await screen.findByText("起算日期: 2026-02-10")).toBeInTheDocument();
-  expect(await screen.findByText("目前生效時長: 2 個月")).toBeInTheDocument();
+  const today = new Date().toISOString().slice(0, 10);
+  expect(await screen.findByText(`起算日期: ${today}`)).toBeInTheDocument();
+  expect(await screen.findByText("目前生效時長: 1 個月")).toBeInTheDocument();
 });
 
 test.each([

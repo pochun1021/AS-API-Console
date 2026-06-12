@@ -988,15 +988,12 @@ export const mockApiProvider = {
     }
 
     const originalDurationMonths = Number(target.original_duration_months ?? target.duration_months);
-    const baseExpires = new Date(target.created_at);
-    baseExpires.setUTCDate(baseExpires.getUTCDate() + originalDurationMonths * 30);
-    const extensionOffsetDays = Math.max(
-      Math.floor((Date.now() - new Date(target.application_date).getTime()) / (1000 * 60 * 60 * 24)),
-      0
-    );
-    const expires = new Date(baseExpires.getTime() + extensionOffsetDays * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const expires = new Date(now);
+    expires.setUTCDate(expires.getUTCDate() + originalDurationMonths * 30);
     target.original_duration_months = originalDurationMonths;
-    target.duration_months += originalDurationMonths;
+    target.application_date = now.toISOString().slice(0, 10);
+    target.duration_months = originalDurationMonths;
     target.expires_at = expires.toISOString();
     target.status = "active";
     target.expiration_notice_sent_at = null;

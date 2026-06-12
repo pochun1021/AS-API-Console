@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("APP_ENV", "test")
@@ -19,7 +20,7 @@ from db.base import Base
 from db import models  # noqa: F401
 from db.models.limit_strategy_config import LimitStrategyConfig
 from db.session import get_db
-from tests.db_test_utils import configure_worker_test_database_env, ensure_worker_test_database
+from tests.db_test_utils import configure_worker_test_database_env, ensure_worker_test_database, worker_id
 
 configure_worker_test_database_env()
 get_settings.cache_clear()
@@ -60,6 +61,43 @@ def _reset_test_schema(engine) -> None:
     Base.metadata.create_all(bind=engine)
 
 
+def _build_test_db_diagnostics(engine) -> dict[str, str | None]:
+    settings = get_settings()
+    diagnostics: dict[str, str | None] = {
+        "worker_id": worker_id(),
+        "settings_test_database_url": settings.test_database_url,
+        "settings_database_url": settings.database_url,
+        "engine_url": str(engine.url),
+        "current_database": None,
+        "connection_id": None,
+        "threads_connected": None,
+    }
+    try:
+        with engine.connect() as conn:
+            diagnostics["current_database"] = conn.execute(text("SELECT DATABASE()")).scalar()
+            diagnostics["connection_id"] = str(conn.execute(text("SELECT CONNECTION_ID()")).scalar())
+            threads_connected_row = conn.execute(text("SHOW STATUS LIKE 'Threads_connected'")).fetchone()
+            diagnostics["threads_connected"] = str(threads_connected_row[1]) if threads_connected_row else None
+    except Exception as exc:  # pragma: no cover - diagnostics path only
+        diagnostics["current_database"] = f"<unavailable: {exc}>"
+        diagnostics["connection_id"] = f"<unavailable: {exc}>"
+        diagnostics["threads_connected"] = f"<unavailable: {exc}>"
+    return diagnostics
+
+
+def _format_test_db_diagnostics(diagnostics: dict[str, str | None]) -> str:
+    ordered_keys = (
+        "worker_id",
+        "settings_test_database_url",
+        "settings_database_url",
+        "engine_url",
+        "current_database",
+        "connection_id",
+        "threads_connected",
+    )
+    return ", ".join(f"{key}={diagnostics.get(key)}" for key in ordered_keys)
+
+
 @pytest.fixture(autouse=True)
 def disable_provider_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: False)
@@ -79,9 +117,16 @@ def client() -> Generator[TestClient, None, None]:
     if not db_url:
         pytest.skip("Set TEST_DATABASE_URL, TEST_DB_*, DATABASE_URL, or DB_* to run tests.")
 
-    engine = create_engine(db_url, future=True)
+    engine = create_engine(db_url, future=True, poolclass=NullPool)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=Session)
-    _reset_test_schema(engine)
+    try:
+        _reset_test_schema(engine)
+    except Exception as exc:
+        diagnostics = _build_test_db_diagnostics(engine)
+        raise RuntimeError(
+            "Failed to reset test schema before client setup: "
+            f"{_format_test_db_diagnostics(diagnostics)}"
+        ) from exc
     with TestingSessionLocal() as seed_db:
         _seed_default_limit_strategy_config(seed_db)
 
@@ -92,11 +137,22 @@ def client() -> Generator[TestClient, None, None]:
         finally:
             db.close()
 
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    _reset_test_schema(engine)
-    app.dependency_overrides.clear()
+    try:
+        app.dependency_overrides[get_db] = override_get_db
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
+        try:
+            _reset_test_schema(engine)
+        except Exception as exc:
+            diagnostics = _build_test_db_diagnostics(engine)
+            raise RuntimeError(
+                "Failed to reset test schema during client teardown: "
+                f"{_format_test_db_diagnostics(diagnostics)}"
+            ) from exc
+        finally:
+            engine.dispose()
 
 
 def build_headers(

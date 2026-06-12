@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.models.operation_audit_logs import OperationAuditLog
+from tests.api_keys_test_utils import _create_whitelist
 from tests.conftest import api_path, build_headers
 
 
@@ -42,21 +43,6 @@ def _count_limit_strategy_config() -> int:
             text("SELECT COUNT(*) FROM limit_strategy_config WHERE id = 'global-limit-strategy-config'")
         ).first()
     return int(row[0]) if row is not None else 0
-
-
-def _create_whitelist(client, admin_headers, sysid: int) -> None:
-    resp = client.post(
-        api_path("/whitelists"),
-        headers=admin_headers,
-        json={
-            "sysid": sysid,
-            "account": f"user{sysid}",
-            "name": f"User {sysid}",
-            "email": f"user{sysid}@example.com",
-            "note": "seed",
-        },
-    )
-    assert resp.status_code == 201
 
 
 def test_application_create_logs_success_and_failure(client, admin_headers, user_headers):

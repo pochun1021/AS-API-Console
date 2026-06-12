@@ -1,395 +1,73 @@
 import logging
 from types import SimpleNamespace
 from datetime import UTC, date, datetime, timedelta
-from uuid import uuid4
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
-from app.services.api_keys_service import _extended_terms, _provider_total_days_for_expiration
+from app.services.api_keys_service import (
+    _extended_terms,
+    _provider_total_days_for_expiration,
+    _provider_total_days_from_key_created_at,
+)
 from db.repositories.types import AuthIdentity
+from tests.api_keys_test_utils import (
+    _assert_utc_datetime_string,
+    _create_whitelist,
+    _fetch_application_row,
+    _fetch_application_row_for_key,
+    _fetch_expiration_notice_rows,
+    _fetch_key_notice_state,
+    _fetch_key_status_row,
+    _insert_key_usage_snapshot_history,
+    _set_application_limits,
+    _set_expiration_notice_sent_at,
+    _set_key_expires_at_offset_days,
+    _set_key_expires_at_past,
+    _set_key_owner_snapshot,
+    _set_key_secret_material,
+    _set_key_usage_snapshot,
+    _set_limit_strategy_config,
+)
 from tests.conftest import api_path as _api, build_headers
 
 
-def _create_whitelist(client, admin_headers, sysid: str) -> None:
-    parsed_sysid = int(sysid)
-    resp = client.post(
-        _api("/whitelists"),
-        headers=admin_headers,
-        json={
-            "sysid": parsed_sysid,
-            "account": f"user{parsed_sysid}",
-            "name": f"User {parsed_sysid}",
-            "email": f"user{parsed_sysid}@example.com",
-            "note": "seed",
-        },
-    )
-    assert resp.status_code == 201
-
-
-def _set_key_expires_at_past(key_id: str) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    past = datetime.now(UTC) - timedelta(days=1)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                UPDATE api_key_applications a
-                JOIN api_keys k ON k.application_id = a.id
-                SET a.expires_at = :past
-                WHERE k.id = :key_id
-                """
-            ),
-            {"past": past, "key_id": key_id},
-        )
-
-
-def _set_expiration_notice_sent_at(key_id: str, sent_at: datetime | None) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                UPDATE api_keys
-                SET expiration_notice_sent_at = :sent_at
-                WHERE id = :key_id
-                """
-            ),
-            {"sent_at": sent_at, "key_id": key_id},
-        )
-
-
-def _set_key_expires_at_offset_days(key_id: str, *, days: int, hours: int = 1) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    target_date = (datetime.now(UTC) + timedelta(days=days)).date()
-    target = datetime(target_date.year, target_date.month, target_date.day, hours, 0, 0, tzinfo=UTC)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                UPDATE api_key_applications a
-                JOIN api_keys k ON k.application_id = a.id
-                SET a.expires_at = :target
-                WHERE k.id = :key_id
-                """
-            ),
-            {"target": target, "key_id": key_id},
-        )
-
-
-def _set_key_owner_snapshot(key_id: str, *, name: str | None = None, department: str | None = None) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                UPDATE api_key_applications a
-                JOIN api_keys k ON k.application_id = a.id
-                SET a.name = COALESCE(:name, a.name),
-                    a.department = COALESCE(:department, a.department)
-                WHERE k.id = :key_id
-                """
-            ),
-            {"name": name, "department": department, "key_id": key_id},
-        )
-
-
-def _set_key_usage_snapshot(
-    key_id: str,
-    *,
-    usage_spend: str | None,
-    usage_budget_reset_at: datetime | None,
-    usage_synced_at: datetime | None,
-) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                UPDATE api_keys
-                SET usage_spend = :usage_spend,
-                    usage_budget_reset_at = :usage_budget_reset_at,
-                    usage_synced_at = :usage_synced_at
-                WHERE id = :key_id
-                """
-            ),
-            {
-                "usage_spend": usage_spend,
-                "usage_budget_reset_at": usage_budget_reset_at,
-                "usage_synced_at": usage_synced_at,
-                "key_id": key_id,
-            },
-        )
-
-
-def _insert_key_usage_snapshot_history(
-    key_id: str,
-    *,
-    spend: str | None,
-    budget_reset_at: datetime | None,
-    synced_at: datetime,
-) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO api_key_usage_snapshots (id, api_key_id, spend, budget_reset_at, synced_at)
-                VALUES (:id, :api_key_id, :spend, :budget_reset_at, :synced_at)
-                """
-            ),
-            {
-                "id": str(uuid4()),
-                "api_key_id": key_id,
-                "spend": spend,
-                "budget_reset_at": budget_reset_at,
-                "synced_at": synced_at,
-            },
-        )
-
-
-def test_extend_active_uses_original_duration_base_and_application_date_offset():
-    application_date = date(2026, 6, 1)
+def test_extend_resets_application_date_for_new_effective_window():
     issued_at = datetime(2026, 6, 1, 0, 30, 0, tzinfo=UTC)
     now = datetime(2026, 6, 10, 12, 0, 0, tzinfo=UTC)
 
     next_application_date, extended_expires_at = _extended_terms(
-        application_date=application_date,
         issued_at=issued_at,
         original_duration_months=1,
         now=now,
-        reset_application_date=False,
     )
     provider_duration_days = _provider_total_days_for_expiration(
         application_date=next_application_date,
         expires_at=extended_expires_at,
     )
 
-    assert next_application_date == date(2026, 6, 1)
+    assert next_application_date == date(2026, 6, 10)
     assert extended_expires_at == datetime(2026, 7, 10, 0, 30, 0, tzinfo=UTC)
-    assert provider_duration_days == 39
+    assert provider_duration_days == 30
 
 
-def test_extend_expired_resets_application_date_and_duration_base():
-    application_date = date(2026, 6, 1)
-    issued_at = datetime(2026, 6, 1, 0, 30, 0, tzinfo=UTC)
+def test_provider_duration_from_key_created_at_uses_fixed_anchor():
+    key_created_at = datetime(2026, 6, 1, 0, 30, 0, tzinfo=UTC)
     now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
 
     next_application_date, extended_expires_at = _extended_terms(
-        application_date=application_date,
-        issued_at=issued_at,
+        issued_at=key_created_at,
         original_duration_months=1,
         now=now,
-        reset_application_date=True,
     )
-    provider_duration_days = _provider_total_days_for_expiration(
-        application_date=next_application_date,
+    provider_duration_days = _provider_total_days_from_key_created_at(
+        key_created_at=key_created_at,
         expires_at=extended_expires_at,
     )
 
     assert next_application_date == date(2026, 8, 10)
     assert extended_expires_at == datetime(2026, 9, 9, 0, 30, 0, tzinfo=UTC)
-    assert provider_duration_days == 30
-
-
-def _set_application_limits(
-    key_id: str,
-    *,
-    max_budget: str | None = None,
-    tpm_limit: int | None = None,
-    rpm_limit: int | None = None,
-) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                UPDATE api_key_applications a
-                JOIN api_keys k ON k.application_id = a.id
-                SET a.max_budget = COALESCE(:max_budget, a.max_budget),
-                    a.tpm_limit = COALESCE(:tpm_limit, a.tpm_limit),
-                    a.rpm_limit = COALESCE(:rpm_limit, a.rpm_limit)
-                WHERE k.id = :key_id
-                """
-            ),
-            {
-                "max_budget": max_budget,
-                "tpm_limit": tpm_limit,
-                "rpm_limit": rpm_limit,
-                "key_id": key_id,
-            },
-        )
-
-
-def _set_limit_strategy_config(
-    *,
-    budget_max_budget: str,
-    budget_duration: str,
-    rate_limit_tpm: int,
-    rate_limit_rpm: int,
-    max_parallel_requests: int,
-) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                UPDATE limit_strategy_config
-                SET budget_max_budget = :budget_max_budget,
-                    budget_duration = :budget_duration,
-                    rate_limit_tpm = :rate_limit_tpm,
-                    rate_limit_rpm = :rate_limit_rpm,
-                    max_parallel_requests = :max_parallel_requests
-                WHERE id = 'global-limit-strategy-config'
-                """
-            ),
-            {
-                "budget_max_budget": budget_max_budget,
-                "budget_duration": budget_duration,
-                "rate_limit_tpm": rate_limit_tpm,
-                "rate_limit_rpm": rate_limit_rpm,
-                "max_parallel_requests": max_parallel_requests,
-            },
-        )
-
-
-def _set_key_secret_material(key_id: str, *, key_ciphertext: str | None, key_kek_version: str | None) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                UPDATE api_keys
-                SET key_ciphertext = :key_ciphertext,
-                    key_kek_version = :key_kek_version
-                WHERE id = :key_id
-                """
-            ),
-            {
-                "key_ciphertext": key_ciphertext,
-                "key_kek_version": key_kek_version,
-                "key_id": key_id,
-            },
-        )
-
-
-def _fetch_key_status_row(key_id: str) -> dict:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT k.status AS key_status, a.status AS application_status, a.revoked_at, a.expires_at
-                FROM api_keys k
-                JOIN api_key_applications a ON a.id = k.application_id
-                WHERE k.id = :key_id
-                """
-            ),
-            {"key_id": key_id},
-        ).mappings().one()
-    return dict(row)
-
-
-def _fetch_key_notice_state(key_id: str) -> dict:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT expiration_notice_sent_at
-                FROM api_keys
-                WHERE id = :key_id
-                """
-            ),
-            {"key_id": key_id},
-        ).mappings().one()
-    return dict(row)
-
-
-def _fetch_expiration_notice_rows(key_id: str) -> list[dict]:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        rows = conn.execute(
-            text(
-                """
-                SELECT notice_days_before, status, sent_at, error_message, success_notice_days_before, expires_at_snapshot
-                FROM api_key_expiration_notices
-                WHERE key_id = :key_id
-                ORDER BY created_at ASC, id ASC
-                """
-            ),
-            {"key_id": key_id},
-        ).mappings().all()
-    return [dict(row) for row in rows]
-
-
-def _fetch_application_row(application_id: str) -> dict:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT id, account, name, email, department, sysid, is_proxy_submission, proxy_operator_account
-                FROM api_key_applications
-                WHERE id = :application_id
-                """
-            ),
-            {"application_id": application_id},
-        ).mappings().one()
-    return dict(row)
-
-
-def _fetch_application_row_for_key(key_id: str) -> dict:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT a.id, a.account, a.name, a.email, a.department, a.sysid, a.is_proxy_submission,
-                       a.proxy_operator_account, a.application_date, a.duration_months, a.original_duration_months,
-                       a.issued_at, a.expires_at, a.status
-                FROM api_key_applications a
-                JOIN api_keys k ON k.application_id = a.id
-                WHERE k.id = :key_id
-                """
-            ),
-            {"key_id": key_id},
-        ).mappings().one()
-    return dict(row)
-
-
-def _assert_utc_datetime_string(value: str) -> None:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    assert parsed.tzinfo is not None
-    assert value.endswith("Z") or value.endswith("+00:00")
+    assert provider_duration_days == 100
 
 
 def test_calc_expiration_uses_fixed_day_duration():
@@ -1519,7 +1197,7 @@ def test_extend_sends_latest_key_alias_to_provider(client, admin_headers, monkey
         get_settings.cache_clear()
 
 
-def test_extend_sends_total_days_from_original_start_to_provider(client, admin_headers, monkeypatch):
+def test_extend_resets_effective_window_and_sends_provider_duration_from_key_created_at(client, admin_headers, monkeypatch):
     from app.core.config import get_settings
 
     user = build_headers(role="user", account="user1", email="user1@example.com", sysid="2001")
@@ -1546,8 +1224,12 @@ def test_extend_sends_total_days_from_original_start_to_provider(client, admin_h
     try:
         extend = client.post(_api(f"/api-keys/{key_id}/extend"), headers=user, json={})
         assert extend.status_code == 200
-        assert captured_update_payload["duration"] == "39d"
-        assert extend.json()["expires_at"].startswith(str(application_date + timedelta(days=39)))
+        updated_application = _fetch_application_row_for_key(key_id)
+        expected_application_date = date.today()
+        assert updated_application["application_date"] == expected_application_date
+        assert updated_application["duration_months"] == 1
+        assert captured_update_payload["duration"] == "30d"
+        assert extend.json()["expires_at"].startswith(str(expected_application_date + timedelta(days=30)))
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
@@ -1771,19 +1453,20 @@ def test_extend_active_and_expired_keys_anytime_for_user_and_admin(client, admin
     _assert_utc_datetime_string(allowed.json()["expires_at"])
     assert _fetch_key_notice_state(key_id)["expiration_notice_sent_at"] is None
     active_extended = _fetch_application_row_for_key(key_id)
-    assert str(active_extended["application_date"]) == original_application_date
+    active_application_date = str(date.today())
+    assert str(active_extended["application_date"]) == active_application_date
     assert active_extended["original_duration_months"] == 1
-    assert active_extended["duration_months"] == 2
+    assert active_extended["duration_months"] == 1
 
     active_listed = client.get(_api("/api-keys"), headers=user)
     assert active_listed.status_code == 200
-    assert active_listed.json()["items"][0]["application_date"] == original_application_date
-    assert active_listed.json()["items"][0]["duration_months"] == 2
+    assert active_listed.json()["items"][0]["application_date"] == active_application_date
+    assert active_listed.json()["items"][0]["duration_months"] == 1
 
     active_detail = client.get(_api(f"/api-keys/{key_id}"), headers=user)
     assert active_detail.status_code == 200
-    assert active_detail.json()["application_date"] == original_application_date
-    assert active_detail.json()["duration_months"] == 2
+    assert active_detail.json()["application_date"] == active_application_date
+    assert active_detail.json()["duration_months"] == 1
 
     allowed_admin = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={})
     assert allowed_admin.status_code == 200
