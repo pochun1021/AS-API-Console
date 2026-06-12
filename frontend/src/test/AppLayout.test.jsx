@@ -28,6 +28,7 @@ test("user sees shared navigation including models", () => {
   expect(screen.getByRole("link", { name: "申請" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "API Keys" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Models" })).toBeInTheDocument();
+  expect(screen.getByAltText("AS API Console logo")).toBeInTheDocument();
   expect(screen.getByLabelText("語言")).toBeInTheDocument();
   expect(screen.getByLabelText("登出")).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "特殊人員名單管理" })).not.toBeInTheDocument();

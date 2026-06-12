@@ -24,6 +24,7 @@ export default function AppLayout({ children, auth, onChangeLocale = () => {}, o
   const [localeMenuAnchor, setLocaleMenuAnchor] = useState(null);
   const visibleNavItems = navItems.filter((item) => item.roles.includes(auth.role));
   const localeMenuOpen = Boolean(localeMenuAnchor);
+  const logoSrc = `${import.meta.env.BASE_URL}favicon.svg`;
 
   function openLocaleMenu(event) {
     setLocaleMenuAnchor(event.currentTarget);
@@ -49,9 +50,17 @@ export default function AppLayout({ children, auth, onChangeLocale = () => {}, o
     >
       <AppBar position="static" elevation={0}>
         <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            AS API Console
-          </Typography>
+          <Box sx={{ flexGrow: 1, display: "flex", alignItems: "center", gap: 1.25, minWidth: 0 }}>
+            <Box
+              component="img"
+              src={logoSrc}
+              alt="AS API Console logo"
+              sx={{ width: 32, height: 32, flexShrink: 0 }}
+            />
+            <Typography variant="h6" sx={{ minWidth: 0 }}>
+              AS API Console
+            </Typography>
+          </Box>
           {visibleNavItems.map((item) => (
             <Button
               key={item.labelKey}
