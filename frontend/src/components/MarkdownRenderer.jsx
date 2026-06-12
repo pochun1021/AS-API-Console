@@ -26,11 +26,10 @@ async function copyText(text) {
 }
 
 function CodeBlock({ content }) {
-  const { locale } = useLocale();
+  const { t } = useLocale();
   const [copySucceeded, setCopySucceeded] = useState(false);
   const [copyError, setCopyError] = useState("");
   const resetTimerRef = useRef(null);
-  const isZh = locale === "zh-TW";
 
   useEffect(() => () => {
     if (resetTimerRef.current) {
@@ -43,13 +42,13 @@ function CodeBlock({ content }) {
     const result = await copyText(content);
     if (!result.ok) {
       if (result.reason === "insecure_context") {
-        setCopyError(isZh ? "目前環境不支援自動複製，請手動複製。" : "Auto copy is unavailable in this environment. Please copy manually.");
+        setCopyError(t("common_copy_error_insecure_context"));
       } else if (result.reason === "clipboard_unavailable") {
-        setCopyError(isZh ? "目前瀏覽器不支援自動複製，請手動複製。" : "Clipboard API is unavailable. Please copy manually.");
+        setCopyError(t("common_copy_error_clipboard_unavailable"));
       } else if (result.reason === "permission_denied") {
-        setCopyError(isZh ? "剪貼簿權限被拒絕，請允許後再試。" : "Clipboard permission denied. Please allow and retry.");
+        setCopyError(t("common_copy_error_permission_denied"));
       } else {
-        setCopyError(isZh ? "目前無法複製程式碼，請手動複製。" : "Unable to copy code now. Please copy manually.");
+        setCopyError(t("common_copy_error_code"));
       }
       return;
     }
@@ -76,9 +75,9 @@ function CodeBlock({ content }) {
         }}
       >
         <Box sx={{ display: "flex", justifyContent: "flex-end", px: 1, pt: 1 }}>
-          <Tooltip title={copySucceeded ? (isZh ? "已複製" : "Copied") : (isZh ? "複製程式碼" : "Copy Code")}>
+          <Tooltip title={copySucceeded ? t("common_copied") : t("common_copy_code")}>
             <IconButton
-              aria-label={copySucceeded ? (isZh ? "已複製程式碼" : "Copied Code") : (isZh ? "複製程式碼" : "Copy Code")}
+              aria-label={copySucceeded ? t("common_copied_code") : t("common_copy_code")}
               onClick={onCopy}
               size="small"
               sx={{ color: "#e2e8f0" }}

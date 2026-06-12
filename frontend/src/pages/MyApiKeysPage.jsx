@@ -320,19 +320,19 @@ export default function MyApiKeysPage({ auth }) {
 
   async function onCopyRenewKey() {
     if (!renewIssued?.api_key_plaintext) {
-      setRenewCopyError(locale === "zh-TW" ? "目前無法複製金鑰，請手動複製。" : "Unable to copy key now. Please copy manually.");
+      setRenewCopyError(t("common_copy_error_key"));
       return;
     }
     const result = await copyText(renewIssued.api_key_plaintext);
     if (!result.ok) {
       if (result.reason === "insecure_context") {
-        setRenewCopyError(locale === "zh-TW" ? "目前環境不支援自動複製（需 HTTPS 或 localhost），請手動複製。" : "Auto copy is unavailable in this environment (HTTPS or localhost required).");
+        setRenewCopyError(t("common_copy_error_insecure_context"));
       } else if (result.reason === "clipboard_unavailable") {
-        setRenewCopyError(locale === "zh-TW" ? "目前瀏覽器不支援自動複製，請手動複製。" : "Clipboard API is unavailable. Please copy manually.");
+        setRenewCopyError(t("common_copy_error_clipboard_unavailable"));
       } else if (result.reason === "permission_denied") {
-        setRenewCopyError(locale === "zh-TW" ? "剪貼簿權限被拒絕，請允許後再試，或手動複製。" : "Clipboard permission denied. Please allow and retry, or copy manually.");
+        setRenewCopyError(t("common_copy_error_permission_denied"));
       } else {
-        setRenewCopyError(locale === "zh-TW" ? "目前無法複製金鑰，請手動複製。" : "Unable to copy key now. Please copy manually.");
+        setRenewCopyError(t("common_copy_error_key"));
       }
       return;
     }
@@ -927,8 +927,8 @@ export default function MyApiKeysPage({ auth }) {
             <Typography sx={{ fontFamily: "monospace", bgcolor: "grey.100", p: 1, borderRadius: 1, flex: 1, userSelect: "text", wordBreak: "break-all" }}>
               {renewIssued?.api_key_plaintext}
             </Typography>
-            <Tooltip title={renewCopySucceeded ? (locale === "zh-TW" ? "已複製" : "Copied") : (locale === "zh-TW" ? "複製金鑰" : "Copy Key")}>
-              <IconButton aria-label={renewCopySucceeded ? (locale === "zh-TW" ? "已複製金鑰" : "Copied Key") : (locale === "zh-TW" ? "複製金鑰" : "Copy Key")} onClick={onCopyRenewKey}>
+            <Tooltip title={renewCopySucceeded ? t("common_copied") : t("common_copy_key")}>
+              <IconButton aria-label={renewCopySucceeded ? t("common_copied_key") : t("common_copy_key")} onClick={onCopyRenewKey}>
                 {renewCopySucceeded ? <CheckIcon /> : <ContentCopyIcon />}
               </IconButton>
             </Tooltip>

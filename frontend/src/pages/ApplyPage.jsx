@@ -274,20 +274,20 @@ export default function ApplyPage({ auth }) {
 
   async function onCopyKey(event) {
     if (!issued?.api_key_plaintext) {
-      setCopyError("目前無法複製金鑰，請手動複製。");
+      setCopyError(t("common_copy_error_key"));
       return;
     }
 
     const result = await copyText(issued.api_key_plaintext);
     if (!result.ok) {
       if (result.reason === "insecure_context") {
-        setCopyError("目前環境不支援自動複製（需 HTTPS 或 localhost），請手動複製。");
+        setCopyError(t("common_copy_error_insecure_context"));
       } else if (result.reason === "clipboard_unavailable") {
-        setCopyError("目前瀏覽器不支援自動複製，請手動複製。");
+        setCopyError(t("common_copy_error_clipboard_unavailable"));
       } else if (result.reason === "permission_denied") {
-        setCopyError("剪貼簿權限被拒絕，請允許後再試，或手動複製。");
+        setCopyError(t("common_copy_error_permission_denied"));
       } else {
-        setCopyError("目前無法複製金鑰，請手動複製。");
+        setCopyError(t("common_copy_error_key"));
       }
       return;
     }
@@ -420,8 +420,8 @@ export default function ApplyPage({ auth }) {
               <Typography sx={{ fontFamily: "monospace", bgcolor: "grey.100", p: 1, borderRadius: 1, flex: 1, userSelect: "text", wordBreak: "break-all" }}>
                 {issued?.api_key_plaintext}
               </Typography>
-              <Tooltip title={copySucceeded ? "已複製" : "複製金鑰"}>
-                <IconButton aria-label={copySucceeded ? "已複製金鑰" : "複製金鑰"} onClick={onCopyKey}>
+              <Tooltip title={copySucceeded ? t("common_copied") : t("common_copy_key")}>
+                <IconButton aria-label={copySucceeded ? t("common_copied_key") : t("common_copy_key")} onClick={onCopyKey}>
                   {copySucceeded ? <CheckIcon /> : <ContentCopyIcon />}
                 </IconButton>
               </Tooltip>

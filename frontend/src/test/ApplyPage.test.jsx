@@ -1,9 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { vi } from "vitest";
 import { setApiProvider } from "../api/client";
+import { LocaleProvider, useLocale } from "../i18n/locale";
 import ApplyPage from "../pages/ApplyPage";
 
 const auth = {
@@ -15,8 +17,23 @@ const auth = {
 };
 const adminAuth = { ...auth, role: "admin" };
 
-function renderPage(ui) {
-  return render(<LocalizationProvider dateAdapter={AdapterDayjs}>{ui}</LocalizationProvider>);
+function LocaleSetter({ locale }) {
+  const { setLocale } = useLocale();
+
+  useEffect(() => {
+    setLocale(locale);
+  }, [locale, setLocale]);
+
+  return null;
+}
+
+function renderPage(ui, { locale = "zh-TW" } = {}) {
+  return render(
+    <LocaleProvider>
+      <LocaleSetter locale={locale} />
+      <LocalizationProvider dateAdapter={AdapterDayjs}>{ui}</LocalizationProvider>
+    </LocaleProvider>
+  );
 }
 
 test("validates purpose is required", async () => {
@@ -103,6 +120,32 @@ test("copies plaintext key and shows check icon feedback", async () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "複製金鑰" })).toBeInTheDocument();
     }, { timeout: 2500 });
+  } finally {
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: originalClipboard,
+      configurable: true
+    });
+  }
+});
+
+test("copy key labels switch to english locale", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  const originalClipboard = window.navigator.clipboard;
+  Object.defineProperty(window.navigator, "clipboard", {
+    value: { writeText },
+    configurable: true
+  });
+
+  try {
+    const user = userEvent.setup();
+    renderPage(<ApplyPage auth={auth} />, { locale: "en" });
+    await user.type(screen.getByLabelText("Purpose"), "integration test");
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+    await screen.findByText("This plaintext key is shown only once. Save it now.");
+
+    await user.click(screen.getByRole("button", { name: "Copy Key" }));
+    expect(await screen.findByRole("button", { name: "Copied Key" })).toBeInTheDocument();
+    expect(screen.queryByText("Unable to copy key now. Please copy manually.")).not.toBeInTheDocument();
   } finally {
     Object.defineProperty(window.navigator, "clipboard", {
       value: originalClipboard,

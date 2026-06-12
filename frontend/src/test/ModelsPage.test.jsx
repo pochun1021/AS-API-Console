@@ -125,6 +125,7 @@ test("renders english guide content when locale is en", async () => {
   expect(await screen.findByRole("heading", { name: "Service Usage Guide" })).toBeInTheDocument();
   expect(await screen.findByText("The example below is a version prepared for documentation display and user reference:")).toBeInTheDocument();
   expect(await screen.findByText("Available Models")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Copy Code" })).toBeInTheDocument();
 });
 
 test("integration steps are rendered as an ordered list", async () => {
