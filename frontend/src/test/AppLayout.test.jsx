@@ -32,6 +32,7 @@ test("user sees shared navigation including models", () => {
   expect(screen.getByLabelText("語言")).toBeInTheDocument();
   expect(screen.getByLabelText("登出")).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "特殊人員名單管理" })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "服務使用說明" })).toHaveAttribute("href", "/usage-examples");
 });
 
 test("locale menu triggers onChangeLocale with selected value", () => {
@@ -77,6 +78,7 @@ test("admin sees whitelist nav", () => {
 
   expect(screen.getByRole("link", { name: "特殊人員名單管理" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "服務使用說明" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "服務使用說明" })).toHaveAttribute("href", "/usage-examples");
   expect(screen.getByRole("link", { name: "單位代碼" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "管理者名單" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "管理者統計" })).toBeInTheDocument();

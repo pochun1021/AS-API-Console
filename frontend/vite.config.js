@@ -10,6 +10,9 @@ export default defineConfig({
   base: "/main/",
   plugins: [react(), createSensitiveBundleGuardPlugin({ enabled: isProdAppEnv })],
   server: {
+    fs: {
+      allow: [".."]
+    },
     proxy: {
       "/main/api": {
         target: "http://127.0.0.1:8000",

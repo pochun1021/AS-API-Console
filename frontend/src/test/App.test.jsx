@@ -62,7 +62,7 @@ describe("App login-denied flow", () => {
     });
   });
 
-  test("shared /models route renders for non-admin user", async () => {
+  test("shared /usage-examples route renders for non-admin user", async () => {
     provider.getCurrentUser.mockResolvedValueOnce({
       account: "user1",
       name: "User One",
@@ -78,9 +78,10 @@ describe("App login-denied flow", () => {
       fetched_at: "2026-06-05T12:00:00Z"
     });
 
-    renderApp("/models");
+    renderApp("/usage-examples");
 
-    expect(await screen.findByRole("heading", { name: "服務使用說明" })).toBeInTheDocument();
+    expect((await screen.findAllByRole("heading", { name: "服務使用說明" })).length).toBeGreaterThan(0);
     expect(await screen.findByText("gpt-4o-mini")).toBeInTheDocument();
+    expect(await screen.findByText("Python 範例")).toBeInTheDocument();
   });
 });
