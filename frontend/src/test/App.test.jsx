@@ -80,7 +80,7 @@ describe("App login-denied flow", () => {
 
     renderApp("/models");
 
-    expect(await screen.findByRole("heading", { name: "Models" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "服務使用說明" })).toBeInTheDocument();
     expect(await screen.findByText("gpt-4o-mini")).toBeInTheDocument();
   });
 });

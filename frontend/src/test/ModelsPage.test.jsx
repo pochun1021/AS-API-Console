@@ -28,7 +28,7 @@ test("loads models on mount and renders rows", async () => {
 
   render(<ModelsPage auth={auth} />);
 
-  expect(await screen.findByText("Models")).toBeInTheDocument();
+  expect(await screen.findByText("服務使用說明")).toBeInTheDocument();
   expect(await screen.findByText("gpt-4o-mini")).toBeInTheDocument();
 });
 
@@ -52,7 +52,7 @@ test("shows error state and retries", async () => {
 
   render(<ModelsPage auth={auth} />);
 
-  expect(await screen.findByText("failed")).toBeInTheDocument();
+  expect(await screen.findByText("載入模型清單失敗")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "重試" }));
   expect(await screen.findByText("gpt-4o")).toBeInTheDocument();
   expect(listModels).toHaveBeenCalledTimes(2);
