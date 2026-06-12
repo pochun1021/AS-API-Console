@@ -60,7 +60,44 @@
 - 複製流程以 Clipboard API 為唯一可驗證複製路徑；若不可用或複製失敗，需提示使用者手動複製。
 - 透過複製 icon 觸發時不得要求使用者先反白金鑰文字，系統需直接完成複製。
 
-### 2) My API Keys Page（一般使用者我的紀錄頁）
+### 2) Service Usage Guide Page（服務使用說明頁）
+- `user` 與 `admin` 都可使用。
+- 正式路由為 `/usage-examples`。
+- 正式入口使用既有主導覽列中的「服務使用說明」項目；第一版不另外要求在 Apply Page 提供快捷入口。
+- 頁面需同時呈現兩類資訊：
+  - 服務使用說明文件（靜態內容）
+  - 可用模型清單（動態資料）
+- 說明文件內容以 repo 內 markdown 維護，第一版文件來源為：
+  - `docs/service-usage-guide.zh-TW.md`
+  - `docs/service-usage-guide.en.md`
+- 前端依目前 locale 載入對應文件。
+- 文件內容第一版至少需包含：
+  - 這份文件用途與適用對象
+  - 申請 API Key 前需要準備的資訊
+  - 串接步驟摘要
+  - 至少一組 Python 範例
+  - 注意事項，例如明文 key 只顯示一次、應立即保存、不要把 key 寫死在前端、建議用環境變數管理
+- 第一版 Python 範例內容需參考既有測試腳本 `../AI-Api-test/afs_chat_completions.py`，但畫面不得依賴 repo 外檔案；需將可顯示版本收斂並維護在 repo 內文件。
+- 第一版 Python 範例需至少涵蓋：
+  - 以環境變數讀取 `API_KEY`、`BASE_URL`
+  - 呼叫 `POST /chat/completions`
+  - 使用 `Authorization: Bearer <API_KEY>`
+  - payload 至少包含 `model`、`messages`
+  - 由 response `choices[0].message.content` 取出回應內容
+- 頁面中的模型清單區塊需沿用 `GET /main/api/v1/models`，並與服務使用說明文件顯示於同一頁。
+- 第一版不新增後端 API。
+- `GET /main/api/v1/models` 成功回應固定為 `{ items, total, fetched_at }`，其中 `items[*]` 僅包含 normalized `{ id, label }`。
+- `APP_ENV=dev/test` 時，`GET /main/api/v1/models` 直接回系統內建測試資料：`gpt-4o`、`gpt-4o-mini`；`APP_ENV=prod` 才讀取 provider `/models`。
+- 若 provider `/models` timeout、回 `5xx`、或成功但 payload 無法辨識，後端需統一回 `503 PROVIDER_UNAVAILABLE`，不得透出 provider 原始 payload/error shape。
+- 頁面 mount 時需自動查詢一次模型清單。
+- 頁面停留期間需每 `15` 分鐘自動刷新一次。
+- 頁面需提供手動重新整理按鈕，且與自動刷新共用同一個 `load()` 流程。
+- 第一版模型清單僅顯示基本資料，不顯示 metadata、access groups、team/global 切換或其他進階資訊。
+- 第一版模型列表以 Data Table 呈現，僅需一欄 `Model`，顯示 `label`。
+- 頁面需提供 Loading、Empty、Error（含 Retry）狀態。
+- 頁面 unmount 時需清除 refresh timer，避免重複請求。
+
+### 3) My API Keys Page（一般使用者我的紀錄頁）
 - 顯示範圍：僅本人帳號歷史紀錄（`active|revoked|expired`）；若舊 key 已被 renew，對一般使用者隱藏。
 - 顯示欄位：申請日期、生效時長、狀態、Health、到期時間、遮罩 key、操作（其中包含 Usage icon；`APP_ENV=prod` 為 `sk-...` + 後 4 碼；`dev/test` 為 `AS-...` + 後 4 碼）。
 - `Health` 欄位為目前 quota 健康度摘要，僅允許 `healthy|low_budget|exhausted|unknown` 四種狀態；可使用獨立文案與顏色呈現，但不得把健康度語意塞回 Usage icon。
@@ -90,7 +127,7 @@
   - renew 會建立新 key，來源 key 對 `user` 列表需隱藏。
   - extend 會沿用原 key，只延長有效期限。
 
-### 3) API Key Detail Dialog（詳情視窗）
+### 4) API Key Detail Dialog（詳情視窗）
 - 顯示完整申請資訊與狀態。
 - 顯示欄位至少包含：申請日期、生效時長、用途（`purpose`）、單位（`department`）、建立時間、到期時間、遮罩 key。
 - 詳情視窗需沿用 API 時間欄位語意，不得把曾展延 key 的 `application_date`、`duration_months`、`expires_at` 顯示成彼此矛盾的資訊：
@@ -100,7 +137,7 @@
 - 一般查詢/詳情不可再次顯示 key 明文（僅受控 reveal 流程可回取）。
 - 管理者可於詳情視窗編輯 `key_alias`。
 
-### 4) Whitelist Admin Page（特殊人員名單管理頁）
+### 5) Whitelist Admin Page（特殊人員名單管理頁）
 - 可用 `account`、`name` 查詢使用者後加入特殊人員名單。
 - 名單表格屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
 - 查詢候選表格屬於 `local-full-dataset table`：目前可保留前端 local sorting/filter/pagination。
@@ -113,7 +150,7 @@
 - `note` / 備註欄位需支援中英文、數字、空白、`_`、`-`、`、`，且不得因前端驗證破壞中文輸入法組字。
 - `note` 違反 persisted-text 驗證時，前端需在儲存前提示並阻止送出；直接打 API 時後端需回 `422 VALIDATION_ERROR`。
 
-### 5) Admin List Page（管理者名單頁）
+### 6) Admin List Page（管理者名單頁）
 - 僅 `admin` 可使用。
 - 名單表格屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
 - 查詢候選表格屬於 `local-full-dataset table`：目前可保留前端 local sorting/filter/pagination。
@@ -130,7 +167,7 @@
 - 前端需阻擋管理者對自己執行管理者停用（避免誤鎖管理權限）。
 - 前端在「新增管理者」查詢結果中，對已存在於管理者名單（`active` 或 `inactive`）的人員，不得顯示新增按鈕。
 
-### 6) Admin Dashboard Page（管理者統計頁）
+### 7) Admin Dashboard Page（管理者統計頁）
 - 僅 `admin` 可使用。
 - 以 Data Table 呈現每位申請人的統計資料，欄位至少包含：`account`、`name`、`email`、`total_applications`、`active_count`、`revoked_count`、`expired_count`、`last_applied_at`。
 - 表格查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；欄位 filter 不得退化成單純前端本頁比對。
@@ -150,7 +187,7 @@
 - 表格中的 `total_applications` 與 `active_count` 需可點擊，並以 Dialog 顯示該申請人的 API Key 明細（僅遮罩 key，不得回傳明文）。
 - Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨目前統計頁日期篩選（`from`、`to`）。
 
-### 6-1) Institute View Page（單位代碼資料檢視頁）
+### 7-1) Institute View Page（單位代碼資料檢視頁）
 - 僅 `admin` 可使用。
 - 目的：供管理者確認 DB `institutes` 資料是否已寫入。
 - 資料來源僅 `GET /main/api/v1/institutes`（僅顯示 `active` institutes）。
@@ -162,21 +199,6 @@
 - 若 API 回 `429 INSTITUTE_SYNC_COOLDOWN`，前端需使用 API 回傳的 `retry_after_seconds` 啟動倒數，顯示剩餘冷卻時間，並於倒數期間停用同步按鈕。
 - 冷卻倒數顯示格式需支援 `X 分 Y 秒`；剩餘不足 1 分鐘時可僅顯示秒數。
 - 因 `429 INSTITUTE_SYNC_IN_PROGRESS` 或 `429 INSTITUTE_SYNC_COOLDOWN` 被拒絕時，前端不得重新載入 institute 列表。
-
-### 6-2) Models Page（可用模型清單頁）
-- `user` 與 `admin` 都可使用。
-- 頁面需在主導覽列提供 `Models` 入口。
-- 資料來源僅 `GET /main/api/v1/models`。
-- `GET /main/api/v1/models` 成功回應固定為 `{ items, total, fetched_at }`，其中 `items[*]` 僅包含 normalized `{ id, label }`。
-- `APP_ENV=dev/test` 時，`GET /main/api/v1/models` 直接回系統內建測試資料：`gpt-4o`、`gpt-4o-mini`；`APP_ENV=prod` 才讀取 provider `/models`。
-- 若 provider `/models` timeout、回 `5xx`、或成功但 payload 無法辨識，後端需統一回 `503 PROVIDER_UNAVAILABLE`，不得透出 provider 原始 payload/error shape。
-- 頁面 mount 時需自動查詢一次模型清單。
-- 頁面停留期間需每 `15` 分鐘自動刷新一次。
-- 頁面需提供手動重新整理按鈕，且與自動刷新共用同一個 `load()` 流程。
-- 第一版僅顯示基本模型清單，不顯示 metadata、access groups、team/global 切換或其他進階資訊。
-- 第一版列表以 Data Table 呈現，僅需一欄 `Model`，顯示 `label`。
-- 頁面需提供 Loading、Empty、Error（含 Retry）狀態。
-- 頁面 unmount 時需清除 refresh timer，避免重複請求。
 
 ### 8) Key Condition Page（金鑰條件管理頁）
 - 僅 `admin` 可使用。
@@ -1092,11 +1114,11 @@ Base path：`/main/api/v1`
 46. `admin` 可於 `/institute-view` 查看 `active` institutes 清單與 `total`，並可手動觸發同步；若 Persnl SOAP 不可用，`POST /main/api/v1/institutes/sync` 需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 46A. `POST /main/api/v1/institutes/sync` 需具備全域 single-flight 與 cooldown 保護：同時間只允許一個手動同步執行；執行中需回 `429 INSTITUTE_SYNC_IN_PROGRESS`，冷卻中需回 `429 INSTITUTE_SYNC_COOLDOWN`，且 `429` 回應至少包含 `retry_after_seconds` 與 `next_allowed_at`。成功後冷卻 `15` 分鐘，失敗後冷卻 `1` 分鐘；成功回應 shape 仍僅包含既有同步統計欄位。
 46B. `GET /main/api/v1/institutes/sync-status` 需回傳 DB 持久化的手動同步狀態，供前端重新整理頁面後立即恢復 cooldown 倒數與按鈕 disable 狀態。
-47. `user` 與 `admin` 都需可從主導覽列進入 `Models` 頁，且 `GET /main/api/v1/models` 需允許兩種角色成功呼叫。
+47. `user` 與 `admin` 都需可從主導覽列進入「服務使用說明」頁；正式路由為 `/usage-examples`，且頁面中的 `GET /main/api/v1/models` 需允許兩種角色成功呼叫。
 48. `GET /main/api/v1/models` 遇到 provider OpenAI-style `data` 陣列時，需正規化為 `{ id, label }` 清單；provider 回傳字串陣列時也需正規化成功，並去除空值、去重與依字母排序。
 49. `GET /main/api/v1/models` 若 provider timeout 或 `5xx`，需回傳 `503 PROVIDER_UNAVAILABLE`；若 provider payload 無法辨識，需走受控錯誤流程，且不得洩漏原始 payload。
-50. `Models` 頁在 mount 時需自動查詢一次；手動重新整理與每 `15` 分鐘自動刷新需重用同一查詢流程；頁面離開時需清除 timer。
-51. `Models` 頁需正確呈現 Loading、Empty、Error、Retry 狀態；第一版列表僅顯示一欄 `Model`，內容來自 API 回傳的 `label`。
+50. 服務使用說明頁中的模型清單區塊在 mount 時需自動查詢一次；手動重新整理與每 `15` 分鐘自動刷新需重用同一查詢流程；頁面離開時需清除 timer。
+51. 服務使用說明頁需正確呈現 Loading、Empty、Error、Retry 狀態；第一版模型列表僅顯示一欄 `Model`，內容來自 API 回傳的 `label`，且同頁需顯示 repo 內維護的服務說明與至少一組 Python code block。
 
 ### OAuth、Session 與語系
 52. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。`GET /main/auth/callback` 成功時需建立 session 並 redirect `/main/`，失敗時需回錯且寫入 failure audit。
