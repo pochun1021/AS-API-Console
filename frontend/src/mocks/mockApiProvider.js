@@ -2,6 +2,30 @@ import { containsOnlyAllowedPersistedTextCharacters, containsUnsafePersistedText
 
 const today = new Date().toISOString().slice(0, 10);
 const daysFromNow = (days) => new Date(Date.now() + 1000 * 60 * 60 * 24 * days).toISOString();
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+function fixedDurationDays(durationMonths) {
+  return Number(durationMonths) * 30;
+}
+
+function startOfUtcDay(value) {
+  const dt = value instanceof Date ? new Date(value) : new Date(value);
+  return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()));
+}
+
+function providerDurationDaysFromCreatedAt(createdAt, extendAt, originalDurationMonths) {
+  const createdDay = startOfUtcDay(createdAt);
+  const extendDay = startOfUtcDay(extendAt);
+  const elapsedDays = Math.max(0, Math.round((extendDay.getTime() - createdDay.getTime()) / MS_PER_DAY));
+  return elapsedDays + fixedDurationDays(originalDurationMonths);
+}
+
+function expiresAtFromProviderDuration(createdAt, durationDays) {
+  const expires = startOfUtcDay(createdAt);
+  expires.setUTCDate(expires.getUTCDate() + durationDays);
+  return expires.toISOString();
+}
+
 const mockInstitutes = [
   { inst_code: "01", inst_name: "院本部", abb_inst_name: "院本部", einst_name: "Headquarters", division: "1" },
   { inst_code: "02", inst_name: "資訊所", abb_inst_name: "資訊所", einst_name: "Institute of Information Science", division: "2" },
@@ -989,12 +1013,11 @@ export const mockApiProvider = {
 
     const originalDurationMonths = Number(target.original_duration_months ?? target.duration_months);
     const now = new Date();
-    const expires = new Date(now);
-    expires.setUTCDate(expires.getUTCDate() + originalDurationMonths * 30);
+    const totalDurationDays = providerDurationDaysFromCreatedAt(target.created_at, now, originalDurationMonths);
     target.original_duration_months = originalDurationMonths;
     target.application_date = now.toISOString().slice(0, 10);
     target.duration_months = originalDurationMonths;
-    target.expires_at = expires.toISOString();
+    target.expires_at = expiresAtFromProviderDuration(target.created_at, totalDurationDays);
     target.status = "active";
     target.expiration_notice_sent_at = null;
 

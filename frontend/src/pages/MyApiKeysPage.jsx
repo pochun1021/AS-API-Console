@@ -139,6 +139,14 @@ function getExtendDurationLabel(item, t) {
   return `${months} ${t("mykeys_duration_suffix")}`;
 }
 
+function getPredictedExtendExpiresAt(item) {
+  const months = Number(item?.original_duration_months ?? item?.duration_months ?? 0);
+  if (!months) return null;
+  const nextExpiresAt = new Date();
+  nextExpiresAt.setUTCDate(nextExpiresAt.getUTCDate() + (months * 30));
+  return nextExpiresAt.toISOString();
+}
+
 export default function MyApiKeysPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const { formatDepartment } = useDepartmentDisplay(auth);
@@ -180,6 +188,7 @@ export default function MyApiKeysPage({ auth }) {
   const renewCopyResetTimerRef = useRef(null);
   const isMountedRef = useRef(true);
   const pendingExtendItem = items.find((item) => item.id === pendingExtendId) || null;
+  const pendingExtendExpiresAt = getPredictedExtendExpiresAt(pendingExtendItem);
 
   function openActionMenu(event, row) {
     setActionMenuAnchorEl(event.currentTarget);
@@ -883,6 +892,11 @@ export default function MyApiKeysPage({ auth }) {
               {t("mykeys_dialog_extend_body")}
               {getExtendDurationLabel(pendingExtendItem, t) ? `（${getExtendDurationLabel(pendingExtendItem, t)}）` : ""}
             </Typography>
+            {pendingExtendExpiresAt ? (
+              <Typography>
+                {t("mykeys_dialog_extend_expires_at")}: {formatDateInTaipei(pendingExtendExpiresAt, { locale })}
+              </Typography>
+            ) : null}
           </Stack>
         </DialogContent>
         <DialogActions>

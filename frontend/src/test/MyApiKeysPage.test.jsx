@@ -325,6 +325,10 @@ test("user can extend active key with original duration", async () => {
   await user.click(moreActionButtons[0]);
   await user.click(await screen.findByRole("menuitem", { name: "展延金鑰" }));
   expect(await screen.findByText("確認展延")).toBeInTheDocument();
+  const expectedDialogExpiresAt = new Date();
+  expectedDialogExpiresAt.setUTCDate(expectedDialogExpiresAt.getUTCDate() + 180);
+  const expectedDialogExpiresDate = expectedDialogExpiresAt.toISOString().slice(0, 10);
+  expect(await screen.findByText(`預計到期時間: ${expectedDialogExpiresDate}`)).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "確認" }));
   expect(await screen.findByText("金鑰已展延。")).toBeInTheDocument();
   expect(screen.queryByRole("dialog", { name: "確認展延" })).not.toBeInTheDocument();
@@ -332,6 +336,10 @@ test("user can extend active key with original duration", async () => {
   const detailButtons = await screen.findAllByRole("button", { name: "查看詳情" });
   await user.click(detailButtons[0]);
   expect(await screen.findByText("目前生效時長: 6 個月")).toBeInTheDocument();
+  const expectedExpiresAt = new Date();
+  expectedExpiresAt.setUTCDate(expectedExpiresAt.getUTCDate() + 180);
+  const expectedExpiresDate = expectedExpiresAt.toISOString().slice(0, 10);
+  expect(await screen.findByText(`到期時間: ${expectedExpiresDate}`)).toBeInTheDocument();
 });
 
 test("extending an expired key resets start date and reuses original duration", async () => {
@@ -353,8 +361,15 @@ test("extending an expired key resets start date and reuses original duration", 
   expect(expiredRowDetailButton).toBeTruthy();
   await user.click(expiredRowDetailButton);
   const today = new Date().toISOString().slice(0, 10);
+  const expectedExpiresAt = new Date(Date.UTC(2026, 4, 2));
+  const todayStart = new Date();
+  const extendDay = new Date(Date.UTC(todayStart.getUTCFullYear(), todayStart.getUTCMonth(), todayStart.getUTCDate()));
+  const elapsedDays = Math.max(0, Math.round((extendDay.getTime() - expectedExpiresAt.getTime()) / (1000 * 60 * 60 * 24)));
+  expectedExpiresAt.setUTCDate(expectedExpiresAt.getUTCDate() + elapsedDays + 30);
+  const expectedExpiresDate = expectedExpiresAt.toISOString().slice(0, 10);
   expect(await screen.findByText(`起算日期: ${today}`)).toBeInTheDocument();
   expect(await screen.findByText("目前生效時長: 1 個月")).toBeInTheDocument();
+  expect(await screen.findByText(`到期時間: ${expectedExpiresDate}`)).toBeInTheDocument();
 });
 
 test.each([
