@@ -204,6 +204,28 @@ export const httpApiProvider = {
     return request(`${apiPath("/admins")}?${query.toString()}`, { auth });
   },
 
+  async listAnnouncements(paramsOrAuth, maybeAuth) {
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
+    const query = new URLSearchParams();
+    if (params.page) query.set("page", String(params.page));
+    if (params.page_size) query.set("page_size", String(params.page_size));
+    if (params.scope) query.set("scope", params.scope);
+    if (params.status) query.set("status", params.status);
+    if (params.title) query.set("title", params.title);
+    if (params.publish_from_from) query.set("publish_from_from", params.publish_from_from);
+    if (params.publish_from_to) query.set("publish_from_to", params.publish_from_to);
+    if (params.publish_to_from) query.set("publish_to_from", params.publish_to_from);
+    if (params.publish_to_to) query.set("publish_to_to", params.publish_to_to);
+    if (params.updated_from) query.set("updated_from", params.updated_from);
+    if (params.updated_to) query.set("updated_to", params.updated_to);
+    if (params.sort_by) query.set("sort_by", params.sort_by);
+    if (params.sort_dir) query.set("sort_dir", params.sort_dir);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request(`${apiPath("/announcements")}${suffix}`, { auth });
+  },
+
   listInstitutes(auth) {
     return request(apiPath("/institutes"), { auth });
   },
@@ -241,6 +263,29 @@ export const httpApiProvider = {
 
   deleteAdmin(id, auth) {
     return request(apiPath(`/admins/${id}`), { method: "DELETE", auth });
+  },
+
+  createAnnouncement(payload, auth) {
+    return request(apiPath("/announcements"), {
+      method: "POST",
+      auth,
+      body: payload
+    });
+  },
+
+  updateAnnouncement(id, payload, auth) {
+    return request(apiPath(`/announcements/${id}`), {
+      method: "PATCH",
+      auth,
+      body: payload
+    });
+  },
+
+  deleteAnnouncement(id, auth) {
+    return request(apiPath(`/announcements/${id}`), {
+      method: "DELETE",
+      auth
+    });
   },
 
   getLocalePreference(auth) {

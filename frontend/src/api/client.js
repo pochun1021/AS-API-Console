@@ -131,6 +131,7 @@ export const apiClient = {
   listOperationAuditLogs: (params, auth) => provider.listOperationAuditLogs(params, auth),
   listAuthAuditLogs: (params, auth) => provider.listAuthAuditLogs(params, auth),
   listAdmins: (paramsOrAuth, maybeAuth) => provider.listAdmins(paramsOrAuth, maybeAuth),
+  listAnnouncements: (paramsOrAuth, maybeAuth) => provider.listAnnouncements(paramsOrAuth, maybeAuth),
   listInstitutes: (auth) => {
     if (shouldMockInstituteCooldown()) {
       return Promise.resolve(buildInstituteCooldownInstitutesPayload());
@@ -158,6 +159,9 @@ export const apiClient = {
   enableAdmin: (id, auth) => provider.enableAdmin(id, auth),
   disableAdmin: (id, auth) => provider.disableAdmin(id, auth),
   deleteAdmin: (id, auth) => provider.deleteAdmin(id, auth),
+  createAnnouncement: (payload, auth) => provider.createAnnouncement(payload, auth),
+  updateAnnouncement: (id, payload, auth) => provider.updateAnnouncement(id, payload, auth),
+  deleteAnnouncement: (id, auth) => provider.deleteAnnouncement(id, auth),
   getLocalePreference: (auth) => provider.getLocalePreference(auth),
   updateLocalePreference: (preferredLocale, auth) => provider.updateLocalePreference(preferredLocale, auth),
   listWhitelists: (paramsOrAuth, maybeAuth) => provider.listWhitelists(paramsOrAuth, maybeAuth),

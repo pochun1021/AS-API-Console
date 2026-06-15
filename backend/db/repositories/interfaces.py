@@ -1,10 +1,14 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Protocol
 
 from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
+from db.models.announcement import Announcement
 from db.models.whitelist import ApiKeyWhitelist
 from db.repositories.types import (
+    AnnouncementCreateInput,
+    AnnouncementListFilter,
+    AnnouncementUpdateInput,
     ApiKeyAliasUpdateInput,
     ApiKeyCreateInput,
     ApiKeyDetail,
@@ -19,6 +23,26 @@ from db.repositories.types import (
     WhitelistCreateInput,
     WhitelistUpdateInput,
 )
+
+
+class AnnouncementRepository(Protocol):
+    def create(self, data: AnnouncementCreateInput) -> Announcement: ...
+
+    def list(
+        self,
+        filters: AnnouncementListFilter,
+        *,
+        active_only: bool = False,
+        now: datetime | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[Announcement], int]: ...
+
+    def get_by_id(self, announcement_id: str) -> Announcement | None: ...
+
+    def update(self, announcement_id: str, data: AnnouncementUpdateInput) -> Announcement | None: ...
+
+    def delete(self, announcement_id: str) -> Announcement | None: ...
 
 
 class WhitelistRepository(Protocol):

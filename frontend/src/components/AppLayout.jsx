@@ -7,6 +7,7 @@ import { Link as RouterLink, useLocation } from "react-router-dom";
 import { useLocale } from "../i18n/locale";
 
 const navItems = [
+  { labelKey: "nav_announcements", path: "/announcements", roles: ["user", "admin"] },
   { labelKey: "nav_apply", path: "/apply", roles: ["user", "admin"] },
   { labelKey: "nav_api_keys", path: "/api-keys", roles: ["user", "admin"] },
   { labelKey: "nav_models", path: "/usage-examples", roles: ["user", "admin"] },
@@ -18,7 +19,13 @@ const navItems = [
   { labelKey: "nav_institute_view", path: "/institute-view", roles: ["admin"] }
 ];
 
-export default function AppLayout({ children, auth, onChangeLocale = () => {}, onLogout = () => {}, logoutInProgress = false }) {
+export default function AppLayout({
+  children,
+  auth,
+  onChangeLocale = () => {},
+  onLogout = () => {},
+  logoutInProgress = false
+}) {
   const location = useLocation();
   const { locale, t } = useLocale();
   const [localeMenuAnchor, setLocaleMenuAnchor] = useState(null);

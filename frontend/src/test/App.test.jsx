@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import App from "../App";
@@ -10,9 +12,11 @@ import * as navigation from "../utils/navigation";
 function renderApp(initialPath = "/apply") {
   return render(
     <LocaleProvider>
-      <MemoryRouter initialEntries={[initialPath]}>
-        <App />
-      </MemoryRouter>
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <MemoryRouter initialEntries={[initialPath]}>
+          <App />
+        </MemoryRouter>
+      </LocalizationProvider>
     </LocaleProvider>
   );
 }
@@ -22,6 +26,7 @@ describe("App public auth pages", () => {
     getCurrentUser: vi.fn(),
     getLocalePreference: vi.fn(),
     updateLocalePreference: vi.fn(),
+    listAnnouncements: vi.fn(),
     listModels: vi.fn(),
     logout: vi.fn()
   };
@@ -30,6 +35,7 @@ describe("App public auth pages", () => {
     provider.getCurrentUser.mockReset();
     provider.getLocalePreference.mockReset();
     provider.updateLocalePreference.mockReset();
+    provider.listAnnouncements.mockReset();
     provider.listModels.mockReset();
     provider.logout.mockReset();
     setApiProvider(provider);
@@ -123,5 +129,56 @@ describe("App public auth pages", () => {
     expect((await screen.findAllByRole("heading", { name: "服務使用說明" })).length).toBeGreaterThan(0);
     expect(await screen.findByText("gpt-4o-mini")).toBeInTheDocument();
     expect(await screen.findByText("Python 範例")).toBeInTheDocument();
+  });
+
+  test("root route redirects user to /announcements", async () => {
+    provider.getCurrentUser.mockResolvedValueOnce({
+      account: "user1",
+      name: "User One",
+      email: "user1@example.com",
+      department: "IT",
+      sysid: 2001,
+      role: "user"
+    });
+    provider.getLocalePreference.mockResolvedValueOnce({ preferred_locale: "zh-TW" });
+    provider.listAnnouncements.mockResolvedValue({
+      items: [{ id: "ann_1", title: "首頁公告", body: "公告內容", updated_at: "2026-06-15T08:00:00Z" }],
+      total: 1,
+      page: 1,
+      page_size: 20
+    });
+
+    renderApp("/");
+
+    await waitFor(() => {
+      expect(provider.listAnnouncements).toHaveBeenCalled();
+    });
+    expect(provider.listAnnouncements.mock.calls.some(([params]) => params?.scope === "all")).toBe(false);
+    expect(screen.queryByRole("button", { name: "新增" })).not.toBeInTheDocument();
+  });
+
+  test("root route redirects admin to /announcements", async () => {
+    provider.getCurrentUser.mockResolvedValueOnce({
+      account: "admin1",
+      name: "Admin One",
+      email: "admin1@example.com",
+      department: "IT",
+      sysid: 1001,
+      role: "admin"
+    });
+    provider.getLocalePreference.mockResolvedValueOnce({ preferred_locale: "zh-TW" });
+    provider.listAnnouncements.mockResolvedValue({
+      items: [{ id: "ann_1", title: "首頁公告", body: "公告內容" }],
+      total: 1,
+      page: 1,
+      page_size: 20
+    });
+
+    renderApp("/");
+
+    await waitFor(() => {
+      expect(provider.listAnnouncements).toHaveBeenCalled();
+      expect(provider.listAnnouncements.mock.calls.some(([params]) => params?.scope === "all")).toBe(true);
+    });
   });
 });

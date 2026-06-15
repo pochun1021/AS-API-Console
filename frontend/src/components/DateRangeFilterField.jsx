@@ -40,6 +40,7 @@ export default function DateRangeFilterField({
   clearLabel = "Clear",
   closeLabel = "Close",
   minWidth = 220,
+  size = "medium",
 }) {
   const { locale } = useLocale();
   const [anchorEl, setAnchorEl] = useState(null);
@@ -91,6 +92,7 @@ export default function DateRangeFilterField({
     <>
       <TextField
         label={label}
+        size={size}
         value={buildSummary(fromValue, toValue)}
         placeholder="YYYY-MM-DD - YYYY-MM-DD"
         onClick={(event) => setAnchorEl(event.currentTarget)}

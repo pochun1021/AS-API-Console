@@ -14,6 +14,7 @@ import LimitStrategiesPage from "./pages/LimitStrategiesPage";
 import InstituteViewPage from "./pages/InstituteViewPage";
 import ModelsPage from "./pages/ModelsPage";
 import OperationAuditLogsPage from "./pages/OperationAuditLogsPage";
+import SystemAnnouncementsPage from "./pages/SystemAnnouncementsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 import { redirectToLogin } from "./utils/navigation";
 
@@ -140,9 +141,14 @@ export default function App() {
   }
 
   return (
-    <AppLayout auth={auth} onChangeLocale={changeLocale} onLogout={handleLogout} logoutInProgress={logoutInProgress}>
+    <AppLayout
+      auth={auth}
+      onChangeLocale={changeLocale}
+      onLogout={handleLogout}
+      logoutInProgress={logoutInProgress}
+    >
       <Routes>
-        <Route path="/" element={<Navigate to="/apply" replace />} />
+        <Route path="/" element={<Navigate to="/announcements" replace />} />
         <Route path="/apply" element={<ApplyPage auth={auth} />} />
         <Route path="/api-keys" element={<MyApiKeysPage auth={auth} />} />
         <Route path="/usage-examples" element={<ModelsPage auth={auth} />} />
@@ -205,6 +211,10 @@ export default function App() {
               <Navigate to="/apply" replace />
             )
           }
+        />
+        <Route
+          path="/announcements"
+          element={<SystemAnnouncementsPage auth={auth} />}
         />
       </Routes>
     </AppLayout>

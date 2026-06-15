@@ -25,6 +25,7 @@ test("user sees shared navigation including models", () => {
     </MemoryRouter>
   );
 
+  expect(screen.getByRole("link", { name: "系統公告" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "申請" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "API Keys" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "服務使用說明" })).toBeInTheDocument();
@@ -33,6 +34,7 @@ test("user sees shared navigation including models", () => {
   expect(screen.getByLabelText("登出")).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "特殊人員名單管理" })).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "服務使用說明" })).toHaveAttribute("href", "/usage-examples");
+  expect(screen.queryByRole("heading", { name: "服務使用說明" })).not.toBeInTheDocument();
 });
 
 test("locale menu triggers onChangeLocale with selected value", () => {
@@ -76,7 +78,10 @@ test("admin sees whitelist nav", () => {
     </MemoryRouter>
   );
 
+  const navLinks = screen.getAllByRole("link");
+  expect(navLinks[0]).toHaveTextContent("系統公告");
   expect(screen.getByRole("link", { name: "特殊人員名單管理" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "系統公告" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "服務使用說明" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "服務使用說明" })).toHaveAttribute("href", "/usage-examples");
   expect(screen.getByRole("link", { name: "單位代碼" })).toBeInTheDocument();

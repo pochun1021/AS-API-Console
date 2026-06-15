@@ -167,6 +167,41 @@ class WhitelistListFilter:
 
 
 @dataclass(slots=True)
+class AnnouncementCreateInput:
+    id: str
+    title: str
+    body: str
+    status: str
+    publish_from: datetime | None
+    publish_to: datetime | None
+    created_by: str
+
+
+@dataclass(slots=True)
+class AnnouncementUpdateInput:
+    title: str
+    body: str
+    status: str
+    publish_from: datetime | None
+    publish_to: datetime | None
+    updated_by: str
+
+
+@dataclass(slots=True)
+class AnnouncementListFilter:
+    title: str | None = None
+    status: str | None = None
+    publish_from_from: datetime | None = None
+    publish_from_to: datetime | None = None
+    publish_to_from: datetime | None = None
+    publish_to_to: datetime | None = None
+    updated_from: datetime | None = None
+    updated_to: datetime | None = None
+    sort_by: str = "updated_at"
+    sort_dir: str = "desc"
+
+
+@dataclass(slots=True)
 class AdminListFilter:
     status: str | None = None
     sysid: int | None = None

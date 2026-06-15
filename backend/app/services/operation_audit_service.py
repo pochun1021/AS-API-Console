@@ -13,6 +13,7 @@ from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.models.operation_audit_logs import OperationAuditLog
 
 ALLOWED_METADATA_KEYS = {
+    "announcement_id",
     "application_id",
     "budget_duration",
     "budget_max_budget",
@@ -26,6 +27,7 @@ ALLOWED_METADATA_KEYS = {
     "whitelist_id",
     "target_admin_id",
     "status",
+    "title",
     "duration_months",
     "is_proxy_submission",
     "provider_request_id",
