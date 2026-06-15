@@ -98,8 +98,8 @@
 - 頁面 unmount 時需清除 refresh timer，避免重複請求。
 
 ### 2-1) System Announcement Surface（系統公告區塊與管理頁）
-- `user` 與 `admin` 登入後都需可在共用版型看到「系統公告區塊」。
-- 公告區塊需顯示目前有效公告；第一版不要求使用者已讀、關閉、pin、排序權重或附件能力。
+- 登入後共用版型不顯示系統公告區塊；公告集中於獨立的 `System Announcements Page`。
+- 第一版不要求使用者已讀、關閉、pin、排序權重或附件能力。
 - 公告有效條件為：
   - `status=active`
   - `publish_from` 為空或 `publish_from <= now`
@@ -108,7 +108,6 @@
   - `title`（必填）
   - `body`（必填；純文字）
 - 公告內容需套用 persisted-text 驗證；第一版不支援 Markdown、HTML、富文字編輯器、公告內 CTA 連結或圖片。
-- 若目前沒有任何有效公告，前端不得渲染空白大型公告卡片。
 - 「服務使用說明」連結第一版需常駐於 `System Announcements Page`：
   - `user` 與 `admin` 都可見
   - 連到既有 `/usage-examples`
@@ -117,11 +116,16 @@
 - `System Announcements Page`：
   - `user` 與 `admin` 都可使用，且主導覽列中的「系統公告」入口需位於最左側。
   - `user` 進入此頁時，僅可查看目前有效公告；不得看到 inactive、未上架、已下架公告，也不得看到新增、編輯、刪除等管理操作。
+  - `user` 與 `admin` 的公告列表都需使用表格式呈現，且公告內文不得直接常駐於列表中。
+  - `user` 與 `admin` 都可點擊公告 `title` 開啟 modal 查看完整 `body`。
   - 頁面內需固定提供「服務使用說明」入口，且不受是否有有效公告影響。
+  - 公告列表查詢互動需比照 `My API Keys Page` 的頁面外查詢欄位模式，不使用 DataTable 內建篩選器面板。
+  - `user` 視圖需提供 `title` 搜尋，以及 `publish_from`、`publish_to` 的時間區間查詢；查詢結果仍僅限目前有效公告。
   - `user` 視圖需提供 Loading、Empty、Error（含 Retry）狀態。
   - `admin` 視圖需提供公告管理能力。
   - `admin` 主表格屬於 `server-side table`。
   - `admin` 列表至少顯示：`title`、`status`、`publish_from`、`publish_to`、`updated_at`、`actions`
+  - `admin` 查詢可使用 `title`、`status`、`publish_from`、`publish_to`、`updated_at` 的頁面外查詢欄位。
   - `admin` 可新增、編輯、刪除公告。
   - `admin` 表單欄位至少包含：`title`、`body`、`status`、`publish_from`、`publish_to`
   - 若 `publish_from` 與 `publish_to` 同時存在，需滿足 `publish_from <= publish_to`
@@ -1193,11 +1197,12 @@ Base path：`/main/api/v1`
 49. `GET /main/api/v1/models` 若 provider timeout 或 `5xx`，需回傳 `503 PROVIDER_UNAVAILABLE`；若 provider payload 無法辨識，需走受控錯誤流程，且不得洩漏原始 payload。
 50. 服務使用說明頁中的模型清單區塊在 mount 時需自動查詢一次；手動重新整理與每 `15` 分鐘自動刷新需重用同一查詢流程；頁面離開時需清除 timer。
 51. 服務使用說明頁需正確呈現 Loading、Empty、Error、Retry 狀態；第一版模型列表僅顯示一欄 `Model`，內容來自 API 回傳的 `label`，且同頁需顯示 repo 內維護的服務說明與至少一組 Python code block。
-51A. 登入後共用版型在存在有效公告時，需同時顯示系統公告區塊與「服務使用說明」提示卡；若沒有任何有效公告，兩者皆不顯示。提示卡需連到 `/usage-examples`。
+51A. 登入後共用版型不得直接顯示系統公告區塊；系統公告需集中於 `/announcements` 頁，且該頁固定提供連往 `/usage-examples` 的服務使用說明入口。
 51B. `GET /main/api/v1/announcements` 對 `user` 與未帶 `scope=all` 的 `admin`，只可回目前有效公告；`inactive`、未到 `publish_from`、或已超過 `publish_to` 的公告不得出現在前台。
 51C. `POST /main/api/v1/announcements`、`PATCH /main/api/v1/announcements/{id}`、`DELETE /main/api/v1/announcements/{id}` 僅 `admin` 可使用；非 `admin` 需回 `403`。
 51D. 公告 `title`、`body` 若包含 persisted-text 不安全語法需回 `422 VALIDATION_ERROR`；若 `publish_from > publish_to` 也需回 `422 VALIDATION_ERROR`。
 51E. `System Announcements Page` 主表格需採 `server-side table`；前端不得只以當前頁 rows 做本地篩選。
+51F. `System Announcements Page` 的 `user` 與 `admin` 都需可點擊公告標題，以 modal 檢視該筆公告全文；公告 `body` 不得在列表中直接常駐展開。
 
 ### OAuth、Session 與語系
 52. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。`GET /main/auth/callback` 成功時需建立 session 並 redirect `/main/`，失敗時需回錯且寫入 failure audit。

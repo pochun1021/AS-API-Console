@@ -118,7 +118,6 @@ describe("App public auth pages", () => {
       role: "user"
     });
     provider.getLocalePreference.mockResolvedValueOnce({ preferred_locale: "zh-TW" });
-    provider.listAnnouncements.mockResolvedValueOnce({ items: [], total: 0, page: 1, page_size: 20 });
     provider.listModels.mockResolvedValueOnce({
       items: [{ id: "gpt-4o-mini", label: "gpt-4o-mini" }],
       total: 1,
@@ -151,7 +150,10 @@ describe("App public auth pages", () => {
 
     renderApp("/");
 
-    expect(await screen.findByText("首頁公告")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(provider.listAnnouncements).toHaveBeenCalled();
+    });
+    expect(provider.listAnnouncements.mock.calls.some(([params]) => params?.scope === "all")).toBe(false);
     expect(screen.queryByRole("button", { name: "新增" })).not.toBeInTheDocument();
   });
 
@@ -175,7 +177,7 @@ describe("App public auth pages", () => {
     renderApp("/");
 
     await waitFor(() => {
-      expect(provider.listAnnouncements.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(provider.listAnnouncements).toHaveBeenCalled();
       expect(provider.listAnnouncements.mock.calls.some(([params]) => params?.scope === "all")).toBe(true);
     });
   });

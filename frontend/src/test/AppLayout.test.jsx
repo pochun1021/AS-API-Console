@@ -89,27 +89,6 @@ test("admin sees whitelist nav", () => {
   expect(screen.getByRole("link", { name: "管理者統計" })).toBeInTheDocument();
 });
 
-test("layout renders announcement surface when items are provided", () => {
-  render(
-    <MemoryRouter>
-      <AppLayout
-        auth={userAuth}
-        announcementState={{
-          items: [{ id: "ann_1", title: "維護公告", body: "請留意維護時段" }],
-          loading: false,
-          error: ""
-        }}
-      >
-        <div>content</div>
-      </AppLayout>
-    </MemoryRouter>
-  );
-
-  expect(screen.getByText("維護公告")).toBeInTheDocument();
-  expect(screen.getByText("請留意維護時段")).toBeInTheDocument();
-  expect(screen.queryByRole("link", { name: "查看說明" })).not.toBeInTheDocument();
-});
-
 test("clicking logout icon triggers onLogout", () => {
   const onLogout = vi.fn();
   render(

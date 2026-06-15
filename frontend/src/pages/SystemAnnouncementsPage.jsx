@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import VisibilityIcon from "@mui/icons-material/Visibility";
 import {
   Alert,
   Box,
+  ButtonBase,
   Button,
   Card,
   CardContent,
@@ -93,6 +95,7 @@ export default function SystemAnnouncementsPage({ auth }) {
   const [dialogError, setDialogError] = useState("");
   const [form, setForm] = useState(buildDefaultForm());
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [previewItem, setPreviewItem] = useState(null);
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
   const hasActiveFilters = Boolean(
@@ -120,11 +123,11 @@ export default function SystemAnnouncementsPage({ auth }) {
           page_size: pageSize,
           scope: isAdmin ? "all" : undefined,
           status: isAdmin ? statusFilter || undefined : undefined,
-          title: isAdmin ? titleFilter.trim() || undefined : undefined,
-          publish_from_from: isAdmin ? publishFromRange.from || undefined : undefined,
-          publish_from_to: isAdmin ? publishFromRange.to || undefined : undefined,
-          publish_to_from: isAdmin ? publishToRange.from || undefined : undefined,
-          publish_to_to: isAdmin ? publishToRange.to || undefined : undefined,
+          title: titleFilter.trim() || undefined,
+          publish_from_from: publishFromRange.from || undefined,
+          publish_from_to: publishFromRange.to || undefined,
+          publish_to_from: publishToRange.from || undefined,
+          publish_to_to: publishToRange.to || undefined,
           updated_from: isAdmin ? updatedRange.from || undefined : undefined,
           updated_to: isAdmin ? updatedRange.to || undefined : undefined,
           sort_by: sort.field,
@@ -182,6 +185,10 @@ export default function SystemAnnouncementsPage({ auth }) {
     if (dialogSaving) return;
     setDialogOpen(false);
     setDialogError("");
+  }
+
+  function openPreview(item) {
+    setPreviewItem(item);
   }
 
   async function saveAnnouncement() {
@@ -246,7 +253,29 @@ export default function SystemAnnouncementsPage({ auth }) {
   const columns = useMemo(
     () => {
       const baseColumns = [
-        { field: "title", headerName: t("announcement_col_title"), flex: 1.2, minWidth: 220, filterable: false },
+        {
+          field: "title",
+          headerName: t("announcement_col_title"),
+          flex: 1.2,
+          minWidth: 220,
+          filterable: false,
+          renderCell: (params) => (
+            <ButtonBase
+              onClick={() => openPreview(params.row)}
+              sx={{
+                justifyContent: "flex-start",
+                textAlign: "left",
+                color: "primary.main",
+                fontWeight: 600,
+                textDecoration: "underline",
+                textUnderlineOffset: "3px",
+              }}
+              aria-label={`${t("announcement_view")} ${params.value}`}
+            >
+              {params.value}
+            </ButtonBase>
+          )
+        },
         {
           field: "status",
           headerName: t("common_status"),
@@ -287,7 +316,7 @@ export default function SystemAnnouncementsPage({ auth }) {
         }
       ];
       if (!isAdmin) {
-        return baseColumns;
+        return baseColumns.filter((column) => column.field !== "status");
       }
       return [
         ...baseColumns,
@@ -347,17 +376,18 @@ export default function SystemAnnouncementsPage({ auth }) {
 
       <Card variant="outlined">
         <CardContent>
-          {isAdmin ? (
-            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-              <TextField
-                label={t("announcement_filter_title")}
-                size="small"
-                value={titleFilter}
-                onChange={(e) => {
-                  setTitleFilter(e.target.value);
-                  setPage(0);
-                }}
-              />
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+            <TextField
+              label={t("announcement_filter_title")}
+              size="small"
+              value={titleFilter}
+              onChange={(e) => {
+                setTitleFilter(e.target.value);
+                setPage(0);
+              }}
+              sx={{ minWidth: 220 }}
+            />
+            {isAdmin ? (
               <TextField
                 select
                 size="small"
@@ -373,52 +403,63 @@ export default function SystemAnnouncementsPage({ auth }) {
                 <MenuItem value="active">{t("announcement_status_active")}</MenuItem>
                 <MenuItem value="inactive">{t("announcement_status_inactive")}</MenuItem>
               </TextField>
-              <DateRangeFilterField
-                label={t("announcement_filter_publish_from_range")}
-                fromLabel={t("announcement_filter_publish_from_from")}
-                toLabel={t("announcement_filter_publish_from_to")}
-                fromValue={publishFromDateFrom}
-                toValue={publishFromDateTo}
-                onChange={(nextFrom, nextTo) => {
-                  setPublishFromDateFrom(nextFrom);
-                  setPublishFromDateTo(nextTo);
-                  setPage(0);
-                }}
-              />
-              <DateRangeFilterField
-                label={t("announcement_filter_publish_to_range")}
-                fromLabel={t("announcement_filter_publish_to_from")}
-                toLabel={t("announcement_filter_publish_to_to")}
-                fromValue={publishToDateFrom}
-                toValue={publishToDateTo}
-                onChange={(nextFrom, nextTo) => {
-                  setPublishToDateFrom(nextFrom);
-                  setPublishToDateTo(nextTo);
-                  setPage(0);
-                }}
-              />
+            ) : null}
+            <DateRangeFilterField
+              label={t("announcement_filter_publish_from_range")}
+              size="small"
+              startLabel={t("announcement_filter_publish_from_from")}
+              endLabel={t("announcement_filter_publish_from_to")}
+              fromValue={publishFromDateFrom}
+              toValue={publishFromDateTo}
+              clearLabel={t("common_clear")}
+              closeLabel={t("common_close")}
+              onChange={({ from, to }) => {
+                setPublishFromDateFrom(from);
+                setPublishFromDateTo(to);
+                setPage(0);
+              }}
+            />
+            <DateRangeFilterField
+              label={t("announcement_filter_publish_to_range")}
+              size="small"
+              startLabel={t("announcement_filter_publish_to_from")}
+              endLabel={t("announcement_filter_publish_to_to")}
+              fromValue={publishToDateFrom}
+              toValue={publishToDateTo}
+              clearLabel={t("common_clear")}
+              closeLabel={t("common_close")}
+              onChange={({ from, to }) => {
+                setPublishToDateFrom(from);
+                setPublishToDateTo(to);
+                setPage(0);
+              }}
+            />
+            {isAdmin ? (
               <DateRangeFilterField
                 label={t("announcement_filter_updated_range")}
-                fromLabel={t("announcement_filter_updated_from")}
-                toLabel={t("announcement_filter_updated_to")}
+                size="small"
+                startLabel={t("announcement_filter_updated_from")}
+                endLabel={t("announcement_filter_updated_to")}
                 fromValue={updatedDateFrom}
                 toValue={updatedDateTo}
-                onChange={(nextFrom, nextTo) => {
-                  setUpdatedDateFrom(nextFrom);
-                  setUpdatedDateTo(nextTo);
+                clearLabel={t("common_clear")}
+                closeLabel={t("common_close")}
+                onChange={({ from, to }) => {
+                  setUpdatedDateFrom(from);
+                  setUpdatedDateTo(to);
                   setPage(0);
                 }}
               />
-              <Button variant="text" onClick={clearFilters} disabled={!hasActiveFilters}>
-                {t("common_clear")}
-              </Button>
-            </Stack>
-          ) : null}
+            ) : null}
+            <Button variant="outlined" onClick={clearFilters} disabled={!hasActiveFilters}>
+              {t("common_clear")}
+            </Button>
+          </Stack>
 
           {loading ? <LoadingBlock text={t("announcement_loading")} /> : null}
           {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
           {!loading && !error && total === 0 ? <EmptyBlock text={isAdmin ? t("announcement_empty") : t("announcement_public_empty")} /> : null}
-          {!loading && !error && total > 0 && isAdmin ? (
+          {!loading && !error && total > 0 ? (
             <Box sx={{ minHeight: 520 }}>
               <DataGrid
                 autoHeight={false}
@@ -436,30 +477,16 @@ export default function SystemAnnouncementsPage({ auth }) {
                   setPageSize(model.pageSize);
                 }}
                 sortModel={sortModel}
-                onSortModelChange={setSortModel}
+                onSortModelChange={(model) => {
+                  setSortModel(model);
+                  setPage(0);
+                }}
                 disableRowSelectionOnClick
                 localeText={gridLocaleText}
                 sx={compactGridSx}
                 {...compactGridProps}
               />
             </Box>
-          ) : null}
-          {!loading && !error && total > 0 && !isAdmin ? (
-            <Stack spacing={1.5}>
-              {items.map((item) => (
-                <Box key={item.id} sx={{ borderLeft: "4px solid", borderColor: "primary.main", pl: 1.5, py: 0.25 }}>
-                  <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
-                    <Typography variant="h6">{item.title}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {t("common_updated_at")}: {formatDateTimeInTaipei(item.updated_at, { locale })}
-                    </Typography>
-                  </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-wrap", mt: 0.75 }}>
-                    {item.body}
-                  </Typography>
-                </Box>
-              ))}
-            </Stack>
           ) : null}
         </CardContent>
       </Card>
@@ -525,6 +552,26 @@ export default function SystemAnnouncementsPage({ auth }) {
         <DialogActions>
           <Button onClick={() => setPendingDelete(null)}>{t("common_cancel")}</Button>
           <Button onClick={confirmDelete} color="error" variant="contained">{t("common_delete")}</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(previewItem)} onClose={() => setPreviewItem(null)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <VisibilityIcon fontSize="small" />
+          <span>{previewItem?.title || t("announcement_preview_title")}</span>
+        </DialogTitle>
+        <DialogContent dividers>
+          {previewItem ? (
+            <Stack spacing={1.5}>
+              <Typography variant="body2" color="text.secondary">
+                {t("common_updated_at")}: {formatDateTimeInTaipei(previewItem.updated_at, { locale })}
+              </Typography>
+              <Typography sx={{ whiteSpace: "pre-wrap" }}>{previewItem.body}</Typography>
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPreviewItem(null)}>{t("common_close")}</Button>
         </DialogActions>
       </Dialog>
     </Stack>

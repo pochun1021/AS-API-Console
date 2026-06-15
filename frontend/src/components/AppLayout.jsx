@@ -2,7 +2,7 @@ import { useState } from "react";
 import CheckIcon from "@mui/icons-material/Check";
 import LanguageOutlinedIcon from "@mui/icons-material/LanguageOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
-import { Alert, AppBar, Box, Button, Card, CardContent, Container, IconButton, Menu, MenuItem, Stack, Toolbar, Tooltip, Typography } from "@mui/material";
+import { AppBar, Box, Button, Container, IconButton, Menu, MenuItem, Toolbar, Tooltip, Typography } from "@mui/material";
 import { Link as RouterLink, useLocation } from "react-router-dom";
 import { useLocale } from "../i18n/locale";
 
@@ -19,54 +19,12 @@ const navItems = [
   { labelKey: "nav_institute_view", path: "/institute-view", roles: ["admin"] }
 ];
 
-function SystemInfoSurface({ announcementState, t }) {
-  const state = announcementState || {};
-  const items = Array.isArray(state.items) ? state.items : [];
-  const hasVisibleSurface = items.length > 0 || state.loading || state.error;
-
-  if (!hasVisibleSurface) {
-    return null;
-  }
-
-  return (
-    <Card variant="outlined">
-      <CardContent>
-        <Stack spacing={1.25}>
-          <Typography variant="h6">{t("announcement_surface_title")}</Typography>
-          {state.loading ? <Typography color="text.secondary">{t("announcement_surface_loading")}</Typography> : null}
-          {!state.loading && state.error ? (
-            <Alert
-              severity="error"
-              action={
-                state.onRetry ? (
-                  <Button color="inherit" size="small" onClick={state.onRetry}>{t("common_retry")}</Button>
-                ) : null
-              }
-            >
-              {state.error?.message || t("announcement_surface_error")}
-            </Alert>
-          ) : null}
-          {!state.loading && !state.error && items.map((item) => (
-            <Box key={item.id} sx={{ borderLeft: "4px solid", borderColor: "primary.main", pl: 1.5 }}>
-              <Typography variant="subtitle1">{item.title}</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
-                {item.body}
-              </Typography>
-            </Box>
-          ))}
-        </Stack>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function AppLayout({
   children,
   auth,
   onChangeLocale = () => {},
   onLogout = () => {},
-  logoutInProgress = false,
-  announcementState = { items: [], loading: false, error: "" }
+  logoutInProgress = false
 }) {
   const location = useLocation();
   const { locale, t } = useLocale();
@@ -178,7 +136,6 @@ export default function AppLayout({
       </AppBar>
       <Container maxWidth={false} sx={{ py: { xs: 2, md: 2.5 }, px: { xs: 2, md: 3 }, display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
         <Box sx={{ maxWidth: 1840, mx: "auto", width: "100%", display: "flex", flexDirection: "column", gap: 2, flex: 1, minHeight: 0, overflow: "hidden" }}>
-          <SystemInfoSurface announcementState={announcementState} t={t} />
           {children}
         </Box>
       </Container>

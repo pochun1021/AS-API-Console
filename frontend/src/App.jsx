@@ -16,7 +16,6 @@ import ModelsPage from "./pages/ModelsPage";
 import OperationAuditLogsPage from "./pages/OperationAuditLogsPage";
 import SystemAnnouncementsPage from "./pages/SystemAnnouncementsPage";
 import WhitelistAdminPage from "./pages/WhitelistAdminPage";
-import { normalizeApiError } from "./api/errors";
 import { redirectToLogin } from "./utils/navigation";
 
 export default function App() {
@@ -26,9 +25,6 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [logoutInProgress, setLogoutInProgress] = useState(false);
   const [localeReady, setLocaleReady] = useState(false);
-  const [announcements, setAnnouncements] = useState([]);
-  const [announcementsLoading, setAnnouncementsLoading] = useState(false);
-  const [announcementsError, setAnnouncementsError] = useState("");
   const { setLocale } = useLocale();
   const isLoginDeniedRoute = location.pathname === "/login-denied";
   const isLoginErrorRoute = location.pathname === "/login-error";
@@ -61,21 +57,6 @@ export default function App() {
       setAuth(null);
       setLogoutInProgress(false);
       redirectToLogin();
-    }
-  }
-
-  async function loadAnnouncements(currentAuth) {
-    if (!currentAuth) return;
-    setAnnouncementsLoading(true);
-    setAnnouncementsError("");
-    try {
-      const response = await apiClient.listAnnouncements(currentAuth);
-      setAnnouncements(response.items || []);
-    } catch (error) {
-      setAnnouncements([]);
-      setAnnouncementsError(normalizeApiError(error, "Failed to load announcements"));
-    } finally {
-      setAnnouncementsLoading(false);
     }
   }
 
@@ -145,11 +126,6 @@ export default function App() {
     };
   }, [auth, setLocale]);
 
-  useEffect(() => {
-    if (!auth) return;
-    loadAnnouncements(auth);
-  }, [auth]);
-
   if (isLoginDeniedRoute || isLoginErrorRoute) {
     return (
       <Routes>
@@ -170,12 +146,6 @@ export default function App() {
       onChangeLocale={changeLocale}
       onLogout={handleLogout}
       logoutInProgress={logoutInProgress}
-      announcementState={{
-        items: announcements,
-        loading: announcementsLoading,
-        error: announcementsError,
-        onRetry: () => loadAnnouncements(auth),
-      }}
     >
       <Routes>
         <Route path="/" element={<Navigate to="/announcements" replace />} />
