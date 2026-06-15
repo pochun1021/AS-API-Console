@@ -5,7 +5,7 @@ import { useLocale } from "../i18n/locale";
 function normalizeMessage(message) {
   return typeof message === "string"
     ? { message, details: "" }
-    : { message: message?.message || "發生錯誤。", details: message?.details || "" };
+    : { message: message?.message || "", details: message?.details || "" };
 }
 
 function ErrorContent({ message, onRetry, padded }) {
@@ -31,7 +31,7 @@ function ErrorContent({ message, onRetry, padded }) {
       sx={padded ? undefined : { width: "100%" }}
     >
       <Typography component="div">
-        {normalized.message === "發生錯誤。" ? t("common_error") : normalized.message}
+        {normalized.message || t("common_error")}
       </Typography>
       {normalized.details ? (
         <Collapse in={detailsOpen}>
@@ -47,26 +47,26 @@ function ErrorContent({ message, onRetry, padded }) {
   );
 }
 
-export function LoadingBlock({ text = "載入中..." }) {
+export function LoadingBlock({ text = "" }) {
   const { t } = useLocale();
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 2, py: 3 }}>
       <CircularProgress size={24} />
-      <Typography>{text === "載入中..." ? t("common_loading") : text}</Typography>
+      <Typography>{text || t("common_loading")}</Typography>
     </Box>
   );
 }
 
-export function EmptyBlock({ text = "目前沒有資料。" }) {
+export function EmptyBlock({ text = "" }) {
   const { t } = useLocale();
   return (
     <Box sx={{ py: 4 }}>
-      <Typography color="text.secondary">{text === "目前沒有資料。" ? t("common_no_data") : text}</Typography>
+      <Typography color="text.secondary">{text || t("common_no_data")}</Typography>
     </Box>
   );
 }
 
-export function ErrorBlock({ message = "發生錯誤。", onRetry }) {
+export function ErrorBlock({ message = "", onRetry }) {
   return (
     <Box sx={{ py: 3 }}>
       <ErrorContent message={message} onRetry={onRetry} padded />

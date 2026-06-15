@@ -1,7 +1,7 @@
-export function normalizeApiError(error, fallbackMessage = "請求失敗") {
+export function normalizeApiError(error, fallbackMessage = "") {
   const payloadError = error?.payload?.error;
   return {
-    message: payloadError?.message || fallbackMessage || error?.message || "請求失敗",
+    message: payloadError?.message || fallbackMessage || error?.message || "",
     details: payloadError?.details || "",
     code: payloadError?.code || "",
     request_id: typeof error?.payload?.request_id === "string" ? error.payload.request_id : "",

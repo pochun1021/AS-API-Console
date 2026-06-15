@@ -38,6 +38,10 @@ function statusColor(status) {
   return "default";
 }
 
+function getStatusLabel(status, t) {
+  return t(`mykeys_status_${status}`, status || "-");
+}
+
 function formatMaskedKey(value) {
   if (!value) return "-";
   return String(value);
@@ -499,7 +503,7 @@ export default function AdminDashboardPage({ auth }) {
                     <TableCell>{item.key_alias}</TableCell>
                     <TableCell>{formatMaskedKey(item.masked_key)}</TableCell>
                     <TableCell>
-                      <Chip size="small" label={item.status} color={statusColor(item.status)} />
+                      <Chip size="small" label={getStatusLabel(item.status, t)} color={statusColor(item.status)} />
                     </TableCell>
                   </TableRow>
                 ))}

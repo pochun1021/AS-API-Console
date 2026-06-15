@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { vi } from "vitest";
+import { LocaleProvider, useLocale } from "../i18n/locale";
 import AdminPage from "../pages/AdminPage";
 import { mockApiProvider } from "../mocks/mockApiProvider";
 
@@ -15,11 +17,24 @@ const adminAuth = {
   role: "admin"
 };
 
-function renderPage(ui) {
+function LocaleSetter({ locale }) {
+  const { setLocale } = useLocale();
+
+  useEffect(() => {
+    setLocale(locale);
+  }, [locale, setLocale]);
+
+  return null;
+}
+
+function renderPage(ui, { locale = "zh-TW" } = {}) {
   return render(
-    <LocalizationProvider dateAdapter={AdapterDayjs}>
-      {ui}
-    </LocalizationProvider>
+    <LocaleProvider>
+      <LocaleSetter locale={locale} />
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        {ui}
+      </LocalizationProvider>
+    </LocaleProvider>
   );
 }
 
@@ -108,4 +123,11 @@ test("clear filters button resets admin list filters", async () => {
       adminAuth
     );
   });
+});
+
+test("admin search button aria-label switches to english locale", async () => {
+  renderPage(<AdminPage auth={adminAuth} />, { locale: "en" });
+
+  expect(await screen.findByText("Admin List")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Open add admin search" })).toBeInTheDocument();
 });

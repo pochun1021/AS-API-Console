@@ -159,6 +159,15 @@ test("usage and health labels switch to english locale", async () => {
   expect(await screen.findByRole("columnheader", { name: "Health" })).toBeInTheDocument();
   expect(screen.queryByRole("columnheader", { name: "Usage" })).not.toBeInTheDocument();
 
+  await user.click(screen.getByLabelText("Status"));
+  expect(await screen.findByRole("option", { name: "Active" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Revoked" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Expired" })).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+
+  const moreActionButtons = await screen.findAllByRole("button", { name: "More actions" });
+  expect(moreActionButtons.length).toBeGreaterThan(0);
+
   const usageButtons = await screen.findAllByRole("button", { name: "View Usage" });
   await user.click(usageButtons[1]);
 
@@ -472,7 +481,7 @@ test("admin list sends custom filter params without DataGrid filter model", asyn
   await user.type(screen.getByLabelText("姓名"), "尤");
   await user.type(screen.getByLabelText("Key Alias"), "for_ktu");
   await user.click(screen.getByLabelText("狀態"));
-  await user.click(screen.getByRole("option", { name: "active" }));
+  await user.click(screen.getByRole("option", { name: "啟用中" }));
   await setDateRange("起算日期", "起算日期（起）", "起算日期（迄）", "2026-04-01", "2026-04-30");
   await setDateRange("到期日期", "到期日期（起）", "到期日期（迄）", "2026-10-01", "2026-10-31");
 

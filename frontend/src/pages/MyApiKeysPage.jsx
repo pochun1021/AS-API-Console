@@ -133,6 +133,10 @@ function canShowExtendAction(item) {
   return item.extend_eligible === true;
 }
 
+function getStatusLabel(status, t) {
+  return t(`mykeys_status_${status}`, status || "-");
+}
+
 function getExtendDurationLabel(item, t) {
   const months = Number(item?.original_duration_months ?? item?.duration_months ?? 0);
   if (!months) return "";
@@ -461,7 +465,7 @@ export default function MyApiKeysPage({ auth }) {
           flex: 1,
           minWidth: 120,
           filterable: false,
-          renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
+          renderCell: (params) => <Chip size="small" label={getStatusLabel(params.value, t)} color={statusColor(params.value)} />
         },
         {
           field: "health_status",
@@ -559,9 +563,9 @@ export default function MyApiKeysPage({ auth }) {
               </Tooltip>
             ) : null}
             {(params.row.status === "active" || params.row.status === "revoked" || params.row.status === "expired") ? (
-              <Tooltip title={locale === "zh-TW" ? "更多操作" : "More actions"}>
+              <Tooltip title={t("common_more_actions")}>
                 <IconButton
-                  aria-label={locale === "zh-TW" ? "更多操作" : "More actions"}
+                  aria-label={t("common_more_actions")}
                   size="small"
                   onClick={(event) => openActionMenu(event, params.row)}
                 >
@@ -607,9 +611,9 @@ export default function MyApiKeysPage({ auth }) {
             }}
           >
             <MenuItem value="">{t("mykeys_filter_all_statuses")}</MenuItem>
-            <MenuItem value="active">active</MenuItem>
-            <MenuItem value="revoked">revoked</MenuItem>
-            <MenuItem value="expired">expired</MenuItem>
+            <MenuItem value="active">{t("mykeys_status_active")}</MenuItem>
+            <MenuItem value="revoked">{t("mykeys_status_revoked")}</MenuItem>
+            <MenuItem value="expired">{t("mykeys_status_expired")}</MenuItem>
           </Select>
         </FormControl>
         <DateRangeFilterField
@@ -949,7 +953,7 @@ export default function MyApiKeysPage({ auth }) {
             <Stack spacing={2} sx={{ mt: 0.5 }}>
               <Typography>ID: {detailItem.id}</Typography>
               <Box>
-                {t("mykeys_detail_status")}: <Chip size="small" label={detailItem.status} color={statusColor(detailItem.status)} />
+                {t("mykeys_detail_status")}: <Chip size="small" label={getStatusLabel(detailItem.status, t)} color={statusColor(detailItem.status)} />
               </Box>
               {auth.role === "admin" ? (
                 <Typography>
@@ -980,11 +984,11 @@ export default function MyApiKeysPage({ auth }) {
           {detailItem?.status === "active" ? (
             <Box sx={{ mr: "auto" }}>
               <Button color="warning" variant="contained" onClick={() => setPendingRevokeId(detailItem.id)}>
-                停用金鑰
+                {t("mykeys_revoke_key")}
               </Button>
             </Box>
           ) : null}
-          <Button onClick={closeDetail}>{locale === "zh-TW" ? "關閉" : "Close"}</Button>
+          <Button onClick={closeDetail}>{t("common_close")}</Button>
           {auth.role === "admin" && detailItem ? (
             <Button
               variant="outlined"

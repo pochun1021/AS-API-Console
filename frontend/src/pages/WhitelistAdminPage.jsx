@@ -53,6 +53,10 @@ function statusColor(status) {
   return status === "active" ? "success" : "default";
 }
 
+function getStatusLabel(status, t) {
+  return status === "active" ? t("whitelist_status_active") : t("whitelist_status_inactive");
+}
+
 function WhitelistNoteField({ note, onDraftChange }) {
   const [draft, setDraft] = useState(note || "");
   const composingRef = useRef(false);
@@ -302,7 +306,7 @@ export default function WhitelistAdminPage({ auth }) {
         flex: 1,
         minWidth: 120,
         filterable: false,
-        renderCell: (params) => <Chip size="small" label={params.value} color={statusColor(params.value)} />
+        renderCell: (params) => <Chip size="small" label={getStatusLabel(params.value, t)} color={statusColor(params.value)} />
       },
       {
         field: "remark",
@@ -498,7 +502,7 @@ export default function WhitelistAdminPage({ auth }) {
         <Button
           variant="outlined"
           startIcon={<AddIcon />}
-          aria-label="開啟新增特殊人員名單人員"
+          aria-label={t("whitelist_open_search")}
           onClick={() => setSearchDialogOpen(true)}
           sx={{ ml: { md: "auto" }, alignSelf: { xs: "stretch", md: "center" }, minHeight: 56 }}
         >

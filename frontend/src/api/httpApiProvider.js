@@ -30,7 +30,7 @@ function mapErrorPayload(status, body) {
   return {
     error: {
       code: status >= 500 ? "INTERNAL_ERROR" : "REQUEST_FAILED",
-      message: body?.message || "請求失敗"
+      message: body?.message || ""
     }
   };
 }
@@ -62,7 +62,7 @@ async function request(path, { method = "GET", auth, body } = {}) {
   }
 
   if (!response.ok) {
-    const error = new Error(data?.error?.message || "請求失敗");
+    const error = new Error(data?.error?.message || "");
     error.status = response.status;
     error.payload = mapErrorPayload(response.status, data);
     error.retryAfter = response.headers.get("retry-after");

@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import { LocaleProvider, useLocale } from "../i18n/locale";
 import WhitelistAdminPage from "../pages/WhitelistAdminPage";
 import { mockApiProvider } from "../mocks/mockApiProvider";
 
@@ -27,8 +29,23 @@ beforeEach(() => {
   mockApiProvider.resetForTests();
 });
 
-function renderPage(ui) {
-  return render(<LocalizationProvider dateAdapter={AdapterDayjs}>{ui}</LocalizationProvider>);
+function LocaleSetter({ locale }) {
+  const { setLocale } = useLocale();
+
+  useEffect(() => {
+    setLocale(locale);
+  }, [locale, setLocale]);
+
+  return null;
+}
+
+function renderPage(ui, { locale = "zh-TW" } = {}) {
+  return render(
+    <LocaleProvider>
+      <LocaleSetter locale={locale} />
+      <LocalizationProvider dateAdapter={AdapterDayjs}>{ui}</LocalizationProvider>
+    </LocaleProvider>
+  );
 }
 
 async function openSearchDialog(user) {
@@ -193,4 +210,12 @@ test("search requires keyword in whitelist dialog", async () => {
   const searchDialog = await openSearchDialog(user);
   await user.click(within(searchDialog).getByRole("button", { name: "查詢人員" }));
   expect(await within(searchDialog).findByText("請輸入查詢關鍵字。")).toBeInTheDocument();
+});
+
+test("whitelist search button aria-label switches to english locale", async () => {
+  renderPage(<WhitelistAdminPage auth={adminAuth} />, { locale: "en" });
+
+  expect(await screen.findByText("Whitelist Admin")).toBeInTheDocument();
+  expect((await screen.findAllByText("Active")).length).toBeGreaterThan(0);
+  expect(screen.getByRole("button", { name: "Open add whitelist user search" })).toBeInTheDocument();
 });

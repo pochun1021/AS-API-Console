@@ -463,7 +463,7 @@ export default function AdminPage({ auth }) {
           <Button
             variant="outlined"
             startIcon={<AddIcon />}
-            aria-label="開啟新增管理者查詢"
+            aria-label={t("admin_open_search")}
             sx={{ backgroundColor: "transparent", minHeight: 56, alignSelf: { xs: "stretch", md: "center" } }}
             onClick={() => setSearchDialogOpen(true)}
           >
