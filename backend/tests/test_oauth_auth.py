@@ -1,8 +1,10 @@
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from urllib.parse import parse_qs, urlparse
 
 from app.core.errors import ApiError
+from app.main import app
 from app.services.oauth_service import OAuthIdentity
 from app.core.config import get_settings
 from db.models.admins import Admin
@@ -168,20 +170,88 @@ def test_callback_logs_failure_when_basic_fetch_fails(client, monkeypatch):
 
 def test_callback_unexpected_error_returns_controlled_401_and_audits(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
-    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
         lambda self, code: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     resp = client.get("/main/auth/callback?code=bad-code", follow_redirects=False)
-    assert resp.status_code == 401
-    body = resp.json()
-    assert body["error"]["code"] == "OAUTH_CALLBACK_FAILED"
-    assert "request_id=" in body["error"]["message"]
+    assert resp.status_code == 302
+    parsed = urlparse(resp.headers["location"])
+    assert parsed.path == "/main/login-error"
+    query = parse_qs(parsed.query)
+    assert query["route"] == ["auth_callback"]
+    assert query["reason"] == ["oauth_exchange_failed"]
+    assert query["request_id"]
     latest = _latest_auth_audit()
-    assert latest is not None
-    assert latest.result == "failure"
-    assert latest.error_code == "OAUTH_CALLBACK_FAILED"
+    assert latest is None
+
+
+def test_callback_unexpected_eligibility_error_redirects_to_login_error(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.fetch_identity",
+        lambda self, token: OAuthIdentity(
+            account="oauth.user5",
+            name="OAuth User5",
+            email="oauth.user5@example.com",
+            department="IT",
+            sysid=3005,
+            tcode="A03",
+            role="user",
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.login_eligibility_service.LoginEligibilityService.is_eligible",
+        lambda self, sysid, tcode: (_ for _ in ()).throw(RuntimeError("db stale connection")),
+    )
+    resp = client.get("/main/auth/callback?code=bad-code", follow_redirects=False)
+    assert resp.status_code == 302
+    parsed = urlparse(resp.headers["location"])
+    assert parsed.path == "/main/login-error"
+    query = parse_qs(parsed.query)
+    assert query["route"] == ["auth_callback"]
+    assert query["reason"] == ["eligibility_check_failed"]
+    assert query["request_id"]
+    latest = _latest_auth_audit()
+    assert latest is None
+
+
+def test_login_unexpected_error_redirects_to_login_error(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
+    monkeypatch.setattr(
+        "app.services.oauth_service.OAuthService.build_login_url",
+        lambda self: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    resp = client.get("/main/login", follow_redirects=False)
+    assert resp.status_code == 302
+    parsed = urlparse(resp.headers["location"])
+    assert parsed.path == "/main/login-error"
+    query = parse_qs(parsed.query)
+    assert query["route"] == ["login"]
+    assert query["reason"] == ["login_redirect_failed"]
+    assert query["request_id"]
+
+
+def test_users_me_unexpected_error_returns_structured_500(client, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "test")
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "app.core.auth._resolve_admin_role",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    with TestClient(app, raise_server_exceptions=False) as error_client:
+        resp = error_client.get(
+            "/main/api/v1/users/me",
+            headers=build_headers(role="user", account="user1", email="user1@example.com", sysid=2001),
+        )
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body["error"]["code"] == "INTERNAL_ERROR"
+    assert body["error"]["message"] == "unexpected internal error"
+    assert body["request_id"]
+    assert body["route"] == "/main/api/v1/users/me"
+    assert body["reason"] == "unexpected_internal_error"
 
 
 def test_callback_allows_missing_state(client, monkeypatch):

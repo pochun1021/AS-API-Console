@@ -450,6 +450,7 @@ Base path：`/main/api/v1`
   - 規則：
     - `dev/test`：以 `DEV_LOGIN_ACCOUNT`、`DEV_LOGIN_NAME`、`DEV_LOGIN_EMAIL`、`DEV_LOGIN_DEPARTMENT`、`DEV_LOGIN_SYSID`、`DEV_LOGIN_ROLE` 建立 `auth_context`；`DEV_LOGIN_ROLE` 僅允許 `user|admin`
     - `prod`：導向 OAuth provider 時不傳送 `state` 參數
+    - 登入相關未預期錯誤不得直接回框架預設純文字 `Internal Server Error`；需提供可追蹤的 `request_id`
   - Response：
     - 成功回 `302`
       - `prod`：redirect 至 OAuth provider
@@ -468,12 +469,14 @@ Base path：`/main/api/v1`
     - 若同一身份同時命中 `active whitelist(sysid)` 與 `active admins(id=sysid)`，登入資格仍視為通過；session 可先以 `role=user` 建立，但對外有效角色必須由 `active admins` 覆蓋為 `admin`
     - 若未通過登入資格檢查，回 `302` redirect `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 且不得建立 session
     - 前端在 `/main/login-denied` 需可直接顯示公開拒絕頁，不得發生自動導回 `/main/login` 的重導循環
+    - 若登入流程發生未預期錯誤，需導向公開頁 `/main/login-error`，並以 query string 提供 `route`、`reason`、`request_id`，其中 `route` 至少可區分 `login`、`auth_callback`、`users_me`，`reason` 需為簡短可理解的失敗階段說明（例如 `eligibility_check_failed`）
     - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
     - 成功與失敗皆需寫入 `auth_audit_logs`
   - Response：
     - 成功回 `302` redirect `/`
     - `401`：`OAUTH_TOKEN_EXCHANGE_FAILED`、`OAUTH_BASIC_FETCH_FAILED`
     - `422`：`OAUTH_CODE_MISSING`、`OAUTH_IDENTITY_INVALID`
+    - 非預期 `500` 需提供結構化錯誤內容或 redirect 至 `/main/login-error`，不得只回傳純文字 `Internal Server Error`
 - `GET /main/api/v1/users/me`
   - 用途：回傳目前 session 使用者資訊與 CSRF token。
   - 規則：

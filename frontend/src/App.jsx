@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { apiClient } from "./api/client";
 import AppLayout from "./components/AppLayout";
 import { clearOAuthAuthContext, readOAuthAuthContext } from "./authContext";
 import { detectSystemLocale, useLocale } from "./i18n/locale";
 import ApplyPage from "./pages/ApplyPage";
 import LoginDeniedPage from "./pages/LoginDeniedPage";
+import LoginErrorPage from "./pages/LoginErrorPage";
 import MyApiKeysPage from "./pages/MyApiKeysPage";
 import AdminPage from "./pages/AdminPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
@@ -18,12 +19,23 @@ import { redirectToLogin } from "./utils/navigation";
 
 export default function App() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [auth, setAuth] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [logoutInProgress, setLogoutInProgress] = useState(false);
   const [localeReady, setLocaleReady] = useState(false);
   const { setLocale } = useLocale();
   const isLoginDeniedRoute = location.pathname === "/login-denied";
+  const isLoginErrorRoute = location.pathname === "/login-error";
+
+  function navigateToLoginError(error) {
+    const route = error?.payload?.route || "users_me";
+    const reason = error?.payload?.reason || "session_restore_failed";
+    const requestId = error?.payload?.request_id || "";
+    const params = new URLSearchParams({ route, reason });
+    if (requestId) params.set("request_id", requestId);
+    navigate(`/login-error?${params.toString()}`, { replace: true });
+  }
 
   function changeLocale(nextLocale) {
     setLocale(nextLocale);
@@ -50,7 +62,7 @@ export default function App() {
   useEffect(() => {
     let canceled = false;
     async function bootstrapAuth() {
-      if (isLoginDeniedRoute) {
+      if (isLoginDeniedRoute || isLoginErrorRoute) {
         if (!canceled) {
           setAuthReady(true);
           setLocale(detectSystemLocale());
@@ -64,8 +76,13 @@ export default function App() {
         if (!canceled) {
           setAuth(currentUser);
         }
-      } catch {
-        if (!canceled) redirectToLogin();
+      } catch (error) {
+        if (canceled) return;
+        if (error?.status >= 500) {
+          navigateToLoginError(error);
+        } else {
+          redirectToLogin();
+        }
       } finally {
         if (!canceled) {
           setAuthReady(true);
@@ -76,7 +93,7 @@ export default function App() {
     return () => {
       canceled = true;
     };
-  }, [isLoginDeniedRoute, setLocale]);
+  }, [isLoginDeniedRoute, isLoginErrorRoute, navigate, setLocale]);
 
   useEffect(() => {
     if (!auth) return;
@@ -108,10 +125,11 @@ export default function App() {
     };
   }, [auth, setLocale]);
 
-  if (isLoginDeniedRoute) {
+  if (isLoginDeniedRoute || isLoginErrorRoute) {
     return (
       <Routes>
         <Route path="/login-denied" element={<LoginDeniedPage />} />
+        <Route path="/login-error" element={<LoginErrorPage />} />
         <Route path="*" element={<Navigate to="/login-denied" replace />} />
       </Routes>
     );

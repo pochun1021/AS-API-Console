@@ -1,5 +1,12 @@
+import logging
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette import status
+
+
+DEFAULT_INTERNAL_ERROR_MESSAGE = "unexpected internal error"
+logger = logging.getLogger(__name__)
 
 
 class ApiError(Exception):
@@ -35,6 +42,11 @@ def _derive_error_details(request: Request, explicit_details: str | None = None)
     return f"{module}:{name}"
 
 
+def get_request_id(request: Request) -> str | None:
+    request_id = getattr(request.state, "request_id", None)
+    return request_id if isinstance(request_id, str) and request_id else None
+
+
 def _build_error_content(
     request: Request,
     *,
@@ -48,6 +60,9 @@ def _build_error_content(
     if resolved_details:
         error["details"] = resolved_details
     content = {"error": error}
+    request_id = get_request_id(request)
+    if request_id:
+        content["request_id"] = request_id
     if extra:
         content.update(extra)
     return content
@@ -74,4 +89,17 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=_build_error_content(request, code=code, message=str(exc.detail)),
+        )
+
+    @app.exception_handler(Exception)
+    async def unexpected_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("unhandled exception request_id=%s path=%s", get_request_id(request), request.url.path)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=_build_error_content(
+                request,
+                code="INTERNAL_ERROR",
+                message=DEFAULT_INTERNAL_ERROR_MESSAGE,
+                extra={"route": request.url.path, "reason": "unexpected_internal_error"},
+            ),
         )

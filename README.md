@@ -169,6 +169,7 @@ npm run build
 - `APP_ENV=prod`：`GET /main/login` 走 OAuth，callback `GET /main/auth/callback` 於必要 claims 驗證後，依序檢查 `active whitelist(sysid)`、`active admins(id=sysid)`、`LOGIN_ALLOWED_TITLE_CODES`；通過才建立 session，否則導向 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE`。`whitelist` 僅代表登入資格放行，不是角色來源；若同時命中 `active admins`，對外有效角色仍為 `admin`。
   - `APP_ENV=dev/test`：`GET /main/login` 直接 bypass OAuth，使用 `DEV_LOGIN_*` 建立 session auth context（`role` 由 `DEV_LOGIN_ROLE` 控制，僅 `user|admin`）。
 - 前端公開拒絕頁：`/main/login-denied` 為不符登入資格時的公開頁，不需 session 即可顯示，並提供返回 `/main/login` 重新登入。
+- 前端公開錯誤頁：`/main/login-error` 用於登入流程非預期失敗，顯示失敗路由、簡短原因與 `request_id`，並提供返回 `/main/login` 重新登入。
 - 前端啟動時會呼叫 `GET /main/api/v1/users/me` 取得目前 session 使用者資訊與 `csrf_token`。
 - `POST/PATCH` API 會以 `X-CSRF-Token` 搭配 session 驗證；正式環境不得以前端自送 header 當作正式認證來源。
 - 若在 `dev/test` 啟用 `ALLOW_HEADER_AUTH=true`，前端可用開發身分 bootstrap session（需包含 `account`、`name`、`email`、`department`、`sysid`、`role`）：

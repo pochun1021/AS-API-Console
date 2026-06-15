@@ -1,4 +1,5 @@
 from uuid import uuid4
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
@@ -19,6 +20,34 @@ router = APIRouter()
 settings = get_settings()
 
 
+def _clear_login_session(request: Request) -> None:
+    request.session.pop("auth_context", None)
+    request.session.pop("csrf_token", None)
+    request.session.pop("oauth_request_id", None)
+
+
+def _build_login_error_redirect(*, route: str, reason: str, request_id: str) -> RedirectResponse:
+    query = urlencode({"route": route, "reason": reason, "request_id": request_id})
+    return RedirectResponse(f"/main/login-error?{query}", status_code=302)
+
+
+def _log_auth_audit_or_redirect(
+    *,
+    request: Request,
+    audit: AuthAuditService,
+    route: str,
+    reason: str,
+    request_id: str,
+    payload: dict,
+) -> RedirectResponse | None:
+    try:
+        audit.log(**payload)
+    except Exception:
+        _clear_login_session(request)
+        return _build_login_error_redirect(route=route, reason=reason, request_id=request_id)
+    return None
+
+
 @router.get(
     "/login",
     status_code=302,
@@ -33,6 +62,7 @@ def login(
     request: Request,
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    request_id = getattr(request.state, "request_id", str(uuid4()))
     current_settings = get_settings()
     env = current_settings.app_env.lower()
     if env in {"dev", "test"}:
@@ -74,9 +104,15 @@ def login(
         ensure_csrf_token(request)
         return RedirectResponse("/main/", status_code=302)
 
-    ensure_csrf_token(request)
-    service = OAuthService()
-    return RedirectResponse(service.build_login_url(), status_code=302)
+    try:
+        ensure_csrf_token(request)
+        service = OAuthService()
+        return RedirectResponse(service.build_login_url(), status_code=302)
+    except ApiError:
+        raise
+    except Exception:
+        _clear_login_session(request)
+        return _build_login_error_redirect(route="login", reason="login_redirect_failed", request_id=request_id)
 
 
 @router.get(
@@ -101,59 +137,116 @@ def oauth_callback(
     audit = AuthAuditService(db)
 
     if not code:
-        audit.log(provider=provider, request_id=request_id, result="failure", error_code="OAUTH_CODE_MISSING")
+        redirect = _log_auth_audit_or_redirect(
+            request=request,
+            audit=audit,
+            route="auth_callback",
+            reason="audit_log_failed",
+            request_id=request_id,
+            payload={
+                "provider": provider,
+                "request_id": request_id,
+                "result": "failure",
+                "error_code": "OAUTH_CODE_MISSING",
+            },
+        )
+        if redirect is not None:
+            return redirect
         raise ApiError("OAUTH_CODE_MISSING", "oauth callback code missing", 422)
 
+    oauth = OAuthService()
     try:
-        oauth = OAuthService()
         token = oauth.exchange_code_for_token(code)
         identity = oauth.fetch_identity(token)
     except ApiError as exc:
-        audit.log(provider=provider, request_id=request_id, result="failure", error_code=exc.code)
+        redirect = _log_auth_audit_or_redirect(
+            request=request,
+            audit=audit,
+            route="auth_callback",
+            reason="audit_log_failed",
+            request_id=request_id,
+            payload={
+                "provider": provider,
+                "request_id": request_id,
+                "result": "failure",
+                "error_code": exc.code,
+            },
+        )
+        if redirect is not None:
+            return redirect
         raise ApiError(exc.code, f"{exc.message}; request_id={request_id}", exc.status_code) from exc
-    except Exception as exc:
-        audit.log(provider=provider, request_id=request_id, result="failure", error_code="OAUTH_CALLBACK_FAILED")
-        raise ApiError("OAUTH_CALLBACK_FAILED", f"oauth callback failed; request_id={request_id}", 401) from exc
+    except Exception:
+        _clear_login_session(request)
+        return _build_login_error_redirect(route="auth_callback", reason="oauth_exchange_failed", request_id=request_id)
 
     eligibility = LoginEligibilityService(
         whitelist_repo=SQLAlchemyWhitelistRepository(db),
         admin_repo=SQLAlchemyAdminRepository(db),
     )
-    if not eligibility.is_eligible(sysid=identity.sysid, tcode=identity.tcode):
-        audit.log(
-            provider=provider,
+    try:
+        is_eligible = eligibility.is_eligible(sysid=identity.sysid, tcode=identity.tcode)
+    except Exception:
+        _clear_login_session(request)
+        return _build_login_error_redirect(route="auth_callback", reason="eligibility_check_failed", request_id=request_id)
+
+    if not is_eligible:
+        redirect = _log_auth_audit_or_redirect(
+            request=request,
+            audit=audit,
+            route="auth_callback",
+            reason="audit_log_failed",
             request_id=request_id,
-            result="failure",
-            account=identity.account,
-            name=identity.name,
-            email=identity.email,
-            department=identity.department,
-            sysid=identity.sysid,
-            role="user",
-            error_code="LOGIN_NOT_ELIGIBLE",
+            payload={
+                "provider": provider,
+                "request_id": request_id,
+                "result": "failure",
+                "account": identity.account,
+                "name": identity.name,
+                "email": identity.email,
+                "department": identity.department,
+                "sysid": identity.sysid,
+                "role": "user",
+                "error_code": "LOGIN_NOT_ELIGIBLE",
+            },
         )
+        if redirect is not None:
+            return redirect
         return RedirectResponse("/main/login-denied?error=LOGIN_NOT_ELIGIBLE", status_code=302)
 
-    request.session["auth_context"] = {
-        "account": identity.account,
-        "name": identity.name,
-        "email": identity.email.lower(),
-        "department": identity.department,
-        "sysid": identity.sysid,
-        "role": "user",
-    }
-    ensure_csrf_token(request)
-    audit.log(
-        provider=provider,
+    try:
+        request.session["auth_context"] = {
+            "account": identity.account,
+            "name": identity.name,
+            "email": identity.email.lower(),
+            "department": identity.department,
+            "sysid": identity.sysid,
+            "role": "user",
+        }
+        ensure_csrf_token(request)
+    except Exception:
+        _clear_login_session(request)
+        return _build_login_error_redirect(route="auth_callback", reason="session_init_failed", request_id=request_id)
+
+    redirect = _log_auth_audit_or_redirect(
+        request=request,
+        audit=audit,
+        route="auth_callback",
+        reason="audit_log_failed",
         request_id=request_id,
-        result="success",
-        account=identity.account,
-        name=identity.name,
-        email=identity.email,
-        department=identity.department,
-        sysid=identity.sysid,
-        role="user",
+        payload={
+            "provider": provider,
+            "request_id": request_id,
+            "result": "success",
+            "account": identity.account,
+            "name": identity.name,
+            "email": identity.email,
+            "department": identity.department,
+            "sysid": identity.sysid,
+            "role": "user",
+        },
     )
+    if redirect is not None:
+        return redirect
     return RedirectResponse("/main/", status_code=302)
 
 

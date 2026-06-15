@@ -1,5 +1,6 @@
 from pathlib import Path
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -55,6 +56,14 @@ def create_app() -> FastAPI:
     if settings.app_env.lower() == "test":
         app.include_router(test_auth_router, prefix=PATH_BASE)
     app.include_router(api_router, prefix=f"{PATH_BASE}/api/v1")
+
+    @app.middleware("http")
+    async def request_id_middleware(request, call_next):
+        request_id = request.headers.get("x-request-id") or str(uuid4())
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-Id"] = request_id
+        return response
 
     @app.middleware("http")
     async def security_headers_middleware(request, call_next):

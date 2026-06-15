@@ -17,7 +17,7 @@ function renderApp(initialPath = "/apply") {
   );
 }
 
-describe("App login-denied flow", () => {
+describe("App public auth pages", () => {
   const provider = {
     getCurrentUser: vi.fn(),
     getLocalePreference: vi.fn(),
@@ -51,6 +51,24 @@ describe("App login-denied flow", () => {
     expect(navigation.redirectToLogin).toHaveBeenCalledTimes(1);
   });
 
+  test("does not call getCurrentUser on /login-error and renders login error page", async () => {
+    renderApp("/login-error?route=auth_callback&reason=eligibility_check_failed&request_id=req-123");
+
+    expect(await screen.findByRole("heading", { name: "Sign-In Failed" })).toBeInTheDocument();
+    expect(screen.getByText("Failed Route: auth_callback")).toBeInTheDocument();
+    expect(screen.getByText("Failure Reason: eligibility_check_failed")).toBeInTheDocument();
+    expect(screen.getByText("Request ID: req-123")).toBeInTheDocument();
+    expect(provider.getCurrentUser).not.toHaveBeenCalled();
+  });
+
+  test("retry button on login error page redirects to /main/login", async () => {
+    const user = userEvent.setup();
+    renderApp("/login-error?route=auth_callback&reason=audit_log_failed&request_id=req-2");
+
+    await user.click(await screen.findByRole("button", { name: "Sign In Again" }));
+    expect(navigation.redirectToLogin).toHaveBeenCalledTimes(1);
+  });
+
   test("non-denied routes still redirect to /main/login when getCurrentUser fails", async () => {
     provider.getCurrentUser.mockRejectedValueOnce(new Error("unauthorized"));
 
@@ -60,6 +78,28 @@ describe("App login-denied flow", () => {
       expect(provider.getCurrentUser).toHaveBeenCalledTimes(1);
       expect(navigation.redirectToLogin).toHaveBeenCalledTimes(1);
     });
+  });
+
+  test("structured 500 from getCurrentUser routes to login error page", async () => {
+    const error = new Error("boom");
+    error.status = 500;
+    error.payload = {
+      request_id: "req-users-me-1",
+      route: "/main/api/v1/users/me",
+      reason: "unexpected_internal_error",
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "unexpected internal error"
+      }
+    };
+    provider.getCurrentUser.mockRejectedValueOnce(error);
+
+    renderApp("/apply");
+
+    expect(await screen.findByRole("heading", { name: "Sign-In Failed" })).toBeInTheDocument();
+    expect(await screen.findByText("Failed Route: /main/api/v1/users/me")).toBeInTheDocument();
+    expect(await screen.findByText("Request ID: req-users-me-1")).toBeInTheDocument();
+    expect(navigation.redirectToLogin).not.toHaveBeenCalled();
   });
 
   test("shared /usage-examples route renders for non-admin user", async () => {
