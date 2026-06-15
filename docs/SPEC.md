@@ -264,6 +264,9 @@
 - 外部研究人員服務失敗（timeout/5xx）時：允許進入系統，但阻擋申請
 - 申請成功時立即核發 API Key；provider timeout/5xx 時直接回傳 `503 PROVIDER_UNAVAILABLE`
 - 需提供 API Key 到期前 `30|14|7|3|1` 天多段式提醒信機制，通知申請者本人可進行展延
+  - 主旨固定為 `[AS-ITS] API Key 將於 {days_before} 天後到期 / API Key Expiration Notice ({days_before} Days Remaining)`，其中 `{days_before}` 僅允許 `30|14|7|3|1`
+  - 信件需提供中文與英文雙語內容，並固定包含服務申請／展延網址 `https://api.ascs.sinica.edu.tw/main/`
+  - 信件中的到期時間需顯示為 `Asia/Taipei` 對應的 `UTC+8` 在地時間；中文格式為 `YYYY 年 M 月 D 日 HH:MM（UTC+8）`，英文格式為 `Month D, YYYY, HH:MM (UTC+8)`
 - API 生效時長固定月數選單（`1|6|12`）
 - API Key 對外前綴依環境決定：`APP_ENV=prod` 為 `sk-` + 30 碼隨機字元，`dev/test` 為 `AS-` + 30 碼隨機字元（總長皆為 33）
 - API Key 明文只顯示一次

@@ -730,14 +730,27 @@ def test_expiration_notice_mail_contains_expiration_and_extend_hint(monkeypatch)
         )
     )
 
-    assert "7 天後到期" in captured["subject"]
+    assert (
+        captured["subject"]
+        == "[AS-ITS] API Key 將於 7 天後到期 / API Key Expiration Notice (7 Days Remaining)"
+    )
     assert captured["recipients"] == ["user@example.com"]
     assert "將於 7 天後到期" in captured["body"]
-    assert "到期時間：2026-06-30 09:02 台灣時間" in captured["body"]
-    assert "可於到期前或到期後進行展延" in captured["body"]
-    assert "expire in 7 days" in captured["body"]
-    assert "Expiration time: 2026-06-30 09:02 Asia/Taipei" in captured["body"]
-    assert "You can extend this key before or after expiration." in captured["body"]
+    assert "到期時間：2026 年 6 月 30 日 09:02（UTC+8）" in captured["body"]
+    assert "如需持續使用，請於到期前或到期後至系統進行展延（Extend）作業。" in captured["body"]
+    assert "服務申請／展延網址：https://api.ascs.sinica.edu.tw/main/" in captured["body"]
+    assert "線上服務台（上班時間）：https://its.sinica.edu.tw/online" in captured["body"]
+    assert "電話（上班時間）：(02) 2789-8855" in captured["body"]
+    assert "Dear User," in captured["body"]
+    assert "This is a reminder that your API Key will expire in 7 days." in captured["body"]
+    assert "Expiration Date and Time: June 30, 2026, 09:02 (UTC+8)" in captured["body"]
+    assert "Application / Extension URL: https://api.ascs.sinica.edu.tw/main/" in captured["body"]
+    assert "Online Service Desk (Business Hours): https://its.sinica.edu.tw/online" in captured["body"]
+    assert "Phone (Business Hours): +886-2-2789-8855" in captured["body"]
+    assert "The Department of Information Technology Services<br/>Academia Sinica" in captured["body"]
+    assert "Asia/Taipei" not in captured["body"]
+    assert "台灣時間" not in captured["body"]
+    assert "password: 27898855" not in captured["body"]
 
 
 def test_expiration_reminder_script_supports_multi_stage_and_keeps_first_notice_timestamp(

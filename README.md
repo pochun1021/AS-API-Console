@@ -133,7 +133,8 @@ export ENV_FILE=/home/app/config/.env
 - `MAIL_ENABLED`：可選，是否啟用 Email 發送（預設 `false`）
 - `MAIL_SERVER` / `MAIL_PORT`：可選，SMTP 主機與連接埠
 - `MAIL_USERNAME` / `MAIL_PASSWORD`：可選，SMTP 認證資訊
-- `MAIL_FROM` / `MAIL_FROM_NAME`：可選，寄件者地址與顯示名稱
+- `MAIL_FROM_NAME`：可選，寄件者顯示名稱
+- 寄件者地址固定為 `noreply@as.edu.tw`，不透過環境變數覆寫
 - `MAIL_STARTTLS` / `MAIL_SSL_TLS` / `MAIL_VALIDATE_CERTS`：可選，SMTP 傳輸安全參數
 
 4. 啟動後端（同時提供 API + 前端頁面）

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import logging
 from asyncio import run as run_async
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ except ModuleNotFoundError:  # pragma: no cover - dependency guard for environme
 from app.core.config import get_settings
 
 MAIL_DISPLAY_TZ = ZoneInfo("Asia/Taipei")
+MAIL_FROM_ADDRESS = "noreply@as.edu.tw"
 
 
 class MailService:
@@ -24,7 +26,6 @@ class MailService:
     def is_enabled(self) -> bool:
         required = [
             self.settings.mail_server,
-            self.settings.mail_from,
         ]
         return bool(self.settings.mail_enabled and all(required))
 
@@ -56,7 +57,7 @@ class MailService:
         conf = ConnectionConfig(
             MAIL_USERNAME=username,
             MAIL_PASSWORD=password,
-            MAIL_FROM=self.settings.mail_from,
+            MAIL_FROM=MAIL_FROM_ADDRESS,
             MAIL_FROM_NAME=self.settings.mail_from_name,
             MAIL_PORT=self.settings.mail_port,
             MAIL_SERVER=self.settings.mail_server,
@@ -85,34 +86,47 @@ class MailService:
     ) -> None:
         expires_at_utc = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
         expires_at_taipei = expires_at_utc.astimezone(MAIL_DISPLAY_TZ)
-        expires_text_zh = expires_at_taipei.strftime("%Y-%m-%d %H:%M 台灣時間")
-        expires_text_en = expires_at_taipei.strftime("%Y-%m-%d %H:%M Asia/Taipei")
+        expires_text_zh = (
+            f"{expires_at_taipei.year} 年 {expires_at_taipei.month} 月 "
+            f"{expires_at_taipei.day} 日 {expires_at_taipei.strftime('%H:%M')}（UTC+8）"
+        )
+        expires_text_en = (
+            f"{calendar.month_name[expires_at_taipei.month]} {expires_at_taipei.day}, "
+            f"{expires_at_taipei.year}, {expires_at_taipei.strftime('%H:%M')} (UTC+8)"
+        )
         await self._send_html(
-            subject=f"[AS API Console] API Key 將於 {days_before} 天後到期 / Expires in {days_before} days",
+            subject=(
+                f"[AS-ITS] API Key 將於 {days_before} 天後到期 / "
+                f"API Key Expiration Notice ({days_before} Days Remaining)"
+            ),
             recipients=[to_email],
             body=(
                 "<p>親愛的使用者，您好：</p>"
                 f"<p>提醒您，您的 API Key 將於 {days_before} 天後到期。</p>"
                 f"<p>到期時間：{expires_text_zh}</p>"
-                "<p>您可於到期前或到期後進行展延（extend）。</p>"
-                "<p>若此操作非您本人執行，請立即連繫資訊服務處。</p>"
-                "<p>若您有任何疑問，歡迎向資訊服務處服務台反映。</p>"
-                "<p>聯絡窗口：中央研究院資訊服務處<br/>"
-                "線上服務台（上班時間）：https://its.sinica.edu.tw/online（密碼27898855）<br/>"
-                "電話（上班時間）：02-27898855<br/>"
-                "信箱：its@sinica.edu.tw</p>"
+                "<p>如需持續使用，請於到期前或到期後至系統進行展延（Extend）作業。</p>"
+                "<p>服務申請／展延網址：https://api.ascs.sinica.edu.tw/main/</p>"
+                "<p>若您未曾申請或使用此 API Key，請與資訊服務處服務台聯繫。</p>"
+                "<p>如有其他相關問題，歡迎與我們聯絡。</p>"
+                "<p>聯絡資訊：<br/>"
+                "線上服務台（上班時間）：https://its.sinica.edu.tw/online<br/>"
+                "電話（上班時間）：(02) 2789-8855<br/>"
+                "電子郵件：its@sinica.edu.tw</p>"
                 "<p>中央研究院資訊服務處 敬啟</p>"
                 "<hr/>"
-                "<p>Dear user,</p>"
-                f"<p>This is a reminder that your API key will expire in {days_before} days.</p>"
-                f"<p>Expiration time: {expires_text_en}</p>"
-                "<p>You can extend this key before or after expiration.</p>"
-                "<p>If this action was not performed by you, please contact the IT Service Desk immediately.</p>"
-                "<p>If you have any questions, please contact the IT Service Desk.</p>"
-                "<p>Contact: Institute of Information Science, Academia Sinica IT Service Desk<br/>"
-                "Online Service Desk (business hours): https://its.sinica.edu.tw/online (password: 27898855)<br/>"
-                "Phone (business hours): 02-27898855<br/>"
+                "<p>Dear User,</p>"
+                f"<p>This is a reminder that your API Key will expire in {days_before} days.</p>"
+                f"<p>Expiration Date and Time: {expires_text_en}</p>"
+                "<p>If you wish to continue using this API Key, please extend it through the system "
+                "either before or after its expiration.</p>"
+                "<p>Application / Extension URL: https://api.ascs.sinica.edu.tw/main/</p>"
+                "<p>If you did not apply for or use this API Key, please contact the IT Service Desk.</p>"
+                "<p>For any questions, please feel free to contact us.</p>"
+                "<p>Contact Information:<br/>"
+                "Online Service Desk (Business Hours): https://its.sinica.edu.tw/online<br/>"
+                "Phone (Business Hours): +886-2-2789-8855<br/>"
                 "Email: its@sinica.edu.tw</p>"
-                "<p>Sincerely,<br/>Academia Sinica IT Service Desk</p>"
+                "<p>Sincerely,</p>"
+                "<p>The Department of Information Technology Services<br/>Academia Sinica</p>"
             ),
         )

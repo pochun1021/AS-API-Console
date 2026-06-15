@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     mail_port: int = 587
     mail_username: str | None = None
     mail_password: str | None = None
-    mail_from: str | None = None
+    mail_from: str = "noreply@as.edu.tw"
     mail_from_name: str = "AS API Console"
     mail_starttls: bool = True
     mail_ssl_tls: bool = False

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 
+DEFAULT_MAIL_FROM = "noreply@as.edu.tw"
+
 
 def load_env_file(env_path: Path) -> None:
     if not env_path.exists():
@@ -33,21 +35,18 @@ async def send_test_email(to_email: str) -> None:
         raise RuntimeError("MAIL_ENABLED is false; please set MAIL_ENABLED=true in .env")
 
     mail_server = os.getenv("MAIL_SERVER", "").strip()
-    mail_from = os.getenv("MAIL_FROM", "").strip()
     mail_username = os.getenv("MAIL_USERNAME", "").strip()
     mail_password = os.getenv("MAIL_PASSWORD", "").strip()
 
     if not mail_server:
         raise RuntimeError("MAIL_SERVER is empty")
-    if not mail_from:
-        raise RuntimeError("MAIL_FROM is empty")
 
     use_credentials = bool(mail_username and mail_password)
 
     conf = ConnectionConfig(
         MAIL_USERNAME=mail_username,
         MAIL_PASSWORD=mail_password,
-        MAIL_FROM=mail_from,
+        MAIL_FROM=DEFAULT_MAIL_FROM,
         MAIL_FROM_NAME=os.getenv("MAIL_FROM_NAME", "AS API Console"),
         MAIL_PORT=int(os.getenv("MAIL_PORT", "587")),
         MAIL_SERVER=mail_server,

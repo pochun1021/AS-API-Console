@@ -829,7 +829,7 @@ sudo -u asapic tail -n 100 /home/app/log/send_expiration_reminders/$(TZ=Asia/Tai
 
 ### 18.3 排錯重點
 - `MAIL_ENABLED` 不是 `true`：會略過寄信；請檢查 `/home/app/config/.env`。
-- SMTP 參數缺失：檢查 `MAIL_SERVER`、`MAIL_PORT`、`MAIL_FROM` 與帳密設定。
+- SMTP 參數缺失：檢查 `MAIL_SERVER`、`MAIL_PORT` 與帳密設定；寄件者地址固定為 `noreply@as.edu.tw`。
 - 執行環境找不到 `uv`：腳本會自動 fallback 到 `.venv/bin/python` 或 `python`，但仍需先安裝依賴。
 - 若查無資料寄送：先以 `--dry-run` 檢查是否有命中任一 `30|14|7|3|1` 提醒時段的 `active` 資料。
 - 若只收到部分提醒：確認 `api_key_expiration_notices` 是否已有該 key、該輪 `expires_at`、該提醒時段的成功紀錄；同時段成功紀錄存在時不應重寄。
