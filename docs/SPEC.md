@@ -97,6 +97,32 @@
 - 頁面需提供 Loading、Empty、Error（含 Retry）狀態。
 - 頁面 unmount 時需清除 refresh timer，避免重複請求。
 
+### 2-1) System Announcement Surface（系統公告區塊與管理頁）
+- `user` 與 `admin` 登入後都需可在共用版型看到「系統公告區塊」。
+- 公告區塊需顯示目前有效公告；第一版不要求使用者已讀、關閉、pin、排序權重或附件能力。
+- 公告有效條件為：
+  - `status=active`
+  - `publish_from` 為空或 `publish_from <= now`
+  - `publish_to` 為空或 `publish_to >= now`
+- 公告內容格式第一版固定為：
+  - `title`（必填）
+  - `body`（必填；純文字）
+- 公告內容需套用 persisted-text 驗證；第一版不支援 Markdown、HTML、富文字編輯器、公告內 CTA 連結或圖片。
+- 若目前沒有任何有效公告，前端不得渲染空白大型公告卡片；僅保留固定服務使用說明提示卡。
+- 固定「服務使用說明」提示卡需獨立於公告資料存在：
+  - `user` 與 `admin` 都可見
+  - 永遠連到既有 `/usage-examples`
+  - 不可被 admin 刪除、停用或用一般公告覆蓋
+- `admin` 需可使用獨立的 `System Announcements Page` 管理公告。
+- `System Announcements Page`：
+  - 僅 `admin` 可使用。
+  - 主表格屬於 `server-side table`。
+  - 列表至少顯示：`title`、`status`、`publish_from`、`publish_to`、`updated_at`、`actions`
+  - 可新增、編輯、刪除公告。
+  - 表單欄位至少包含：`title`、`body`、`status`、`publish_from`、`publish_to`
+  - 若 `publish_from` 與 `publish_to` 同時存在，需滿足 `publish_from <= publish_to`
+  - 頁面需提供 Loading、Empty、Error（含 Retry）狀態。
+
 ### 3) My API Keys Page（一般使用者我的紀錄頁）
 - 顯示範圍：僅本人帳號歷史紀錄（`active|revoked|expired`）；若舊 key 已被 renew，對一般使用者隱藏。
 - 顯示欄位：申請日期、生效時長、狀態、Health、到期時間、遮罩 key、操作（其中包含 Usage icon；`APP_ENV=prod` 為 `sk-...` + 後 4 碼；`dev/test` 為 `AS-...` + 後 4 碼）。
@@ -245,7 +271,7 @@
   - 日期欄位僅允許區間查詢，使用 `from/to` 或 `<field>_from/<field>_to`；不得把 DataGrid 原生日期 operator 直接暴露成公開 API。
   - 數字/識別碼欄位（如 `sysid`）僅允許 exact match。
 - 本 repo 現階段 Data Table 分類如下：
-  - `server-side table`：`My API Keys Page`、`Whitelist Admin Page`、`Admin List Page`（管理者名單主表格）、`Admin Dashboard Page`、`Operation Audit Logs Page`、`Auth Audit Logs Page`
+  - `server-side table`：`My API Keys Page`、`Whitelist Admin Page`、`Admin List Page`（管理者名單主表格）、`Admin Dashboard Page`、`Operation Audit Logs Page`、`Auth Audit Logs Page`、`System Announcements Page`
   - `local-full-dataset table`：`Admin List Page`（新增管理者查詢候選表格）、`Institute View Page`
 
 ## 功能需求
@@ -259,6 +285,7 @@
 - 所有會變更資料的 API 皆需通過 CSRF 驗證
 - 僅符合資格的人員可進入系統與申請 API Key（研究人員名單職稱代碼命中，或特殊人員名單 `active` 命中）
 - 特殊人員名單管理能力（新增、查詢、停用/啟用）
+- 系統公告能力（有效公告查詢、admin CRUD、固定服務使用說明提示卡）
 - 研究人員名單由外部服務提供並以職稱代碼判斷
 - 本系統不同步維護本地研究人員名單；申請時以外部服務即時查詢為準
 - 外部研究人員服務失敗（timeout/5xx）時：允許進入系統，但阻擋申請
@@ -382,6 +409,22 @@
   - 同一把 key 若 extend 後 `expires_at` 改變，需允許建立新一輪提醒紀錄。
   - 失敗紀錄不得阻止後續重試；只要同提醒時段尚未成功，後續排程仍可再次嘗試。
 
+### Entity: `announcements`
+- `id` (uuid/string, required)
+- `title` (string, required)
+- `body` (text/string, required)
+- `status` (string, required；允許值 `active|inactive`)
+- `publish_from` (datetime, nullable；開始對外顯示時間)
+- `publish_to` (datetime, nullable；結束對外顯示時間)
+- `created_by` (string, required；建立公告的 admin account)
+- `updated_by` (string, required；最後更新公告的 admin account)
+- `created_at` (datetime, required)
+- `updated_at` (datetime, required)
+- 規則：
+  - `title`、`body` 套用 persisted-text 驗證
+  - 若 `publish_from` 與 `publish_to` 同時存在，必須滿足 `publish_from <= publish_to`
+  - `status=active` 且排程視窗命中時，該公告才可出現在一般前台公告區塊
+
 ### Entity: `auth_audit_logs`
 - `id` (string/uuid)
 - `provider` (string, required)
@@ -425,6 +468,8 @@
 - `user`：不可更新 `key_alias`。
 - `admin`：可查詢全部 API Key 與申請紀錄，可管理特殊人員名單（沿用受保護路徑 `/main/api/v1/whitelists*`），可啟用/停用其他使用者管理者身分（沿用受保護路徑 `/main/api/v1/admins/{id}/enable|disable`）。
 - `admin`：可使用 `PATCH /main/api/v1/api-keys/{id}` 更新 `key_alias`。
+- `user` 與 `admin`：可使用 `GET /main/api/v1/announcements` 取得目前有效公告。
+- `admin`：可使用 `POST`、`PATCH`、`DELETE /main/api/v1/announcements*` 管理公告。
 - 金鑰對外狀態判斷採 effective status：
   - 若 `api_keys.status='active'` 且 `expires_at < now(UTC)`，則對外一律視為 `expired`。
   - 其餘狀態沿用 `api_keys.status`（`active|revoked|expired`）。
@@ -845,6 +890,25 @@ Base path：`/main/api/v1`
   - Request body：`{ "preferred_locale": "zh-TW" | "en" }`
   - 僅允許 `zh-TW|en`，其餘值回傳 `422 VALIDATION_ERROR`
 
+### 5-5) System Announcements API
+- `GET /main/api/v1/announcements`
+- 用途：提供登入後共用版型與公告管理頁查詢公告。
+- 規則：
+  - `user` 與 `admin` 都可使用。
+  - 預設回目前有效公告。
+  - 成功回應為分頁結構 `{ items, page, page_size, total }`。
+  - `admin` 可透過 `scope=all` 取得全部公告；非 `admin` 傳 `scope=all` 需回 `403 FORBIDDEN`。
+  - 第一版需支援 `page`、`page_size`、`scope`、`status`、`title`、`publish_from_from`、`publish_from_to`、`publish_to_from`、`publish_to_to`、`updated_from`、`updated_to`、`sort_by`、`sort_dir`。
+  - `title` 為 case-insensitive `contains`；`status` 為 exact match；日期欄位為區間查詢。
+  - 回傳欄位至少包含 `id`、`title`、`body`、`status`、`publish_from`、`publish_to`、`created_at`、`updated_at`。
+- `POST /main/api/v1/announcements`
+- `PATCH /main/api/v1/announcements/{id}`
+- `DELETE /main/api/v1/announcements/{id}`
+- 規則：
+  - 僅 `admin` 可使用，且需記錄操作稽核資訊（操作者、時間）。
+  - `POST/PATCH` payload 至少包含 `title`、`body`、`status`、`publish_from`、`publish_to`
+  - `DELETE` 為實體刪除。
+
 ### 前端語言規則（MVP）
 - 僅支援 `zh-TW`、`en`。
 - 啟動語言優先序：
@@ -1125,6 +1189,11 @@ Base path：`/main/api/v1`
 49. `GET /main/api/v1/models` 若 provider timeout 或 `5xx`，需回傳 `503 PROVIDER_UNAVAILABLE`；若 provider payload 無法辨識，需走受控錯誤流程，且不得洩漏原始 payload。
 50. 服務使用說明頁中的模型清單區塊在 mount 時需自動查詢一次；手動重新整理與每 `15` 分鐘自動刷新需重用同一查詢流程；頁面離開時需清除 timer。
 51. 服務使用說明頁需正確呈現 Loading、Empty、Error、Retry 狀態；第一版模型列表僅顯示一欄 `Model`，內容來自 API 回傳的 `label`，且同頁需顯示 repo 內維護的服務說明與至少一組 Python code block。
+51A. 登入後共用版型需顯示系統公告區塊與固定「服務使用說明」提示卡；固定提示卡不得依賴公告是否存在，且需連到 `/usage-examples`。
+51B. `GET /main/api/v1/announcements` 對 `user` 與未帶 `scope=all` 的 `admin`，只可回目前有效公告；`inactive`、未到 `publish_from`、或已超過 `publish_to` 的公告不得出現在前台。
+51C. `POST /main/api/v1/announcements`、`PATCH /main/api/v1/announcements/{id}`、`DELETE /main/api/v1/announcements/{id}` 僅 `admin` 可使用；非 `admin` 需回 `403`。
+51D. 公告 `title`、`body` 若包含 persisted-text 不安全語法需回 `422 VALIDATION_ERROR`；若 `publish_from > publish_to` 也需回 `422 VALIDATION_ERROR`。
+51E. `System Announcements Page` 主表格需採 `server-side table`；前端不得只以當前頁 rows 做本地篩選。
 
 ### OAuth、Session 與語系
 52. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。`GET /main/auth/callback` 成功時需建立 session 並 redirect `/main/`，失敗時需回錯且寫入 failure audit。
@@ -1136,7 +1205,7 @@ Base path：`/main/api/v1`
 58. `GET /main/api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 僅允許 `zh-TW|en`，成功後可立即由 `GET` 讀回。手動切換語言後，重新登入需沿用 DB 偏好，且導覽列、頁標題、按鈕、錯誤/提示訊息與 DataGrid locale 文案需隨語言切換更新。
 
 ### 稽核、查詢限制與安全邊界
-59. `GET /main/api/v1/users` 與 `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`limit-strategy-config`、`institutes/sync` 等關鍵操作 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`；failure 事件另需提供可供管理者除錯的 `error_detail` 與 `request_id`。其中 `GET /main/api/v1/users` 需以 `lookup_context` 區分 `proxy_application|admin_create|whitelist_create` 用途。
+59. `GET /main/api/v1/users` 與 `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`announcements`、`limit-strategy-config`、`institutes/sync` 等關鍵操作 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`；failure 事件另需提供可供管理者除錯的 `error_detail` 與 `request_id`。其中 `GET /main/api/v1/users` 需以 `lookup_context` 區分 `proxy_application|admin_create|whitelist_create` 用途。
 60. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證；`metadata_json` 與 `error_detail` 僅允許白名單安全內容，不得包含 stack trace、SQL、完整第三方 payload。若 audit 寫入失敗，不得改變主流程成功或失敗語意。
 61. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 僅 `admin` 可使用；未提供 `from/to` 時預設回傳最近 7 天熱資料，結果依 `created_at desc` 排序，並支援分頁與既定篩選條件。
 62. `GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
