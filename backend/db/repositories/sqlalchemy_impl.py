@@ -8,12 +8,16 @@ from sqlalchemy.orm import Session, aliased
 
 from db.models.api_key_usage_snapshots import ApiKeyUsageSnapshot
 from db.models.admins import Admin
+from db.models.announcement import Announcement
 from db.models.api_keys import ApiKey
 from db.models.applications import ApiKeyApplication
 from db.models.whitelist import ApiKeyWhitelist
-from db.repositories.interfaces import ApiKeyRepository, WhitelistRepository
+from db.repositories.interfaces import AnnouncementRepository, ApiKeyRepository, WhitelistRepository
 from db.repositories.types import (
     AdminListFilter,
+    AnnouncementCreateInput,
+    AnnouncementListFilter,
+    AnnouncementUpdateInput,
     ApiKeyAliasUpdateInput,
     ApiKeyCreateInput,
     ApiKeyDetail,
@@ -32,6 +36,122 @@ from db.repositories.types import (
 
 def _contains_ci(column, value: str):
     return func.lower(column).like(f"%{value.lower()}%")
+
+
+class SQLAlchemyAnnouncementRepository(AnnouncementRepository):
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    @staticmethod
+    def _apply_list_filters(stmt: Select, filters: AnnouncementListFilter) -> Select:
+        if filters.title:
+            stmt = stmt.where(_contains_ci(Announcement.title, filters.title))
+        if filters.status:
+            stmt = stmt.where(Announcement.status == filters.status)
+        if filters.publish_from_from:
+            stmt = stmt.where(Announcement.publish_from >= filters.publish_from_from)
+        if filters.publish_from_to:
+            stmt = stmt.where(Announcement.publish_from <= filters.publish_from_to)
+        if filters.publish_to_from:
+            stmt = stmt.where(Announcement.publish_to >= filters.publish_to_from)
+        if filters.publish_to_to:
+            stmt = stmt.where(Announcement.publish_to <= filters.publish_to_to)
+        if filters.updated_from:
+            stmt = stmt.where(Announcement.updated_at >= filters.updated_from)
+        if filters.updated_to:
+            stmt = stmt.where(Announcement.updated_at <= filters.updated_to)
+        return stmt
+
+    def create(self, data: AnnouncementCreateInput) -> Announcement:
+        now = datetime.now(timezone.utc)
+        announcement = Announcement(
+            id=data.id,
+            title=data.title,
+            body=data.body,
+            status=data.status,
+            publish_from=data.publish_from,
+            publish_to=data.publish_to,
+            created_by=data.created_by,
+            updated_by=data.created_by,
+            created_at=now,
+            updated_at=now,
+        )
+        self.session.add(announcement)
+        self.session.flush()
+        return announcement
+
+    def list(
+        self,
+        filters: AnnouncementListFilter,
+        *,
+        active_only: bool = False,
+        now: datetime | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[Announcement], int]:
+        sortable_columns = {
+            "title": Announcement.title,
+            "status": Announcement.status,
+            "publish_from": Announcement.publish_from,
+            "publish_to": Announcement.publish_to,
+            "created_at": Announcement.created_at,
+            "updated_at": Announcement.updated_at,
+        }
+        sort_column = sortable_columns.get(filters.sort_by, Announcement.updated_at)
+        sort_dir = "asc" if filters.sort_dir == "asc" else "desc"
+
+        stmt: Select[tuple[Announcement]] = select(Announcement)
+        if active_only:
+            current_time = now or datetime.now(timezone.utc)
+            stmt = stmt.where(
+                Announcement.status == "active",
+                (Announcement.publish_from.is_(None) | (Announcement.publish_from <= current_time)),
+                (Announcement.publish_to.is_(None) | (Announcement.publish_to >= current_time)),
+            )
+        stmt = self._apply_list_filters(stmt, filters)
+        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
+        total = int(self.session.scalar(count_stmt) or 0)
+
+        if active_only and filters.sort_by == "updated_at" and filters.sort_dir == "desc":
+            stmt = stmt.order_by(
+                case((Announcement.publish_from.is_(None), 1), else_=0).asc(),
+                Announcement.publish_from.desc(),
+                Announcement.updated_at.desc(),
+                Announcement.id.desc(),
+            )
+        elif sort_dir == "asc":
+            stmt = stmt.order_by(sort_column.asc(), Announcement.id.asc())
+        else:
+            stmt = stmt.order_by(sort_column.desc(), Announcement.id.desc())
+
+        stmt = stmt.limit(limit).offset(offset)
+        return list(self.session.scalars(stmt).all()), total
+
+    def get_by_id(self, announcement_id: str) -> Announcement | None:
+        return self.session.get(Announcement, announcement_id)
+
+    def update(self, announcement_id: str, data: AnnouncementUpdateInput) -> Announcement | None:
+        announcement = self.get_by_id(announcement_id)
+        if announcement is None:
+            return None
+        announcement.title = data.title
+        announcement.body = data.body
+        announcement.status = data.status
+        announcement.publish_from = data.publish_from
+        announcement.publish_to = data.publish_to
+        announcement.updated_by = data.updated_by
+        announcement.updated_at = datetime.now(timezone.utc)
+        self.session.add(announcement)
+        self.session.flush()
+        return announcement
+
+    def delete(self, announcement_id: str) -> Announcement | None:
+        announcement = self.get_by_id(announcement_id)
+        if announcement is None:
+            return None
+        self.session.delete(announcement)
+        self.session.flush()
+        return announcement
 
 
 class SQLAlchemyAdminRepository:

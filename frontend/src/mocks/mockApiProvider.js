@@ -301,6 +301,29 @@ const initialWhitelists = [
   }
 ];
 
+const initialAnnouncements = [
+  {
+    id: "ann_001",
+    title: "平台維護公告",
+    body: "本週三 18:00 進行例行維護，期間可能有短暫延遲。",
+    status: "active",
+    publish_from: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+    publish_to: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: "ann_002",
+    title: "草稿公告",
+    body: "尚未啟用的公告",
+    status: "inactive",
+    publish_from: null,
+    publish_to: null,
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()
+  }
+];
+
 const initialUsers = [
   {
     id: "usr_001",
@@ -356,6 +379,7 @@ const initialUsers = [
 
 let apiKeys = initialApiKeys.map((item) => ({ ...item }));
 let whitelists = initialWhitelists.map((item) => ({ ...item }));
+let announcements = initialAnnouncements.map((item) => ({ ...item }));
 let users = initialUsers.map((item) => ({ ...item }));
 let modelsPayload = {
   data: initialModelsPayload.data.map((item) => ({ ...item })),
@@ -481,6 +505,10 @@ function findUserById(id) {
   return users.find((item) => item.id === id);
 }
 
+function findAnnouncementById(id) {
+  return announcements.find((item) => item.id === id);
+}
+
 function normalizeAlias(item) {
   return item.key_alias || `for_${item.owner_account}`;
 }
@@ -542,6 +570,39 @@ function mapUserForAdminPage(user) {
 
 function containsCI(value, keyword) {
   return String(value || "").toLowerCase().includes(String(keyword || "").trim().toLowerCase());
+}
+
+function normalizeAnnouncementPayload(payload) {
+  const title = validatePersistedText(payload?.title, { required: true });
+  if (!title.ok) {
+    throw createError("VALIDATION_ERROR", title.reason === "unsafe" ? "title contains unsafe syntax" : "title is required", 422);
+  }
+  const body = validatePersistedText(payload?.body, { required: true });
+  if (!body.ok) {
+    throw createError("VALIDATION_ERROR", body.reason === "unsafe" ? "body contains unsafe syntax" : "body is required", 422);
+  }
+  if (!["active", "inactive"].includes(payload?.status)) {
+    throw createError("VALIDATION_ERROR", "status must be active or inactive", 422);
+  }
+  const publishFrom = payload?.publish_from ? new Date(payload.publish_from).toISOString() : null;
+  const publishTo = payload?.publish_to ? new Date(payload.publish_to).toISOString() : null;
+  if (publishFrom && publishTo && new Date(publishFrom) > new Date(publishTo)) {
+    throw createError("VALIDATION_ERROR", "publish_from must be less than or equal to publish_to", 422);
+  }
+  return {
+    title: title.value,
+    body: body.value,
+    status: payload.status,
+    publish_from: publishFrom,
+    publish_to: publishTo
+  };
+}
+
+function isAnnouncementVisible(item, now = new Date()) {
+  if (item.status !== "active") return false;
+  if (item.publish_from && new Date(item.publish_from) > now) return false;
+  if (item.publish_to && new Date(item.publish_to) < now) return false;
+  return true;
 }
 
 function compareValues(a, b, sortDir = "asc") {
@@ -1142,6 +1203,58 @@ export const mockApiProvider = {
     return paginateItems(sorted, params);
   },
 
+  async listAnnouncements(paramsOrAuth, maybeAuth) {
+    await delay();
+    const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
+    const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;
+    const params = hasAuthHeaderShape ? {} : paramsOrAuth || {};
+    if (!auth?.account) {
+      throw createError("UNAUTHORIZED", "unauthorized", 401);
+    }
+
+    const scope = params.scope || "";
+    if (scope && scope !== "all") {
+      throw createError("VALIDATION_ERROR", "scope must be all when provided", 422);
+    }
+    if (scope === "all") {
+      ensureAdmin(auth);
+    }
+
+    let items = [...announcements];
+    if (scope !== "all") {
+      items = items.filter((item) => isAnnouncementVisible(item));
+    }
+    if (params.status) {
+      items = items.filter((item) => item.status === params.status);
+    }
+    if (params.title) {
+      items = items.filter((item) => containsCI(item.title, params.title));
+    }
+    if (params.publish_from_from) {
+      items = items.filter((item) => item.publish_from && new Date(item.publish_from) >= new Date(params.publish_from_from));
+    }
+    if (params.publish_from_to) {
+      items = items.filter((item) => item.publish_from && new Date(item.publish_from) <= new Date(params.publish_from_to));
+    }
+    if (params.publish_to_from) {
+      items = items.filter((item) => item.publish_to && new Date(item.publish_to) >= new Date(params.publish_to_from));
+    }
+    if (params.publish_to_to) {
+      items = items.filter((item) => item.publish_to && new Date(item.publish_to) <= new Date(params.publish_to_to));
+    }
+    if (params.updated_from) {
+      items = items.filter((item) => new Date(item.updated_at) >= new Date(params.updated_from));
+    }
+    if (params.updated_to) {
+      items = items.filter((item) => new Date(item.updated_at) <= new Date(params.updated_to));
+    }
+
+    const sortField = params.sort_by || "updated_at";
+    const sortDir = params.sort_dir || "desc";
+    const sorted = [...items].sort((a, b) => compareValues(a[sortField], b[sortField], sortDir));
+    return paginateItems(sorted, params);
+  },
+
   async listInstitutes(auth) {
     await delay();
     if (!auth?.account) {
@@ -1241,6 +1354,44 @@ export const mockApiProvider = {
       throw createError("VALIDATION_ERROR", "active admin cannot be deleted", 422);
     }
     users = users.filter((item) => item.id !== id);
+  },
+
+  async createAnnouncement(payload, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const normalized = normalizeAnnouncementPayload(payload);
+    const now = new Date().toISOString();
+    const item = {
+      id: `ann_${String(announcements.length + 1).padStart(3, "0")}`,
+      ...normalized,
+      created_at: now,
+      updated_at: now
+    };
+    announcements = [item, ...announcements];
+    return item;
+  },
+
+  async updateAnnouncement(id, payload, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const item = findAnnouncementById(id);
+    if (!item) {
+      throw createError("VALIDATION_ERROR", "announcement not found", 404);
+    }
+    const normalized = normalizeAnnouncementPayload(payload);
+    Object.assign(item, normalized, { updated_at: new Date().toISOString() });
+    return { ...item };
+  },
+
+  async deleteAnnouncement(id, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const item = findAnnouncementById(id);
+    if (!item) {
+      throw createError("VALIDATION_ERROR", "announcement not found", 404);
+    }
+    announcements = announcements.filter((entry) => entry.id !== id);
+    return {};
   },
 
   async getLocalePreference(auth) {
@@ -1389,6 +1540,7 @@ export const mockApiProvider = {
   resetForTests() {
     apiKeys = initialApiKeys.map((item) => ({ ...item }));
     whitelists = initialWhitelists.map((item) => ({ ...item }));
+    announcements = initialAnnouncements.map((item) => ({ ...item }));
     users = initialUsers.map((item) => ({ ...item }));
     modelsPayload = {
       data: initialModelsPayload.data.map((item) => ({ ...item })),
