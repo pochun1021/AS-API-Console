@@ -190,10 +190,10 @@ test("hides SysID and uses radio for duration", async () => {
   renderPage(<ApplyPage auth={auth} />);
 
   expect(screen.queryByLabelText("SysID")).not.toBeInTheDocument();
-  expect(screen.getByRole("radio", { name: "6 個月" })).toBeChecked();
+  expect(screen.getByRole("radio", { name: "180 天" })).toBeChecked();
 
-  await user.click(screen.getByRole("radio", { name: "12 個月" }));
-  expect(screen.getByRole("radio", { name: "12 個月" })).toBeChecked();
+  await user.click(screen.getByRole("radio", { name: "360 天" }));
+  expect(screen.getByRole("radio", { name: "360 天" })).toBeChecked();
 });
 
 test("shows Chinese error message when API returns English message", async () => {

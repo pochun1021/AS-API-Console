@@ -39,15 +39,17 @@
   - `status in ('active', 'inactive')`
 
 ### `api_key_applications`
-- 核心欄位：`id`, `account`, `name`, `email`, `department`, `application_date`, `duration_months`, `purpose`, `status`, `issued_at`, `expires_at`, `revoked_at`, `sysid`, `is_proxy_submission`, `proxy_operator_account`, `created_at`, `updated_at`
+- 核心欄位：`id`, `account`, `name`, `email`, `department`, `application_date`, `duration_days`, `original_duration_days`, `purpose`, `status`, `issued_at`, `expires_at`, `revoked_at`, `sysid`, `is_proxy_submission`, `proxy_operator_account`, `created_at`, `updated_at`
 - 約束：
-  - `duration_months in (1, 6, 12)`
+  - `duration_days in (30, 180, 360)`
+  - `original_duration_days in (30, 180, 360)`
   - `status in ('active', 'revoked', 'expired')`
 - 欄位語意：
   - application ownership 以 applicant snapshot（`account`, `name`, `email`, `department`, `sysid`）為準
-  - `application_date` 保留原始申請日，不因 extend 改寫
-  - `duration_months` 為目前累計有效月數；每次 extend 成功後需加上該次展延月數
-  - `expires_at` 為目前有效到期時間；若 key 已過期才 extend，新的到期計算基準為 extend 成功當下
+  - `application_date` 於初次申請或每次 extend 成功後，代表最新一輪有效期起算日
+  - `duration_days` 為目前這一輪有效期時長；每次 extend 成功後需重置為 `original_duration_days`
+  - `original_duration_days` 保存初次核發時長，供 renew/extend 固定沿用
+  - `expires_at` 為目前有效到期時間，並一律以 fixed-day 規則重算
   - `is_proxy_submission = false` 時，`proxy_operator_account = NULL`
   - `is_proxy_submission = true` 時，`proxy_operator_account` 記錄實際代送的 `admin account`
 

@@ -35,17 +35,17 @@ def _json_dump(value: Any) -> str:
     return json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True)
 
 
-def _provider_duration(months: int) -> str:
-    if months <= 0:
+def _provider_duration(days: int) -> str:
+    if days <= 0:
         raise ValueError("duration must be positive")
-    return f"{months * 30}d"
+    return f"{days}d"
 
 
-def _next_duration_months(current: int) -> int:
-    for candidate in (1, 6, 12):
+def _next_duration_days(current: int) -> int:
+    for candidate in (30, 180, 360):
         if candidate > current:
             return candidate
-    return current + 1
+    return current
 
 
 @dataclass(slots=True)
@@ -67,7 +67,7 @@ class ProviderLifecycleTester:
         team_id: str,
         timeout_seconds: float,
         alias_prefix: str,
-        duration_months: int,
+        duration_days: int,
         max_budget: float,
         tpm_limit: int,
         rpm_limit: int,
@@ -78,8 +78,8 @@ class ProviderLifecycleTester:
         self.team_id = team_id
         self.timeout_seconds = timeout_seconds
         self.alias_prefix = alias_prefix
-        self.duration_months = duration_months
-        self.extend_duration_months = _next_duration_months(duration_months)
+        self.duration_days = duration_days
+        self.extend_duration_days = _next_duration_days(duration_days)
         self.max_budget = max_budget
         self.tpm_limit = tpm_limit
         self.rpm_limit = rpm_limit
@@ -139,11 +139,11 @@ class ProviderLifecycleTester:
 
         return StepResult(status_code=response.status_code, body=body)
 
-    def _base_generate_payload(self, alias: str, duration_months: int) -> dict[str, Any]:
+    def _base_generate_payload(self, alias: str, duration_days: int) -> dict[str, Any]:
         return {
             "max_budget": self.max_budget,
             "budget_duration": "30d",
-            "duration": _provider_duration(duration_months),
+            "duration": _provider_duration(duration_days),
             "tpm_limit": self.tpm_limit,
             "rpm_limit": self.rpm_limit,
             "max_parallel_requests": 0,
@@ -152,12 +152,12 @@ class ProviderLifecycleTester:
             "key_type": "llm_api",
         }
 
-    def _base_update_payload(self, key_plaintext: str, duration_months: int) -> dict[str, Any]:
+    def _base_update_payload(self, key_plaintext: str, duration_days: int) -> dict[str, Any]:
         return {
             "key": key_plaintext,
             "max_budget": self.max_budget,
             "budget_duration": "30d",
-            "duration": _provider_duration(duration_months),
+            "duration": _provider_duration(duration_days),
             "tpm_limit": self.tpm_limit,
             "rpm_limit": self.rpm_limit,
             "max_parallel_requests": 0,
@@ -187,14 +187,14 @@ class ProviderLifecycleTester:
             generate_a = self._request(
                 step="generate key A",
                 path="/key/generate",
-                payload=self._base_generate_payload(alias_a, self.duration_months),
+                payload=self._base_generate_payload(alias_a, self.duration_days),
             )
             self.key_a = self._extract_plaintext_key("generate key A", generate_a.body)
             cleanup_needed = True
 
             alias_a_updated = f"{self.alias_prefix}_a_updated"
             self._remember_alias(alias_a_updated)
-            update_alias_payload = self._base_update_payload(self.key_a, self.duration_months)
+            update_alias_payload = self._base_update_payload(self.key_a, self.duration_days)
             update_alias_payload["key_alias"] = alias_a_updated
             self._request(
                 step="update key A alias",
@@ -202,7 +202,7 @@ class ProviderLifecycleTester:
                 payload=update_alias_payload,
             )
 
-            extend_payload = self._base_update_payload(self.key_a, self.extend_duration_months)
+            extend_payload = self._base_update_payload(self.key_a, self.extend_duration_days)
             extend_payload["key_alias"] = alias_a_updated
             self._request(
                 step="extend key A",
@@ -221,7 +221,7 @@ class ProviderLifecycleTester:
             generate_b = self._request(
                 step="generate key B",
                 path="/key/generate",
-                payload=self._base_generate_payload(alias_b, self.duration_months),
+                payload=self._base_generate_payload(alias_b, self.duration_days),
             )
             self.key_b = self._extract_plaintext_key("generate key B", generate_b.body)
 
@@ -325,7 +325,7 @@ class ProviderLifecycleTester:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Test provider key lifecycle directly against provider endpoints.")
     parser.add_argument("--alias-prefix", default="", help="Alias prefix to use for generated test keys.")
-    parser.add_argument("--duration", type=int, default=1, help="Initial key duration in months. Default: 1")
+    parser.add_argument("--duration", type=int, default=30, help="Initial key duration in days. Default: 30")
     parser.add_argument("--budget", type=float, default=0.01, help="max_budget for test keys. Default: 0.01")
     parser.add_argument("--tpm", type=int, default=1, help="tpm_limit for test keys. Default: 1")
     parser.add_argument("--rpm", type=int, default=1, help="rpm_limit for test keys. Default: 1")
@@ -365,8 +365,8 @@ def main() -> int:
     print(f"Team ID:         {team_id}")
     print(f"Timeout:         {timeout_seconds}s")
     print(f"Alias Prefix:    {alias_prefix}")
-    print(f"Initial Months:  {args.duration}")
-    print(f"Extend Months:   {_next_duration_months(args.duration)}")
+    print(f"Initial Days:    {args.duration}")
+    print(f"Extend Days:     {_next_duration_days(args.duration)}")
     print(f"Max Budget:      {args.budget}")
     print(f"TPM Limit:       {args.tpm}")
     print(f"RPM Limit:       {args.rpm}")
@@ -379,7 +379,7 @@ def main() -> int:
         team_id=team_id,
         timeout_seconds=timeout_seconds,
         alias_prefix=alias_prefix,
-        duration_months=args.duration,
+        duration_days=args.duration,
         max_budget=args.budget,
         tpm_limit=args.tpm,
         rpm_limit=args.rpm,

@@ -28,7 +28,7 @@ ALLOWED_METADATA_KEYS = {
     "target_admin_id",
     "status",
     "title",
-    "duration_months",
+    "duration_days",
     "is_proxy_submission",
     "provider_request_id",
     "provider_operation_id",

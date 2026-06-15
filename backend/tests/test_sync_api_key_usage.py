@@ -54,7 +54,7 @@ def test_usage_sync_script_records_snapshot_history(client, admin_headers, user_
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "sync usage"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "sync usage"},
     )
     assert create_resp.status_code == 201
     item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]

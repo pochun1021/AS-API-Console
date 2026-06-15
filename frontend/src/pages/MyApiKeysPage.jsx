@@ -138,16 +138,16 @@ function getStatusLabel(status, t) {
 }
 
 function getExtendDurationLabel(item, t) {
-  const months = Number(item?.original_duration_months ?? item?.duration_months ?? 0);
-  if (!months) return "";
-  return `${months} ${t("mykeys_duration_suffix")}`;
+  const days = Number(item?.original_duration_days ?? item?.duration_days ?? 0);
+  if (!days) return "";
+  return `${days} ${t("mykeys_duration_suffix")}`;
 }
 
 function getPredictedExtendExpiresAt(item) {
-  const months = Number(item?.original_duration_months ?? item?.duration_months ?? 0);
-  if (!months) return null;
+  const days = Number(item?.original_duration_days ?? item?.duration_days ?? 0);
+  if (!days) return null;
   const nextExpiresAt = new Date();
-  nextExpiresAt.setUTCDate(nextExpiresAt.getUTCDate() + (months * 30));
+  nextExpiresAt.setUTCDate(nextExpiresAt.getUTCDate() + days);
   return nextExpiresAt.toISOString();
 }
 
@@ -450,8 +450,8 @@ export default function MyApiKeysPage({ auth }) {
           renderCell: (params) => params.row.application_date || "-"
         },
         {
-          field: "duration_months",
-          headerName: t("mykeys_col_duration_months"),
+          field: "duration_days",
+          headerName: t("mykeys_col_duration_days"),
           flex: 1,
           minWidth: 120,
           valueFormatter: (value) => `${value} ${t("mykeys_duration_suffix")}`,
@@ -962,7 +962,7 @@ export default function MyApiKeysPage({ auth }) {
               ) : null}
               <Typography>{t("mykeys_detail_department")}: {formatDepartment(detailItem.department, locale)}</Typography>
               <Typography>{t("mykeys_detail_application_date")}: {detailItem.application_date}</Typography>
-              <Typography>{t("mykeys_detail_duration")}: {detailItem.duration_months} {t("mykeys_duration_suffix")}</Typography>
+              <Typography>{t("mykeys_detail_duration")}: {detailItem.duration_days} {t("mykeys_duration_suffix")}</Typography>
               <Typography>
                 {t("mykeys_detail_masked_key")}: {formatMaskedKey(detailItem.masked_key)}
               </Typography>

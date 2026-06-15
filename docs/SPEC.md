@@ -39,14 +39,14 @@
   - `department`（必填，唯讀，自 SSO/OAuth 登入帶入）
   - `sysid`（必填，唯讀，自 SSO/OAuth 登入帶入；純數字）
   - `application_date`（必填，使用者可選）
-  - `duration_months`（必填，選單：`1|6|12`）
+  - `duration_days`（必填，選單：`30|180|360`）
   - `purpose`（必填）
   - `target_identity`（選填；僅 `admin` 可傳，欄位：`account`）
 - 驗證：
   - `email` 格式檢查
   - `sysid` 必須為純數字（整數語意）
   - `application_date` 格式為 `YYYY-MM-DD` 且不得晚於申請當日
-  - `duration_months` 僅允許 `1|6|12`
+  - `duration_days` 僅允許 `30|180|360`
   - 所有會寫入後端的文字欄位採共用 persisted-text 驗證：允許正常中英文、數字、空白與常見標點，但若包含明顯程式語法片段（至少包含 HTML tag、`<script...>`、`</script>`、`javascript:`、明顯 SQL injection 片段、明顯 JS `function(...)` / `=>` 語法）需阻擋送出
   - 送出申請時的 auth context 驗證、資格檢查、錯誤碼與 provider/SOAP 錯誤語意，以 `POST /main/api/v1/api-keys/applications` 契約為準
   - `admin` 代申請時，`target_identity.account` 必填；目標 `name`、`email`、`department`、`sysid` 由後端目錄查詢補齊
@@ -146,8 +146,8 @@
 - `Unlimited`（`max_budget=0`）在 `Usage` popover 內不得渲染百分比 progress bar，需改以純文字狀態呈現；若 `max_budget > 0` 但缺少 usage snapshot 或 `spend`，仍需顯示 progress bar，並以前端 `0%` / `0 / budget` 呈現。
 - 清單查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
 - 時間欄位語意：
-  - 成功申請或 extend 後：`application_date` 為最近一次申請或成功展延後的起算日；`duration_months` 為目前這一輪有效期時長；`expires_at` 為目前有效到期時間。
-  - `expires_at` 一律採 fixed-day 規則計算：`1|6|12` 個月分別視為 `30|180|360` 天。初次核發與後續每次 extend 都以當次起算日重新計算 `expires_at = application_date + effective_duration_days`；`duration_months` 不做累加。
+  - 成功申請或 extend 後：`application_date` 為最近一次申請或成功展延後的起算日；`duration_days` 為目前這一輪有效期時長；`expires_at` 為目前有效到期時間。
+  - `expires_at` 一律採 fixed-day 規則計算：生效時長固定僅允許 `30|180|360` 天。初次核發與後續每次 extend 都以當次起算日重新計算 `expires_at = application_date + effective_duration_days`；`duration_days` 不做累加。
   - 前端在 API Key 清單與詳情顯示 `expires_at` 時，僅顯示 `YYYY-MM-DD` 日期，不顯示時分秒。
 - 管理者在同頁可額外查看申請人識別欄位（`owner_account`、`owner_name`）。
 - 日期區間篩選 UI 需使用 Date Range Picker，並以雙月曆（開始/結束）呈現 `application_date` 與 `expires_at` 的區間選擇。
@@ -157,15 +157,15 @@
   - 對 `expired` key 顯示「展延（extend）」按鈕（icon + 文字）。
   - 對 `revoked` key 顯示「續發（renew）」按鈕（icon + 文字）。
   - `active|expired` key 一律顯示展延按鈕；前端不得再以「距離到期 30 天內」作為顯示或送出限制。
-  - extend 需以確認 Dialog 送出，不再提供 `duration_months` 選單；每次 extend 一律沿用該 key 的 `original_duration_months` 作為本次展延基數。
+  - extend 需以確認 Dialog 送出，不再提供 `duration_days` 選單；每次 extend 一律沿用該 key 的 `original_duration_days` 作為本次展延基數。
   - renew 會建立新 key，來源 key 對 `user` 列表需隱藏。
   - extend 會沿用原 key，只延長有效期限。
 
 ### 4) API Key Detail Dialog（詳情視窗）
 - 顯示完整申請資訊與狀態。
 - 顯示欄位至少包含：申請日期、生效時長、用途（`purpose`）、單位（`department`）、建立時間、到期時間、遮罩 key。
-- 詳情視窗需沿用 API 時間欄位語意，不得把曾展延 key 的 `application_date`、`duration_months`、`expires_at` 顯示成彼此矛盾的資訊：
-  - extend 後需顯示更新後的 `application_date`（即最近一次成功展延當日）與本輪 `duration_months`（即 `original_duration_months`）。
+- 詳情視窗需沿用 API 時間欄位語意，不得把曾展延 key 的 `application_date`、`duration_days`、`expires_at` 顯示成彼此矛盾的資訊：
+  - extend 後需顯示更新後的 `application_date`（即最近一次成功展延當日）與本輪 `duration_days`（即 `original_duration_days`）。
 - 一般使用者僅可查本人資料。
 - 一般使用者可停用本人 `active` key。
 - 一般查詢/詳情不可再次顯示 key 明文（僅受控 reveal 流程可回取）。
@@ -302,7 +302,7 @@
   - 主旨固定為 `[AS-ITS] API Key 將於 {days_before} 天後到期 / API Key Expiration Notice ({days_before} Days Remaining)`，其中 `{days_before}` 僅允許 `30|14|7|3|1`
   - 信件需提供中文與英文雙語內容，並固定包含服務申請／展延網址 `https://api.ascs.sinica.edu.tw/main/`
   - 信件中的到期時間需顯示為 `Asia/Taipei` 對應的 `UTC+8` 在地時間；中文格式為 `YYYY 年 M 月 D 日 HH:MM（UTC+8）`，英文格式為 `Month D, YYYY, HH:MM (UTC+8)`
-- API 生效時長固定月數選單（`1|6|12`）
+- API 生效時長固定天數選單（`30|180|360`）
 - API Key 對外前綴依環境決定：`APP_ENV=prod` 為 `sk-` + 30 碼隨機字元，`dev/test` 為 `AS-` + 30 碼隨機字元（總長皆為 33）
 - API Key 明文只顯示一次
 - 系統儲存 `key_hash` 與加密密文（`key_ciphertext`），不直接儲存明文
@@ -366,8 +366,8 @@
 - `email` (string, required)
 - `department` (string, required)
 - `application_date` (date, required)
-- `duration_months` (int, required, allowed: `1|6|12`)
-- `original_duration_months` (int, required；保存原始申請時長，供 extend 基數計算使用)
+- `duration_days` (int, required, allowed: `30|180|360`)
+- `original_duration_days` (int, required；保存原始申請時長，供 extend 基數計算使用)
 - `purpose` (string, required)
 - `status` (enum: `active` | `revoked` | `expired`)
 - `issued_at` (datetime)
@@ -381,8 +381,8 @@
 - 欄位語意：
   - application ownership 以申請人快照欄位（`account`、`name`、`email`、`department`、`sysid`）為準
 - `application_date` 初次核發時為原始申請日期；每次 extend 成功後都需改寫為本次展延當日，作為新的起算日
-- `duration_months` 為業務顯示欄位，不等同 provider `duration` 傳值；每次 extend 成功後一律重置為 `original_duration_months`，代表目前這一輪有效期時長
-- `original_duration_months` 為內部計算欄位，需保存初次核發時的原始申請時長；後續 extend 不得改寫，供 `original_duration_days` 推導使用
+- `duration_days` 為業務顯示欄位，不等同 provider `duration` 傳值；每次 extend 成功後一律重置為 `original_duration_days`，代表目前這一輪有效期時長
+- `original_duration_days` 為內部計算欄位，需保存初次核發時的原始申請時長；後續 extend 不得改寫，供 fixed-day 展延推導使用
 - `expires_at` 為目前有效到期時間；extend 時一律需先將 `application_date` 改寫為 `extend_action_date`，再以 `new_expires_at = application_date + original_duration_days` 重新計算
   - `is_proxy_submission = false` 時，`proxy_operator_account = NULL`
   - `is_proxy_submission = true` 時，`proxy_operator_account` 需記錄實際代送的 `admin account`
@@ -554,7 +554,7 @@ Base path：`/main/api/v1`
 ```json
 {
   "application_date": "2026-05-04",
-  "duration_months": 6,
+  "duration_days": 180,
   "purpose": "integration for internal service",
   "target_identity": {
     "account": "target.user"
@@ -601,14 +601,14 @@ Base path：`/main/api/v1`
   - auth header 固定為 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；沿用既有 `PROVIDER_MASTER_KEY` 作為 Bearer token 值
   - external provider mode 下 `PROVIDER_TEAM_ID` 為必要設定；若缺少此設定，建立與 renew 必須 fail fast，且不得呼叫 provider
   - `budget_duration` 由系統設定映射：`daily->1d`、`weekly->7d`、`monthly->30d`
-  - `duration` 由 `duration_months` 映射：`1->30d`、`6->180d`、`12->360d`
+  - `duration` 由 `duration_days` 映射：`30->30d`、`180->180d`、`360->360d`
   - 本地 `expires_at` 也需沿用同一 fixed-day 規則，不得再使用曆月位移算法
   - 若全域設定中的 `tpm_limit` 或 `rpm_limit` 為 `0`，送往 provider 時需轉為 `null`，表示不限制
   - `max_parallel_requests` 預設為 `0`，表示不限制；本地設定維持 `0`，送往 provider 時需轉為 `null`
   - `team_id` 固定使用 `PROVIDER_TEAM_ID`
   - `key_alias` 預設先送 `for_{owner_account}`；若 provider 回 `400`，系統需自動依序重試 `for_{owner_account}_v2`、`_v3` ...，成功後將最終 alias 寫回本地 `api_keys.key_alias`
   - 目前不送 `budget_limits`
-  - 僅送上述新欄位；不再送舊欄位（例如 `account`、`application_id`、`duration_months`、`purpose`、`limit_strategy`）
+  - 僅送上述新欄位；不再送舊欄位（例如 `account`、`application_id`、`duration_days`、`purpose`、`limit_strategy`）
   - provider 成功回應需自 `response.key` 讀取新明文 secret；不得假設回傳欄位為 `api_key_plaintext`
 
 ### 1-1) 全域金鑰條件設定（Admin only）
@@ -659,7 +659,7 @@ Base path：`/main/api/v1`
 - usage 同步時僅累計 provider spend logs 中 `status=success` 的紀錄；`failure` 紀錄不得計入 `spend`。
 - usage 同步排程預設每 `5` 分鐘執行一次，僅同步目前 `active` keys；若 provider 查詢失敗，不得中斷其他 keys 的同步。
 - 讀取欄位語意：
-- 對曾 extend 的 key：`application_date` 需改為最近一次成功展延當日；`duration_months` 需重置為 `original_duration_months`，代表目前這一輪有效期時長；`expires_at` 為重新起算後的目前有效到期時間。
+- 對曾 extend 的 key：`application_date` 需改為最近一次成功展延當日；`duration_days` 需重置為 `original_duration_days`，代表目前這一輪有效期時長；`expires_at` 為重新起算後的目前有效到期時間。
 - Query：`page`, `page_size`, `status`, `owner_account`, `owner_name`, `key_alias`, `application_date_from`, `application_date_to`, `expires_from`, `expires_to`, `sort_by`, `sort_dir`
   - `page_size` 定義為每頁顯示筆數（非全量上限）。
   - `status` 為 exact match，allowed: `active|revoked|expired`
@@ -752,12 +752,12 @@ Base path：`/main/api/v1`
 - 規則：`user` 僅可查本人資料；`admin` 可查任意資料；不可回傳明文 key。
 - 到期口徑：`expires_at` 早於查詢當下（UTC）且原始狀態為 `active` 時，API 對外狀態需視為 `expired`。
 - 讀取欄位語意：
-- 對曾 extend 的 key：`application_date` 需改為最近一次成功展延當日；`duration_months` 需重置為 `original_duration_months`，代表目前這一輪有效期時長；`expires_at` 為重新起算後的目前有效到期時間。
+- 對曾 extend 的 key：`application_date` 需改為最近一次成功展延當日；`duration_days` 需重置為 `original_duration_days`，代表目前這一輪有效期時長；`expires_at` 為重新起算後的目前有效到期時間。
 - 回傳 `key_alias`；若資料未設定則回傳系統產生 alias（初始為 `for_{owner_account}`，若 provider 衝突則可能為 `for_{owner_account}_vN`）。
 - 回傳可包含申請人識別欄位 `owner_account`、`owner_name`（供管理者辨識申請來源）。
 - 回傳應包含 `purpose` 供詳情頁顯示；若歷史資料未留存用途，前端顯示 `-`。
 - 回傳應包含 `department` 供詳情頁顯示；若歷史資料未留存單位，前端顯示 `-`。
-- frontend detail 顯示需直接沿用上述語意，不得將 `duration_months` 解讀為「最近一次 extend 月數」。
+- frontend detail 顯示需直接沿用上述語意，不得將 `duration_days` 解讀為其他輪次或累加時長。
 - 錯誤回應：
   - `403 FORBIDDEN` / `KEY_NOT_OWNED_BY_USER`：使用者不可查他人 key
   - `404 VALIDATION_ERROR`：key 不存在
@@ -801,7 +801,7 @@ Base path：`/main/api/v1`
   - 呼叫 provider `generate` 時，request body 沿用 applications create 的 `generate` wire format，且必須包含 `team_id`；payload 不得包含 `key`。
   - renew 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫入新 key。
   - renew 會在 provider 成功後建立新 key（`status=active`），不是把舊 key 改回 `active`。
-  - 新 key 的 `duration_months` 與 `purpose` 需沿用來源 key 的原資料。
+  - 新 key 的 `duration_days` 與 `purpose` 需沿用來源 key 的原資料。
   - provider 成功但本地同步失敗時，需保留可追蹤資訊並支援 retry / reconciliation，避免 provider 與本地資料不一致。
 - renew 成功時，回傳一次性 `api_key_plaintext`。
   - renew 的新明文需自 provider response `key` 讀取。
@@ -815,8 +815,8 @@ Base path：`/main/api/v1`
 ```
 - 規則：
   - `user` 僅可展延本人 `active|expired` key；`admin` 可展延任意 `active|expired` key。
-  - extend request 不再接收 `duration_months`；每次 extend 一律沿用該 key 初次核發時保存的 `original_duration_months` 作為本次展延時長。
-  - extend 成功後，讀取 API 的 `application_date` 需改為本次展延當日；`duration_months` 一律設為 `original_duration_months`，代表目前這一輪有效期時長。
+  - extend request 不再接收 `duration_days`；每次 extend 一律沿用該 key 初次核發時保存的 `original_duration_days` 作為本次展延時長。
+  - extend 成功後，讀取 API 的 `application_date` 需改為本次展延當日；`duration_days` 一律設為 `original_duration_days`，代表目前這一輪有效期時長。
   - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
   - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
   - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format；`duration` 需送「從 `api_keys.created_at` 起算到新 `expires_at` 的總天數」，provider 請求仍需以 `"{provider_duration_days}d"` 傳送。
@@ -1104,7 +1104,7 @@ Base path：`/main/api/v1`
 建議錯誤碼：
 - `VALIDATION_ERROR`
 - `INVALID_APPLICATION_DATE`
-- `INVALID_DURATION_MONTHS`
+- `INVALID_DURATION_DAYS`
 - `LIMIT_STRATEGY_REQUIRED`
 - `LIMIT_STRATEGY_CONFLICT`
 - `MISSING_BUDGET_FIELDS`
@@ -1129,7 +1129,7 @@ Base path：`/main/api/v1`
 1. 研究人員名單職稱代碼命中者，或研究名單未命中但特殊人員名單 `active` 命中者，可成功核發 API Key；兩者皆未命中時不得允許進入系統，且申請 API 回傳 `403 APPLICANT_NOT_ELIGIBLE`。
 2. 當資格判斷需查詢 `tCode` 且 Persnl SOAP 服務 timeout/5xx 時，登入流程可放行，但申請 API 必須回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 3. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`；若 auth context 缺少必要欄位、`sysid` 非數字或非正整數，申請 API 需回傳 `422 VALIDATION_ERROR`，且不得建立申請或 key 紀錄。
-4. `duration_months` 僅允許 `1|6|12`，`application_date` 需為合法日期且不得晚於申請當日；非法值需回傳對應驗證錯誤。
+4. `duration_days` 僅允許 `30|180|360`，`application_date` 需為合法日期且不得晚於申請當日；非法值需回傳對應驗證錯誤。
 5. `admin` 可透過 `target_identity.account` 代他人送出申請；若目錄服務查無帳號、結果不唯一或 Persnl SOAP timeout/5xx，API 需回傳對應 `422 VALIDATION_ERROR` 或 `503 SOAP_SERVICE_UNAVAILABLE`。
 6. 一般申請建立的 application row 需保留申請人快照欄位，`is_proxy_submission=false`、`proxy_operator_account=NULL`；代申請需保留目標申請人快照，`is_proxy_submission=true`，且 `proxy_operator_account` 為實際代送的 admin account。
 7. `purpose`、proxy `target_identity.account` 若包含明顯程式語法，前端需先提示且不得送出；相同 payload 直接打 API 時需回傳 `422 VALIDATION_ERROR`。
@@ -1145,7 +1145,7 @@ Base path：`/main/api/v1`
 13. `extend`、`revoke` 若需舊明文 key，後端必須從 `key_ciphertext` 解密，且明文只可在服務記憶體中短暫使用；不得出現在 DB、log、audit log、exception message。`renew` 不得依賴舊明文 key。
 14. 若 provider timeout/5xx、明確拒絕、缺少密文材料、解密失敗或回應不完整，本地不得先改動狀態或有效期限，並需回傳對應錯誤。
 15. 若部署使用 local provider adapter 作為開發/測試替身，仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
-16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_parallel_requests`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_months(1|6|12)` 需映射為 `30d|180d|360d`，本地 `expires_at` 也需使用相同的 `30|180|360` 天 fixed-day 規則計算，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 與 `max_parallel_requests` 需送 `null`，且不得送 `models` 或 `budget_limits`。
+16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_parallel_requests`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_days(30|180|360)` 需映射為 `30d|180d|360d`，本地 `expires_at` 也需使用相同的 `30|180|360` 天 fixed-day 規則計算，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 與 `max_parallel_requests` 需送 `null`，且不得送 `models` 或 `budget_limits`。
 17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`update` 用於 extend 或 alias 同步時可帶 `key_alias`，且 `duration` 一律需與當前 key 的目標有效期一致：對 extend 與 alias 同步都需送「從 `api_keys.created_at` 起算到目標 `expires_at` 的總天數」；本地 `application_date` 仍需在 extend 成功後改寫為本次展延當日，供 UI 顯示目前這一輪有效期；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
 18. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 
@@ -1153,17 +1153,17 @@ Base path：`/main/api/v1`
 19. `user` 登入後只能看到自己的全部歷史紀錄；若舊 key 已被 renew，來源舊 key 對 `user` 不可見；`admin` 可看到全域完整資料，且每筆至少需能辨識 `owner_account`、`owner_name`。
 19. 一般查詢僅能看到 `masked_key`（`APP_ENV=prod` 為 `sk-...XXXX`；`dev/test` 為 `AS-...XXXX`），不得看到明文；清單頁不得顯示建立時間，建立時間僅顯示於單筆詳情視窗。frontend 不得自行把 API 回傳的 `masked_key` 補成 `AS-...`。
 20. 單筆詳情需顯示 `purpose`、`department`；若無資料需顯示 `-`。
-21. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 的 `application_date`、`duration_months`、`expires_at` 語意需一致：對曾 extend 的 key，`application_date` 為最近一次成功展延後的起算日，`duration_months` 為目前這一輪有效期時長（即 `original_duration_months`），`expires_at` 為目前有效到期時間。frontend 清單與詳情不得把曾展延 key 顯示成互相矛盾的時間資訊。
+21. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 的 `application_date`、`duration_days`、`expires_at` 語意需一致：對曾 extend 的 key，`application_date` 為最近一次成功展延後的起算日，`duration_days` 為目前這一輪有效期時長（即 `original_duration_days`），`expires_at` 為目前有效到期時間。frontend 清單與詳情不得把曾展延 key 顯示成互相矛盾的時間資訊。
 22. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 的到期口徑需以 `expires_at` 即時計算；原始狀態為 `active` 且已過期者，對外需顯示為 `expired`。
 23. 即使 expired 回填排程停用或失敗，清單、詳情與統計 API 仍需依 effective status 正確呈現 `expired`；回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked`。
 24. 一般使用者可停用本人 `active` key；停用非本人 key 時需回傳 `KEY_NOT_OWNED_BY_USER` / `403`，停用非 `active` key 時需回傳 `KEY_NOT_ACTIVE`。
 25. 一般使用者僅可續發本人 `revoked` key；續發 `active|expired` key 時需回傳 `KEY_NOT_RENEWABLE`，且同一把舊 key 不得重複續發，重複續發需回傳 `KEY_ALREADY_RENEWED`。
 26. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時需回傳 `KEY_NOT_EXTENDABLE`。`active|expired` key 皆可隨時展延。extend 成功後：
   - `application_date` 一律同步改寫為展延當日，代表最新一輪有效期起算日。
-  - `duration_months` 一律重置為 `original_duration_months`，代表目前這一輪有效期時長，不做累加。
-  - extend request 不再由使用者選擇月數；每次展延固定沿用該 key 的 `original_duration_months`。
+  - `duration_days` 一律重置為 `original_duration_days`，代表目前這一輪有效期時長，不做累加。
+  - extend request 不再由使用者選擇天數；每次展延固定沿用該 key 的 `original_duration_days`。
   - `expires_at` 一律以展延當日重新起算：`new_expires_at = application_date + original_duration_days`。
-  - provider `duration` 需送從 `api_keys.created_at` 到新 `expires_at` 的總天數，不得直接等同本地 `duration_months`，也不得再使用 `remaining_days` 模型。
+  - provider `duration` 需送從 `api_keys.created_at` 到新 `expires_at` 的總天數，不得直接等同本地 `duration_days`，也不得再使用 `remaining_days` 模型。
 27. `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm`、`max_parallel_requests` 僅接受 ASCII `0-9`；非數字字元、空字串、科學記號、小數、負號、全形數字與混合字串不得通過前端送出，也不得通過後端 API 驗證。
 28. whitelist `note` 需可正常輸入與儲存中英文混合內容，且中文輸入法組字不得被前端驗證破壞；允許空白、`_`、`-`、`、`，但若內容包含明顯程式語法，或含上述以外特殊符號（例如 `.`, `@`, `/`, `<`, `>`），前後端都需拒絕。
 29. `key_alias` 僅允許中英文、數字、`_`、`-`、`、`；若包含空白、其他特殊符號，或明顯程式語法，前端需阻擋儲存，後端直接打 API 時需回傳 `422 VALIDATION_ERROR`。

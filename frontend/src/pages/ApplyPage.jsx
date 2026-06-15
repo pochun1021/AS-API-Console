@@ -85,7 +85,7 @@ function toErrorMessage(error, t) {
     SOAP_SERVICE_UNAVAILABLE: t("apply_error_directory_unavailable"),
     DIRECTORY_SERVICE_UNAVAILABLE: t("apply_error_directory_unavailable"),
     INVALID_APPLICATION_DATE: t("apply_error_invalid_date"),
-    INVALID_DURATION_MONTHS: t("apply_error_invalid_duration"),
+    INVALID_DURATION_DAYS: t("apply_error_invalid_duration"),
     VALIDATION_ERROR: resolveValidationMessage(rawMessage, t)
   };
   if (code && map[code]) return map[code];
@@ -125,7 +125,7 @@ export default function ApplyPage({ auth }) {
   const isZh = locale === "zh-TW";
   const { formatDepartment } = useDepartmentDisplay(auth);
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [form, setForm] = useState({ application_date: today, duration_months: 6, purpose: "" });
+  const [form, setForm] = useState({ application_date: today, duration_days: 180, purpose: "" });
   const [proxyEnabled, setProxyEnabled] = useState(false);
   const [targetIdentity, setTargetIdentity] = useState({
     account: ""
@@ -149,7 +149,7 @@ export default function ApplyPage({ auth }) {
   }, []);
 
   const onChange = (key) => (event) => {
-    const value = key === "duration_months" ? Number(event.target.value) : event.target.value;
+    const value = key === "duration_days" ? Number(event.target.value) : event.target.value;
     setForm((prev) => ({ ...prev, [key]: value }));
   };
   const onTargetChange = (key) => (event) => {
@@ -209,7 +209,7 @@ export default function ApplyPage({ auth }) {
       return;
     }
 
-    if (![1, 6, 12].includes(form.duration_months)) {
+    if (![30, 180, 360].includes(form.duration_days)) {
       setError(t("apply_error_invalid_duration"));
       return;
     }
@@ -242,7 +242,7 @@ export default function ApplyPage({ auth }) {
     try {
       const payload = {
         application_date: form.application_date,
-        duration_months: form.duration_months,
+        duration_days: form.duration_days,
         purpose: purposeValidation.value
       };
       if (auth.role === "admin" && proxyEnabled) {
@@ -382,17 +382,17 @@ export default function ApplyPage({ auth }) {
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <FormControl>
-                    <FormLabel id="duration-months-label">{isZh ? "生效時長（月）" : "Duration (months)"}</FormLabel>
+                    <FormLabel id="duration-days-label">{isZh ? "生效時長（天）" : "Duration (days)"}</FormLabel>
                     <RadioGroup
                       row
-                      aria-labelledby="duration-months-label"
-                      name="duration_months"
-                      value={String(form.duration_months)}
-                      onChange={onChange("duration_months")}
+                      aria-labelledby="duration-days-label"
+                      name="duration_days"
+                      value={String(form.duration_days)}
+                      onChange={onChange("duration_days")}
                     >
-                      <FormControlLabel value="1" control={<Radio />} label={t("apply_duration_1_month")} />
-                      <FormControlLabel value="6" control={<Radio />} label={t("apply_duration_6_months")} />
-                      <FormControlLabel value="12" control={<Radio />} label={t("apply_duration_12_months")} />
+                      <FormControlLabel value="30" control={<Radio />} label={t("apply_duration_30_days")} />
+                      <FormControlLabel value="180" control={<Radio />} label={t("apply_duration_180_days")} />
+                      <FormControlLabel value="360" control={<Radio />} label={t("apply_duration_360_days")} />
                     </RadioGroup>
                   </FormControl>
                 </Grid>

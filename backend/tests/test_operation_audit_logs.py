@@ -51,14 +51,14 @@ def test_application_create_logs_success_and_failure(client, admin_headers, user
     ok = client.post(
         api_path("/api-keys/applications"),
         headers={**user_headers, "x-request-id": "req-app-ok", "x-forwarded-for": "198.51.100.20"},
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "audit"},
     )
     assert ok.status_code == 201
 
     bad = client.post(
         api_path("/api-keys/applications"),
         headers={**user_headers, "x-request-id": "req-app-fail"},
-        json={"application_date": str(date.today()), "duration_months": 2, "purpose": "audit"},
+        json={"application_date": str(date.today()), "duration_days": 2, "purpose": "audit"},
     )
     assert bad.status_code == 422
 
@@ -72,14 +72,14 @@ def test_application_create_logs_success_and_failure(client, admin_headers, user
     assert success_row.source_ip == "198.51.100.20"
     success_meta = json.loads(success_row.metadata_json or "{}")
     assert success_meta["application_id"]
-    assert success_meta["duration_months"] == 1
+    assert success_meta["duration_days"] == 30
     assert "api_key_plaintext" not in (success_row.metadata_json or "")
 
     assert failure_row.result == "failure"
-    assert failure_row.error_code == "INVALID_DURATION_MONTHS"
-    assert failure_row.error_detail == "duration_months must be one of 1, 6, 12"
+    assert failure_row.error_code == "INVALID_DURATION_DAYS"
+    assert failure_row.error_detail == "duration_days must be one of 30, 180, 360"
     failure_meta = json.loads(failure_row.metadata_json or "{}")
-    assert failure_meta["duration_months"] == 2
+    assert failure_meta["duration_days"] == 2
 
 
 def test_revoke_logs_success_and_failure(client, admin_headers):
@@ -89,7 +89,7 @@ def test_revoke_logs_success_and_failure(client, admin_headers):
     create_resp = client.post(
         api_path("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "audit"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(api_path("/api-keys"), headers=user1).json()["items"][0]["id"]
@@ -119,7 +119,7 @@ def test_renew_logs_success_and_failure(client, admin_headers):
     create_resp = client.post(
         api_path("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "audit renew"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "audit renew"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(api_path("/api-keys"), headers=user1).json()["items"][0]["id"]

@@ -304,7 +304,7 @@ def _fetch_application_row_for_key(key_id: str) -> dict:
             text(
                 """
                 SELECT a.id, a.account, a.name, a.email, a.department, a.sysid, a.is_proxy_submission,
-                       a.proxy_operator_account, a.application_date, a.duration_months, a.original_duration_months,
+                       a.proxy_operator_account, a.application_date, a.duration_days, a.original_duration_days,
                        a.issued_at, a.expires_at, a.status
                 FROM api_key_applications a
                 JOIN api_keys k ON k.application_id = a.id

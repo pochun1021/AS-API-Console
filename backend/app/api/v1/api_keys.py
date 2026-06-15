@@ -58,7 +58,7 @@ def create_application(
         result = service.create_application(
             current_user=current_user,
             application_date=payload.application_date,
-            duration_months=payload.duration_months,
+            duration_days=payload.duration_days,
             purpose=payload.purpose,
             target_identity=payload.target_identity.model_dump() if payload.target_identity else None,
         )
@@ -74,7 +74,7 @@ def create_application(
             target_type=target_type,
             context=context,
             metadata={
-                "duration_months": payload.duration_months,
+                "duration_days": payload.duration_days,
                 "is_proxy_submission": payload.target_identity is not None,
             },
         )
@@ -91,7 +91,7 @@ def create_application(
             target_type=target_type,
             context=context,
             metadata={
-                "duration_months": payload.duration_months,
+                "duration_days": payload.duration_days,
                 "is_proxy_submission": payload.target_identity is not None,
             },
         )
@@ -106,7 +106,7 @@ def create_application(
         context=context,
         metadata={
             "application_id": result["application"]["id"],
-            "duration_months": payload.duration_months,
+            "duration_days": payload.duration_days,
             "is_proxy_submission": payload.target_identity is not None,
             "provider_request_id": result.get("provider_request_id"),
             "provider_operation_id": result.get("provider_operation_id"),

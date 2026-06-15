@@ -9,7 +9,7 @@ from app.schemas.datetime_serializers import serialize_utc_datetime
 
 class ApplicationCreateRequest(BaseModel):
     application_date: date
-    duration_months: int = Field(..., description="allowed: 1, 6, 12")
+    duration_days: int = Field(..., description="allowed: 30, 180, 360")
     purpose: str
     target_identity: "ApplicationTargetIdentityRequest | None" = None
 
@@ -67,8 +67,8 @@ class ApiKeyListItemResponse(BaseModel):
     masked_key: str
     key_alias: str
     application_date: date
-    duration_months: int
-    original_duration_months: int
+    duration_days: int
+    original_duration_days: int
     owner_account: str
     owner_name: str
     expires_at: datetime
@@ -101,8 +101,8 @@ class ApiKeyDetailResponse(BaseModel):
     purpose: str
     department: str
     application_date: date
-    duration_months: int
-    original_duration_months: int
+    duration_days: int
+    original_duration_days: int
     created_at: datetime
     expires_at: datetime
     expiration_notice_sent_at: datetime | None = None

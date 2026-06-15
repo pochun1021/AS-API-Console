@@ -9,8 +9,8 @@ from db.base import Base
 class ApiKeyApplication(Base):
     __tablename__ = "api_key_applications"
     __table_args__ = (
-        CheckConstraint("duration_months > 0", name="ck_applications_duration_months"),
-        CheckConstraint("original_duration_months > 0", name="ck_applications_original_duration_months"),
+        CheckConstraint("duration_days in (30, 180, 360)", name="ck_applications_duration_days"),
+        CheckConstraint("original_duration_days in (30, 180, 360)", name="ck_applications_original_duration_days"),
         CheckConstraint("status in ('active', 'revoked', 'expired')", name="ck_applications_status"),
     )
 
@@ -20,8 +20,8 @@ class ApiKeyApplication(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     department: Mapped[str] = mapped_column(String(100), nullable=False)
     application_date: Mapped[date] = mapped_column(Date, nullable=False)
-    duration_months: Mapped[int] = mapped_column(Integer, nullable=False)
-    original_duration_months: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    original_duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
     max_budget: Mapped[str | None] = mapped_column(String(100), nullable=True)
     budget_duration: Mapped[str | None] = mapped_column(String(20), nullable=True)

@@ -76,16 +76,17 @@ def _mask_key(plaintext: str) -> str:
     return f"{_key_prefix_for_env(get_settings().app_env)}...{plaintext[-4:]}"
 
 
-def _calc_expiration(issued_at: datetime, duration_months: int) -> datetime:
-    if duration_months <= 0:
-        raise ValueError("duration_months must be positive")
-    return issued_at + timedelta(days=duration_months * 30)
+ALLOWED_DURATION_DAYS = {30, 180, 360}
 
 
-def _duration_days(duration_months: int) -> int:
-    if duration_months <= 0:
-        raise ValueError("duration_months must be positive")
-    return duration_months * 30
+def _validate_duration_days(duration_days: int) -> int:
+    if duration_days not in ALLOWED_DURATION_DAYS:
+        raise ValueError("duration_days must be one of 30, 180, 360")
+    return duration_days
+
+
+def _calc_expiration(issued_at: datetime, duration_days: int) -> datetime:
+    return issued_at + timedelta(days=_validate_duration_days(duration_days))
 
 
 def _default_alias(owner_account: str) -> str:
@@ -120,8 +121,8 @@ def _to_provider_budget_duration(duration: str) -> str:
     return normalized
 
 
-def _to_provider_duration(duration_months: int) -> str:
-    return f"{_duration_days(duration_months)}d"
+def _to_provider_duration(duration_days: int) -> str:
+    return f"{_validate_duration_days(duration_days)}d"
 
 
 def _to_provider_duration_days(duration_days: int) -> str:
@@ -160,11 +161,11 @@ def _normalized_utc_datetime(value: datetime) -> datetime:
 def _base_expires_at(
     *,
     application_date: date,
-    original_duration_months: int,
+    original_duration_days: int,
     issued_at: datetime,
 ) -> datetime:
     issued_at_utc = _normalized_utc_datetime(issued_at)
-    base_date = application_date + timedelta(days=_duration_days(original_duration_months))
+    base_date = application_date + timedelta(days=_validate_duration_days(original_duration_days))
     return datetime.combine(base_date, issued_at_utc.timetz())
 
 
@@ -177,13 +178,13 @@ def _provider_total_days_for_expiration(*, application_date: date, expires_at: d
 def _extended_terms(
     *,
     issued_at: datetime,
-    original_duration_months: int,
+    original_duration_days: int,
     now: datetime,
 ) -> tuple[date, datetime]:
     next_application_date = now.date()
     return next_application_date, _base_expires_at(
         application_date=next_application_date,
-        original_duration_months=original_duration_months,
+        original_duration_days=original_duration_days,
         issued_at=issued_at,
     )
 
@@ -272,14 +273,14 @@ class ApiKeysService:
         self,
         current_user: CurrentUser,
         application_date: date,
-        duration_months: int,
+        duration_days: int,
         purpose: str,
         target_identity: dict | None = None,
     ) -> dict:
         if application_date > date.today():
             raise ApiError("INVALID_APPLICATION_DATE", "application_date cannot be in the future", 422)
-        if duration_months not in {1, 6, 12}:
-            raise ApiError("INVALID_DURATION_MONTHS", "duration_months must be one of 1, 6, 12", 422)
+        if duration_days not in ALLOWED_DURATION_DAYS:
+            raise ApiError("INVALID_DURATION_DAYS", "duration_days must be one of 30, 180, 360", 422)
         normalized_purpose = validate_safe_persisted_text(field_name="purpose", value=purpose, required=True)
 
         identity = AuthIdentity(
@@ -324,11 +325,11 @@ class ApiKeysService:
                 raise ApiError("APPLICANT_NOT_ELIGIBLE", "applicant is not eligible", 403)
 
         issued_at = datetime.now(UTC)
-        expires_at = _calc_expiration(issued_at, duration_months)
+        expires_at = _calc_expiration(issued_at, duration_days)
         config = self._get_limit_strategy_values()
         plaintext, provider_metadata, key_alias = self._generate_key_for_application(
             owner_account=identity.account,
-            duration_months=duration_months,
+            duration_days=duration_days,
             config=config,
         )
 
@@ -338,8 +339,8 @@ class ApiKeysService:
                 is_proxy_submission=is_proxy_submission,
                 proxy_operator_account=current_user.account if is_proxy_submission else None,
                 application_date=application_date,
-                duration_months=duration_months,
-                original_duration_months=duration_months,
+                duration_days=duration_days,
+                original_duration_days=duration_days,
                 purpose=normalized_purpose,
                 max_budget=config.max_budget,
                 budget_duration=config.budget_duration,
@@ -398,14 +399,14 @@ class ApiKeysService:
     def _build_provider_payload(
         self,
         *,
-        duration_months: int,
+        duration_days: int,
         config: IssuanceConfigValues,
         key_alias: str,
     ) -> dict:
         return {
             "max_budget": float(config.max_budget),
             "budget_duration": _to_provider_budget_duration(config.budget_duration),
-            "duration": _to_provider_duration(duration_months),
+            "duration": _to_provider_duration(duration_days),
             "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
             "rpm_limit": _to_provider_rate_limit(config.rpm_limit),
             "max_parallel_requests": _to_provider_max_parallel_requests(config.max_parallel_requests),
@@ -419,14 +420,11 @@ class ApiKeysService:
         *,
         plaintext: str,
         duration_days: int | None = None,
-        duration_months: int | None = None,
         config: IssuanceConfigValues,
         key_alias: str | None = None,
     ) -> dict:
         if duration_days is None:
-            if duration_months is None:
-                raise ValueError("duration_days or duration_months is required")
-            duration_days = _duration_days(duration_months)
+            raise ValueError("duration_days is required")
         payload = {
             "key": plaintext,
             "max_budget": float(config.max_budget),
@@ -456,14 +454,14 @@ class ApiKeysService:
         self,
         *,
         owner_account: str,
-        duration_months: int,
+        duration_days: int,
         config: IssuanceConfigValues,
     ) -> tuple[str, dict, str]:
         try:
             if self._provider_operates_remotely():
                 provider_result, key_alias = self._retry_provider_alias_operation(
                     owner_account=owner_account,
-                    duration_months=duration_months,
+                    duration_days=duration_days,
                     config=config,
                     current_alias=None,
                     operation=lambda payload: self.provider_client.generate_key(payload),
@@ -482,7 +480,7 @@ class ApiKeysService:
         self,
         *,
         owner_account: str,
-        duration_months: int,
+        duration_days: int,
         config: IssuanceConfigValues,
         current_alias: str | None,
         operation,
@@ -495,7 +493,7 @@ class ApiKeysService:
                 return (
                     operation(
                         self._build_provider_payload(
-                            duration_months=duration_months,
+                            duration_days=duration_days,
                             config=config,
                             key_alias=candidate_alias,
                         )
@@ -636,7 +634,7 @@ class ApiKeysService:
         allowed_statuses = {"active", "revoked", "expired"}
         allowed_sort_by = {
             "application_date",
-            "duration_months",
+            "duration_days",
             "status",
             "expires_at",
             "masked_key",
@@ -703,8 +701,8 @@ class ApiKeysService:
                     "masked_key": item.masked_key,
                     "key_alias": item.key_alias or _default_alias(item.owner_account),
                     "application_date": item.application_date,
-                    "duration_months": item.duration_months,
-                    "original_duration_months": item.original_duration_months,
+                    "duration_days": item.duration_days,
+                    "original_duration_days": item.original_duration_days,
                     "owner_account": item.owner_account,
                     "owner_name": item.owner_name,
                     "expires_at": item.expires_at,
@@ -744,8 +742,8 @@ class ApiKeysService:
             "purpose": scoped.purpose,
             "department": scoped.department,
             "application_date": scoped.application_date,
-            "duration_months": scoped.duration_months,
-            "original_duration_months": scoped.original_duration_months,
+            "duration_days": scoped.duration_days,
+            "original_duration_days": scoped.original_duration_days,
             "created_at": scoped.created_at,
             "expires_at": scoped.expires_at,
             "expiration_notice_sent_at": scoped.expiration_notice_sent_at,
@@ -815,8 +813,8 @@ class ApiKeysService:
             "purpose": updated.purpose,
             "department": updated.department,
             "application_date": updated.application_date,
-            "duration_months": updated.duration_months,
-            "original_duration_months": updated.original_duration_months,
+            "duration_days": updated.duration_days,
+            "original_duration_days": updated.original_duration_days,
             "created_at": updated.created_at,
             "expires_at": updated.expires_at,
         }
@@ -920,7 +918,7 @@ class ApiKeysService:
             if self._provider_operates_remotely():
                 provider_result, key_alias = self._retry_provider_alias_operation(
                     owner_account=source_app.account,
-                    duration_months=source_app.duration_months,
+                    duration_days=source_app.duration_days,
                     config=config,
                     current_alias=source_key.key_alias,
                     operation=lambda payload: self.provider_client.generate_key(payload),
@@ -954,8 +952,8 @@ class ApiKeysService:
                 is_proxy_submission=is_proxy_submission,
                 proxy_operator_account=current_user.account if is_proxy_submission else None,
                 application_date=date.today(),
-                duration_months=source_app.duration_months,
-                original_duration_months=source_app.duration_months,
+                duration_days=source_app.duration_days,
+                original_duration_days=source_app.duration_days,
                 purpose=source_app.purpose,
                 max_budget=config.max_budget,
                 budget_duration=config.budget_duration,
@@ -963,7 +961,7 @@ class ApiKeysService:
                 rpm_limit=config.rpm_limit,
                 max_parallel_requests=config.max_parallel_requests,
                 issued_at=now,
-                expires_at=_calc_expiration(now, source_app.duration_months),
+                expires_at=_calc_expiration(now, source_app.duration_days),
             )
         )
         issued_key = self._create_key_record(application_id=application.id, plaintext=plaintext, key_alias=key_alias)
@@ -997,10 +995,10 @@ class ApiKeysService:
         if source_effective_status not in {"active", "expired"}:
             raise ApiError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409)
         now = datetime.now(UTC)
-        next_duration_months = source_app.original_duration_months
+        next_duration_days = source_app.original_duration_days
         next_application_date, next_expires_at = _extended_terms(
             issued_at=source_app.issued_at,
-            original_duration_months=source_app.original_duration_months,
+            original_duration_days=source_app.original_duration_days,
             now=now,
         )
         provider_duration_days = _provider_total_days_from_key_created_at(
@@ -1031,7 +1029,7 @@ class ApiKeysService:
             raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
 
         source_app.application_date = next_application_date
-        source_app.duration_months = next_duration_months
+        source_app.duration_days = next_duration_days
         source_app.expires_at = next_expires_at
         source_app.status = "active"
         source_key.status = "active"

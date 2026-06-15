@@ -4,8 +4,8 @@ const today = new Date().toISOString().slice(0, 10);
 const daysFromNow = (days) => new Date(Date.now() + 1000 * 60 * 60 * 24 * days).toISOString();
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
-function fixedDurationDays(durationMonths) {
-  return Number(durationMonths) * 30;
+function fixedDurationDays(durationDays) {
+  return Number(durationDays);
 }
 
 function startOfUtcDay(value) {
@@ -13,11 +13,11 @@ function startOfUtcDay(value) {
   return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()));
 }
 
-function providerDurationDaysFromCreatedAt(createdAt, extendAt, originalDurationMonths) {
+function providerDurationDaysFromCreatedAt(createdAt, extendAt, originalDurationDays) {
   const createdDay = startOfUtcDay(createdAt);
   const extendDay = startOfUtcDay(extendAt);
   const elapsedDays = Math.max(0, Math.round((extendDay.getTime() - createdDay.getTime()) / MS_PER_DAY));
-  return elapsedDays + fixedDurationDays(originalDurationMonths);
+  return elapsedDays + fixedDurationDays(originalDurationDays);
 }
 
 function expiresAtFromProviderDuration(createdAt, durationDays) {
@@ -57,7 +57,7 @@ const initialApiKeys = [
     status: "active",
     masked_key: "AS-...xy90",
     application_date: today,
-    duration_months: 6,
+    duration_days: 180,
     purpose: "integration test for platform service",
     department: "02",
     created_at: "2026-06-04T09:00:00.000Z",
@@ -80,7 +80,7 @@ const initialApiKeys = [
     masked_key: "AS-...mn56",
     key_alias: "shared_alias",
     application_date: today,
-    duration_months: 1,
+    duration_days: 30,
     purpose: "legacy integration",
     department: "02",
     created_at: "2026-06-03T09:00:00.000Z",
@@ -102,11 +102,11 @@ const initialApiKeys = [
     status: "active",
     masked_key: "AS-...ab12",
     application_date: today,
-    duration_months: 12,
+    duration_days: 360,
     purpose: "admin automation",
     department: "03",
     created_at: "2026-06-02T09:00:00.000Z",
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
+    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 360).toISOString(),
     expiration_notice_sent_at: null,
     max_budget: "0",
     tpm_limit: 0,
@@ -124,7 +124,7 @@ const initialApiKeys = [
     status: "expired",
     masked_key: "AS-...pq78",
     application_date: "2025-04-01",
-    duration_months: 1,
+    duration_days: 30,
     created_at: "2025-04-01T08:00:00.000Z",
     expires_at: "2025-05-01T08:00:00.000Z",
     expiration_notice_sent_at: "2025-04-01T08:00:00.000Z",
@@ -137,7 +137,7 @@ const initialApiKeys = [
     status: "active",
     masked_key: "AS-...cd34",
     application_date: "2026-04-15",
-    duration_months: 6,
+    duration_days: 180,
     purpose: "reporting service integration",
     department: "04",
     created_at: "2026-04-15T09:30:00.000Z",
@@ -152,7 +152,7 @@ const initialApiKeys = [
     status: "active",
     masked_key: "AS-...kt01",
     application_date: "2026-04-20",
-    duration_months: 6,
+    duration_days: 180,
     purpose: "cross page search demo",
     department: "02",
     created_at: "2026-04-20T03:00:00.000Z",
@@ -167,7 +167,7 @@ const initialApiKeys = [
     status: "revoked",
     masked_key: "AS-...ef56",
     application_date: "2026-03-10",
-    duration_months: 12,
+    duration_days: 360,
     purpose: "security scanner",
     department: "03",
     created_at: "2026-03-10T02:20:00.000Z",
@@ -182,7 +182,7 @@ const initialApiKeys = [
     status: "expired",
     masked_key: "AS-...gh78",
     application_date: "2025-12-01",
-    duration_months: 1,
+    duration_days: 30,
     purpose: "legacy webhook client",
     department: "05",
     created_at: "2025-12-01T05:00:00.000Z",
@@ -197,7 +197,7 @@ const initialApiKeys = [
     status: "active",
     masked_key: "AS-...du01",
     application_date: "2026-05-01",
-    duration_months: 6,
+    duration_days: 180,
     purpose: "dev.user local integration test",
     department: "02",
     created_at: "2026-05-04T02:15:00.000Z",
@@ -212,7 +212,7 @@ const initialApiKeys = [
     status: "revoked",
     masked_key: "AS-...du02",
     application_date: "2026-04-18",
-    duration_months: 1,
+    duration_days: 30,
     purpose: "dev.user revoke flow test",
     department: "02",
     created_at: "2026-05-03T07:20:00.000Z",
@@ -227,7 +227,7 @@ const initialApiKeys = [
     status: "expired",
     masked_key: "AS-...du03",
     application_date: "2026-02-10",
-    duration_months: 1,
+    duration_days: 30,
     purpose: "dev.user expiry scenario",
     department: "02",
     created_at: "2026-05-02T11:00:00.000Z",
@@ -242,7 +242,7 @@ const initialApiKeys = [
     status: "active",
     masked_key: "AS-...du04",
     application_date: today,
-    duration_months: 1,
+    duration_days: 30,
     purpose: "dev.user near expiry scenario",
     department: "02",
     created_at: "2026-05-01T09:00:00.000Z",
@@ -463,8 +463,8 @@ function ensureAdmin(auth) {
 }
 
 function validateApplication(payload, auth) {
-  if (![1, 6, 12].includes(payload.duration_months)) {
-    throw createError("INVALID_DURATION_MONTHS", "生效時長僅允許 1、6、12 個月");
+  if (![30, 180, 360].includes(payload.duration_days)) {
+    throw createError("INVALID_DURATION_DAYS", "生效時長僅允許 30、180、360 天");
   }
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.application_date) || payload.application_date > today) {
@@ -761,8 +761,7 @@ export const mockApiProvider = {
     const plain = generatePlainKey();
     const id = `key_${String(apiKeys.length + 1).padStart(3, "0")}`;
     const now = new Date();
-    const expires = new Date(now);
-    expires.setMonth(expires.getMonth() + payload.duration_months);
+    const expires = new Date(now.getTime() + payload.duration_days * MS_PER_DAY);
 
     apiKeys = [
       {
@@ -770,7 +769,8 @@ export const mockApiProvider = {
         status: "active",
         masked_key: `AS-...${plain.slice(-4)}`,
         application_date: payload.application_date,
-        duration_months: payload.duration_months,
+        duration_days: payload.duration_days,
+        original_duration_days: payload.duration_days,
         purpose: payload.purpose.trim(),
         key_alias: ensureUniqueAlias(auth.account),
         department: auth.department,
@@ -846,7 +846,7 @@ export const mockApiProvider = {
     items.sort((left, right) => {
       const leftValue = {
         application_date: left.application_date,
-        duration_months: left.duration_months,
+        duration_days: left.duration_days,
         status: left.status,
         expires_at: left.expires_at,
         masked_key: left.masked_key,
@@ -857,7 +857,7 @@ export const mockApiProvider = {
       }[sortBy];
       const rightValue = {
         application_date: right.application_date,
-        duration_months: right.duration_months,
+        duration_days: right.duration_days,
         status: right.status,
         expires_at: right.expires_at,
         masked_key: right.masked_key,
@@ -1022,8 +1022,7 @@ export const mockApiProvider = {
 
     const idNew = `key_${String(apiKeys.length + 1).padStart(3, "0")}`;
     const now = new Date();
-    const expires = new Date(now);
-    expires.setMonth(expires.getMonth() + target.duration_months);
+    const expires = new Date(now.getTime() + target.duration_days * MS_PER_DAY);
     const plain = generatePlainKey();
 
     apiKeys = [
@@ -1032,7 +1031,8 @@ export const mockApiProvider = {
         status: "active",
         masked_key: `AS-...${plain.slice(-4)}`,
         application_date: now.toISOString().slice(0, 10),
-        duration_months: target.duration_months,
+        duration_days: target.duration_days,
+        original_duration_days: target.original_duration_days ?? target.duration_days,
         purpose: target.purpose || "",
         key_alias: ensureUniqueAlias(target.owner_account, target.key_alias),
         department: target.department,
@@ -1072,12 +1072,12 @@ export const mockApiProvider = {
       throw createError("KEY_ALREADY_RENEWED", "key already renewed", 409);
     }
 
-    const originalDurationMonths = Number(target.original_duration_months ?? target.duration_months);
+    const originalDurationDays = Number(target.original_duration_days ?? target.duration_days);
     const now = new Date();
-    const totalDurationDays = providerDurationDaysFromCreatedAt(target.created_at, now, originalDurationMonths);
-    target.original_duration_months = originalDurationMonths;
+    const totalDurationDays = providerDurationDaysFromCreatedAt(target.created_at, now, originalDurationDays);
+    target.original_duration_days = originalDurationDays;
     target.application_date = now.toISOString().slice(0, 10);
-    target.duration_months = originalDurationMonths;
+    target.duration_days = originalDurationDays;
     target.expires_at = expiresAtFromProviderDuration(target.created_at, totalDurationDays);
     target.status = "active";
     target.expiration_notice_sent_at = null;

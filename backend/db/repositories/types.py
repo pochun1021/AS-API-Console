@@ -17,8 +17,8 @@ class ApplicationCreateInput:
     is_proxy_submission: bool
     proxy_operator_account: str | None
     application_date: date
-    duration_months: int
-    original_duration_months: int
+    duration_days: int
+    original_duration_days: int
     purpose: str
     max_budget: str | None
     budget_duration: str | None
@@ -48,8 +48,8 @@ class ApiKeyListItem:
     masked_key: str
     key_alias: str | None
     application_date: date
-    duration_months: int
-    original_duration_months: int
+    duration_days: int
+    original_duration_days: int
     owner_account: str
     owner_name: str
     expires_at: datetime
@@ -88,8 +88,8 @@ class ApiKeyDetail:
     purpose: str
     department: str
     application_date: date
-    duration_months: int
-    original_duration_months: int
+    duration_days: int
+    original_duration_days: int
     created_at: datetime
     expires_at: datetime
     expiration_notice_sent_at: datetime | None

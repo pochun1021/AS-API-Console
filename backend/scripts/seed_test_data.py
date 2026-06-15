@@ -99,17 +99,13 @@ def _build_whitelists(now: datetime) -> list[ApiKeyWhitelist]:
     return whitelists
 
 
-def _calc_expires_at(issued_at: datetime, duration_months: int) -> datetime:
-    month = issued_at.month - 1 + duration_months
-    year = issued_at.year + month // 12
-    month = month % 12 + 1
-    day = min(issued_at.day, 28)
-    return issued_at.replace(year=year, month=month, day=day)
+def _calc_expires_at(issued_at: datetime, duration_days: int) -> datetime:
+    return issued_at + timedelta(days=duration_days)
 
 
 def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication], list[ApiKey]]:
     statuses = (["active"] * 8) + (["revoked"] * 7) + (["expired"] * 5)
-    durations = [1, 6, 12]
+    durations = [30, 180, 360]
     departments = ["IT", "R&D", "Data", "Platform"]
     purposes = ["integration test", "internal dashboard", "batch sync", "analytics"]
 
@@ -124,8 +120,8 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
         account = f"user{user_no}"
         email = f"user{user_no}@example.com"
         issued_at = now - timedelta(days=idx * 7)
-        duration_months = durations[idx % len(durations)]
-        expires_at = _calc_expires_at(issued_at, duration_months)
+        duration_days = durations[idx % len(durations)]
+        expires_at = _calc_expires_at(issued_at, duration_days)
         application_id = str(uuid.uuid4())
         revoked_at = issued_at + timedelta(days=3) if status == "revoked" else None
         # Keep seed rows aligned with combined strategy policy.
@@ -141,7 +137,8 @@ def _build_applications_and_keys(now: datetime) -> tuple[list[ApiKeyApplication]
             email=email,
             department=departments[idx % len(departments)],
             application_date=(date.today() - timedelta(days=min(idx * 5, 180))),
-            duration_months=duration_months,
+            duration_days=duration_days,
+            original_duration_days=duration_days,
             purpose=purposes[idx % len(purposes)],
             max_budget=max_budget,
             budget_duration=budget_duration,

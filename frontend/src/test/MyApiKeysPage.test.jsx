@@ -344,7 +344,7 @@ test("user can extend active key with original duration", async () => {
 
   const detailButtons = await screen.findAllByRole("button", { name: "查看詳情" });
   await user.click(detailButtons[0]);
-  expect(await screen.findByText("目前生效時長: 6 個月")).toBeInTheDocument();
+  expect(await screen.findByText("目前生效時長: 180 天")).toBeInTheDocument();
   const expectedExpiresAt = new Date();
   expectedExpiresAt.setUTCDate(expectedExpiresAt.getUTCDate() + 180);
   const expectedExpiresDate = expectedExpiresAt.toISOString().slice(0, 10);
@@ -377,7 +377,7 @@ test("extending an expired key resets start date and reuses original duration", 
   expectedExpiresAt.setUTCDate(expectedExpiresAt.getUTCDate() + elapsedDays + 30);
   const expectedExpiresDate = expectedExpiresAt.toISOString().slice(0, 10);
   expect(await screen.findByText(`起算日期: ${today}`)).toBeInTheDocument();
-  expect(await screen.findByText("目前生效時長: 1 個月")).toBeInTheDocument();
+  expect(await screen.findByText("目前生效時長: 30 天")).toBeInTheDocument();
   expect(await screen.findByText(`到期時間: ${expectedExpiresDate}`)).toBeInTheDocument();
 });
 

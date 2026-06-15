@@ -119,7 +119,7 @@ def main() -> int:
                 "/api/v1/api-keys/applications",
                 json={
                     "application_date": "2026-05-21",
-                    "duration_months": 1,
+                    "duration_days": 30,
                     "purpose": "dast smoke",
                 },
             )
@@ -130,7 +130,7 @@ def main() -> int:
                 headers=user.mutation_headers(),
                 json={
                     "application_date": "2026-05-21",
-                    "duration_months": 1,
+                    "duration_days": 30,
                     "purpose": "dast smoke",
                 },
             )

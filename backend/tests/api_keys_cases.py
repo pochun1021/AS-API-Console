@@ -38,7 +38,7 @@ def test_extend_resets_application_date_for_new_effective_window():
 
     next_application_date, extended_expires_at = _extended_terms(
         issued_at=issued_at,
-        original_duration_months=1,
+        original_duration_days=30,
         now=now,
     )
     provider_duration_days = _provider_total_days_for_expiration(
@@ -57,7 +57,7 @@ def test_provider_duration_from_key_created_at_uses_fixed_anchor():
 
     next_application_date, extended_expires_at = _extended_terms(
         issued_at=key_created_at,
-        original_duration_months=1,
+        original_duration_days=30,
         now=now,
     )
     provider_duration_days = _provider_total_days_from_key_created_at(
@@ -75,9 +75,9 @@ def test_calc_expiration_uses_fixed_day_duration():
 
     issued_at = datetime(2026, 7, 8, 10, 30, 0, tzinfo=UTC)
 
-    assert _calc_expiration(issued_at, 1) == datetime(2026, 8, 7, 10, 30, 0, tzinfo=UTC)
-    assert _calc_expiration(issued_at, 6) == datetime(2027, 1, 4, 10, 30, 0, tzinfo=UTC)
-    assert _calc_expiration(issued_at, 12) == datetime(2027, 7, 3, 10, 30, 0, tzinfo=UTC)
+    assert _calc_expiration(issued_at, 30) == datetime(2026, 8, 7, 10, 30, 0, tzinfo=UTC)
+    assert _calc_expiration(issued_at, 180) == datetime(2027, 1, 4, 10, 30, 0, tzinfo=UTC)
+    assert _calc_expiration(issued_at, 360) == datetime(2027, 7, 3, 10, 30, 0, tzinfo=UTC)
 
 
 def test_application_success_and_no_plaintext_in_queries(client, admin_headers, user_headers):
@@ -86,7 +86,7 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test"},
     )
     assert create_resp.status_code == 201
     body = create_resp.json()
@@ -132,7 +132,7 @@ def test_list_api_keys_returns_usage_summary_and_low_budget_health(client, admin
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
@@ -166,7 +166,7 @@ def test_list_api_keys_prefers_latest_usage_snapshot_history(client, admin_heade
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
@@ -205,7 +205,7 @@ def test_list_api_keys_uses_current_limit_strategy_config_for_usage_rate_limits(
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test"},
     )
     assert create_resp.status_code == 201
 
@@ -241,7 +241,7 @@ def test_list_api_keys_unlimited_budget_stays_healthy_and_zero_remaining(client,
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
@@ -293,7 +293,7 @@ def test_application_rejects_unsafe_purpose(client, admin_headers, user_headers)
     resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "<script>alert(1)</script>"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "<script>alert(1)</script>"},
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
@@ -313,7 +313,7 @@ def test_application_rejects_unsafe_proxy_account(client, admin_headers, monkeyp
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
-            "duration_months": 1,
+            "duration_days": 30,
             "purpose": "normal purpose",
             "target_identity": {"account": "foo => bar"},
         },
@@ -332,7 +332,7 @@ def test_application_rejects_non_whitelisted(client, user_headers):
         resp = client.post(
             _api("/api-keys/applications"),
             headers=user_headers,
-            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+            json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test"},
         )
     finally:
         PersnlSoapService.is_configured = original_is_configured
@@ -348,7 +348,7 @@ def test_application_rejects_missing_auth_headers_with_field_details(client, use
     resp = client.post(
         _api("/api-keys/applications"),
         headers=invalid_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test"},
     )
 
     assert resp.status_code == 422
@@ -362,7 +362,7 @@ def test_application_rejects_non_numeric_sysid(client, user_headers):
     resp = client.post(
         _api("/api-keys/applications"),
         headers=invalid_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test"},
     )
 
     assert resp.status_code == 422
@@ -376,7 +376,7 @@ def test_application_rejects_blank_purpose(client, admin_headers, user_headers):
     resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "   "},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "   "},
     )
 
     assert resp.status_code == 422
@@ -407,7 +407,7 @@ def test_admin_can_submit_proxy_application_for_target_user(client, admin_header
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
-            "duration_months": 1,
+            "duration_days": 30,
             "purpose": "admin proxy submit",
             "target_identity": {
                 "account": "target.user",
@@ -432,7 +432,7 @@ def test_admin_proxy_application_validates_required_target_identity_fields(clien
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
-            "duration_months": 1,
+            "duration_days": 30,
             "purpose": "admin proxy submit",
             "target_identity": {
                 "account": "",
@@ -463,7 +463,7 @@ def test_admin_proxy_application_target_account_not_found(client, admin_headers,
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
-            "duration_months": 1,
+            "duration_days": 30,
             "purpose": "admin proxy submit",
             "target_identity": {"account": "missing.user"},
         },
@@ -492,7 +492,7 @@ def test_admin_proxy_application_directory_unavailable(client, admin_headers, mo
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
-            "duration_months": 1,
+            "duration_days": 30,
             "purpose": "admin proxy submit",
             "target_identity": {"account": "target.user"},
         },
@@ -521,7 +521,7 @@ def test_admin_proxy_application_target_account_not_unique(client, admin_headers
         headers=admin_headers,
         json={
             "application_date": str(date.today()),
-            "duration_months": 1,
+            "duration_days": 30,
             "purpose": "admin proxy submit",
             "target_identity": {"account": "duplicated.user"},
         },
@@ -550,7 +550,7 @@ def test_application_provider_timeout_returns_503(client, admin_headers, user_he
         resp = client.post(
             _api("/api-keys/applications"),
             headers=user_headers,
-            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test notify failure"},
+            json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test notify failure"},
         )
         assert resp.status_code == 503
         assert resp.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
@@ -581,7 +581,7 @@ def test_application_external_provider_requires_team_id(client, admin_headers, u
         resp = client.post(
             _api("/api-keys/applications"),
             headers=user_headers,
-            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "missing team id"},
+            json={"application_date": str(date.today()), "duration_days": 30, "purpose": "missing team id"},
         )
         assert resp.status_code == 503
         assert resp.json()["error"]["code"] == "PROVIDER_TEAM_ID_REQUIRED"
@@ -600,7 +600,7 @@ def test_provider_payload_builder_uses_external_contract():
 
     payload = service._build_provider_payload(
         key_alias="for_user1",
-        duration_months=6,
+        duration_days=180,
         config=IssuanceConfigValues(
             max_budget="1000",
             budget_duration="monthly",
@@ -632,7 +632,7 @@ def test_provider_payload_builder_converts_zero_rate_limits_to_null():
 
     payload = service._build_provider_payload(
         key_alias="for_user1",
-        duration_months=1,
+        duration_days=30,
         config=IssuanceConfigValues(
             max_budget="1000",
             budget_duration="monthly",
@@ -657,7 +657,7 @@ def test_provider_update_payload_builder_converts_zero_parallel_limit_to_null():
 
     payload = service._build_provider_update_payload(
         plaintext="AS-old",
-        duration_months=1,
+        duration_days=30,
         config=IssuanceConfigValues(
             max_budget="1000",
             budget_duration="monthly",
@@ -682,7 +682,7 @@ def test_prod_env_masks_and_stores_sk_prefix(client, admin_headers, user_headers
         create_resp = client.post(
             _api("/api-keys/applications"),
             headers=user_headers,
-            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "prod prefix"},
+            json={"application_date": str(date.today()), "duration_days": 30, "purpose": "prod prefix"},
         )
         assert create_resp.status_code == 201
         assert create_resp.json()["api_key_plaintext"].startswith("sk-")
@@ -770,7 +770,7 @@ def test_expiration_reminder_script_supports_multi_stage_and_keeps_first_notice_
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "multi stage reminder"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "multi stage reminder"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
@@ -838,7 +838,7 @@ def test_expiration_reminder_script_retries_failed_notice_and_stops_after_succes
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "retry reminder"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "retry reminder"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
@@ -911,7 +911,7 @@ def test_application_success_for_research_eligible_without_whitelist(client, use
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test"},
     )
     assert create_resp.status_code == 201
     assert create_resp.json()["api_key_plaintext"].startswith("AS-")
@@ -941,7 +941,7 @@ def test_application_research_service_unavailable_returns_503_and_no_records(cli
     resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test"},
     )
     after = client.get(_api("/api-keys"), headers=admin_headers).json()["total"]
 
@@ -955,10 +955,10 @@ def test_application_rejects_invalid_duration(client, admin_headers, user_header
     resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 2, "purpose": "test"},
+        json={"application_date": str(date.today()), "duration_days": 2, "purpose": "test"},
     )
     assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "INVALID_DURATION_MONTHS"
+    assert resp.json()["error"]["code"] == "INVALID_DURATION_DAYS"
 
 
 def test_application_rejects_future_date(client, admin_headers, user_headers):
@@ -966,7 +966,7 @@ def test_application_rejects_future_date(client, admin_headers, user_headers):
     resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": "2999-01-01", "duration_months": 1, "purpose": "test"},
+        json={"application_date": "2999-01-01", "duration_days": 30, "purpose": "test"},
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "INVALID_APPLICATION_DATE"
@@ -990,7 +990,7 @@ def test_issue_pending_application_does_not_send_issued_email(client, admin_head
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test issue mail"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test issue mail"},
     )
     assert create_resp.status_code == 201
     body = create_resp.json()
@@ -1007,7 +1007,7 @@ def test_issue_pending_application_local_mode_does_not_call_provider(client, adm
         create_resp = client.post(
             _api("/api-keys/applications"),
             headers=user_headers,
-            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "local issue mode"},
+            json={"application_date": str(date.today()), "duration_days": 30, "purpose": "local issue mode"},
         )
         assert create_resp.status_code == 201
         monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
@@ -1034,7 +1034,7 @@ def test_revoke_permissions_and_status_checks(client, admin_headers):
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
     assert create_resp.status_code == 201
@@ -1061,7 +1061,7 @@ def test_revoke_provider_unavailable_does_not_change_local_status(client, admin_
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "revoke provider fail"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "revoke provider fail"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
@@ -1097,7 +1097,7 @@ def test_provider_mutation_payloads_use_key_field_and_shared_contract(client, ad
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "revoke payload"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "revoke payload"},
     )
     assert create_resp.status_code == 201
     created_plaintext = create_resp.json()["api_key_plaintext"]
@@ -1172,7 +1172,7 @@ def test_extend_sends_latest_key_alias_to_provider(client, admin_headers, monkey
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "extend alias preservation"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "extend alias preservation"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
@@ -1219,7 +1219,7 @@ def test_extend_resets_effective_window_and_sends_provider_duration_from_key_cre
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(application_date), "duration_months": 1, "purpose": "extend original duration"},
+        json={"application_date": str(application_date), "duration_days": 30, "purpose": "extend original duration"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
@@ -1240,7 +1240,7 @@ def test_extend_resets_effective_window_and_sends_provider_duration_from_key_cre
         updated_application = _fetch_application_row_for_key(key_id)
         expected_application_date = date.today()
         assert updated_application["application_date"] == expected_application_date
-        assert updated_application["duration_months"] == 1
+        assert updated_application["duration_days"] == 30
         assert captured_update_payload["duration"] == "30d"
         assert extend.json()["expires_at"].startswith(str(expected_application_date + timedelta(days=30)))
     finally:
@@ -1258,7 +1258,7 @@ def test_extend_expired_resets_application_date_and_sends_reset_duration_to_prov
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(original_application_date), "duration_months": 1, "purpose": "extend expired reset"},
+        json={"application_date": str(original_application_date), "duration_days": 30, "purpose": "extend expired reset"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
@@ -1311,7 +1311,7 @@ def test_create_application_retries_key_alias_with_version_suffix(client, admin_
         create_resp = client.post(
             _api("/api-keys/applications"),
             headers=user,
-            json={"application_date": str(date.today()), "duration_months": 1, "purpose": "retry alias"},
+            json={"application_date": str(date.today()), "duration_days": 30, "purpose": "retry alias"},
         )
         assert create_resp.status_code == 201
         assert attempted_aliases == [f"for_{user['x-account']}", f"for_{user['x-account']}_v2"]
@@ -1333,7 +1333,7 @@ def test_renew_permissions_and_visibility(client, admin_headers):
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 6, "purpose": "renew test"},
+        json={"application_date": str(date.today()), "duration_days": 180, "purpose": "renew test"},
     )
     assert create_resp.status_code == 201
     source_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
@@ -1361,7 +1361,7 @@ def test_renew_permissions_and_visibility(client, admin_headers):
     user_items = user_list.json()["items"]
     assert len(user_items) == 1
     assert user_items[0]["id"] == body["id"]
-    assert user_items[0]["duration_months"] == 6
+    assert user_items[0]["duration_days"] == 180
 
     admin_list = client.get(_api("/api-keys"), headers=admin_headers)
     assert admin_list.status_code == 200
@@ -1379,7 +1379,7 @@ def test_renew_rejects_active_key(client, admin_headers, user_headers):
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew active"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "renew active"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
@@ -1393,7 +1393,7 @@ def test_expired_is_visible_but_not_renewable_by_expires_at(client, admin_header
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "expire-visible"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "expire-visible"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
@@ -1422,7 +1422,7 @@ def test_renew_rejects_expired_key_without_calling_provider(client, admin_header
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "expired renew gate"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "expired renew gate"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
@@ -1454,7 +1454,7 @@ def test_extend_active_and_expired_keys_anytime_for_user_and_admin(client, admin
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": original_application_date, "duration_months": 1, "purpose": "extend near expiry gate"},
+        json={"application_date": original_application_date, "duration_days": 30, "purpose": "extend near expiry gate"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
@@ -1468,18 +1468,18 @@ def test_extend_active_and_expired_keys_anytime_for_user_and_admin(client, admin
     active_extended = _fetch_application_row_for_key(key_id)
     active_application_date = str(date.today())
     assert str(active_extended["application_date"]) == active_application_date
-    assert active_extended["original_duration_months"] == 1
-    assert active_extended["duration_months"] == 1
+    assert active_extended["original_duration_days"] == 30
+    assert active_extended["duration_days"] == 30
 
     active_listed = client.get(_api("/api-keys"), headers=user)
     assert active_listed.status_code == 200
     assert active_listed.json()["items"][0]["application_date"] == active_application_date
-    assert active_listed.json()["items"][0]["duration_months"] == 1
+    assert active_listed.json()["items"][0]["duration_days"] == 30
 
     active_detail = client.get(_api(f"/api-keys/{key_id}"), headers=user)
     assert active_detail.status_code == 200
     assert active_detail.json()["application_date"] == active_application_date
-    assert active_detail.json()["duration_months"] == 1
+    assert active_detail.json()["duration_days"] == 30
 
     allowed_admin = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={})
     assert allowed_admin.status_code == 200
@@ -1493,17 +1493,17 @@ def test_extend_active_and_expired_keys_anytime_for_user_and_admin(client, admin
     expired_extended = _fetch_application_row_for_key(key_id)
     expired_application_date = str(date.today())
     assert str(expired_extended["application_date"]) == expired_application_date
-    assert expired_extended["duration_months"] == 1
+    assert expired_extended["duration_days"] == 30
 
     expired_listed = client.get(_api("/api-keys"), headers=user)
     assert expired_listed.status_code == 200
     assert expired_listed.json()["items"][0]["application_date"] == expired_application_date
-    assert expired_listed.json()["items"][0]["duration_months"] == 1
+    assert expired_listed.json()["items"][0]["duration_days"] == 30
 
     expired_detail = client.get(_api(f"/api-keys/{key_id}"), headers=user)
     assert expired_detail.status_code == 200
     assert expired_detail.json()["application_date"] == expired_application_date
-    assert expired_detail.json()["duration_months"] == 1
+    assert expired_detail.json()["duration_days"] == 30
 
     _set_key_expires_at_past(key_id)
     admin_allowed = client.post(_api(f"/api-keys/{key_id}/extend"), headers=admin_headers, json={})
@@ -1512,7 +1512,7 @@ def test_extend_active_and_expired_keys_anytime_for_user_and_admin(client, admin
     _assert_utc_datetime_string(admin_allowed.json()["expires_at"])
     admin_extended = _fetch_application_row_for_key(key_id)
     assert str(admin_extended["application_date"]) == expired_application_date
-    assert admin_extended["duration_months"] == 1
+    assert admin_extended["duration_days"] == 30
 
 
 def test_extend_provider_unavailable_does_not_change_expiration(client, admin_headers, monkeypatch):
@@ -1524,7 +1524,7 @@ def test_extend_provider_unavailable_does_not_change_expiration(client, admin_he
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "extend provider fail"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "extend provider fail"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
@@ -1561,7 +1561,7 @@ def test_provider_operations_require_secret_material_before_calling_provider(cli
     active_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "missing secret active"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "missing secret active"},
     )
     assert active_resp.status_code == 201
     active_key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
@@ -1571,7 +1571,7 @@ def test_provider_operations_require_secret_material_before_calling_provider(cli
     revoked_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "missing secret revoked"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "missing secret revoked"},
     )
     assert revoked_resp.status_code == 201
     key_items = client.get(_api("/api-keys"), headers=user).json()["items"]
@@ -1623,7 +1623,7 @@ def test_renew_provider_unavailable_returns_503(client, admin_headers, monkeypat
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "renew pending"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "renew pending"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user).json()["items"][0]["id"]
@@ -1664,7 +1664,7 @@ def test_application_provider_422_maps_to_validation_error(client, admin_headers
         resp = client.post(
             _api("/api-keys/applications"),
             headers=user_headers,
-            json={"application_date": str(date.today()), "duration_months": 6, "purpose": "provider-422"},
+            json={"application_date": str(date.today()), "duration_days": 180, "purpose": "provider-422"},
         )
         assert resp.status_code == 422
         assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
@@ -1683,12 +1683,12 @@ def test_admin_can_list_global_keys(client, admin_headers):
     resp1 = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     resp2 = client.post(
         _api("/api-keys/applications"),
         headers=user2,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp1.status_code == 201
     assert resp2.status_code == 201
@@ -1708,7 +1708,7 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
     resp1 = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": "2026-05-01", "duration_days": 30, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp1.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
@@ -1718,7 +1718,7 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
     resp2 = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": "2026-05-10", "duration_months": 1, "purpose": "u1-2", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": "2026-05-10", "duration_days": 30, "purpose": "u1-2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp2.status_code == 201
     latest_user1_key_id = client.get(_api("/api-keys?sort_by=application_date&sort_dir=desc"), headers=user1).json()["items"][0]["id"]
@@ -1727,7 +1727,7 @@ def test_admin_can_filter_key_list_by_owner_status_and_date(client, admin_header
     resp3 = client.post(
         _api("/api-keys/applications"),
         headers=user2,
-        json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": "2026-05-03", "duration_days": 30, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp3.status_code == 201
 
@@ -1756,12 +1756,12 @@ def test_admin_can_filter_key_list_by_key_alias_expires_and_sort(client, admin_h
     first = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": "2026-05-01", "duration_days": 30, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     second = client.post(
         _api("/api-keys/applications"),
         headers=user2,
-        json={"application_date": "2026-05-02", "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": "2026-05-02", "duration_days": 30, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert first.status_code == 201
     assert second.status_code == 201
@@ -1801,7 +1801,7 @@ def test_list_api_keys_total_is_full_match_count_not_page_size(client, admin_hea
             headers=user,
             json={
                 "application_date": str(date.today()),
-                "duration_months": 1,
+                "duration_days": 30,
                 "purpose": f"pager-{i}",
                 "max_budget": "1000",
                 "budget_duration": "monthly",
@@ -1827,7 +1827,7 @@ def test_list_api_keys_accepts_page_and_page_size_query_params(client, admin_hea
         headers=user,
         json={
             "application_date": str(date.today()),
-            "duration_months": 1,
+            "duration_days": 30,
             "purpose": "page-query",
             "max_budget": "1000",
             "budget_duration": "monthly",
@@ -1849,7 +1849,7 @@ def test_reveal_plaintext_admin_only(client, admin_headers):
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
     created_plaintext = create_resp.json()["api_key_plaintext"]
@@ -1878,7 +1878,7 @@ def test_admin_can_update_key_alias_and_user_cannot(client, admin_headers):
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
@@ -1907,7 +1907,7 @@ def test_admin_update_key_alias_syncs_provider_before_local_commit(client, admin
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 6, "purpose": "u1"},
+        json={"application_date": str(date.today()), "duration_days": 180, "purpose": "u1"},
     )
     assert create_resp.status_code == 201
     created_plaintext = create_resp.json()["api_key_plaintext"]
@@ -1947,7 +1947,7 @@ def test_admin_update_key_alias_provider_unavailable_leaves_local_alias_unchange
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "u1"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
@@ -1983,7 +1983,7 @@ def test_admin_update_key_alias_provider_validation_error_leaves_local_alias_unc
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "u1"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
@@ -2018,7 +2018,7 @@ def test_admin_update_key_alias_requires_secret_material_before_provider_call(cl
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "u1"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
@@ -2056,7 +2056,7 @@ def test_admin_update_key_alias_rejects_duplicates(client, admin_headers):
         create_resp = client.post(
             _api("/api-keys/applications"),
             headers=headers,
-            json={"application_date": str(date.today()), "duration_months": 1, "purpose": headers["x-account"]},
+            json={"application_date": str(date.today()), "duration_days": 30, "purpose": headers["x-account"]},
         )
         assert create_resp.status_code == 201
 
@@ -2086,7 +2086,7 @@ def test_admin_update_key_alias_rejects_unsafe_syntax(client, admin_headers):
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "u1"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
@@ -2103,7 +2103,7 @@ def test_admin_update_key_alias_rejects_invalid_characters(client, admin_headers
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "u1"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
@@ -2120,7 +2120,7 @@ def test_admin_update_key_alias_allows_ideographic_comma(client, admin_headers):
     create_resp = client.post(
         _api("/api-keys/applications"),
         headers=user1,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "u1"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "u1"},
     )
     assert create_resp.status_code == 201
     key_id = client.get(_api("/api-keys"), headers=user1).json()["items"][0]["id"]
@@ -2143,7 +2143,7 @@ def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
     resp = client.post(
         _api("/api-keys/applications"),
         headers=bad_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     after = client.get(_api("/api-keys"), headers=admin_headers).json()["total"]
     assert resp.status_code == 422
@@ -2156,7 +2156,7 @@ def test_error_response_shape_consistency(client, admin_headers, user_headers):
     e1 = client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
-        json={"application_date": str(date.today()), "duration_months": 1, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "test", "max_budget": "1000", "budget_duration": "monthly"},
     )
     # non-admin whitelist management error
     e2 = client.get(_api("/whitelists"), headers=user_headers)
@@ -2184,13 +2184,13 @@ def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin
         resp = client.post(
             _api("/api-keys/applications"),
             headers=user1,
-            json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
+            json={"application_date": "2026-05-01", "duration_days": 30, "purpose": "u1", "max_budget": "1000", "budget_duration": "monthly"},
         )
         assert resp.status_code == 201
     resp = client.post(
         _api("/api-keys/applications"),
         headers=user2,
-        json={"application_date": "2026-05-02", "duration_months": 1, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": "2026-05-02", "duration_days": 30, "purpose": "u2", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert resp.status_code == 201
 
@@ -2211,12 +2211,12 @@ def test_admin_user_statistics_scope_date_range_and_forbidden(client, admin_head
     first = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": "2026-05-01", "duration_months": 1, "purpose": "first", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": "2026-05-01", "duration_days": 30, "purpose": "first", "max_budget": "1000", "budget_duration": "monthly"},
     )
     second = client.post(
         _api("/api-keys/applications"),
         headers=user,
-        json={"application_date": "2026-05-03", "duration_months": 1, "purpose": "second", "max_budget": "1000", "budget_duration": "monthly"},
+        json={"application_date": "2026-05-03", "duration_days": 30, "purpose": "second", "max_budget": "1000", "budget_duration": "monthly"},
     )
     assert first.status_code == 201
     assert second.status_code == 201
@@ -2282,7 +2282,7 @@ def test_admin_user_statistics_supports_column_filters(client, admin_headers):
             headers=user,
             json={
                 "application_date": application_date,
-                "duration_months": 1,
+                "duration_days": 30,
                 "purpose": user["x-account"],
                 "max_budget": "1000",
                 "budget_duration": "monthly",
