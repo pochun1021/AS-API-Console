@@ -109,7 +109,7 @@ test("usage popover is opened from actions and shows snapshot details in zh-TW",
 
   expect(await screen.findByText("用量摘要")).toBeInTheDocument();
   expect(await screen.findByRole("progressbar", { name: "額度使用進度" })).toBeInTheDocument();
-  expect(await screen.findByText("85% 已使用 (850.25 / 1000 USD)")).toBeInTheDocument();
+  expect(await screen.findByText("85% 已使用")).toBeInTheDocument();
   expect(await screen.findByText("剩餘 14.98%")).toBeInTheDocument();
   expect(await screen.findByText("剩餘額度偏低")).toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "已用額度: 850.25 USD")).not.toBeInTheDocument();
@@ -142,7 +142,7 @@ test("usage popover keeps placeholder interaction for unknown snapshot in zh-TW"
 
   expect(await screen.findByText("用量摘要")).toBeInTheDocument();
   expect(await screen.findByRole("progressbar", { name: "額度使用進度" })).toBeInTheDocument();
-  expect(await screen.findByText("0% 已使用 (0 / 1000 USD)")).toBeInTheDocument();
+  expect(await screen.findByText("0% 已使用")).toBeInTheDocument();
   expect(await screen.findByText("剩餘 100%")).toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "已用額度: 未知")).not.toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "額度: 1000 USD")).not.toBeInTheDocument();
@@ -173,7 +173,7 @@ test("usage and health labels switch to english locale", async () => {
 
   expect(await screen.findByText("Usage Summary")).toBeInTheDocument();
   expect(await screen.findByRole("progressbar", { name: "Budget usage progress" })).toBeInTheDocument();
-  expect(await screen.findByText("85% used (850.25 / 1000 USD)")).toBeInTheDocument();
+  expect(await screen.findByText("85% used")).toBeInTheDocument();
   expect(await screen.findByText("14.98% remaining")).toBeInTheDocument();
   expect(await screen.findByText("Budget running low")).toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "Spend: 850.25 USD")).not.toBeInTheDocument();

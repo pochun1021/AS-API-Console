@@ -136,8 +136,8 @@
 - 顯示欄位：申請日期、生效時長、狀態、Health、到期時間、遮罩 key、操作（其中包含 Usage icon；`APP_ENV=prod` 為 `sk-...` + 後 4 碼；`dev/test` 為 `AS-...` + 後 4 碼）。
 - `Health` 欄位為目前 quota 健康度摘要，僅允許 `healthy|low_budget|exhausted|unknown` 四種狀態；可使用獨立文案與顏色呈現，但不得把健康度語意塞回 Usage icon。
 - `Usage` 明細入口需放在操作區，並使用中性、非 color-coded 的 icon；不得以 icon 顏色取代 `Health` 欄位。
-- 點擊 `Usage` icon 需開啟 popover；popover 需顯示 `spend`、`max_budget`、`remaining_budget`、`tpm_limit`、`rpm_limit`、`max_parallel_requests`、`budget_reset_at`、`synced_at`；其中 `tpm_limit`、`rpm_limit`、`max_parallel_requests` 需對齊目前金鑰管理（limit strategy config）設定值。
-- `Usage` popover 在 `max_budget > 0` 時，需額外顯示 budget progress bar；若 `spend` 缺值則以前端 `0` 顯示，並以 `spend / max_budget` 呈現已使用比例，同步顯示已使用百分比、`used / budget` 數值與剩餘百分比。
+- 點擊 `Usage` icon 需開啟 popover；popover 需顯示 `spend`、`max_budget`、`remaining_budget`、`tpm_limit`、`rpm_limit`、`max_parallel_requests`、`budget_reset_at`、`synced_at`；其中 `max_budget`、`tpm_limit`、`rpm_limit`、`max_parallel_requests` 需對齊目前金鑰管理（limit strategy config）設定值。
+- `Usage` popover 在 `max_budget > 0` 時，需額外顯示 budget progress bar；若 `spend` 缺值則以前端 `0` 顯示，並以 `spend / max_budget` 呈現已使用比例，同步顯示已使用百分比與剩餘百分比。
 - 當 `Usage` popover 已顯示 budget progress bar 時，不需再重複顯示獨立的 `spend`、`max_budget`、`remaining_budget` 三行文字；`Unlimited` 或其他未顯示 progress bar 的情況才保留這三行文字摘要。
 - 當剩餘額度比例 `<= 20%` 時，budget progress bar 需改用警示樣式並顯示明確警示文案；此提示僅屬視覺警示，不得阻擋任何操作。
 - 列表不得額外展開成 `spend / budget / TPM / RPM` 多個 raw numeric 欄位，避免表格過度擁擠。
@@ -701,7 +701,7 @@ Base path：`/main/api/v1`
 - `health_status` allowed: `healthy|low_budget|exhausted|unknown`
 - `usage_summary` 欄位語意：
   - `spend`：目前 snapshot 記錄的已花費金額（USD）；未知時為 `null`
-  - `max_budget`：目前 key 的總額度（USD）；`0` 表示 unlimited；未知時為 `null`
+  - `max_budget`：目前金鑰管理（limit strategy config）的總額度（USD）；`0` 表示 unlimited；未知時為 `null`
   - `remaining_budget`：由後端以 `max(max_budget - spend, 0)` 計算；`0` 可表示 exhausted，也可在 `max_budget=0` 時表示 unlimited；未知時為 `null`
   - `tpm_limit`、`rpm_limit`：目前金鑰管理（limit strategy config）的速率限制設定值；`0` 表示 unlimited；未知時為 `null`
   - `max_parallel_requests`：目前金鑰管理（limit strategy config）的最大平行請求數設定值；`0` 表示 unlimited；未知時為 `null`
@@ -773,6 +773,7 @@ Base path：`/main/api/v1`
 ### 3-2) 背景同步（API Key Usage Snapshot）
 - 目的：週期性自 provider `/spend/logs/v2` 同步每把 `active` API Key 的最新 usage snapshot，供列表 `Usage` / `Health` 顯示使用。
 - 查詢鍵：以本地 `key_alias` 查 provider；若本地未存 alias，需以系統預設 alias `for_{owner_account}` 查詢。
+- 查詢時間窗：每次同步僅查 UTC 當日 `00:00:00` 到 `23:59:59` 的 spend logs，並需對 provider 一併帶 `start_date`、`end_date`；格式固定為 `YYYY-MM-DD HH:MM:SS`。
 - 聚合規則：只累計 `status=success` 的 spend logs；`spend` 為同一 alias 目前查詢範圍內成功紀錄的加總。`failure` logs 僅供維運排查，不得寫入 usage snapshot。
 - token 聚合規則：`prompt_tokens`、`completion_tokens`、`total_tokens` 皆只累計 `status=success` 的 spend logs；若單筆 log 缺少個別 token 欄位，該欄位以 `0` 累計，不得因缺欄中止整把 key 的 snapshot 寫入。
 - 落地規則：每次同步都需寫入 `api_key_usage_snapshots` 新歷史列，並可同步覆寫 `api_keys.usage_spend`、`usage_budget_reset_at`、`usage_synced_at` 作為最新快取鏡像。
@@ -1224,7 +1225,7 @@ Base path：`/main/api/v1`
 65A. `GET /main/api/v1/api-keys` 每筆資料需回傳 `health_status` 與 `usage_summary`；`health_status` 僅允許 `healthy|low_budget|exhausted|unknown`，且需由後端依 snapshot 與額度計算，不得要求前端自行重算。
 65B. `usage_summary.remaining_budget` 不得為負值；`max_budget=0`、`tpm_limit=0`、`rpm_limit=0` 代表 unlimited，對外仍維持 `0`，由前端顯示 `Unlimited`。
 65C. `GET /main/api/v1/api-keys` 缺少 usage snapshot 時，`health_status` 需回傳 `unknown`，`usage_summary.synced_at` 需為 `null`，但前端仍需保留可開啟的 Usage popover。
-65D. `GET /main/api/v1/api-keys` 的 `usage_summary.tpm_limit`、`usage_summary.rpm_limit`、`usage_summary.max_parallel_requests` 必須回傳目前金鑰管理（limit strategy config）設定值，不得沿用個別 key 歷史申請當下的快照值。
+65D. `GET /main/api/v1/api-keys` 的 `usage_summary.max_budget`、`usage_summary.tpm_limit`、`usage_summary.rpm_limit`、`usage_summary.max_parallel_requests` 必須回傳目前金鑰管理（limit strategy config）設定值，不得沿用個別 key 歷史申請當下的快照值；更新全域金鑰條件後，列表端點下一次讀取即需反映新值，不得等待 usage sync 排程。
 66. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 需支援欄位級 server-side sorting/filtering；若某欄位未支援後端 query contract，對應前端欄位必須禁用 filter 或 sort，不得回退成 local table 行為。
 67. 關鍵操作稽核功能、申請人識別欄位調整、統計、`GET /main/api/v1/models` 與 lifecycle 擴充，均不得改動既有受保護 API 路徑與角色模型（`user|admin`）；若需擴充對外 error response，僅允許增加相容性的 optional 欄位（如 `error.details`），不得破壞既有 `error.code` / `error.message` 契約或既有 success response shape。
 

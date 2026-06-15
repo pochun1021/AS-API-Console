@@ -61,12 +61,15 @@ def test_usage_sync_script_records_snapshot_history(client, admin_headers, user_
     key_id = item["id"]
     key_alias = item["key_alias"]
 
-    synced_at = datetime.now(UTC).replace(microsecond=0)
-    budget_reset_at = synced_at + timedelta(days=7)
+    log_time = datetime.now(UTC).replace(microsecond=0)
+    sync_now = datetime(2026, 6, 8, 12, 34, 56, tzinfo=UTC)
+    budget_reset_at = log_time + timedelta(days=7)
 
     class _FakeProviderClient:
         def list_spend_logs(self, query: dict) -> dict:
             assert query["key_alias"] == key_alias
+            assert query["start_date"] == "2026-06-08 00:00:00"
+            assert query["end_date"] == "2026-06-08 23:59:59"
             return {
                 "data": [
                     {
@@ -75,8 +78,8 @@ def test_usage_sync_script_records_snapshot_history(client, admin_headers, user_
                         "prompt_tokens": 123,
                         "completion_tokens": 45,
                         "total_tokens": 168,
-                        "startTime": synced_at.isoformat(),
-                        "endTime": synced_at.isoformat(),
+                        "startTime": log_time.isoformat(),
+                        "endTime": log_time.isoformat(),
                     },
                     {
                         "status": "failure",
@@ -84,8 +87,8 @@ def test_usage_sync_script_records_snapshot_history(client, admin_headers, user_
                         "prompt_tokens": 999,
                         "completion_tokens": 999,
                         "total_tokens": 1998,
-                        "startTime": synced_at.isoformat(),
-                        "endTime": synced_at.isoformat(),
+                        "startTime": log_time.isoformat(),
+                        "endTime": log_time.isoformat(),
                     },
                 ],
                 "total": 2,
@@ -99,7 +102,7 @@ def test_usage_sync_script_records_snapshot_history(client, admin_headers, user_
     monkeypatch.setattr(
         sync_api_key_usage,
         "_now_utc",
-        lambda: synced_at,
+        lambda: sync_now,
     )
 
     updated = sync_api_key_usage.run_once(batch_size=100, dry_run=False)
@@ -112,7 +115,7 @@ def test_usage_sync_script_records_snapshot_history(client, admin_headers, user_
     assert rows[0]["completion_tokens"] == 45
     assert rows[0]["total_tokens"] == 168
     assert rows[0]["budget_reset_at"].replace(tzinfo=UTC) == budget_reset_at
-    assert rows[0]["synced_at"].replace(tzinfo=UTC) == synced_at
+    assert rows[0]["synced_at"].replace(tzinfo=UTC) == sync_now
 
     listed = client.get(_api("/api-keys"), headers=user_headers)
     assert listed.status_code == 200

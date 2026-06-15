@@ -165,6 +165,8 @@ def test_list_spend_logs_uses_query_params(monkeypatch: pytest.MonkeyPatch) -> N
 
     payload = client.list_spend_logs(
         {
+            "start_date": "2026-06-08 00:00:00",
+            "end_date": "2026-06-08 23:59:59",
             "key_alias": "for_user1",
             "status_filter": "success",
             "page": 1,
@@ -177,7 +179,7 @@ def test_list_spend_logs_uses_query_params(monkeypatch: pytest.MonkeyPatch) -> N
     assert payload == {"data": [], "total": 0, "page": 1, "page_size": 100, "total_pages": 0}
     assert fake_client.calls == [
         {
-            "url": "/spend/logs/v2?key_alias=for_user1&status_filter=success&page=1&page_size=100&sort_by=startTime&sort_order=desc",
+            "url": "/spend/logs/v2?start_date=2026-06-08+00%3A00%3A00&end_date=2026-06-08+23%3A59%3A59&key_alias=for_user1&status_filter=success&page=1&page_size=100&sort_by=startTime&sort_order=desc",
             "headers": {
                 "Authorization": "Bearer secret-token",
             },

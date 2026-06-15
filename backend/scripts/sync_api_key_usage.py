@@ -105,6 +105,15 @@ def _coerce_datetime(value: object) -> datetime | None:
         return None
 
 
+def _build_utc_day_window(now: datetime) -> tuple[str, str]:
+    current = now.astimezone(UTC)
+    day = current.date()
+    return (
+        f"{day.isoformat()} 00:00:00",
+        f"{day.isoformat()} 23:59:59",
+    )
+
+
 def _fetch_spend_snapshot(provider_client: ProviderClient, *, key_alias: str) -> tuple[float, int, int, int, datetime | None]:
     page = 1
     total_pages = 1
@@ -113,10 +122,13 @@ def _fetch_spend_snapshot(provider_client: ProviderClient, *, key_alias: str) ->
     completion_tokens = 0
     total_tokens = 0
     budget_reset_at: datetime | None = None
+    start_date, end_date = _build_utc_day_window(_now_utc())
 
     while page <= total_pages:
         payload = provider_client.list_spend_logs(
             {
+                "start_date": start_date,
+                "end_date": end_date,
                 "key_alias": key_alias,
                 "status_filter": "success",
                 "page": page,

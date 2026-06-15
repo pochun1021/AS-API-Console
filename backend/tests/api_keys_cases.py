@@ -197,7 +197,7 @@ def test_list_api_keys_prefers_latest_usage_snapshot_history(client, admin_heade
     _assert_utc_datetime_string(item["usage_summary"]["synced_at"])
 
 
-def test_list_api_keys_uses_current_limit_strategy_config_for_usage_rate_limits(
+def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(
     client, admin_headers, user_headers
 ):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
@@ -222,9 +222,35 @@ def test_list_api_keys_uses_current_limit_strategy_config_for_usage_rate_limits(
 
         assert listed.status_code == 200
         item = listed.json()["items"][0]
+        assert item["usage_summary"]["max_budget"] == 1000.0
         assert item["usage_summary"]["tpm_limit"] == 43210
         assert item["usage_summary"]["rpm_limit"] == 321
         assert item["usage_summary"]["max_parallel_requests"] == 12
+
+        snapshot_synced_at = datetime.now(UTC).replace(microsecond=0)
+        _set_key_usage_snapshot(
+            item["id"],
+            usage_spend="850.25",
+            usage_budget_reset_at=snapshot_synced_at + timedelta(days=7),
+            usage_synced_at=snapshot_synced_at,
+        )
+        _set_limit_strategy_config(
+            budget_max_budget="2000",
+            budget_duration="monthly",
+            rate_limit_tpm=54321,
+            rate_limit_rpm=654,
+            max_parallel_requests=9,
+        )
+
+        refreshed = client.get(_api("/api-keys"), headers=user_headers)
+
+        assert refreshed.status_code == 200
+        refreshed_item = refreshed.json()["items"][0]
+        assert refreshed_item["usage_summary"]["max_budget"] == 2000.0
+        assert refreshed_item["usage_summary"]["remaining_budget"] == 1149.75
+        assert refreshed_item["usage_summary"]["tpm_limit"] == 54321
+        assert refreshed_item["usage_summary"]["rpm_limit"] == 654
+        assert refreshed_item["usage_summary"]["max_parallel_requests"] == 9
     finally:
         _set_limit_strategy_config(
             budget_max_budget="1000",

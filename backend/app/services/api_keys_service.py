@@ -686,7 +686,7 @@ class ApiKeysService:
         for item in items:
             effective_status = _effective_status(status=item.status, expires_at=item.expires_at)
             usage_summary = _build_usage_summary(
-                max_budget_raw=item.max_budget,
+                max_budget_raw=limit_config.budget_max_budget,
                 tpm_limit=limit_config.rate_limit_tpm,
                 rpm_limit=limit_config.rate_limit_rpm,
                 max_parallel_requests=limit_config.max_parallel_requests,

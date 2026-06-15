@@ -785,11 +785,7 @@ export default function MyApiKeysPage({ auth }) {
               />
               <Stack direction="row" justifyContent="space-between" spacing={1}>
                 <Typography variant="caption">
-                  {t("mykeys_usage_used_percent", {
-                    percent: usageProgress.usedPercentLabel,
-                    used: usageProgress.spendLabel,
-                    budget: usageProgress.budgetLabel,
-                  })}
+                  {t("mykeys_usage_used_percent", { percent: usageProgress.usedPercentLabel })}
                 </Typography>
                 <Typography variant="caption">
                   {t("mykeys_usage_remaining_percent", { percent: usageProgress.remainingPercentLabel })}
