@@ -15,6 +15,7 @@ from db.repositories.types import (
     ApiKeyListFilter,
     ApiKeyListItem,
     ApiKeySecretMaterial,
+    ApiKeyUsageSeriesItem,
     ApiKeyUserStatisticsFilter,
     ApiKeyUserStatisticsItem,
     ApplicationCreateInput,
@@ -85,7 +86,16 @@ class ApiKeyRepository(Protocol):
     ) -> tuple[list[ApiKeyListItem], int]: ...
 
     def get_key_detail(self, key_id: str, requester_role: str, requester_account: str) -> ApiKeyDetail | None: ...
-    
+
+    def list_usage_series(
+        self,
+        *,
+        key_id: str,
+        granularity: str,
+        bucket_start_from: datetime,
+        bucket_start_to: datetime,
+    ) -> list[ApiKeyUsageSeriesItem]: ...
+
     def get_key_secret_material(
         self, key_id: str, requester_role: str, requester_account: str
     ) -> ApiKeySecretMaterial | None: ...

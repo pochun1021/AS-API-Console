@@ -8,22 +8,20 @@ def test_mail_service_uses_hardcoded_mail_from(monkeypatch):
 
     captured: dict = {}
 
-    class _FakeFastMail:
-        def __init__(self, conf):
-            captured["conf"] = conf
+    async def _fake_send_html_message(config, *, subject, recipients, body):
+        captured["config"] = config
+        captured["subject"] = subject
+        captured["recipients"] = recipients
+        captured["body"] = body
 
-        async def send_message(self, message):
-            captured["message"] = message
-
-    monkeypatch.setattr(mail_service, "ConnectionConfig", lambda **kwargs: kwargs)
-    monkeypatch.setattr(mail_service, "FastMail", _FakeFastMail)
+    monkeypatch.setattr(mail_service, "send_html_message", _fake_send_html_message)
     monkeypatch.setenv("MAIL_FROM", "override@example.com")
     service = mail_service.MailService()
     monkeypatch.setattr(service, "is_enabled", lambda: True)
 
     run_async(service._send_html(subject="test", recipients=["user@example.com"], body="<p>body</p>"))
 
-    assert captured["conf"]["MAIL_FROM"] == "noreply@as.edu.tw"
+    assert captured["config"].from_email == "noreply@as.edu.tw"
 
 
 def test_send_test_email_uses_hardcoded_mail_from(monkeypatch):
@@ -31,19 +29,17 @@ def test_send_test_email_uses_hardcoded_mail_from(monkeypatch):
 
     captured: dict = {}
 
-    class _FakeFastMail:
-        def __init__(self, conf):
-            captured["conf"] = conf
-
-        async def send_message(self, message):
-            captured["message"] = message
+    async def _fake_send_html_message(config, *, subject, recipients, body):
+        captured["config"] = config
+        captured["subject"] = subject
+        captured["recipients"] = recipients
+        captured["body"] = body
 
     monkeypatch.setenv("MAIL_ENABLED", "true")
     monkeypatch.setenv("MAIL_SERVER", "smtp.example.internal")
     monkeypatch.setenv("MAIL_FROM", "override@example.com")
-    monkeypatch.setattr(send_test_email, "ConnectionConfig", lambda **kwargs: kwargs)
-    monkeypatch.setattr(send_test_email, "FastMail", _FakeFastMail)
+    monkeypatch.setattr(send_test_email, "send_html_message", _fake_send_html_message)
 
     run_async(send_test_email.send_test_email("user@example.com"))
 
-    assert captured["conf"]["MAIL_FROM"] == "noreply@as.edu.tw"
+    assert captured["config"].from_email == "noreply@as.edu.tw"

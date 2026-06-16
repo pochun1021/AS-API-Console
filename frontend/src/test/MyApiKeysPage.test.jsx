@@ -351,7 +351,7 @@ test("user can extend active key with original duration", async () => {
   expect(await screen.findByText(`到期時間: ${expectedExpiresDate}`)).toBeInTheDocument();
 });
 
-test("extending an expired key resets start date and reuses original duration", async () => {
+test("expired key shows renew instead of extend", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
@@ -360,25 +360,8 @@ test("extending an expired key resets start date and reuses original duration", 
   const expiredRowActionButton = expiredRow?.querySelector('button[aria-label="更多操作"]');
   expect(expiredRowActionButton).toBeTruthy();
   await user.click(expiredRowActionButton);
-  await user.click(await screen.findByRole("menuitem", { name: "展延金鑰" }));
-  await user.click(screen.getByRole("button", { name: "確認" }));
-  expect(await screen.findByText("金鑰已展延。")).toBeInTheDocument();
-
-  const updatedExpiredRow = (await screen.findByText("AS-...du03")).closest('[data-id="key_010"]');
-  expect(updatedExpiredRow).toBeTruthy();
-  const expiredRowDetailButton = updatedExpiredRow?.querySelector('button[aria-label="查看詳情"]');
-  expect(expiredRowDetailButton).toBeTruthy();
-  await user.click(expiredRowDetailButton);
-  const today = new Date().toISOString().slice(0, 10);
-  const expectedExpiresAt = new Date(Date.UTC(2026, 4, 2));
-  const todayStart = new Date();
-  const extendDay = new Date(Date.UTC(todayStart.getUTCFullYear(), todayStart.getUTCMonth(), todayStart.getUTCDate()));
-  const elapsedDays = Math.max(0, Math.round((extendDay.getTime() - expectedExpiresAt.getTime()) / (1000 * 60 * 60 * 24)));
-  expectedExpiresAt.setUTCDate(expectedExpiresAt.getUTCDate() + elapsedDays + 30);
-  const expectedExpiresDate = expectedExpiresAt.toISOString().slice(0, 10);
-  expect(await screen.findByText(`起算日期: ${today}`)).toBeInTheDocument();
-  expect(await screen.findByText("目前生效時長: 30 天")).toBeInTheDocument();
-  expect(await screen.findByText(`到期時間: ${expectedExpiresDate}`)).toBeInTheDocument();
+  expect(await screen.findByRole("menuitem", { name: "更新金鑰" })).toBeInTheDocument();
+  expect(screen.queryByRole("menuitem", { name: "展延金鑰" })).not.toBeInTheDocument();
 });
 
 test.each([
@@ -388,9 +371,9 @@ test.each([
     shouldSeeExtend: true,
   },
   {
-    name: "user can see extend action for expired key",
+    name: "user cannot see extend action for expired key",
     buttonIndex: 2,
-    shouldSeeExtend: true,
+    shouldSeeExtend: false,
   },
   {
     name: "user can see extend action for active key within near-expiry window",

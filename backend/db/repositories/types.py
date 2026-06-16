@@ -64,6 +64,16 @@ class ApiKeyListItem:
 
 
 @dataclass(slots=True)
+class ApiKeyUsageSeriesItem:
+    bucket_start_utc: datetime
+    bucket_end_utc: datetime
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    spend: float | None
+
+
+@dataclass(slots=True)
 class ApiKeyListFilter:
     status: str | None = None
     owner_account: str | None = None

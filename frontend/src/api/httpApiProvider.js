@@ -111,6 +111,15 @@ export const httpApiProvider = {
     return request(`${apiPath("/api-keys")}${suffix}`, { auth });
   },
 
+  listApiKeyUsageSeries(params, auth) {
+    const query = new URLSearchParams();
+    if (params.key_id) query.set("key_id", params.key_id);
+    if (params.granularity) query.set("granularity", params.granularity);
+    if (params.from) query.set("from", params.from);
+    if (params.to) query.set("to", params.to);
+    return request(`${apiPath("/api-keys/usage-series")}?${query.toString()}`, { auth });
+  },
+
   getApiKeyById(id, auth) {
     return request(apiPath(`/api-keys/${id}`), { auth }).then((item) => ({ item }));
   },

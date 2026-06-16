@@ -91,6 +91,29 @@ class ApiKeyListResponse(BaseModel):
     total: int
 
 
+class ApiKeyUsageSeriesItemResponse(BaseModel):
+    bucket_start: datetime
+    bucket_label: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    spend: float | None = None
+
+    @field_serializer("bucket_start")
+    def serialize_bucket_start(self, value: datetime) -> str:
+        return value.isoformat()
+
+
+class ApiKeyUsageSeriesResponse(BaseModel):
+    key_id: str
+    granularity: str
+    from_date: date = Field(alias="from")
+    to_date: date = Field(alias="to")
+    items: list[ApiKeyUsageSeriesItemResponse]
+
+    model_config = {"populate_by_name": True}
+
+
 class ApiKeyDetailResponse(BaseModel):
     id: str
     status: str

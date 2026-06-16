@@ -8,9 +8,9 @@ from tests.api_keys_cases import (
     test_admin_update_key_alias_rejects_unsafe_syntax,
     test_admin_update_key_alias_requires_secret_material_before_provider_call,
     test_admin_update_key_alias_syncs_provider_before_local_commit,
-    test_extend_active_and_expired_keys_anytime_for_user_and_admin,
-    test_extend_expired_resets_application_date_and_sends_reset_duration_to_provider,
+    test_extend_active_keys_anytime_for_user_and_admin_but_rejects_expired,
+    test_extend_expired_returns_key_not_extendable,
     test_extend_provider_unavailable_does_not_change_expiration,
-    test_extend_resets_effective_window_and_sends_provider_duration_from_key_created_at,
+    test_extend_resets_effective_window_and_sends_original_duration_to_provider,
     test_extend_sends_latest_key_alias_to_provider,
 )

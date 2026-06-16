@@ -5,6 +5,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -41,6 +42,7 @@ from db.repositories.types import (
 
 LIMIT_STRATEGY_CONFIG_ID = "global-limit-strategy-config"
 MAX_KEY_ALIAS_ATTEMPTS = 20
+TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 LIMIT_STRATEGY_DEFAULTS = {
     "budget_max_budget": "1000",
     "budget_duration": "monthly",
@@ -151,7 +153,7 @@ def _is_extend_eligible(
     status: str,
     expires_at: datetime,
 ) -> bool:
-    return status in {"active", "expired"}
+    return status == "active"
 
 
 def _normalized_utc_datetime(value: datetime) -> datetime:
@@ -187,13 +189,6 @@ def _extended_terms(
         original_duration_days=original_duration_days,
         issued_at=issued_at,
     )
-
-
-def _provider_total_days_from_key_created_at(*, key_created_at: datetime, expires_at: datetime) -> int:
-    key_created_at_utc = _normalized_utc_datetime(key_created_at)
-    expires_at_utc = _normalized_utc_datetime(expires_at)
-    total_days = (expires_at_utc.date() - key_created_at_utc.date()).days
-    return max(total_days, 1)
 
 
 def _parse_optional_budget(value: str | None) -> float | None:
@@ -722,6 +717,53 @@ class ApiKeysService:
             "total": total,
         }
 
+    def list_usage_series(
+        self,
+        *,
+        current_user: CurrentUser,
+        key_id: str,
+        granularity: str,
+        from_date: date,
+        to_date: date,
+    ) -> dict:
+        if granularity != "day":
+            raise ApiError("VALIDATION_ERROR", "granularity must be day", 422)
+        if from_date > to_date:
+            raise ApiError("VALIDATION_ERROR", "from cannot be greater than to", 422)
+
+        detail = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
+        if detail is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+        scoped = self.key_repo.get_key_detail(key_id, current_user.role, current_user.account)
+        if scoped is None:
+            raise ApiError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403)
+
+        bucket_start_from = datetime.combine(from_date, datetime.min.time(), tzinfo=TAIPEI_TZ).astimezone(UTC)
+        bucket_start_to = datetime.combine(to_date + timedelta(days=1), datetime.min.time(), tzinfo=TAIPEI_TZ).astimezone(UTC)
+        items = self.key_repo.list_usage_series(
+            key_id=key_id,
+            granularity=granularity,
+            bucket_start_from=bucket_start_from,
+            bucket_start_to=bucket_start_to,
+        )
+        return {
+            "key_id": key_id,
+            "granularity": granularity,
+            "from": from_date,
+            "to": to_date,
+            "items": [
+                {
+                    "bucket_start": _normalized_utc_datetime(item.bucket_start_utc).astimezone(TAIPEI_TZ),
+                    "bucket_label": _normalized_utc_datetime(item.bucket_start_utc).astimezone(TAIPEI_TZ).date().isoformat(),
+                    "prompt_tokens": item.prompt_tokens,
+                    "completion_tokens": item.completion_tokens,
+                    "total_tokens": item.total_tokens,
+                    "spend": _round_money(item.spend) if item.spend is not None else None,
+                }
+                for item in items
+            ],
+        }
+
     def get_key_detail(self, current_user: CurrentUser, key_id: str) -> dict:
         detail = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
         if detail is None:
@@ -776,14 +818,10 @@ class ApiKeysService:
             plaintext = self._decrypt_key_for_provider(key)
             config = self._get_provider_update_config_for_application(application)
             try:
-                provider_duration_days = _provider_total_days_from_key_created_at(
-                    key_created_at=key.created_at,
-                    expires_at=application.expires_at,
-                )
                 self.provider_client.update_key(
                     self._build_provider_update_payload(
                         plaintext=plaintext,
-                        duration_days=provider_duration_days,
+                        duration_days=application.original_duration_days,
                         config=config,
                         key_alias=normalized_alias,
                     )
@@ -878,7 +916,7 @@ class ApiKeysService:
         try:
             plaintext = self._decrypt_key_for_provider(key)
             if self._provider_operates_remotely():
-                provider_result = self.provider_client.block_key({"key": plaintext})
+                provider_result = self.provider_client.delete_key({"key": plaintext})
                 provider_metadata = self._provider_metadata(
                     request_id=provider_result.request_id,
                     operation_id=provider_result.operation_id,
@@ -908,8 +946,8 @@ class ApiKeysService:
 
         source_key, source_app = self._load_key_with_application(key_id)
         source_effective_status = _effective_status(status=source_key.status, expires_at=source_app.expires_at)
-        if source_effective_status != "revoked":
-            raise ApiError("KEY_NOT_RENEWABLE", "only revoked key can be renewed", 409)
+        if source_effective_status not in {"revoked", "expired"}:
+            raise ApiError("KEY_NOT_RENEWABLE", "only revoked or expired key can be renewed", 409)
         if source_key.renewed_to_key_id:
             raise ApiError("KEY_ALREADY_RENEWED", "key already renewed", 409)
 
@@ -992,18 +1030,14 @@ class ApiKeysService:
 
         source_key, source_app = self._load_key_with_application(key_id)
         source_effective_status = _effective_status(status=source_key.status, expires_at=source_app.expires_at)
-        if source_effective_status not in {"active", "expired"}:
-            raise ApiError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409)
+        if source_effective_status != "active":
+            raise ApiError("KEY_NOT_EXTENDABLE", "only active key can be extended", 409)
         now = datetime.now(UTC)
         next_duration_days = source_app.original_duration_days
         next_application_date, next_expires_at = _extended_terms(
             issued_at=source_app.issued_at,
             original_duration_days=source_app.original_duration_days,
             now=now,
-        )
-        provider_duration_days = _provider_total_days_from_key_created_at(
-            key_created_at=source_key.created_at,
-            expires_at=next_expires_at,
         )
 
         provider_metadata: dict = {}
@@ -1014,7 +1048,7 @@ class ApiKeysService:
                 provider_result = self.provider_client.update_key(
                     self._build_provider_update_payload(
                         plaintext=plaintext,
-                        duration_days=provider_duration_days,
+                        duration_days=source_app.original_duration_days,
                         config=config,
                         key_alias=source_key.key_alias or _default_alias(source_app.account),
                     )

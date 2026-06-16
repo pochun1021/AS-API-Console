@@ -27,6 +27,8 @@ describe("App public auth pages", () => {
     getLocalePreference: vi.fn(),
     updateLocalePreference: vi.fn(),
     listAnnouncements: vi.fn(),
+    listApiKeys: vi.fn(),
+    listApiKeyUsageSeries: vi.fn(),
     listModels: vi.fn(),
     logout: vi.fn()
   };
@@ -36,6 +38,8 @@ describe("App public auth pages", () => {
     provider.getLocalePreference.mockReset();
     provider.updateLocalePreference.mockReset();
     provider.listAnnouncements.mockReset();
+    provider.listApiKeys.mockReset();
+    provider.listApiKeyUsageSeries.mockReset();
     provider.listModels.mockReset();
     provider.logout.mockReset();
     setApiProvider(provider);
@@ -129,6 +133,26 @@ describe("App public auth pages", () => {
     expect((await screen.findAllByRole("heading", { name: "服務使用說明" })).length).toBeGreaterThan(0);
     expect(await screen.findByText("gpt-4o-mini")).toBeInTheDocument();
     expect(await screen.findByText("Python 範例")).toBeInTheDocument();
+  });
+
+  test("shared /usage route renders for non-admin user", async () => {
+    provider.getCurrentUser.mockResolvedValueOnce({
+      account: "user1",
+      name: "User One",
+      email: "user1@example.com",
+      department: "IT",
+      sysid: 2001,
+      role: "user"
+    });
+    provider.getLocalePreference.mockResolvedValueOnce({ preferred_locale: "zh-TW" });
+    provider.listApiKeys.mockResolvedValueOnce({
+      items: [{ id: "key_1", key_alias: "for_user1", masked_key: "AS-...1234" }]
+    });
+
+    renderApp("/usage");
+
+    expect(await screen.findByText("API Key 使用量")).toBeInTheDocument();
+    expect(await screen.findByLabelText("API Key")).toBeInTheDocument();
   });
 
   test("root route redirects user to /announcements", async () => {

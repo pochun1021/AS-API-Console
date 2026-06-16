@@ -249,8 +249,8 @@ class ProviderClient:
     def update_key(self, payload: dict) -> ProviderMutationResult:
         return self._perform_request(path="/key/update", payload=payload)
 
-    def block_key(self, payload: dict) -> ProviderMutationResult:
-        return self._perform_request(path="/key/block", payload=payload)
+    def delete_key(self, payload: dict) -> ProviderMutationResult:
+        return self._perform_request(path="/key/delete", payload=payload)
 
     def update_team_limits(self, payload: dict) -> ProviderMutationResult:
         return self._perform_request(path="/team/key/bulk_update", payload=payload)

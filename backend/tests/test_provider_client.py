@@ -200,6 +200,26 @@ def test_update_key_accepts_string_response(monkeypatch: pytest.MonkeyPatch) -> 
     assert result.operation_id is None
 
 
+def test_delete_key_posts_to_delete_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _build_client(monkeypatch)
+    fake_client = _FakeClient(_response("ok"))
+    monkeypatch.setattr("app.services.provider_client.build_safe_httpx_client", lambda **kwargs: fake_client)
+
+    result = client.delete_key({"key": "AS-old"})
+
+    assert result.success is True
+    assert fake_client.calls == [
+        {
+            "url": "/key/delete",
+            "json": {"key": "AS-old"},
+            "headers": {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer secret-token",
+            },
+        }
+    ]
+
+
 def test_provider_422_maps_detail_array(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch)
     monkeypatch.setattr(

@@ -14,6 +14,7 @@ from app.schemas.api_keys import (
     ApiKeyAliasUpdateRequest,
     ApiKeyListResponse,
     ApiKeyRevealResponse,
+    ApiKeyUsageSeriesResponse,
     ApiKeyUserStatisticsResponse,
     LimitStrategyConfigResponse,
     LimitStrategyConfigUpdateRequest,
@@ -155,6 +156,33 @@ def list_api_keys(
         expires_to=expires_to,
         sort_by=sort_by,
         sort_dir=sort_dir,
+    )
+
+
+@router.get(
+    "/api-keys/usage-series",
+    response_model=ApiKeyUsageSeriesResponse,
+    responses={
+        403: {"model": ErrorResponse, "description": "User is not allowed to access this key"},
+        404: {"model": ErrorResponse, "description": "API key was not found"},
+        422: {"model": ErrorResponse, "description": "Invalid query parameters"},
+    },
+)
+def list_api_key_usage_series(
+    key_id: str = Query(...),
+    granularity: str = Query(...),
+    from_date: date = Query(..., alias="from"),
+    to_date: date = Query(..., alias="to"),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    service = ApiKeysService(db)
+    return service.list_usage_series(
+        current_user=current_user,
+        key_id=key_id,
+        granularity=granularity,
+        from_date=from_date,
+        to_date=to_date,
     )
 
 

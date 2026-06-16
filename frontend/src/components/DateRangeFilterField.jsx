@@ -41,6 +41,7 @@ export default function DateRangeFilterField({
   closeLabel = "Close",
   minWidth = 220,
   size = "medium",
+  quickRanges = [],
 }) {
   const { locale } = useLocale();
   const [anchorEl, setAnchorEl] = useState(null);
@@ -170,6 +171,23 @@ export default function DateRangeFilterField({
               },
             }}
           >
+            {quickRanges.length ? (
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 2 }}>
+                {quickRanges.map((item) => (
+                  <Button
+                    key={item.label}
+                    size="small"
+                    variant="outlined"
+                    onClick={() => {
+                      const nextRange = item.getRange?.();
+                      emitRange(nextRange?.from || "", nextRange?.to || "");
+                    }}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </Stack>
+            ) : null}
             <DayPicker
               mode="range"
               numberOfMonths={2}

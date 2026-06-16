@@ -16,7 +16,7 @@ This page explains how logged-in users can integrate with the AS API Console ser
 1. Apply for an API key in the system.
 2. Save the plaintext API key immediately when it is shown.
 3. Set `API_KEY` and `BASE_URL` in your runtime environment, where `BASE_URL` is `https://api.ascs.sinica.edu.tw`.
-4. Call `POST /chat/completions` with `Authorization: Bearer <API_KEY>`.
+4. Call `POST /v1/chat/completions` with `Authorization: Bearer <API_KEY>`.
 5. Read the model output from `choices[0].message.content`.
 
 ## Python Example
@@ -35,7 +35,7 @@ BASE_URL = os.getenv("BASE_URL")
 
 
 def chat_with_model(prompt, model_name="gemma-4-31B-it"):
-    url = f"{BASE_URL}/chat/completions"
+    url = f"{BASE_URL}/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",

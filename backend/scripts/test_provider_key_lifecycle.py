@@ -211,8 +211,8 @@ class ProviderLifecycleTester:
             )
 
             self._request(
-                step="block key A",
-                path="/key/block",
+                step="delete key A",
+                path="/key/delete",
                 payload={"key": self.key_a},
             )
 

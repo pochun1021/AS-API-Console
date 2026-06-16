@@ -129,7 +129,7 @@ function handlePersistentDialogClose(reason, closeDialog) {
 }
 
 function canShowExtendAction(item) {
-  if (!item || !["active", "expired"].includes(item.status)) return false;
+  if (!item || item.status !== "active") return false;
   return item.extend_eligible === true;
 }
 
@@ -734,7 +734,7 @@ export default function MyApiKeysPage({ auth }) {
             {t("mykeys_revoke_key")}
           </MenuItem>
         ) : null}
-        {actionMenuRow?.status === "revoked" ? (
+        {["revoked", "expired"].includes(actionMenuRow?.status || "") ? (
           <MenuItem
             onClick={() => {
               const targetId = actionMenuRow?.id;

@@ -4,7 +4,7 @@ import argparse
 import logging
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 import sys
@@ -18,6 +18,8 @@ LOG_TZ = ZoneInfo("Asia/Taipei")
 LOG_ROOT = Path(os.getenv("SCHEDULER_LOG_ROOT", "/home/app/log"))
 LOG_DIR = LOG_ROOT / "sync_api_key_usage"
 LOGGER_NAME = "sync_api_key_usage"
+TAIPEI_TZ = ZoneInfo("Asia/Taipei")
+ROLLING_DAYS = 30
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from db import models  # noqa: F401
@@ -32,6 +34,17 @@ from app.services.provider_client import ProviderBadRequestError, ProviderClient
 class UsageSyncCandidate:
     key_id: str
     key_alias: str
+
+
+@dataclass(slots=True)
+class DailyUsageBucket:
+    bucket_date: date
+    bucket_start_utc: datetime
+    bucket_end_utc: datetime
+    spend: float
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
 
 
 class TaipeiDateFormatter(logging.Formatter):
@@ -105,24 +118,89 @@ def _coerce_datetime(value: object) -> datetime | None:
         return None
 
 
-def _build_utc_day_window(now: datetime) -> tuple[str, str]:
-    current = now.astimezone(UTC)
-    day = current.date()
-    return (
-        f"{day.isoformat()} 00:00:00",
-        f"{day.isoformat()} 23:59:59",
-    )
+def _format_provider_datetime(value: datetime) -> str:
+    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _fetch_spend_snapshot(provider_client: ProviderClient, *, key_alias: str) -> tuple[float, int, int, int, datetime | None]:
+def _build_rolling_window(now: datetime) -> tuple[datetime, datetime]:
+    local_today = now.astimezone(TAIPEI_TZ).date()
+    local_start = datetime.combine(local_today - timedelta(days=ROLLING_DAYS - 1), time.min, tzinfo=TAIPEI_TZ)
+    local_end_exclusive = datetime.combine(local_today + timedelta(days=1), time.min, tzinfo=TAIPEI_TZ)
+    return local_start.astimezone(UTC), local_end_exclusive.astimezone(UTC)
+
+
+def _bucket_bounds_for_local_day(bucket_date: date) -> tuple[datetime, datetime]:
+    local_start = datetime.combine(bucket_date, time.min, tzinfo=TAIPEI_TZ)
+    local_end = local_start + timedelta(days=1)
+    return local_start.astimezone(UTC), local_end.astimezone(UTC)
+
+
+def _build_daily_buckets(payload: object) -> tuple[list[DailyUsageBucket], datetime | None]:
+    if not isinstance(payload, dict):
+        raise ProviderUnavailableError("provider unavailable")
+    records = payload.get("data")
+    if not isinstance(records, list):
+        raise ProviderUnavailableError("provider unavailable")
+
+    grouped: dict[date, dict[str, Decimal | int]] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("status") or "").strip().lower() != "success":
+            continue
+        start_time = _coerce_datetime(record.get("startTime"))
+        if start_time is None:
+            continue
+        bucket_date = start_time.astimezone(TAIPEI_TZ).date()
+        bucket = grouped.setdefault(
+            bucket_date,
+            {
+                "spend": Decimal("0"),
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            },
+        )
+        try:
+            bucket["spend"] += Decimal(str(record.get("spend") or 0))
+        except Exception:  # noqa: BLE001
+            continue
+        bucket["prompt_tokens"] += _coerce_int(record.get("prompt_tokens"))
+        bucket["completion_tokens"] += _coerce_int(record.get("completion_tokens"))
+        bucket["total_tokens"] += _coerce_int(record.get("total_tokens"))
+
+    budget_reset_at = _coerce_datetime(payload.get("budget_reset_at"))
+    items: list[DailyUsageBucket] = []
+    for bucket_date in sorted(grouped.keys()):
+        bucket_start_utc, bucket_end_utc = _bucket_bounds_for_local_day(bucket_date)
+        aggregate = grouped[bucket_date]
+        items.append(
+            DailyUsageBucket(
+                bucket_date=bucket_date,
+                bucket_start_utc=bucket_start_utc,
+                bucket_end_utc=bucket_end_utc,
+                spend=_round_money(float(aggregate["spend"])),
+                prompt_tokens=int(aggregate["prompt_tokens"]),
+                completion_tokens=int(aggregate["completion_tokens"]),
+                total_tokens=int(aggregate["total_tokens"]),
+            )
+        )
+    return items, budget_reset_at
+
+
+def _fetch_spend_buckets(
+    provider_client: ProviderClient,
+    *,
+    key_alias: str,
+    now: datetime,
+) -> tuple[list[DailyUsageBucket], datetime | None]:
     page = 1
     total_pages = 1
-    total_spend = Decimal("0")
-    prompt_tokens = 0
-    completion_tokens = 0
-    total_tokens = 0
     budget_reset_at: datetime | None = None
-    start_date, end_date = _build_utc_day_window(_now_utc())
+    start_at, end_at_exclusive = _build_rolling_window(now)
+    start_date = _format_provider_datetime(start_at)
+    end_date = _format_provider_datetime(end_at_exclusive - timedelta(seconds=1))
+    grouped: dict[date, DailyUsageBucket] = {}
 
     while page <= total_pages:
         payload = provider_client.list_spend_logs(
@@ -139,27 +217,60 @@ def _fetch_spend_snapshot(provider_client: ProviderClient, *, key_alias: str) ->
         )
         if not isinstance(payload, dict):
             raise ProviderUnavailableError("provider unavailable")
-        records = payload.get("data")
-        if not isinstance(records, list):
-            raise ProviderUnavailableError("provider unavailable")
         total_pages = int(payload.get("total_pages") or 1)
+        items, page_budget_reset_at = _build_daily_buckets(payload)
         if budget_reset_at is None:
-            budget_reset_at = _coerce_datetime(payload.get("budget_reset_at"))
-        for record in records:
-            if not isinstance(record, dict):
+            budget_reset_at = page_budget_reset_at
+        for item in items:
+            existing = grouped.get(item.bucket_date)
+            if existing is None:
+                grouped[item.bucket_date] = item
                 continue
-            if str(record.get("status") or "").strip().lower() != "success":
-                continue
-            try:
-                total_spend += Decimal(str(record.get("spend") or 0))
-            except Exception:  # noqa: BLE001
-                continue
-            prompt_tokens += _coerce_int(record.get("prompt_tokens"))
-            completion_tokens += _coerce_int(record.get("completion_tokens"))
-            total_tokens += _coerce_int(record.get("total_tokens"))
+            grouped[item.bucket_date] = DailyUsageBucket(
+                bucket_date=item.bucket_date,
+                bucket_start_utc=item.bucket_start_utc,
+                bucket_end_utc=item.bucket_end_utc,
+                spend=_round_money(existing.spend + item.spend),
+                prompt_tokens=existing.prompt_tokens + item.prompt_tokens,
+                completion_tokens=existing.completion_tokens + item.completion_tokens,
+                total_tokens=existing.total_tokens + item.total_tokens,
+            )
         page += 1
 
-    return _round_money(float(total_spend)), prompt_tokens, completion_tokens, total_tokens, budget_reset_at
+    return [grouped[key] for key in sorted(grouped.keys())], budget_reset_at
+
+
+def _upsert_daily_bucket(
+    *,
+    session,
+    key_id: str,
+    item: DailyUsageBucket,
+    budget_reset_at: datetime | None,
+    synced_at: datetime,
+) -> None:
+    existing = session.scalar(
+        select(ApiKeyUsageSnapshot).where(
+            ApiKeyUsageSnapshot.api_key_id == key_id,
+            ApiKeyUsageSnapshot.bucket_granularity == "day",
+            ApiKeyUsageSnapshot.bucket_start_utc == item.bucket_start_utc,
+        )
+    )
+    if existing is None:
+        existing = ApiKeyUsageSnapshot(
+            id=str(uuid4()),
+            api_key_id=key_id,
+            bucket_granularity="day",
+            bucket_start_utc=item.bucket_start_utc,
+            bucket_end_utc=item.bucket_end_utc,
+            created_at=synced_at,
+        )
+    existing.spend = item.spend
+    existing.prompt_tokens = item.prompt_tokens
+    existing.completion_tokens = item.completion_tokens
+    existing.total_tokens = item.total_tokens
+    existing.budget_reset_at = budget_reset_at
+    existing.synced_at = synced_at
+    session.add(existing)
 
 
 def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = None) -> int:
@@ -172,9 +283,10 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
     updated = 0
     for candidate in candidates:
         try:
-            spend, prompt_tokens, completion_tokens, total_tokens, budget_reset_at = _fetch_spend_snapshot(
+            daily_buckets, budget_reset_at = _fetch_spend_buckets(
                 provider_client,
                 key_alias=candidate.key_alias,
+                now=now,
             )
         except (ProviderUnavailableError, ProviderBadRequestError) as exc:
             if logger is not None:
@@ -186,27 +298,23 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
                 )
             continue
 
+        latest_bucket = daily_buckets[-1] if daily_buckets else None
         with SessionLocal() as session:
-            session.add(
-                ApiKeyUsageSnapshot(
-                    id=str(uuid4()),
-                    api_key_id=candidate.key_id,
-                    spend=spend,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    total_tokens=total_tokens,
+            for bucket in daily_buckets:
+                _upsert_daily_bucket(
+                    session=session,
+                    key_id=candidate.key_id,
+                    item=bucket,
                     budget_reset_at=budget_reset_at,
                     synced_at=now,
-                    created_at=now,
                 )
-            )
             session.execute(
                 update(ApiKey)
                 .where(ApiKey.id == candidate.key_id)
                 .values(
-                    usage_spend=spend,
-                    usage_budget_reset_at=budget_reset_at,
-                    usage_synced_at=now,
+                    usage_spend=latest_bucket.spend if latest_bucket is not None else None,
+                    usage_budget_reset_at=budget_reset_at if latest_bucket is not None else None,
+                    usage_synced_at=now if latest_bucket is not None else None,
                 )
             )
             session.commit()

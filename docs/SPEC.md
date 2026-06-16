@@ -80,7 +80,7 @@
 - 第一版 Python 範例內容需參考既有測試腳本 `../AI-Api-test/afs_chat_completions.py`，但畫面不得依賴 repo 外檔案；需將可顯示版本收斂並維護在 repo 內文件。
 - 第一版 Python 範例需至少涵蓋：
   - 以環境變數讀取 `API_KEY`、`BASE_URL`
-  - 呼叫 `POST /chat/completions`
+  - 呼叫 `POST /v1/chat/completions`
   - 使用 `Authorization: Bearer <API_KEY>`
   - payload 至少包含 `model`、`messages`
   - 由 response `choices[0].message.content` 取出回應內容
@@ -154,12 +154,31 @@
 - 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示系統產生 alias（初始為 `for_{owner_account}`，若 provider 回報衝突則自動改為 `for_{owner_account}_vN`）。管理者手動輸入時僅允許中英文、數字、`_`、`-`、`、`，不得包含空白或其他符號。
 - 操作：
   - 對 `active` key 顯示「停用」與「展延（extend）」按鈕。
-  - 對 `expired` key 顯示「展延（extend）」按鈕（icon + 文字）。
+  - 對 `expired` key 顯示「續發（renew）」按鈕（icon + 文字）。
   - 對 `revoked` key 顯示「續發（renew）」按鈕（icon + 文字）。
-  - `active|expired` key 一律顯示展延按鈕；前端不得再以「距離到期 30 天內」作為顯示或送出限制。
+  - `active` key 一律顯示展延按鈕；前端不得再以「距離到期 30 天內」作為顯示或送出限制。
   - extend 需以確認 Dialog 送出，不再提供 `duration_days` 選單；每次 extend 一律沿用該 key 的 `original_duration_days` 作為本次展延基數。
   - renew 會建立新 key，來源 key 對 `user` 列表需隱藏。
   - extend 會沿用原 key，只延長有效期限。
+
+### 3-1) Usage Page（API Key 使用量頁）
+- 正式路由為 `/usage`。
+- `user` 與 `admin` 都可使用。
+- 進頁後需先選擇一把 API Key，才可載入使用量圖表。
+- `user` 僅可從自己的 keys 中選擇；`admin` 可選擇任意 key。
+- 頁面需提供可自訂的日期區間查詢，查詢口徑以 `Asia/Taipei` 的日曆日為準。
+- 進入 `/usage` 頁時，日期區間預設為以 `Asia/Taipei` 計算的最近 `7` 個日曆日（含當日），日期欄位不得顯示為空。
+- 日期區間 picker 需提供快捷選日按鈕：`最近 7 日`、`最近 14 日`、`最近一個月`，點擊後需立即套用對應區間。
+- 第一版圖表僅支援 `day` 粒度，不提供小時圖或其他 bucket 粒度切換。
+- 主圖表指標固定為 `total_tokens` 的每日趨勢。
+- 圖表 X 軸需對齊查詢日期區間的完整日曆日；前端可將缺資料日期補為 `null` bucket 以維持日期連續性，但不得補成 `0` 形成假用量。
+- 當查詢區間超過 `31` 個日曆日時，主圖預設僅顯示自 `from` 起算的前 `31` 天視窗，並提供底部日期區間 slider；slider 視窗最大為 `31` 天、最小為 `1` 天，使用者可縮小顯示區間，且縮小後仍可整段左右平移瀏覽整個查詢範圍。
+- slider 互動需區分：拖曳 `start/end` thumb 用於調整開始/結束日期；拖曳中間已選取區塊（track）則以目前區間長度整段平移。
+- slider 兩端的開始/結束日期 label 需完整可見，不得被卡片或畫面邊界裁切。
+- 每個資料點的 tooltip 至少需顯示：`prompt_tokens`、`completion_tokens`、`total_tokens`、`spend`。
+- 頁面需提供 Loading、Empty、Error（含 Retry）狀態。
+- 若查詢區間內無資料，需顯示空狀態，不得以 `0` 補滿整段日期區間形成假資料。
+- 前端查圖資料需使用既有後端 API，不新增前端自行聚合 provider logs 的流程。
 
 ### 4) API Key Detail Dialog（詳情視窗）
 - 顯示完整申請資訊與狀態。
@@ -307,7 +326,8 @@
 - API Key 明文只顯示一次
 - 系統儲存 `key_hash` 與加密密文（`key_ciphertext`），不直接儲存明文
 - API Key lifecycle 採 `External SoT + Encrypted Local Secret`：`applications/create`、`renew`、`extend`、`revoke` 皆以 provider 結果為主，本地僅於 provider 成功後同步狀態
-- `active|expired` key 皆可隨時展延；`revoked` key 不可展延
+- `renew` 允許 `revoked|expired` key；`active` key 不可 renew
+- `active` key 可隨時展延；`expired|revoked` key 不可展延
 - 一般使用者可查看本人全部申請紀錄
 - 一般使用者查詢時 API Key 必須遮罩顯示
 - 一般使用者可自行停用本人已生效 key（軟停用）
@@ -653,8 +673,10 @@ Base path：`/main/api/v1`
 - 查詢模式：此端點為 `server-side table` contract，前端欄位排序、分頁與篩選都必須由此端點對完整資料集處理。
 - 到期口徑：`expires_at` 早於查詢當下（UTC）且原始狀態為 `active` 時，API 對外狀態需視為 `expired`（即使 DB 原始欄位尚未同步更新）。
 - Usage summary 與 health status 需使用本地週期性同步/快取資料；此列表端點不得對每列即時呼叫外部 provider 取 usage。
-- usage snapshot 需落地保存於獨立歷史表 `api_key_usage_snapshots`；`GET /main/api/v1/api-keys` 與相關健康度判定一律以每把 key 最新一筆 snapshot 為準，不得依賴前端即時查 provider。
-- usage snapshot 歷史表最少需保存：`api_key_id`、`spend`、`prompt_tokens`、`completion_tokens`、`total_tokens`、`budget_reset_at`、`synced_at`；既有 `api_keys.usage_*` 欄位可作為最新快取鏡像，但不得作為唯一歷史來源。
+- usage 歷史資料需落地保存於獨立表 `api_key_usage_snapshots`，作為 `/usage` 與 `GET /main/api/v1/api-keys/usage-series` 的每日聚合歷史來源。
+- `api_key_usage_snapshots` 最少需保存：`api_key_id`、`bucket_granularity`、`bucket_start_utc`、`bucket_end_utc`、`spend`、`prompt_tokens`、`completion_tokens`、`total_tokens`、`budget_reset_at`、`synced_at`。
+- `api_key_usage_snapshots` 第一版固定只寫入 `bucket_granularity=day` 的資料，且需以 `(api_key_id, bucket_granularity, bucket_start_utc)` 維持唯一性。
+- 既有 `api_keys.usage_*` 欄位保留作為最新快取鏡像，持續提供 `GET /main/api/v1/api-keys` 的 `usage_summary` 與 `health_status`；歷史圖表不得直接讀 `api_keys.usage_*`。
 - usage 同步以 `key_alias` 作為 provider `/spend/logs/v2` 查詢鍵；若本地 `key_alias` 為空，需以系統預設 alias `for_{owner_account}` 查詢。
 - usage 同步時僅累計 provider spend logs 中 `status=success` 的紀錄；`failure` 紀錄不得計入 `spend`。
 - usage 同步排程預設每 `5` 分鐘執行一次，僅同步目前 `active` keys；若 provider 查詢失敗，不得中斷其他 keys 的同步。
@@ -714,7 +736,44 @@ Base path：`/main/api/v1`
   - `healthy`：其餘已可判定的情況；`max_budget=0`（unlimited）且 snapshot 存在時也屬於 `healthy`
 - `total` 定義為符合目前篩選條件的總筆數（非當頁 `items` 長度）。
 
-### 2-1) 查詢每位使用者 API Key 申請統計（Admin Dashboard）
+### 2-1) 查詢 API Key 使用量時序
+- `GET /main/api/v1/api-keys/usage-series`
+- 規則：`user` 僅可查本人 key；`admin` 可查任意 key；不得回傳明文 key。
+- Query：`key_id`, `granularity`, `from`, `to`
+  - `key_id` 必填。
+  - `granularity` 必填，第一版僅允許 `day`。
+  - `from`、`to` 必填，格式為 `YYYY-MM-DD`，代表 `Asia/Taipei` 日曆日區間。
+  - `from` 不得晚於 `to`；若參數格式錯誤、缺值、granularity 不合法，回傳 `422 VALIDATION_ERROR`。
+- 時間語意：
+  - DB bucket 一律以 UTC 欄位 `bucket_start_utc`、`bucket_end_utc` 儲存。
+  - 查詢區間與畫面日期標籤一律以 `Asia/Taipei` 的日曆日解讀。
+  - 後端需正確處理 Taipei 日期跨 UTC 換日的情況，不得因 UTC 分界將同一 Taipei 日拆成兩天。
+- Response（200）：
+```json
+{
+  "key_id": "...",
+  "granularity": "day",
+  "from": "2026-06-01",
+  "to": "2026-06-30",
+  "items": [
+    {
+      "bucket_start": "2026-06-01T00:00:00+08:00",
+      "bucket_label": "2026-06-01",
+      "prompt_tokens": 1000,
+      "completion_tokens": 500,
+      "total_tokens": 1500,
+      "spend": 1.25
+    }
+  ]
+}
+```
+- `items` 僅回傳實際有資料的 bucket；若查詢區間無資料，回傳空陣列，不以前端或後端補零。
+- 錯誤回應：
+  - `403 FORBIDDEN` / `KEY_NOT_OWNED_BY_USER`：使用者不可查他人 key
+  - `404 VALIDATION_ERROR`：key 不存在
+  - `422 VALIDATION_ERROR`：查詢參數不合法
+
+### 2-2) 查詢每位使用者 API Key 申請統計（Admin Dashboard）
 - `GET /main/api/v1/api-keys/statistics/users`
 - 規則：僅 `admin` 可使用；回傳為申請人維度聚合結果，不得包含明文 key。
 - 查詢模式：此端點為 `server-side table` contract；表格分頁、排序、欄位篩選與圖表口徑都必須以此端點回傳為準。
@@ -771,33 +830,35 @@ Base path：`/main/api/v1`
 - 稽核與維運：排程需輸出執行時間、更新筆數、錯誤訊息，供維運追蹤。
 
 ### 3-2) 背景同步（API Key Usage Snapshot）
-- 目的：週期性自 provider `/spend/logs/v2` 同步每把 `active` API Key 的最新 usage snapshot，供列表 `Usage` / `Health` 顯示使用。
+- 目的：週期性自 provider `/spend/logs/v2` 同步每把 `active` API Key 的最新 usage 快取與每日 bucket 歷史，供列表 `Usage` / `Health` 與 `/usage` 圖表共同使用。
 - 查詢鍵：以本地 `key_alias` 查 provider；若本地未存 alias，需以系統預設 alias `for_{owner_account}` 查詢。
-- 查詢時間窗：每次同步僅查 UTC 當日 `00:00:00` 到 `23:59:59` 的 spend logs，並需對 provider 一併帶 `start_date`、`end_date`；格式固定為 `YYYY-MM-DD HH:MM:SS`。
-- 聚合規則：只累計 `status=success` 的 spend logs；`spend` 為同一 alias 目前查詢範圍內成功紀錄的加總。`failure` logs 僅供維運排查，不得寫入 usage snapshot。
+- 查詢時間窗：每次同步需抓取最近 `30` 天的 rolling window，並需對 provider 一併帶 `start_date`、`end_date`；格式固定為 `YYYY-MM-DD HH:MM:SS`。
+- 聚合規則：只累計 `status=success` 的 spend logs；需先依 `Asia/Taipei` 日曆日聚合後，再寫入對應的 daily bucket。`failure` logs 僅供維運排查，不得寫入 usage snapshot。
 - token 聚合規則：`prompt_tokens`、`completion_tokens`、`total_tokens` 皆只累計 `status=success` 的 spend logs；若單筆 log 缺少個別 token 欄位，該欄位以 `0` 累計，不得因缺欄中止整把 key 的 snapshot 寫入。
-- 落地規則：每次同步都需寫入 `api_key_usage_snapshots` 新歷史列，並可同步覆寫 `api_keys.usage_spend`、`usage_budget_reset_at`、`usage_synced_at` 作為最新快取鏡像。
-- 最新值規則：對外 API 讀取 usage 時，需以 `api_key_usage_snapshots` 中該 key `synced_at` 最新的一筆為準；若無歷史列，才可 fallback 既有 `api_keys.usage_*` 欄位。
+- 落地規則：每次同步需對 rolling window 內各日 bucket 做 upsert；同一天 bucket 允許後續同步覆寫更新，不得重複插入相同 `(api_key_id, bucket_granularity, bucket_start_utc)`。
+- 最新快取規則：同步完成後，需同步覆寫 `api_keys.usage_spend`、`usage_budget_reset_at`、`usage_synced_at` 作為列表與 health 的最新快取鏡像。
+- 歷史值規則：`GET /main/api/v1/api-keys/usage-series` 一律讀取 `api_key_usage_snapshots` 的 daily bucket 歷史；`GET /main/api/v1/api-keys` 則使用 `api_keys.usage_*` 快取鏡像與目前 limit strategy config 組成 `usage_summary`。
 - 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每 `5` 分鐘執行一次。
 - 容錯：
   - 單把 key provider 查詢失敗時，需記錄錯誤並繼續同步其他 keys。
-  - 若某把 key 查無 spend logs，仍需寫入 `synced_at` 對應的 snapshot，`spend` 可為 `0`，`budget_reset_at` 可為 `null`。
-  - provider timeout、5xx、payload 無法辨識時，不得覆蓋該 key 既有最新成功 snapshot。
+  - 若某把 key 在 rolling window 內查無 spend logs，既有 daily bucket 不需補造假資料；但最新快取可更新 `synced_at`，`spend` 可為 `0`，`budget_reset_at` 可為 `null`。
+  - provider timeout、5xx、payload 無法辨識時，不得覆蓋該 key 既有成功 daily bucket 或最新快取鏡像。
+  - 非 `active` key 不再同步新的 usage bucket，但既有歷史資料需保留供查詢。
 - 稽核與維運：排程需輸出執行時間、處理 key 數、成功/失敗 key 數、寫入 snapshot 筆數與錯誤訊息，供維運追蹤。
 
 ### 4) 停用 API Key
 - `POST /main/api/v1/api-keys/{id}/revoke`
 - 規則：
   - `user` 僅可停用本人 `active` key；`admin` 可停用任意 `active` key。
-  - revoke 對應 provider `block`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
-  - 呼叫 provider `block` 時，request body 需以 `key` 欄位傳送舊明文 key。
-  - provider `block` 成功後，才可將本地 `api_keys.status` 與對應 `api_key_applications.status` 同步為 `revoked`。
+  - revoke 對應 provider `delete`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
+  - 呼叫 provider `delete` 時，request body 需以 `key` 欄位傳送舊明文 key。
+  - provider `delete` 成功後，才可將本地 `api_keys.status` 與對應 `api_key_applications.status` 同步為 `revoked`。
   - provider timeout / 5xx / 明確拒絕、缺少密文、或解密失敗時，本地不得先標記為 `revoked`。
 
 ### 4-2) 續發（Renew）API Key
 - `POST /main/api/v1/api-keys/{id}/renew`
 - 規則：
-  - `user` 僅可續發本人 `revoked` key；`admin` 可續發任意 `revoked` key。
+  - `user` 僅可續發本人 `revoked|expired` key；`admin` 可續發任意 `revoked|expired` key。
   - renew 對應 provider `generate`；前端不得提供舊明文 key，後端也不得依賴來源 key 的 `key_ciphertext` 或舊 key 明文。
   - 呼叫 provider `generate` 時，request body 沿用 applications create 的 `generate` wire format，且必須包含 `team_id`；payload 不得包含 `key`。
   - renew 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫入新 key。
@@ -815,12 +876,12 @@ Base path：`/main/api/v1`
 {}
 ```
 - 規則：
-  - `user` 僅可展延本人 `active|expired` key；`admin` 可展延任意 `active|expired` key。
+  - `user` 僅可展延本人 `active` key；`admin` 可展延任意 `active` key。
   - extend request 不再接收 `duration_days`；每次 extend 一律沿用該 key 初次核發時保存的 `original_duration_days` 作為本次展延時長。
   - extend 成功後，讀取 API 的 `application_date` 需改為本次展延當日；`duration_days` 一律設為 `original_duration_days`，代表目前這一輪有效期時長。
-  - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
+  - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired`，並以 `KEY_NOT_EXTENDABLE` 拒絕展延。
   - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
-  - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format；`duration` 需送「從 `api_keys.created_at` 起算到新 `expires_at` 的總天數」，provider 請求仍需以 `"{provider_duration_days}d"` 傳送。
+  - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format；`duration` 一律直接送 `original_duration_days` 對應的 `30d|180d|360d`，不得再依 `api_keys.created_at` 累算總天數。
   - extend 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫回原 key。
   - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`）；新的 `expires_at` 一律以本次展延當日重新起算：`new_expires_at = application_date + original_duration_days`，不得累加先前展延時長，也不得使用剩餘天數補差。
   - extend 成功後，後續到期提醒需以新的 `expires_at` 重新啟動完整 `30|14|7|3|1` 通知週期。
@@ -1147,7 +1208,7 @@ Base path：`/main/api/v1`
 14. 若 provider timeout/5xx、明確拒絕、缺少密文材料、解密失敗或回應不完整，本地不得先改動狀態或有效期限，並需回傳對應錯誤。
 15. 若部署使用 local provider adapter 作為開發/測試替身，仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
 16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_parallel_requests`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_days(30|180|360)` 需映射為 `30d|180d|360d`，本地 `expires_at` 也需使用相同的 `30|180|360` 天 fixed-day 規則計算，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 與 `max_parallel_requests` 需送 `null`，且不得送 `models` 或 `budget_limits`。
-17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`update` 用於 extend 或 alias 同步時可帶 `key_alias`，且 `duration` 一律需與當前 key 的目標有效期一致：對 extend 與 alias 同步都需送「從 `api_keys.created_at` 起算到目標 `expires_at` 的總天數」；本地 `application_date` 仍需在 extend 成功後改寫為本次展延當日，供 UI 顯示目前這一輪有效期；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
+17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`delete` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`update` 用於 extend 或 alias 同步時可帶 `key_alias`，且 `duration` 一律直接送當次展延基數 `30d|180d|360d`，不得再依 `api_keys.created_at` 累算總天數；本地 `application_date` 仍需在 extend 成功後改寫為本次展延當日，供 UI 顯示目前這一輪有效期；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
 18. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 
 ### Key 查詢、狀態與 Lifecycle 權限
@@ -1158,13 +1219,13 @@ Base path：`/main/api/v1`
 22. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 的到期口徑需以 `expires_at` 即時計算；原始狀態為 `active` 且已過期者，對外需顯示為 `expired`。
 23. 即使 expired 回填排程停用或失敗，清單、詳情與統計 API 仍需依 effective status 正確呈現 `expired`；回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked`。
 24. 一般使用者可停用本人 `active` key；停用非本人 key 時需回傳 `KEY_NOT_OWNED_BY_USER` / `403`，停用非 `active` key 時需回傳 `KEY_NOT_ACTIVE`。
-25. 一般使用者僅可續發本人 `revoked` key；續發 `active|expired` key 時需回傳 `KEY_NOT_RENEWABLE`，且同一把舊 key 不得重複續發，重複續發需回傳 `KEY_ALREADY_RENEWED`。
-26. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時需回傳 `KEY_NOT_EXTENDABLE`。`active|expired` key 皆可隨時展延。extend 成功後：
+25. 一般使用者僅可續發本人 `revoked|expired` key；續發 `active` key 時需回傳 `KEY_NOT_RENEWABLE`，且同一把舊 key 不得重複續發，重複續發需回傳 `KEY_ALREADY_RENEWED`。
+26. 一般使用者僅可展延本人 `active` key；展延 `revoked|expired` key 時需回傳 `KEY_NOT_EXTENDABLE`。`active` key 可隨時展延。extend 成功後：
   - `application_date` 一律同步改寫為展延當日，代表最新一輪有效期起算日。
   - `duration_days` 一律重置為 `original_duration_days`，代表目前這一輪有效期時長，不做累加。
   - extend request 不再由使用者選擇天數；每次展延固定沿用該 key 的 `original_duration_days`。
   - `expires_at` 一律以展延當日重新起算：`new_expires_at = application_date + original_duration_days`。
-  - provider `duration` 需送從 `api_keys.created_at` 到新 `expires_at` 的總天數，不得直接等同本地 `duration_days`，也不得再使用 `remaining_days` 模型。
+  - provider `duration` 一律直接送 `original_duration_days` 對應的 `30d|180d|360d`，不得再使用 `api_keys.created_at` 累算總天數，也不得使用 `remaining_days` 模型。
 27. `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm`、`max_parallel_requests` 僅接受 ASCII `0-9`；非數字字元、空字串、科學記號、小數、負號、全形數字與混合字串不得通過前端送出，也不得通過後端 API 驗證。
 28. whitelist `note` 需可正常輸入與儲存中英文混合內容，且中文輸入法組字不得被前端驗證破壞；允許空白、`_`、`-`、`、`，但若內容包含明顯程式語法，或含上述以外特殊符號（例如 `.`, `@`, `/`, `<`, `>`），前後端都需拒絕。
 29. `key_alias` 僅允許中英文、數字、`_`、`-`、`、`；若包含空白、其他特殊符號，或明顯程式語法，前端需阻擋儲存，後端直接打 API 時需回傳 `422 VALIDATION_ERROR`。
@@ -1222,10 +1283,15 @@ Base path：`/main/api/v1`
 63. 對所有 `server-side table` 頁面，前端 DataGrid 欄位篩選不得只作用於當前頁 rows；`items`、`total`、頁數、排序與篩選結果都必須來自完整資料集的後端查詢。
 64. `GET /main/api/v1/api-keys` 的 `owner_account`、`owner_name`、`key_alias` 篩選需採 case-insensitive `contains`；`application_date_from/application_date_to` 與 `expires_from/expires_to` 需分別正確套用到 `application_date` 與 `expires_at`；`sort_by/sort_dir` 僅允許既定白名單欄位與 `asc|desc`。
 65. `GET /main/api/v1/api-keys/statistics/users` 的 `q` 僅作全域搜尋；`owner_account`、`owner_name`、`owner_email`、`owner_department` 欄位篩選需彼此獨立且採 case-insensitive `contains`；切換圖表與表格視圖時查詢口徑需保持一致。
-65A. `GET /main/api/v1/api-keys` 每筆資料需回傳 `health_status` 與 `usage_summary`；`health_status` 僅允許 `healthy|low_budget|exhausted|unknown`，且需由後端依 snapshot 與額度計算，不得要求前端自行重算。
+65A. `GET /main/api/v1/api-keys` 每筆資料需回傳 `health_status` 與 `usage_summary`；`health_status` 僅允許 `healthy|low_budget|exhausted|unknown`，且需由後端依 `api_keys.usage_*` 最新快取與額度計算，不得要求前端自行重算。
 65B. `usage_summary.remaining_budget` 不得為負值；`max_budget=0`、`tpm_limit=0`、`rpm_limit=0` 代表 unlimited，對外仍維持 `0`，由前端顯示 `Unlimited`。
 65C. `GET /main/api/v1/api-keys` 缺少 usage snapshot 時，`health_status` 需回傳 `unknown`，`usage_summary.synced_at` 需為 `null`，但前端仍需保留可開啟的 Usage popover。
 65D. `GET /main/api/v1/api-keys` 的 `usage_summary.max_budget`、`usage_summary.tpm_limit`、`usage_summary.rpm_limit`、`usage_summary.max_parallel_requests` 必須回傳目前金鑰管理（limit strategy config）設定值，不得沿用個別 key 歷史申請當下的快照值；更新全域金鑰條件後，列表端點下一次讀取即需反映新值，不得等待 usage sync 排程。
+65E. `GET /main/api/v1/api-keys/usage-series` 僅允許 `granularity=day`，且需依 `Asia/Taipei` 日曆日回傳每日 token/spend 聚合；DB 內部 UTC bucket 與前端日期語意不得互相衝突。
+65F. `api_key_usage_snapshots` 需作為正式 daily usage 歷史來源；同一 `(api_key_id, bucket_granularity, bucket_start_utc)` 只允許一筆有效 bucket，rolling window 重抓時需覆寫既有 bucket，不得產生重複列。
+65G. `/usage` 頁需允許 `user` 與 `admin` 依 key + 日期區間查看每日使用量；初始日期區間預設為以 `Asia/Taipei` 計算的最近 `7` 個日曆日（含當日）且欄位不得為空，並需提供 `最近 7 日`、`最近 14 日`、`最近一個月` 快捷選日按鈕；主圖表指標為 `total_tokens`，tooltip 至少顯示 `prompt_tokens`、`completion_tokens`、`total_tokens`、`spend`，且無資料時需回空狀態而非偽造零值資料。
+65H. `/usage` 頁在日期區間超過 `31` 個日曆日時，X 軸仍需對齊完整日期區間且缺資料日不得補 `0`；主圖預設顯示 `31` 天視窗，並提供底部 slider 讓使用者以 `1..31` 天的範圍調整主圖區間，且調整後仍可左右平移瀏覽整段區間。
+65I. `/usage` 頁底部 slider 的開始/結束日期 label 在常見桌機與手機寬度下需完整可見，不得因 slider 寬度或端點對齊而被裁切。
 66. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 需支援欄位級 server-side sorting/filtering；若某欄位未支援後端 query contract，對應前端欄位必須禁用 filter 或 sort，不得回退成 local table 行為。
 67. 關鍵操作稽核功能、申請人識別欄位調整、統計、`GET /main/api/v1/models` 與 lifecycle 擴充，均不得改動既有受保護 API 路徑與角色模型（`user|admin`）；若需擴充對外 error response，僅允許增加相容性的 optional 欄位（如 `error.details`），不得破壞既有 `error.code` / `error.message` 契約或既有 success response shape。
 
