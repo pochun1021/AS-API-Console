@@ -5,6 +5,7 @@ import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { LocaleProvider, useLocale } from "../i18n/locale";
 import UsagePage, {
@@ -12,6 +13,7 @@ import UsagePage, {
   buildUsageChartDays,
   buildUsageWindow,
   clampVisibleWindow,
+  defaultDateRange,
   formatUsageTooltip,
   resolveVisibleWindowChange,
   shiftVisibleWindow,
@@ -48,6 +50,7 @@ function renderPage(ui, { locale = "zh-TW" } = {}) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -89,6 +92,36 @@ describe("UsagePage", () => {
     expect(await screen.findByText("每日 total_tokens")).toBeInTheDocument();
     expect(container.querySelectorAll(".MuiChartsAxis-tickLabel").length).toBeGreaterThan(0);
     expect(screen.queryAllByRole("slider")).toHaveLength(0);
+  });
+
+  test("uses a non-empty local default date range on first render", async () => {
+    const listKeysSpy = vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({ items: [] });
+
+    renderPage(<UsagePage auth={auth} />);
+
+    const expectedRange = defaultDateRange();
+    expect(expectedRange.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(expectedRange.to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(dayjs(expectedRange.to).diff(dayjs(expectedRange.from), "day")).toBe(6);
+    expect(screen.getByLabelText("日期區間")).toHaveValue(`${expectedRange.from} - ${expectedRange.to}`);
+    await waitFor(() => expect(listKeysSpy).toHaveBeenCalled());
+  });
+
+  test("shows usage quick range shortcuts and applies the selected range", async () => {
+    vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({ items: [] });
+    const user = userEvent.setup();
+
+    renderPage(<UsagePage auth={auth} />);
+
+    await user.click(screen.getByLabelText("日期區間"));
+    expect(await screen.findByRole("button", { name: "最近7日" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "最近14日" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "最近一個月" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "最近7日" }));
+    const expectedTo = dayjs().format("YYYY-MM-DD");
+    const expectedFrom = dayjs().subtract(6, "day").format("YYYY-MM-DD");
+    expect(screen.getByLabelText("日期區間")).toHaveValue(`${expectedFrom} - ${expectedTo}`);
   });
 
   test("shows error and retry flow for usage series", async () => {

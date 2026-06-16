@@ -11,13 +11,21 @@ import { useLocale } from "../i18n/locale";
 const MAX_VISIBLE_DAYS = 31;
 const PAN_HIT_GAP_PX = 18;
 
-function defaultDateRange() {
-  const today = new Date();
-  const start = new Date(today);
-  start.setDate(today.getDate() - 29);
+export function defaultDateRange() {
+  const today = dayjs();
+  const start = today.subtract(6, "day");
   return {
-    from: start.toISOString().slice(0, 10),
-    to: today.toISOString().slice(0, 10),
+    from: start.format("YYYY-MM-DD"),
+    to: today.format("YYYY-MM-DD"),
+  };
+}
+
+function buildTrailingDateRange(days) {
+  const safeDays = Math.max(Number(days) || 1, 1);
+  const today = dayjs();
+  return {
+    from: today.subtract(safeDays - 1, "day").format("YYYY-MM-DD"),
+    to: today.format("YYYY-MM-DD"),
   };
 }
 
@@ -244,6 +252,14 @@ export default function UsagePage({ auth }) {
     () => keys.find((item) => item.id === selectedKeyId) || null,
     [keys, selectedKeyId]
   );
+  const usageQuickRanges = useMemo(
+    () => [
+      { label: t("usage_quick_range_7_days"), getRange: () => buildTrailingDateRange(7) },
+      { label: t("usage_quick_range_14_days"), getRange: () => buildTrailingDateRange(14) },
+      { label: t("usage_quick_range_30_days"), getRange: () => buildTrailingDateRange(30) },
+    ],
+    [t]
+  );
   const panOverlayMetrics = useMemo(
     () => buildPanOverlayMetrics(visibleWindow, chartDays.length),
     [visibleWindow, chartDays.length]
@@ -377,6 +393,7 @@ export default function UsagePage({ auth }) {
               clearLabel={t("common_clear")}
               closeLabel={t("common_close")}
               minWidth={280}
+              quickRanges={usageQuickRanges}
             />
             <Box sx={{ display: "flex", justifyContent: { xs: "flex-start", lg: "flex-end" }, flex: 1 }}>
               <Button
