@@ -4,24 +4,13 @@ const today = new Date().toISOString().slice(0, 10);
 const daysFromNow = (days) => new Date(Date.now() + 1000 * 60 * 60 * 24 * days).toISOString();
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
-function fixedDurationDays(durationDays) {
-  return Number(durationDays);
-}
-
 function startOfUtcDay(value) {
   const dt = value instanceof Date ? new Date(value) : new Date(value);
   return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()));
 }
 
-function providerDurationDaysFromCreatedAt(createdAt, extendAt, originalDurationDays) {
-  const createdDay = startOfUtcDay(createdAt);
-  const extendDay = startOfUtcDay(extendAt);
-  const elapsedDays = Math.max(0, Math.round((extendDay.getTime() - createdDay.getTime()) / MS_PER_DAY));
-  return elapsedDays + fixedDurationDays(originalDurationDays);
-}
-
-function expiresAtFromProviderDuration(createdAt, durationDays) {
-  const expires = startOfUtcDay(createdAt);
+function expiresAtFromApplicationDate(applicationDate, durationDays) {
+  const expires = startOfUtcDay(`${applicationDate}T00:00:00.000Z`);
   expires.setUTCDate(expires.getUTCDate() + durationDays);
   return expires.toISOString();
 }
@@ -1013,8 +1002,8 @@ export const mockApiProvider = {
     if (auth.role !== "admin" && target.owner_account !== auth.account) {
       throw createError("KEY_NOT_OWNED_BY_USER", "key is not owned by user", 403);
     }
-    if (target.status !== "revoked") {
-      throw createError("KEY_NOT_RENEWABLE", "only revoked key can be renewed", 409);
+    if (!["revoked", "expired"].includes(target.status)) {
+      throw createError("KEY_NOT_RENEWABLE", "only revoked or expired key can be renewed", 409);
     }
     if (target.renewed_to_key_id) {
       throw createError("KEY_ALREADY_RENEWED", "key already renewed", 409);
@@ -1065,8 +1054,8 @@ export const mockApiProvider = {
     if (auth.role !== "admin" && target.owner_account !== auth.account) {
       throw createError("KEY_NOT_OWNED_BY_USER", "key is not owned by user", 403);
     }
-    if (!["active", "expired"].includes(target.status)) {
-      throw createError("KEY_NOT_EXTENDABLE", "only active or expired key can be extended", 409);
+    if (target.status !== "active") {
+      throw createError("KEY_NOT_EXTENDABLE", "only active key can be extended", 409);
     }
     if (target.renewed_to_key_id) {
       throw createError("KEY_ALREADY_RENEWED", "key already renewed", 409);
@@ -1074,11 +1063,10 @@ export const mockApiProvider = {
 
     const originalDurationDays = Number(target.original_duration_days ?? target.duration_days);
     const now = new Date();
-    const totalDurationDays = providerDurationDaysFromCreatedAt(target.created_at, now, originalDurationDays);
     target.original_duration_days = originalDurationDays;
     target.application_date = now.toISOString().slice(0, 10);
     target.duration_days = originalDurationDays;
-    target.expires_at = expiresAtFromProviderDuration(target.created_at, totalDurationDays);
+    target.expires_at = expiresAtFromApplicationDate(target.application_date, originalDurationDays);
     target.status = "active";
     target.expiration_notice_sent_at = null;
 
