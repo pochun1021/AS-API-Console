@@ -16,7 +16,7 @@
 1. 先在系統中申請 API Key。
 2. 申請成功後立即保存一次性顯示的明文 API Key。
 3. 將 `API_KEY` 與 `BASE_URL` 設定到執行環境，其中 `BASE_URL` 為 `https://api.ascs.sinica.edu.tw`。
-4. 使用 `Authorization: Bearer <API_KEY>` 呼叫 `POST /chat/completions`。
+4. 使用 `Authorization: Bearer <API_KEY>` 呼叫 `POST /v1/chat/completions`。
 5. 從回應中的 `choices[0].message.content` 讀取模型回答。
 
 ## Python 範例
@@ -35,7 +35,7 @@ BASE_URL = os.getenv("BASE_URL")
 
 
 def chat_with_model(prompt, model_name="gemma-4-31B-it"):
-    url = f"{BASE_URL}/chat/completions"
+    url = f"{BASE_URL}/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",

@@ -80,7 +80,7 @@
 - 第一版 Python 範例內容需參考既有測試腳本 `../AI-Api-test/afs_chat_completions.py`，但畫面不得依賴 repo 外檔案；需將可顯示版本收斂並維護在 repo 內文件。
 - 第一版 Python 範例需至少涵蓋：
   - 以環境變數讀取 `API_KEY`、`BASE_URL`
-  - 呼叫 `POST /chat/completions`
+  - 呼叫 `POST /v1/chat/completions`
   - 使用 `Authorization: Bearer <API_KEY>`
   - payload 至少包含 `model`、`messages`
   - 由 response `choices[0].message.content` 取出回應內容
