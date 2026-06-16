@@ -8,12 +8,8 @@ from threading import Thread
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-try:
-    from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
-except ModuleNotFoundError:  # pragma: no cover - dependency guard for environments not yet synced
-    ConnectionConfig = FastMail = MessageSchema = MessageType = None  # type: ignore[assignment]
-
 from app.core.config import get_settings
+from app.services.smtp_delivery import SMTPDeliveryConfig, send_html_message
 
 MAIL_DISPLAY_TZ = ZoneInfo("Asia/Taipei")
 MAIL_FROM_ADDRESS = "noreply@as.edu.tw"
@@ -50,30 +46,20 @@ class MailService:
     async def _send_html(self, *, subject: str, recipients: list[str], body: str) -> None:
         if not self.is_enabled():
             return
-        if ConnectionConfig is None:
-            raise RuntimeError("fastapi-mail is not installed")
         username, password, use_credentials = self._mail_credentials()
 
-        conf = ConnectionConfig(
-            MAIL_USERNAME=username,
-            MAIL_PASSWORD=password,
-            MAIL_FROM=MAIL_FROM_ADDRESS,
-            MAIL_FROM_NAME=self.settings.mail_from_name,
-            MAIL_PORT=self.settings.mail_port,
-            MAIL_SERVER=self.settings.mail_server,
-            MAIL_STARTTLS=self.settings.mail_starttls,
-            MAIL_SSL_TLS=self.settings.mail_ssl_tls,
-            USE_CREDENTIALS=use_credentials,
-            VALIDATE_CERTS=self.settings.mail_validate_certs,
+        config = SMTPDeliveryConfig(
+            host=self.settings.mail_server or "",
+            port=self.settings.mail_port,
+            from_email=MAIL_FROM_ADDRESS,
+            from_name=self.settings.mail_from_name,
+            username=username if use_credentials else "",
+            password=password if use_credentials else "",
+            starttls=self.settings.mail_starttls,
+            ssl_tls=self.settings.mail_ssl_tls,
+            validate_certs=self.settings.mail_validate_certs,
         )
-        message = MessageSchema(
-            subject=subject,
-            recipients=recipients,
-            body=body,
-            subtype=MessageType.html,
-        )
-        fm = FastMail(conf)
-        await fm.send_message(message)
+        await send_html_message(config, subject=subject, recipients=recipients, body=body)
 
     async def send_key_expiration_notice(
         self,

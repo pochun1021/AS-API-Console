@@ -5,7 +5,7 @@ import asyncio
 import os
 from pathlib import Path
 
-from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
+from app.services.smtp_delivery import SMTPDeliveryConfig, send_html_message
 
 DEFAULT_MAIL_FROM = "noreply@as.edu.tw"
 
@@ -43,31 +43,26 @@ async def send_test_email(to_email: str) -> None:
 
     use_credentials = bool(mail_username and mail_password)
 
-    conf = ConnectionConfig(
-        MAIL_USERNAME=mail_username,
-        MAIL_PASSWORD=mail_password,
-        MAIL_FROM=DEFAULT_MAIL_FROM,
-        MAIL_FROM_NAME=os.getenv("MAIL_FROM_NAME", "AS API Console"),
-        MAIL_PORT=int(os.getenv("MAIL_PORT", "587")),
-        MAIL_SERVER=mail_server,
-        MAIL_STARTTLS=as_bool(os.getenv("MAIL_STARTTLS"), True),
-        MAIL_SSL_TLS=as_bool(os.getenv("MAIL_SSL_TLS"), False),
-        USE_CREDENTIALS=use_credentials,
-        VALIDATE_CERTS=as_bool(os.getenv("MAIL_VALIDATE_CERTS"), True),
+    config = SMTPDeliveryConfig(
+        host=mail_server,
+        port=int(os.getenv("MAIL_PORT", "587")),
+        from_email=DEFAULT_MAIL_FROM,
+        from_name=os.getenv("MAIL_FROM_NAME", "AS API Console"),
+        username=mail_username if use_credentials else "",
+        password=mail_password if use_credentials else "",
+        starttls=as_bool(os.getenv("MAIL_STARTTLS"), True),
+        ssl_tls=as_bool(os.getenv("MAIL_SSL_TLS"), False),
+        validate_certs=as_bool(os.getenv("MAIL_VALIDATE_CERTS"), True),
     )
-
-    message = MessageSchema(
+    await send_html_message(
+        config,
         subject="[AS API Console] SMTP test",
         recipients=[to_email],
         body=(
             "<p>This is a test email from AS API Console.</p>"
             "<p>If you received this, SMTP settings are working.</p>"
         ),
-        subtype=MessageType.html,
     )
-
-    fm = FastMail(conf)
-    await fm.send_message(message)
 
 
 def main() -> None:
