@@ -10,6 +10,7 @@ const navItems = [
   { labelKey: "nav_announcements", path: "/announcements", roles: ["user", "admin"] },
   { labelKey: "nav_apply", path: "/apply", roles: ["user", "admin"] },
   { labelKey: "nav_api_keys", path: "/api-keys", roles: ["user", "admin"] },
+  { labelKey: "nav_usage", path: "/usage", roles: ["user", "admin"] },
   { labelKey: "nav_models", path: "/usage-examples", roles: ["user", "admin"] },
   { labelKey: "nav_whitelists", path: "/whitelists", roles: ["admin"] },
   { labelKey: "nav_limit_strategies", path: "/limit-strategies", roles: ["admin"] },

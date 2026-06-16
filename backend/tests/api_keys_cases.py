@@ -140,7 +140,7 @@ def test_list_api_keys_returns_usage_summary_and_low_budget_health(client, admin
     _assert_utc_datetime_string(item["usage_summary"]["synced_at"])
 
 
-def test_list_api_keys_prefers_latest_usage_snapshot_history(client, admin_headers, user_headers):
+def test_list_api_keys_uses_api_keys_usage_cache_not_snapshot_history(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
     create_resp = client.post(
@@ -152,29 +152,149 @@ def test_list_api_keys_prefers_latest_usage_snapshot_history(client, admin_heade
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
     stale_synced_at = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=1)
     fresh_synced_at = stale_synced_at + timedelta(minutes=30)
-    _set_key_usage_snapshot(
-        key_id,
-        usage_spend="999.99",
-        usage_budget_reset_at=stale_synced_at + timedelta(days=7),
-        usage_synced_at=stale_synced_at,
-    )
+    _set_key_usage_snapshot(key_id, usage_spend="999.99", usage_budget_reset_at=stale_synced_at + timedelta(days=7), usage_synced_at=stale_synced_at)
     _insert_key_usage_snapshot_history(
         key_id,
         spend="12.34",
         budget_reset_at=fresh_synced_at + timedelta(days=7),
         synced_at=fresh_synced_at,
+        bucket_granularity="day",
+        bucket_start_utc=fresh_synced_at,
+        bucket_end_utc=fresh_synced_at + timedelta(days=1),
+        prompt_tokens=12,
+        completion_tokens=22,
+        total_tokens=34,
     )
 
     listed = client.get(_api("/api-keys"), headers=user_headers)
 
     assert listed.status_code == 200
     item = listed.json()["items"][0]
-    assert item["usage_summary"]["spend"] == 12.34
-    assert item["usage_summary"]["remaining_budget"] == 987.66
+    assert item["usage_summary"]["spend"] == 999.99
+    assert item["usage_summary"]["remaining_budget"] == 0.01
     assert item["usage_summary"]["max_parallel_requests"] == 0
-    assert item["health_status"] == "healthy"
+    assert item["health_status"] == "low_budget"
     _assert_utc_datetime_string(item["usage_summary"]["budget_reset_at"])
     _assert_utc_datetime_string(item["usage_summary"]["synced_at"])
+
+
+def test_usage_series_returns_daily_buckets_in_taipei_calendar(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "usage series"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+    bucket_start_utc = datetime(2026, 5, 31, 16, 0, 0, tzinfo=UTC)
+    bucket_end_utc = datetime(2026, 6, 1, 16, 0, 0, tzinfo=UTC)
+    synced_at = datetime(2026, 6, 2, 2, 0, 0, tzinfo=UTC)
+    _insert_key_usage_snapshot_history(
+        key_id,
+        spend="1.25",
+        budget_reset_at=synced_at + timedelta(days=7),
+        synced_at=synced_at,
+        bucket_granularity="day",
+        bucket_start_utc=bucket_start_utc,
+        bucket_end_utc=bucket_end_utc,
+        prompt_tokens=1000,
+        completion_tokens=500,
+        total_tokens=1500,
+    )
+
+    resp = client.get(
+        _api("/api-keys/usage-series?key_id={}&granularity=day&from=2026-06-01&to=2026-06-01".format(key_id)),
+        headers=user_headers,
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["key_id"] == key_id
+    assert body["granularity"] == "day"
+    assert body["from"] == "2026-06-01"
+    assert body["to"] == "2026-06-01"
+    assert len(body["items"]) == 1
+    item = body["items"][0]
+    assert item["bucket_label"] == "2026-06-01"
+    assert item["prompt_tokens"] == 1000
+    assert item["completion_tokens"] == 500
+    assert item["total_tokens"] == 1500
+    assert item["spend"] == 1.25
+    assert item["bucket_start"].startswith("2026-06-01T00:00:00")
+    assert item["bucket_start"].endswith("+08:00")
+
+
+def test_usage_series_returns_empty_items_without_zero_fill(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "usage series empty"},
+    )
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+
+    resp = client.get(
+        _api(f"/api-keys/usage-series?key_id={key_id}&granularity=day&from=2026-06-01&to=2026-06-30"),
+        headers=user_headers,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
+
+
+def test_usage_series_rejects_invalid_query_and_permissions(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    _create_whitelist(client, admin_headers, "3001")
+    client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "mine"},
+    )
+    other_headers = build_headers(
+        role="user",
+        account="other.user",
+        name="Other User",
+        email="other@example.com",
+        sysid="3001",
+    )
+    client.post(
+        _api("/api-keys/applications"),
+        headers=other_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "other"},
+    )
+    items = client.get(_api("/api-keys"), headers=admin_headers).json()["items"]
+    own_key_id = next(item["id"] for item in items if item["owner_account"] == user_headers["x-account"])
+    other_key_id = next(item["id"] for item in items if item["owner_account"] == "other.user")
+
+    forbidden = client.get(
+        _api(f"/api-keys/usage-series?key_id={other_key_id}&granularity=day&from=2026-06-01&to=2026-06-30"),
+        headers=user_headers,
+    )
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["code"] == "KEY_NOT_OWNED_BY_USER"
+
+    missing = client.get(
+        _api("/api-keys/usage-series?key_id=missing&granularity=day&from=2026-06-01&to=2026-06-30"),
+        headers=admin_headers,
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    invalid_granularity = client.get(
+        _api(f"/api-keys/usage-series?key_id={own_key_id}&granularity=hour&from=2026-06-01&to=2026-06-30"),
+        headers=user_headers,
+    )
+    assert invalid_granularity.status_code == 422
+    assert invalid_granularity.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    invalid_window = client.get(
+        _api(f"/api-keys/usage-series?key_id={own_key_id}&granularity=day&from=2026-06-30&to=2026-06-01"),
+        headers=user_headers,
+    )
+    assert invalid_window.status_code == 422
+    assert invalid_window.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(
@@ -255,7 +375,7 @@ def test_list_api_keys_unlimited_budget_stays_healthy_and_zero_remaining(client,
     _set_application_limits(key_id, max_budget="0")
     try:
         _set_limit_strategy_config(
-            budget_max_budget="1000",
+            budget_max_budget="0",
             budget_duration="monthly",
             rate_limit_tpm=0,
             rate_limit_rpm=0,

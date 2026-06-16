@@ -39,6 +39,38 @@ const initialModelsPayload = {
   ],
   object: "list"
 };
+const initialUsageSeries = [
+  {
+    key_id: "key_002",
+    granularity: "day",
+    bucket_start: "2026-06-01T00:00:00+08:00",
+    bucket_label: "2026-06-01",
+    prompt_tokens: 1000,
+    completion_tokens: 500,
+    total_tokens: 1500,
+    spend: 1.25
+  },
+  {
+    key_id: "key_002",
+    granularity: "day",
+    bucket_start: "2026-06-02T00:00:00+08:00",
+    bucket_label: "2026-06-02",
+    prompt_tokens: 800,
+    completion_tokens: 400,
+    total_tokens: 1200,
+    spend: 0.95
+  },
+  {
+    key_id: "key_003",
+    granularity: "day",
+    bucket_start: "2026-06-01T00:00:00+08:00",
+    bucket_label: "2026-06-01",
+    prompt_tokens: 600,
+    completion_tokens: 300,
+    total_tokens: 900,
+    spend: 0.55
+  }
+];
 
 const initialApiKeys = [
   {
@@ -374,6 +406,7 @@ let modelsPayload = {
   data: initialModelsPayload.data.map((item) => ({ ...item })),
   object: initialModelsPayload.object
 };
+let usageSeries = initialUsageSeries.map((item) => ({ ...item }));
 let limitStrategyConfig = {
   budget_max_budget: "1000",
   budget_duration: "monthly",
@@ -712,6 +745,15 @@ function buildUserStatistics(
   return Array.from(byOwner.values());
 }
 
+function ensureUsageAccess(item, auth) {
+  if (!item) {
+    throw createError("VALIDATION_ERROR", "key not found", 404);
+  }
+  if (auth.role !== "admin" && item.owner_account !== auth.account) {
+    throw createError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403);
+  }
+}
+
 function applyDateRange(items, { from, to }) {
   return items.filter((item) => {
     const date = item.created_at.slice(0, 10);
@@ -868,6 +910,30 @@ export const mockApiProvider = {
       page,
       page_size: pageSize,
       total: items.length
+    };
+  },
+
+  async listApiKeyUsageSeries(params, auth) {
+    await delay();
+    if (params?.granularity !== "day") {
+      throw createError("VALIDATION_ERROR", "granularity must be day", 422);
+    }
+    if (!params?.from || !params?.to || params.from > params.to) {
+      throw createError("VALIDATION_ERROR", "invalid date range", 422);
+    }
+    const key = findApiKeyById(params?.key_id);
+    ensureUsageAccess(key, auth);
+    const items = usageSeries
+      .filter((item) => item.key_id === params.key_id && item.granularity === "day")
+      .filter((item) => item.bucket_label >= params.from && item.bucket_label <= params.to)
+      .sort((left, right) => left.bucket_label.localeCompare(right.bucket_label))
+      .map(({ key_id, granularity, ...rest }) => rest);
+    return {
+      key_id: params.key_id,
+      granularity: "day",
+      from: params.from,
+      to: params.to,
+      items
     };
   },
 
@@ -1534,6 +1600,7 @@ export const mockApiProvider = {
       data: initialModelsPayload.data.map((item) => ({ ...item })),
       object: initialModelsPayload.object
     };
+    usageSeries = initialUsageSeries.map((item) => ({ ...item }));
     limitStrategyConfig = {
       budget_max_budget: "1000",
       budget_duration: "monthly",

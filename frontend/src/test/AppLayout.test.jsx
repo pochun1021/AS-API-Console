@@ -28,6 +28,7 @@ test("user sees shared navigation including models", () => {
   expect(screen.getByRole("link", { name: "系統公告" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "申請" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "API Keys" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "使用量" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "服務使用說明" })).toBeInTheDocument();
   expect(screen.getByAltText("AS API Console logo")).toBeInTheDocument();
   expect(screen.getByLabelText("語言")).toBeInTheDocument();
@@ -82,6 +83,7 @@ test("admin sees whitelist nav", () => {
   expect(navLinks[0]).toHaveTextContent("系統公告");
   expect(screen.getByRole("link", { name: "特殊人員名單管理" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "系統公告" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "使用量" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "服務使用說明" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "服務使用說明" })).toHaveAttribute("href", "/usage-examples");
   expect(screen.getByRole("link", { name: "單位代碼" })).toBeInTheDocument();

@@ -139,19 +139,55 @@ def _insert_key_usage_snapshot_history(
     spend: str | None,
     budget_reset_at: datetime | None,
     synced_at: datetime,
+    bucket_granularity: str | None = None,
+    bucket_start_utc: datetime | None = None,
+    bucket_end_utc: datetime | None = None,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    total_tokens: int = 0,
 ) -> None:
     with _db_begin() as conn:
         conn.execute(
             text(
                 """
-                INSERT INTO api_key_usage_snapshots (id, api_key_id, spend, budget_reset_at, synced_at)
-                VALUES (:id, :api_key_id, :spend, :budget_reset_at, :synced_at)
+                INSERT INTO api_key_usage_snapshots (
+                    id,
+                    api_key_id,
+                    bucket_granularity,
+                    bucket_start_utc,
+                    bucket_end_utc,
+                    spend,
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens,
+                    budget_reset_at,
+                    synced_at
+                )
+                VALUES (
+                    :id,
+                    :api_key_id,
+                    :bucket_granularity,
+                    :bucket_start_utc,
+                    :bucket_end_utc,
+                    :spend,
+                    :prompt_tokens,
+                    :completion_tokens,
+                    :total_tokens,
+                    :budget_reset_at,
+                    :synced_at
+                )
                 """
             ),
             {
                 "id": str(uuid4()),
                 "api_key_id": key_id,
+                "bucket_granularity": bucket_granularity,
+                "bucket_start_utc": bucket_start_utc,
+                "bucket_end_utc": bucket_end_utc,
                 "spend": spend,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
                 "budget_reset_at": budget_reset_at,
                 "synced_at": synced_at,
             },

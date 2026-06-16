@@ -169,6 +169,10 @@
 - 頁面需提供可自訂的日期區間查詢，查詢口徑以 `Asia/Taipei` 的日曆日為準。
 - 第一版圖表僅支援 `day` 粒度，不提供小時圖或其他 bucket 粒度切換。
 - 主圖表指標固定為 `total_tokens` 的每日趨勢。
+- 圖表 X 軸需對齊查詢日期區間的完整日曆日；前端可將缺資料日期補為 `null` bucket 以維持日期連續性，但不得補成 `0` 形成假用量。
+- 當查詢區間超過 `31` 個日曆日時，主圖預設僅顯示自 `from` 起算的前 `31` 天視窗，並提供底部日期區間 slider；slider 視窗最大為 `31` 天、最小為 `1` 天，使用者可縮小顯示區間，且縮小後仍可整段左右平移瀏覽整個查詢範圍。
+- slider 互動需區分：拖曳 `start/end` thumb 用於調整開始/結束日期；拖曳中間已選取區塊（track）則以目前區間長度整段平移。
+- slider 兩端的開始/結束日期 label 需完整可見，不得被卡片或畫面邊界裁切。
 - 每個資料點的 tooltip 至少需顯示：`prompt_tokens`、`completion_tokens`、`total_tokens`、`spend`。
 - 頁面需提供 Loading、Empty、Error（含 Retry）狀態。
 - 若查詢區間內無資料，需顯示空狀態，不得以 `0` 補滿整段日期區間形成假資料。
@@ -1284,6 +1288,8 @@ Base path：`/main/api/v1`
 65E. `GET /main/api/v1/api-keys/usage-series` 僅允許 `granularity=day`，且需依 `Asia/Taipei` 日曆日回傳每日 token/spend 聚合；DB 內部 UTC bucket 與前端日期語意不得互相衝突。
 65F. `api_key_usage_snapshots` 需作為正式 daily usage 歷史來源；同一 `(api_key_id, bucket_granularity, bucket_start_utc)` 只允許一筆有效 bucket，rolling window 重抓時需覆寫既有 bucket，不得產生重複列。
 65G. `/usage` 頁需允許 `user` 與 `admin` 依 key + 日期區間查看每日使用量；主圖表指標為 `total_tokens`，tooltip 至少顯示 `prompt_tokens`、`completion_tokens`、`total_tokens`、`spend`，且無資料時需回空狀態而非偽造零值資料。
+65H. `/usage` 頁在日期區間超過 `31` 個日曆日時，X 軸仍需對齊完整日期區間且缺資料日不得補 `0`；主圖預設顯示 `31` 天視窗，並提供底部 slider 讓使用者以 `1..31` 天的範圍調整主圖區間，且調整後仍可左右平移瀏覽整段區間。
+65I. `/usage` 頁底部 slider 的開始/結束日期 label 在常見桌機與手機寬度下需完整可見，不得因 slider 寬度或端點對齊而被裁切。
 66. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 需支援欄位級 server-side sorting/filtering；若某欄位未支援後端 query contract，對應前端欄位必須禁用 filter 或 sort，不得回退成 local table 行為。
 67. 關鍵操作稽核功能、申請人識別欄位調整、統計、`GET /main/api/v1/models` 與 lifecycle 擴充，均不得改動既有受保護 API 路徑與角色模型（`user|admin`）；若需擴充對外 error response，僅允許增加相容性的 optional 欄位（如 `error.details`），不得破壞既有 `error.code` / `error.message` 契約或既有 success response shape。
 

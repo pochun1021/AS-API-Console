@@ -5,6 +5,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -41,6 +42,7 @@ from db.repositories.types import (
 
 LIMIT_STRATEGY_CONFIG_ID = "global-limit-strategy-config"
 MAX_KEY_ALIAS_ATTEMPTS = 20
+TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 LIMIT_STRATEGY_DEFAULTS = {
     "budget_max_budget": "1000",
     "budget_duration": "monthly",
@@ -713,6 +715,53 @@ class ApiKeysService:
             "page": page,
             "page_size": page_size,
             "total": total,
+        }
+
+    def list_usage_series(
+        self,
+        *,
+        current_user: CurrentUser,
+        key_id: str,
+        granularity: str,
+        from_date: date,
+        to_date: date,
+    ) -> dict:
+        if granularity != "day":
+            raise ApiError("VALIDATION_ERROR", "granularity must be day", 422)
+        if from_date > to_date:
+            raise ApiError("VALIDATION_ERROR", "from cannot be greater than to", 422)
+
+        detail = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
+        if detail is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+        scoped = self.key_repo.get_key_detail(key_id, current_user.role, current_user.account)
+        if scoped is None:
+            raise ApiError("KEY_NOT_OWNED_BY_USER", "key is not owned by requester", 403)
+
+        bucket_start_from = datetime.combine(from_date, datetime.min.time(), tzinfo=TAIPEI_TZ).astimezone(UTC)
+        bucket_start_to = datetime.combine(to_date + timedelta(days=1), datetime.min.time(), tzinfo=TAIPEI_TZ).astimezone(UTC)
+        items = self.key_repo.list_usage_series(
+            key_id=key_id,
+            granularity=granularity,
+            bucket_start_from=bucket_start_from,
+            bucket_start_to=bucket_start_to,
+        )
+        return {
+            "key_id": key_id,
+            "granularity": granularity,
+            "from": from_date,
+            "to": to_date,
+            "items": [
+                {
+                    "bucket_start": _normalized_utc_datetime(item.bucket_start_utc).astimezone(TAIPEI_TZ),
+                    "bucket_label": _normalized_utc_datetime(item.bucket_start_utc).astimezone(TAIPEI_TZ).date().isoformat(),
+                    "prompt_tokens": item.prompt_tokens,
+                    "completion_tokens": item.completion_tokens,
+                    "total_tokens": item.total_tokens,
+                    "spend": _round_money(item.spend) if item.spend is not None else None,
+                }
+                for item in items
+            ],
         }
 
     def get_key_detail(self, current_user: CurrentUser, key_id: str) -> dict:
