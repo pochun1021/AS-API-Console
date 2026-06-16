@@ -154,9 +154,9 @@
 - 管理者在同頁可查看並編輯 `key_alias`；若資料未設定，預設顯示系統產生 alias（初始為 `for_{owner_account}`，若 provider 回報衝突則自動改為 `for_{owner_account}_vN`）。管理者手動輸入時僅允許中英文、數字、`_`、`-`、`、`，不得包含空白或其他符號。
 - 操作：
   - 對 `active` key 顯示「停用」與「展延（extend）」按鈕。
-  - 對 `expired` key 顯示「展延（extend）」按鈕（icon + 文字）。
+  - 對 `expired` key 顯示「續發（renew）」按鈕（icon + 文字）。
   - 對 `revoked` key 顯示「續發（renew）」按鈕（icon + 文字）。
-  - `active|expired` key 一律顯示展延按鈕；前端不得再以「距離到期 30 天內」作為顯示或送出限制。
+  - `active` key 一律顯示展延按鈕；前端不得再以「距離到期 30 天內」作為顯示或送出限制。
   - extend 需以確認 Dialog 送出，不再提供 `duration_days` 選單；每次 extend 一律沿用該 key 的 `original_duration_days` 作為本次展延基數。
   - renew 會建立新 key，來源 key 對 `user` 列表需隱藏。
   - extend 會沿用原 key，只延長有效期限。
@@ -307,7 +307,8 @@
 - API Key 明文只顯示一次
 - 系統儲存 `key_hash` 與加密密文（`key_ciphertext`），不直接儲存明文
 - API Key lifecycle 採 `External SoT + Encrypted Local Secret`：`applications/create`、`renew`、`extend`、`revoke` 皆以 provider 結果為主，本地僅於 provider 成功後同步狀態
-- `active|expired` key 皆可隨時展延；`revoked` key 不可展延
+- `renew` 允許 `revoked|expired` key；`active` key 不可 renew
+- `active` key 可隨時展延；`expired|revoked` key 不可展延
 - 一般使用者可查看本人全部申請紀錄
 - 一般使用者查詢時 API Key 必須遮罩顯示
 - 一般使用者可自行停用本人已生效 key（軟停用）
@@ -789,15 +790,15 @@ Base path：`/main/api/v1`
 - `POST /main/api/v1/api-keys/{id}/revoke`
 - 規則：
   - `user` 僅可停用本人 `active` key；`admin` 可停用任意 `active` key。
-  - revoke 對應 provider `block`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
-  - 呼叫 provider `block` 時，request body 需以 `key` 欄位傳送舊明文 key。
-  - provider `block` 成功後，才可將本地 `api_keys.status` 與對應 `api_key_applications.status` 同步為 `revoked`。
+  - revoke 對應 provider `delete`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
+  - 呼叫 provider `delete` 時，request body 需以 `key` 欄位傳送舊明文 key。
+  - provider `delete` 成功後，才可將本地 `api_keys.status` 與對應 `api_key_applications.status` 同步為 `revoked`。
   - provider timeout / 5xx / 明確拒絕、缺少密文、或解密失敗時，本地不得先標記為 `revoked`。
 
 ### 4-2) 續發（Renew）API Key
 - `POST /main/api/v1/api-keys/{id}/renew`
 - 規則：
-  - `user` 僅可續發本人 `revoked` key；`admin` 可續發任意 `revoked` key。
+  - `user` 僅可續發本人 `revoked|expired` key；`admin` 可續發任意 `revoked|expired` key。
   - renew 對應 provider `generate`；前端不得提供舊明文 key，後端也不得依賴來源 key 的 `key_ciphertext` 或舊 key 明文。
   - 呼叫 provider `generate` 時，request body 沿用 applications create 的 `generate` wire format，且必須包含 `team_id`；payload 不得包含 `key`。
   - renew 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫入新 key。
@@ -815,12 +816,12 @@ Base path：`/main/api/v1`
 {}
 ```
 - 規則：
-  - `user` 僅可展延本人 `active|expired` key；`admin` 可展延任意 `active|expired` key。
+  - `user` 僅可展延本人 `active` key；`admin` 可展延任意 `active` key。
   - extend request 不再接收 `duration_days`；每次 extend 一律沿用該 key 初次核發時保存的 `original_duration_days` 作為本次展延時長。
   - extend 成功後，讀取 API 的 `application_date` 需改為本次展延當日；`duration_days` 一律設為 `original_duration_days`，代表目前這一輪有效期時長。
-  - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired` 可展延。
+  - 展延判定口徑需與查詢一致：`expires_at` 已過且原始狀態為 `active` 時，需視為 `expired`，並以 `KEY_NOT_EXTENDABLE` 拒絕展延。
   - extend 對應 provider `update`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
-  - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format；`duration` 需送「從 `api_keys.created_at` 起算到新 `expires_at` 的總天數」，provider 請求仍需以 `"{provider_duration_days}d"` 傳送。
+  - 呼叫 provider `update` 時，request body 需以 `key` 欄位傳送舊明文 key，其餘限制欄位沿用 `generate` wire format；`duration` 一律直接送 `original_duration_days` 對應的 `30d|180d|360d`，不得再依 `api_keys.created_at` 累算總天數。
   - extend 送往 provider 的 `key_alias` 需優先沿用目前 key alias；若 provider 回 `400`，系統需自動補 `_vN` 後重試，成功後將最終 alias 寫回原 key。
   - extend 會在 provider 成功後沿用原 key，更新同一筆 key 的有效期限與狀態（必要時轉為 `active`）；新的 `expires_at` 一律以本次展延當日重新起算：`new_expires_at = application_date + original_duration_days`，不得累加先前展延時長，也不得使用剩餘天數補差。
   - extend 成功後，後續到期提醒需以新的 `expires_at` 重新啟動完整 `30|14|7|3|1` 通知週期。
@@ -1147,7 +1148,7 @@ Base path：`/main/api/v1`
 14. 若 provider timeout/5xx、明確拒絕、缺少密文材料、解密失敗或回應不完整，本地不得先改動狀態或有效期限，並需回傳對應錯誤。
 15. 若部署使用 local provider adapter 作為開發/測試替身，仍需經由同一 provider abstraction 執行，不得繞過 provider-first 時序直接改本地資料。
 16. 外部 provider `POST /key/generate` payload 僅允許 `rpm_limit`、`tpm_limit`、`max_parallel_requests`、`max_budget`、`budget_duration`、`duration`、`team_id`、`key_alias`、`key_type`；`key_type` 固定 `"llm_api"`，`team_id` 固定使用 `PROVIDER_TEAM_ID`，`duration_days(30|180|360)` 需映射為 `30d|180d|360d`，本地 `expires_at` 也需使用相同的 `30|180|360` 天 fixed-day 規則計算，本地設定值為 `0` 的 `rpm_limit` / `tpm_limit` 與 `max_parallel_requests` 需送 `null`，且不得送 `models` 或 `budget_limits`。
-17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`block` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`update` 用於 extend 或 alias 同步時可帶 `key_alias`，且 `duration` 一律需與當前 key 的目標有效期一致：對 extend 與 alias 同步都需送「從 `api_keys.created_at` 起算到目標 `expires_at` 的總天數」；本地 `application_date` 仍需在 extend 成功後改寫為本次展延當日，供 UI 顯示目前這一輪有效期；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
+17. 外部 provider 驗證 header 需使用 `Authorization: Bearer {PROVIDER_MASTER_KEY}`；`update`、`delete` 若需舊明文 key，request body 一律以 `key` 欄位傳送；`update` 用於 extend 或 alias 同步時可帶 `key_alias`，且 `duration` 一律直接送當次展延基數 `30d|180d|360d`，不得再依 `api_keys.created_at` 累算總天數；本地 `application_date` 仍需在 extend 成功後改寫為本次展延當日，供 UI 顯示目前這一輪有效期；`generate` 成功時一律自 response `key` 讀取新明文 secret。external provider mode 缺少 `PROVIDER_TEAM_ID` 時，`applications`、`renew`、`limit-strategy-config` 同步必須 fail fast。
 18. 外部 provider 回傳 `422` 且 body 為 `detail[]` 時，系統需映射為本地 `422 VALIDATION_ERROR`；timeout、5xx、連線錯誤與無法解析必要回應時仍需回 `503 PROVIDER_UNAVAILABLE`。
 
 ### Key 查詢、狀態與 Lifecycle 權限
@@ -1158,13 +1159,13 @@ Base path：`/main/api/v1`
 22. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 的到期口徑需以 `expires_at` 即時計算；原始狀態為 `active` 且已過期者，對外需顯示為 `expired`。
 23. 即使 expired 回填排程停用或失敗，清單、詳情與統計 API 仍需依 effective status 正確呈現 `expired`；回填排程成功後，符合條件的 `api_keys.status` 與 `api_key_applications.status` 需落地更新為 `expired`，且不得誤改 `revoked`。
 24. 一般使用者可停用本人 `active` key；停用非本人 key 時需回傳 `KEY_NOT_OWNED_BY_USER` / `403`，停用非 `active` key 時需回傳 `KEY_NOT_ACTIVE`。
-25. 一般使用者僅可續發本人 `revoked` key；續發 `active|expired` key 時需回傳 `KEY_NOT_RENEWABLE`，且同一把舊 key 不得重複續發，重複續發需回傳 `KEY_ALREADY_RENEWED`。
-26. 一般使用者可展延本人 `active|expired` key；展延 `revoked` key 時需回傳 `KEY_NOT_EXTENDABLE`。`active|expired` key 皆可隨時展延。extend 成功後：
+25. 一般使用者僅可續發本人 `revoked|expired` key；續發 `active` key 時需回傳 `KEY_NOT_RENEWABLE`，且同一把舊 key 不得重複續發，重複續發需回傳 `KEY_ALREADY_RENEWED`。
+26. 一般使用者僅可展延本人 `active` key；展延 `revoked|expired` key 時需回傳 `KEY_NOT_EXTENDABLE`。`active` key 可隨時展延。extend 成功後：
   - `application_date` 一律同步改寫為展延當日，代表最新一輪有效期起算日。
   - `duration_days` 一律重置為 `original_duration_days`，代表目前這一輪有效期時長，不做累加。
   - extend request 不再由使用者選擇天數；每次展延固定沿用該 key 的 `original_duration_days`。
   - `expires_at` 一律以展延當日重新起算：`new_expires_at = application_date + original_duration_days`。
-  - provider `duration` 需送從 `api_keys.created_at` 到新 `expires_at` 的總天數，不得直接等同本地 `duration_days`，也不得再使用 `remaining_days` 模型。
+  - provider `duration` 一律直接送 `original_duration_days` 對應的 `30d|180d|360d`，不得再使用 `api_keys.created_at` 累算總天數，也不得使用 `remaining_days` 模型。
 27. `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm`、`max_parallel_requests` 僅接受 ASCII `0-9`；非數字字元、空字串、科學記號、小數、負號、全形數字與混合字串不得通過前端送出，也不得通過後端 API 驗證。
 28. whitelist `note` 需可正常輸入與儲存中英文混合內容，且中文輸入法組字不得被前端驗證破壞；允許空白、`_`、`-`、`、`，但若內容包含明顯程式語法，或含上述以外特殊符號（例如 `.`, `@`, `/`, `<`, `>`），前後端都需拒絕。
 29. `key_alias` 僅允許中英文、數字、`_`、`-`、`、`；若包含空白、其他特殊符號，或明顯程式語法，前端需阻擋儲存，後端直接打 API 時需回傳 `422 VALIDATION_ERROR`。
