@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     application_rate_limit: str = "10/hour"
     reveal_rate_limit: str = "5/hour"
     admin_mutation_rate_limit: str = "20/hour"
+    scheduler_log_root: str = "/home/app/log"
 
     @field_validator("provider_base_url")
     @classmethod

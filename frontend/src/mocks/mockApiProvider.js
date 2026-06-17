@@ -442,6 +442,38 @@ let operationAuditLogs = [
     request_id: "req-op-002"
   }
 ];
+let schedulerLogs = [
+  {
+    id: "schedlog_001",
+    job: "sync_api_key_usage",
+    log_date: "2026-06-17",
+    source_file: "2026-06-17.log",
+    timestamp: "2026-06-17T00:15:01+08:00",
+    level: "ERROR",
+    message: "event=usage_sync mode=sync processed_keys=10 success=8 failed=2",
+    raw_line: "[2026-06-17T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2"
+  },
+  {
+    id: "schedlog_002",
+    job: "sync_api_key_usage",
+    log_date: "2026-06-17",
+    source_file: "2026-06-17.log",
+    timestamp: "2026-06-17T00:05:01+08:00",
+    level: "INFO",
+    message: "event=usage_sync mode=sync processed_keys=10 success=9 failed=1",
+    raw_line: "[2026-06-17T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1"
+  },
+  {
+    id: "schedlog_003",
+    job: "send_expiration_reminders",
+    log_date: "2026-06-16",
+    source_file: "2026-06-16.log",
+    timestamp: "2026-06-16T08:00:00+08:00",
+    level: "WARNING",
+    message: "event=expiration_notice sent=0 failed=1",
+    raw_line: "[2026-06-16T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1"
+  }
+];
 let authAuditLogs = [
   {
     id: "authlog_001",
@@ -763,6 +795,15 @@ function applyDateRange(items, { from, to }) {
   });
 }
 
+function applyDateRangeByField(items, { from, to }, field) {
+  return items.filter((item) => {
+    const date = String(item[field] || "").slice(0, 10);
+    if (from && date < from) return false;
+    if (to && date > to) return false;
+    return true;
+  });
+}
+
 export const mockApiProvider = {
   async getCurrentUser(auth) {
     await delay();
@@ -1003,6 +1044,47 @@ export const mockApiProvider = {
       });
 
     return paginateItems(filtered, params);
+  },
+
+  async listSchedulerLogs(params, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const sortDir = params?.sort_dir === "asc" ? "asc" : "desc";
+    const fileMode = params?.file_mode || "date";
+    const availableFiles = params?.job
+      ? schedulerLogs
+          .filter((item) => item.job === params.job)
+          .map((item) => ({ log_date: item.log_date, source_file: item.source_file }))
+          .filter((item, index, arr) => arr.findIndex((candidate) => candidate.source_file === item.source_file) === index)
+          .sort((a, b) => String(b.log_date).localeCompare(String(a.log_date)))
+      : [];
+    let scopedItems = schedulerLogs;
+    if (fileMode === "latest") {
+      const latestByJob = new Map();
+      for (const item of schedulerLogs) {
+        const previous = latestByJob.get(item.job);
+        if (!previous || item.log_date > previous.log_date) {
+          latestByJob.set(item.job, item);
+        }
+      }
+      scopedItems = schedulerLogs.filter((item) => latestByJob.get(item.job)?.source_file === item.source_file);
+    } else if (fileMode === "date") {
+      scopedItems = applyDateRangeByField(schedulerLogs, params || {}, "log_date");
+    }
+
+    const filtered = scopedItems
+      .filter((item) => (params?.job ? item.job === params.job : true))
+      .filter((item) => (params?.level ? item.level === params.level : true))
+      .filter((item) => (params?.q ? containsCI(item.message, params.q) || containsCI(item.raw_line, params.q) : true))
+      .sort((a, b) => {
+        const compared = compareValues(a.timestamp, b.timestamp, sortDir);
+        return compared || String(a.id).localeCompare(String(b.id));
+      });
+
+    return {
+      available_files: availableFiles,
+      ...paginateItems(filtered, params)
+    };
   },
 
   async getApiKeyById(id, auth) {
@@ -1634,6 +1716,38 @@ export const mockApiProvider = {
         error_code: "VALIDATION_ERROR",
         error_detail: "status must be active or inactive",
         request_id: "req-op-002"
+      }
+    ];
+    schedulerLogs = [
+      {
+        id: "schedlog_001",
+        job: "sync_api_key_usage",
+        log_date: "2026-06-17",
+        source_file: "2026-06-17.log",
+        timestamp: "2026-06-17T00:15:01+08:00",
+        level: "ERROR",
+        message: "event=usage_sync mode=sync processed_keys=10 success=8 failed=2",
+        raw_line: "[2026-06-17T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2"
+      },
+      {
+        id: "schedlog_002",
+        job: "sync_api_key_usage",
+        log_date: "2026-06-17",
+        source_file: "2026-06-17.log",
+        timestamp: "2026-06-17T00:05:01+08:00",
+        level: "INFO",
+        message: "event=usage_sync mode=sync processed_keys=10 success=9 failed=1",
+        raw_line: "[2026-06-17T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1"
+      },
+      {
+        id: "schedlog_003",
+        job: "send_expiration_reminders",
+        log_date: "2026-06-16",
+        source_file: "2026-06-16.log",
+        timestamp: "2026-06-16T08:00:00+08:00",
+        level: "WARNING",
+        message: "event=expiration_notice sent=0 failed=1",
+        raw_line: "[2026-06-16T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1"
       }
     ];
     authAuditLogs = [

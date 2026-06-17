@@ -192,6 +192,20 @@ export const httpApiProvider = {
     return request(`${apiPath("/auth-audit-logs")}?${query.toString()}`, { auth });
   },
 
+  listSchedulerLogs(params, auth) {
+    const query = new URLSearchParams();
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.page_size) query.set("page_size", String(params.page_size));
+    if (params?.job) query.set("job", params.job);
+    if (params?.file_mode) query.set("file_mode", params.file_mode);
+    if (params?.from) query.set("from", params.from);
+    if (params?.to) query.set("to", params.to);
+    if (params?.level) query.set("level", params.level);
+    if (params?.q) query.set("q", params.q);
+    if (params?.sort_dir) query.set("sort_dir", params.sort_dir);
+    return request(`${apiPath("/scheduler-logs")}?${query.toString()}`, { auth });
+  },
+
   async listAdmins(paramsOrAuth, maybeAuth) {
     const hasAuthHeaderShape = Boolean(paramsOrAuth?.account && paramsOrAuth?.email && paramsOrAuth?.sysid);
     const auth = hasAuthHeaderShape ? paramsOrAuth : maybeAuth;

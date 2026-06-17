@@ -22,6 +22,10 @@ function defaultHotRange() {
 
 const TAB_OPERATION = "operation";
 const TAB_LOGIN = "login";
+const TAB_SCHEDULER = "scheduler";
+const SCHEDULER_FILE_MODE_DATE = "date";
+const SCHEDULER_FILE_MODE_ALL = "all";
+const SCHEDULER_FILE_MODE_LATEST = "latest";
 const OPERATION_EVENT_TYPE_OPTIONS = [
   "api_key",
   "api_key_application",
@@ -98,6 +102,7 @@ export default function OperationAuditLogsPage({ auth }) {
   const [operationLoading, setOperationLoading] = useState(true);
   const [operationError, setOperationError] = useState("");
   const [selectedOperationLog, setSelectedOperationLog] = useState(null);
+  const [selectedSchedulerLog, setSelectedSchedulerLog] = useState(null);
 
   const [loginItems, setLoginItems] = useState([]);
   const [loginTotal, setLoginTotal] = useState(0);
@@ -112,6 +117,22 @@ export default function OperationAuditLogsPage({ auth }) {
   const [loginSortModel, setLoginSortModel] = useState([{ field: "created_at", sort: "desc" }]);
   const [loginLoading, setLoginLoading] = useState(true);
   const [loginError, setLoginError] = useState("");
+
+  const [schedulerItems, setSchedulerItems] = useState([]);
+  const [schedulerTotal, setSchedulerTotal] = useState(0);
+  const [schedulerPage, setSchedulerPage] = useState(0);
+  const [schedulerPageSize, setSchedulerPageSize] = useState(10);
+  const [schedulerFileMode, setSchedulerFileMode] = useState(SCHEDULER_FILE_MODE_DATE);
+  const [schedulerAvailableFiles, setSchedulerAvailableFiles] = useState([]);
+  const [schedulerSelectedFile, setSchedulerSelectedFile] = useState("");
+  const [schedulerFromDate, setSchedulerFromDate] = useState(hot.from);
+  const [schedulerToDate, setSchedulerToDate] = useState(hot.to);
+  const [schedulerJob, setSchedulerJob] = useState("");
+  const [schedulerLevel, setSchedulerLevel] = useState("");
+  const [schedulerKeyword, setSchedulerKeyword] = useState("");
+  const [schedulerSortModel, setSchedulerSortModel] = useState([{ field: "timestamp", sort: "desc" }]);
+  const [schedulerLoading, setSchedulerLoading] = useState(true);
+  const [schedulerError, setSchedulerError] = useState("");
 
   function clearOperationFilters() {
     setOperationFromDate(hot.from);
@@ -132,6 +153,18 @@ export default function OperationAuditLogsPage({ auth }) {
     setLoginSysid("");
     setLoginRole("");
     setLoginPage(0);
+  }
+
+  function clearSchedulerFilters() {
+    setSchedulerFileMode(SCHEDULER_FILE_MODE_DATE);
+    setSchedulerAvailableFiles([]);
+    setSchedulerSelectedFile("");
+    setSchedulerFromDate(hot.from);
+    setSchedulerToDate(hot.to);
+    setSchedulerJob("");
+    setSchedulerLevel("");
+    setSchedulerKeyword("");
+    setSchedulerPage(0);
   }
 
   const operationColumns = useMemo(
@@ -173,6 +206,29 @@ export default function OperationAuditLogsPage({ auth }) {
       { field: "role", headerName: t("loginlogs_col_role"), minWidth: 110, flex: 0.8, filterable: false },
       { field: "error_code", headerName: t("auditlogs_col_error_code"), minWidth: 160, flex: 1.2, filterable: false },
       { field: "request_id", headerName: t("loginlogs_col_request_id"), minWidth: 220, flex: 1.4, filterable: false },
+    ],
+    [locale, t]
+  );
+
+  const schedulerColumns = useMemo(
+    () => [
+      { field: "timestamp", headerName: t("schedulerlogs_col_timestamp"), minWidth: 190, flex: 1.2, valueFormatter: (v) => formatTs(v, locale), filterable: false },
+      { field: "job", headerName: t("schedulerlogs_col_job"), minWidth: 220, flex: 1.2, sortable: false, filterable: false },
+      { field: "source_file", headerName: t("schedulerlogs_col_source_file"), minWidth: 180, flex: 1, sortable: false, filterable: false },
+      { field: "level", headerName: t("schedulerlogs_col_level"), minWidth: 120, flex: 0.8, sortable: false, filterable: false },
+      { field: "message", headerName: t("schedulerlogs_col_message"), minWidth: 360, flex: 2, sortable: false, filterable: false },
+      {
+        field: "raw_line_action",
+        headerName: t("schedulerlogs_col_raw_line"),
+        minWidth: 160,
+        sortable: false,
+        filterable: false,
+        renderCell: (params) => (
+          <Button size="small" onClick={() => setSelectedSchedulerLog(params.row)}>
+            {t("schedulerlogs_view_raw_line")}
+          </Button>
+        ),
+      },
     ],
     [locale, t]
   );
@@ -230,6 +286,16 @@ export default function OperationAuditLogsPage({ auth }) {
     operationToDate,
     t
   ]);
+
+  useEffect(() => {
+    if (!selectedSchedulerLog) return;
+    const latest = schedulerItems.find((item) => item.id === selectedSchedulerLog.id);
+    if (!latest) {
+      setSelectedSchedulerLog(null);
+    } else if (latest !== selectedSchedulerLog) {
+      setSelectedSchedulerLog(latest);
+    }
+  }, [schedulerItems, selectedSchedulerLog]);
 
   useEffect(() => {
     if (!selectedOperationLog) return;
@@ -293,6 +359,84 @@ export default function OperationAuditLogsPage({ auth }) {
     t
   ]);
 
+  useEffect(() => {
+    if (auth.role !== "admin") return;
+    let cancelled = false;
+    async function load() {
+      setSchedulerLoading(true);
+      setSchedulerError("");
+      try {
+        const response = await apiClient.listSchedulerLogs(
+          {
+            page: schedulerPage + 1,
+            page_size: schedulerPageSize,
+            file_mode: schedulerFileMode,
+            from: schedulerFileMode === SCHEDULER_FILE_MODE_DATE ? schedulerFromDate || undefined : undefined,
+            to: schedulerFileMode === SCHEDULER_FILE_MODE_DATE ? schedulerToDate || undefined : undefined,
+            job: schedulerJob || undefined,
+            level: schedulerLevel || undefined,
+            q: schedulerKeyword || undefined,
+            sort_dir: schedulerSortModel[0]?.sort === "asc" ? "asc" : "desc",
+          },
+          auth
+        );
+        if (cancelled) return;
+        setSchedulerAvailableFiles(response.available_files || []);
+        setSchedulerItems((response.items || []).map((item) => ({ ...item, id: item.id })));
+        setSchedulerTotal(response.total || 0);
+      } catch (e) {
+        if (cancelled) return;
+        setSchedulerAvailableFiles([]);
+        setSchedulerItems([]);
+        setSchedulerTotal(0);
+        setSchedulerError(normalizeApiError(e, t("schedulerlogs_load_failed")));
+      } finally {
+        if (!cancelled) setSchedulerLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    auth,
+    schedulerFileMode,
+    schedulerFromDate,
+    schedulerJob,
+    schedulerKeyword,
+    schedulerLevel,
+    schedulerPage,
+    schedulerPageSize,
+    schedulerSortModel,
+    schedulerToDate,
+    t
+  ]);
+
+  useEffect(() => {
+    if (schedulerFileMode !== SCHEDULER_FILE_MODE_DATE) {
+      if (schedulerSelectedFile) setSchedulerSelectedFile("");
+      return;
+    }
+    if (!schedulerJob) {
+      setSchedulerSelectedFile("");
+      setSchedulerFromDate(hot.from);
+      setSchedulerToDate(hot.to);
+      return;
+    }
+    if (schedulerAvailableFiles.length === 0) {
+      setSchedulerSelectedFile("");
+      return;
+    }
+    const matched = schedulerAvailableFiles.find((item) => item.source_file === schedulerSelectedFile);
+    const nextFile = matched || schedulerAvailableFiles[0];
+    if (!matched || schedulerSelectedFile !== nextFile.source_file || schedulerFromDate !== nextFile.log_date || schedulerToDate !== nextFile.log_date) {
+      setSchedulerSelectedFile(nextFile.source_file);
+      setSchedulerFromDate(nextFile.log_date);
+      setSchedulerToDate(nextFile.log_date);
+      setSchedulerPage(0);
+    }
+  }, [hot.from, hot.to, schedulerAvailableFiles, schedulerFileMode, schedulerFromDate, schedulerJob, schedulerSelectedFile, schedulerToDate]);
+
   if (auth.role !== "admin") {
     return (
       <Stack spacing={3}>
@@ -308,6 +452,7 @@ export default function OperationAuditLogsPage({ auth }) {
       <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value)} aria-label={t("auditlogs_tabs_aria")}>
         <Tab value={TAB_OPERATION} label={t("auditlogs_tab_operation")} />
         <Tab value={TAB_LOGIN} label={t("auditlogs_tab_login")} />
+        <Tab value={TAB_SCHEDULER} label={t("auditlogs_tab_scheduler")} />
       </Tabs>
 
       {activeTab === TAB_OPERATION ? (
@@ -529,6 +674,135 @@ export default function OperationAuditLogsPage({ auth }) {
         </>
       ) : null}
 
+      {activeTab === TAB_SCHEDULER ? (
+        <>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
+            <TextField
+              select
+              label={t("schedulerlogs_file_mode")}
+              value={schedulerFileMode}
+              onChange={(e) => {
+                setSchedulerFileMode(e.target.value);
+                setSchedulerAvailableFiles([]);
+                setSchedulerSelectedFile("");
+                setSchedulerPage(0);
+              }}
+              sx={{ minWidth: 180 }}
+            >
+              <MenuItem value={SCHEDULER_FILE_MODE_DATE}>{t("schedulerlogs_file_mode_date")}</MenuItem>
+              <MenuItem value={SCHEDULER_FILE_MODE_ALL}>{t("schedulerlogs_file_mode_all")}</MenuItem>
+              <MenuItem value={SCHEDULER_FILE_MODE_LATEST}>{t("schedulerlogs_file_mode_latest")}</MenuItem>
+            </TextField>
+            <TextField
+              select
+              label={t("schedulerlogs_job")}
+              value={schedulerJob}
+              onChange={(e) => {
+                setSchedulerJob(e.target.value);
+                setSchedulerSelectedFile("");
+                setSchedulerPage(0);
+              }}
+              sx={{ minWidth: 220 }}
+            >
+              <MenuItem value="">{t("auditlogs_result_all")}</MenuItem>
+              <MenuItem value="sync_expired_api_keys">sync_expired_api_keys</MenuItem>
+              <MenuItem value="sync_api_key_usage">sync_api_key_usage</MenuItem>
+              <MenuItem value="send_expiration_reminders">send_expiration_reminders</MenuItem>
+            </TextField>
+            {schedulerFileMode === SCHEDULER_FILE_MODE_DATE ? (
+              <TextField
+                select
+                label={t("schedulerlogs_file")}
+                value={schedulerSelectedFile}
+                onChange={(e) => {
+                  const nextFile = schedulerAvailableFiles.find((item) => item.source_file === e.target.value);
+                  setSchedulerSelectedFile(e.target.value);
+                  setSchedulerFromDate(nextFile?.log_date || "");
+                  setSchedulerToDate(nextFile?.log_date || "");
+                  setSchedulerPage(0);
+                }}
+                sx={{ minWidth: 220 }}
+                disabled={!schedulerJob || schedulerAvailableFiles.length === 0}
+                helperText={
+                  !schedulerJob
+                    ? t("schedulerlogs_file_select_job_first")
+                    : schedulerAvailableFiles.length === 0
+                      ? t("schedulerlogs_file_empty")
+                      : undefined
+                }
+              >
+                {schedulerAvailableFiles.map((item) => (
+                  <MenuItem key={item.source_file} value={item.source_file}>
+                    {item.source_file}
+                  </MenuItem>
+                ))}
+              </TextField>
+            ) : null}
+            <TextField
+              select
+              label={t("schedulerlogs_level")}
+              value={schedulerLevel}
+              onChange={(e) => {
+                setSchedulerLevel(e.target.value);
+                setSchedulerPage(0);
+              }}
+              sx={{ minWidth: 160 }}
+            >
+              <MenuItem value="">{t("auditlogs_result_all")}</MenuItem>
+              <MenuItem value="INFO">INFO</MenuItem>
+              <MenuItem value="WARNING">WARNING</MenuItem>
+              <MenuItem value="ERROR">ERROR</MenuItem>
+              <MenuItem value="CRITICAL">CRITICAL</MenuItem>
+            </TextField>
+            <TextField
+              label={t("schedulerlogs_keyword")}
+              value={schedulerKeyword}
+              onChange={(e) => {
+                setSchedulerKeyword(e.target.value);
+                setSchedulerPage(0);
+              }}
+            />
+            <Button
+              variant="outlined"
+              onClick={clearSchedulerFilters}
+              sx={{ height: 56, alignSelf: { xs: "stretch", md: "flex-start" } }}
+            >
+              {t("common_clear")}
+            </Button>
+          </Stack>
+
+          {schedulerLoading ? <LoadingBlock text={t("schedulerlogs_loading")} /> : null}
+          {!schedulerLoading && schedulerError ? <ErrorBlock message={schedulerError} /> : null}
+          {!schedulerLoading && !schedulerError && schedulerItems.length === 0 ? <EmptyBlock text={t("schedulerlogs_empty")} /> : null}
+          {!schedulerLoading && !schedulerError && schedulerItems.length > 0 ? (
+            <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "white", borderRadius: 2, p: 0.5 }}>
+              <DataGrid
+                sx={compactGridSx}
+                rows={schedulerItems}
+                columns={schedulerColumns}
+                paginationMode="server"
+                sortingMode="server"
+                rowCount={schedulerTotal}
+                paginationModel={{ page: schedulerPage, pageSize: schedulerPageSize }}
+                sortModel={schedulerSortModel}
+                onPaginationModelChange={(model) => {
+                  setSchedulerPage(model.page);
+                  setSchedulerPageSize(model.pageSize);
+                }}
+                onSortModelChange={(model) => {
+                  setSchedulerSortModel(model.length ? model : [{ field: "timestamp", sort: "desc" }]);
+                  setSchedulerPage(0);
+                }}
+                pageSizeOptions={COMPACT_MAIN_PAGE_SIZE_OPTIONS}
+                disableRowSelectionOnClick
+                {...compactGridProps}
+                localeText={gridLocaleText}
+              />
+            </Box>
+          ) : null}
+        </>
+      ) : null}
+
       <Dialog open={Boolean(selectedOperationLog)} onClose={() => setSelectedOperationLog(null)} fullWidth maxWidth="sm">
         <DialogTitle>{t("auditlogs_detail_title")}</DialogTitle>
         <DialogContent>
@@ -548,6 +822,29 @@ export default function OperationAuditLogsPage({ auth }) {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSelectedOperationLog(null)}>{t("common_close")}</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(selectedSchedulerLog)} onClose={() => setSelectedSchedulerLog(null)} fullWidth maxWidth="md">
+        <DialogTitle>{t("schedulerlogs_detail_title")}</DialogTitle>
+        <DialogContent>
+          {selectedSchedulerLog ? (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <TextField label={t("schedulerlogs_col_job")} value={selectedSchedulerLog.job || ""} InputProps={{ readOnly: true }} />
+              <TextField label={t("schedulerlogs_col_source_file")} value={selectedSchedulerLog.source_file || ""} InputProps={{ readOnly: true }} />
+              <TextField label={t("schedulerlogs_col_level")} value={selectedSchedulerLog.level || ""} InputProps={{ readOnly: true }} />
+              <TextField
+                label={t("schedulerlogs_col_raw_line")}
+                value={selectedSchedulerLog.raw_line || ""}
+                InputProps={{ readOnly: true }}
+                multiline
+                minRows={4}
+              />
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSelectedSchedulerLog(null)}>{t("common_close")}</Button>
         </DialogActions>
       </Dialog>
     </Stack>
