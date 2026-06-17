@@ -16,15 +16,22 @@ const adminAuth = {
   role: "admin"
 };
 
-test("user sees shared navigation including models", () => {
-  render(
-    <MemoryRouter>
-      <AppLayout auth={userAuth}>
+function renderAppLayout({ path = "/", auth = userAuth, props = {} } = {}) {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <AppLayout auth={auth} {...props}>
         <div>content</div>
       </AppLayout>
     </MemoryRouter>
   );
+}
 
+test("user sees shared navigation including models", () => {
+  renderAppLayout();
+
+  const navLinks = screen.getAllByRole("link");
+  expect(navLinks[0]).toHaveTextContent("系統公告");
+  expect(navLinks[1]).toHaveTextContent("服務使用說明");
   expect(screen.getByRole("link", { name: "系統公告" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "申請" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "API Keys" })).toBeInTheDocument();
@@ -41,13 +48,7 @@ test("user sees shared navigation including models", () => {
 test("locale menu triggers onChangeLocale with selected value", () => {
   const onChangeLocale = vi.fn();
 
-  render(
-    <MemoryRouter>
-      <AppLayout auth={userAuth} onChangeLocale={onChangeLocale}>
-        <div>content</div>
-      </AppLayout>
-    </MemoryRouter>
-  );
+  renderAppLayout({ props: { onChangeLocale } });
 
   fireEvent.click(screen.getByLabelText("語言"));
   fireEvent.click(screen.getByRole("menuitem", { name: "EN" }));
@@ -56,13 +57,7 @@ test("locale menu triggers onChangeLocale with selected value", () => {
 });
 
 test("locale menu shows checkmark for current locale", () => {
-  render(
-    <MemoryRouter>
-      <AppLayout auth={userAuth}>
-        <div>content</div>
-      </AppLayout>
-    </MemoryRouter>
-  );
+  renderAppLayout();
 
   fireEvent.click(screen.getByLabelText("語言"));
 
@@ -71,16 +66,11 @@ test("locale menu shows checkmark for current locale", () => {
 });
 
 test("admin sees whitelist nav", () => {
-  render(
-    <MemoryRouter>
-      <AppLayout auth={adminAuth}>
-        <div>content</div>
-      </AppLayout>
-    </MemoryRouter>
-  );
+  renderAppLayout({ auth: adminAuth });
 
   const navLinks = screen.getAllByRole("link");
   expect(navLinks[0]).toHaveTextContent("系統公告");
+  expect(navLinks[1]).toHaveTextContent("服務使用說明");
   expect(screen.getByRole("link", { name: "特殊人員名單管理" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "系統公告" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "使用量" })).toBeInTheDocument();
@@ -93,14 +83,29 @@ test("admin sees whitelist nav", () => {
 
 test("clicking logout icon triggers onLogout", () => {
   const onLogout = vi.fn();
-  render(
-    <MemoryRouter>
-      <AppLayout auth={userAuth} onLogout={onLogout}>
-        <div>content</div>
-      </AppLayout>
-    </MemoryRouter>
-  );
+  renderAppLayout({ props: { onLogout } });
 
   fireEvent.click(screen.getByLabelText("登出"));
   expect(onLogout).toHaveBeenCalledTimes(1);
+});
+
+test("usage route only highlights usage nav item", () => {
+  renderAppLayout({ path: "/usage" });
+
+  expect(screen.getByRole("link", { name: "使用量" })).toHaveClass("MuiButton-colorSecondary");
+  expect(screen.getByRole("link", { name: "服務使用說明" })).not.toHaveClass("MuiButton-colorSecondary");
+});
+
+test("usage examples route only highlights usage examples nav item", () => {
+  renderAppLayout({ path: "/usage-examples" });
+
+  expect(screen.getByRole("link", { name: "服務使用說明" })).toHaveClass("MuiButton-colorSecondary");
+  expect(screen.getByRole("link", { name: "使用量" })).not.toHaveClass("MuiButton-colorSecondary");
+});
+
+test("nested api key route keeps api keys nav active", () => {
+  renderAppLayout({ path: "/api-keys/123" });
+
+  expect(screen.getByRole("link", { name: "API Keys" })).toHaveClass("MuiButton-colorSecondary");
+  expect(screen.getByRole("link", { name: "使用量" })).not.toHaveClass("MuiButton-colorSecondary");
 });

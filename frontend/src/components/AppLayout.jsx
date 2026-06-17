@@ -8,10 +8,10 @@ import { useLocale } from "../i18n/locale";
 
 const navItems = [
   { labelKey: "nav_announcements", path: "/announcements", roles: ["user", "admin"] },
+  { labelKey: "nav_models", path: "/usage-examples", roles: ["user", "admin"] },
   { labelKey: "nav_apply", path: "/apply", roles: ["user", "admin"] },
   { labelKey: "nav_api_keys", path: "/api-keys", roles: ["user", "admin"] },
   { labelKey: "nav_usage", path: "/usage", roles: ["user", "admin"] },
-  { labelKey: "nav_models", path: "/usage-examples", roles: ["user", "admin"] },
   { labelKey: "nav_whitelists", path: "/whitelists", roles: ["admin"] },
   { labelKey: "nav_limit_strategies", path: "/limit-strategies", roles: ["admin"] },
   { labelKey: "nav_admins", path: "/users", roles: ["admin"] },
@@ -19,6 +19,10 @@ const navItems = [
   { labelKey: "nav_operation_logs", path: "/operation-audit-logs", roles: ["admin"] },
   { labelKey: "nav_institute_view", path: "/institute-view", roles: ["admin"] }
 ];
+
+function isNavItemActive(pathname, itemPath) {
+  return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
+}
 
 export default function AppLayout({
   children,
@@ -74,7 +78,7 @@ export default function AppLayout({
               key={item.labelKey}
               component={RouterLink}
               to={item.path}
-              color={location.pathname.startsWith(item.path.replace(":id", "")) ? "secondary" : "inherit"}
+              color={isNavItemActive(location.pathname, item.path) ? "secondary" : "inherit"}
               sx={{
                 ml: { xs: 0.5, sm: 1 },
                 px: { xs: 1, sm: 1.5 },
