@@ -256,6 +256,7 @@ ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run
 cd backend
 ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh
 ```
+- 前置條件：部署或升版後需先完成 `cd backend && uv run alembic upgrade head`；若 `api_key_usage_snapshots` 尚未套用 daily bucket schema（`0044_usage_daily_buckets`），腳本會明確失敗並提示先補 migration。
 - 參數範例：
 ```bash
 cd backend

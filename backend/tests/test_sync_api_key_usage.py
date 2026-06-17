@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -217,3 +218,21 @@ def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(cli
     assert len(rows) == 1
     assert float(rows[0]["spend"]) == 0.75
     assert rows[0]["total_tokens"] == 300
+
+
+def test_usage_sync_script_fails_fast_when_daily_bucket_columns_are_missing(monkeypatch):
+    from scripts import sync_api_key_usage
+
+    class _FakeInspector:
+        def get_columns(self, table_name: str) -> list[dict]:
+            assert table_name == "api_key_usage_snapshots"
+            return [{"name": "id"}, {"name": "api_key_id"}, {"name": "spend"}]
+
+    fake_session = SimpleNamespace(bind=object())
+    monkeypatch.setattr(sync_api_key_usage, "inspect", lambda bind: _FakeInspector())
+
+    with pytest.raises(sync_api_key_usage.UsageSnapshotSchemaError) as exc_info:
+        sync_api_key_usage._ensure_usage_snapshot_schema(fake_session)
+
+    assert "bucket_granularity" in str(exc_info.value)
+    assert "alembic upgrade head" in str(exc_info.value)

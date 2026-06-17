@@ -11,7 +11,7 @@ import sys
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Select, func, literal, select, update
+from sqlalchemy import Select, func, inspect, literal, select, update
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 LOG_TZ = ZoneInfo("Asia/Taipei")
@@ -45,6 +45,10 @@ class DailyUsageBucket:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+
+
+class UsageSnapshotSchemaError(RuntimeError):
+    """Raised when usage snapshot schema is older than the script expects."""
 
 
 class TaipeiDateFormatter(logging.Formatter):
@@ -107,6 +111,20 @@ def _collect_candidates(*, batch_size: int) -> list[UsageSyncCandidate]:
     with SessionLocal() as session:
         rows = session.execute(stmt).all()
     return [UsageSyncCandidate(key_id=row.id, key_alias=row.effective_key_alias) for row in rows]
+
+
+def _ensure_usage_snapshot_schema(session) -> None:
+    required_columns = {"bucket_granularity", "bucket_start_utc", "bucket_end_utc"}
+    inspector = inspect(session.bind)
+    existing_columns = {column["name"] for column in inspector.get_columns("api_key_usage_snapshots")}
+    missing_columns = sorted(required_columns - existing_columns)
+    if not missing_columns:
+        return
+    missing = ", ".join(missing_columns)
+    raise UsageSnapshotSchemaError(
+        "api_key_usage_snapshots schema is missing required columns: "
+        f"{missing}. Run 'cd backend && uv run alembic upgrade head' before sync_api_key_usage."
+    )
 
 
 def _coerce_datetime(value: object) -> datetime | None:
@@ -277,6 +295,9 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
     candidates = _collect_candidates(batch_size=batch_size)
     if dry_run or not candidates:
         return len(candidates)
+
+    with SessionLocal() as session:
+        _ensure_usage_snapshot_schema(session)
 
     provider_client = ProviderClient()
     now = _now_utc()

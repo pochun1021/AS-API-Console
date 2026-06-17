@@ -286,6 +286,13 @@ cd backend
 ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh
 ```
 
+前置條件：先確認 migration 已到最新版本，至少包含 `0044_usage_daily_buckets`。
+```bash
+cd backend
+ENV_FILE=/home/app/config/.env uv run alembic upgrade head
+```
+- 若腳本回報 `api_key_usage_snapshots schema is missing required columns`，代表部署環境仍是舊 schema，需先補跑 migration，再重新執行 usage sync。
+
 先看 dry-run：
 ```bash
 cd backend
