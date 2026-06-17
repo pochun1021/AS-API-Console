@@ -916,7 +916,7 @@ class ApiKeysService:
         try:
             plaintext = self._decrypt_key_for_provider(key)
             if self._provider_operates_remotely():
-                provider_result = self.provider_client.delete_key({"key": plaintext})
+                provider_result = self.provider_client.delete_key({"keys": [plaintext]})
                 provider_metadata = self._provider_metadata(
                     request_id=provider_result.request_id,
                     operation_id=provider_result.operation_id,

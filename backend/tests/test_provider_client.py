@@ -205,13 +205,13 @@ def test_delete_key_posts_to_delete_endpoint(monkeypatch: pytest.MonkeyPatch) ->
     fake_client = _FakeClient(_response("ok"))
     monkeypatch.setattr("app.services.provider_client.build_safe_httpx_client", lambda **kwargs: fake_client)
 
-    result = client.delete_key({"key": "AS-old"})
+    result = client.delete_key({"keys": ["AS-old"]})
 
     assert result.success is True
     assert fake_client.calls == [
         {
             "url": "/key/delete",
-            "json": {"key": "AS-old"},
+            "json": {"keys": ["AS-old"]},
             "headers": {
                 "Content-Type": "application/json",
                 "Authorization": "Bearer secret-token",

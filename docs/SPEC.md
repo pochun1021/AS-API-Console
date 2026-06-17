@@ -864,7 +864,7 @@ Base path：`/main/api/v1`
 - 規則：
   - `user` 僅可停用本人 `active` key；`admin` 可停用任意 `active` key。
   - revoke 對應 provider `delete`；前端不得提供舊明文 key，後端需從 `key_ciphertext` 解密後直接呼叫 provider。
-  - 呼叫 provider `delete` 時，request body 需以 `key` 欄位傳送舊明文 key。
+  - 呼叫 provider `delete` 時，request body 需以 `keys` 陣列傳送舊明文 key；單筆 revoke 也需包成單元素陣列。
   - provider `delete` 成功後，才可將本地 `api_keys.status` 與對應 `api_key_applications.status` 同步為 `revoked`。
   - provider timeout / 5xx / 明確拒絕、缺少密文、或解密失敗時，本地不得先標記為 `revoked`。
 

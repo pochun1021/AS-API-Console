@@ -1254,7 +1254,7 @@ def test_provider_mutation_payloads_use_key_field_and_shared_contract(client, ad
     try:
         revoke = client.post(_api(f"/api-keys/{key_id}/revoke"), headers=user)
         assert revoke.status_code == 200
-        assert captured_delete_payload == {"key": created_plaintext}
+        assert captured_delete_payload == {"keys": [created_plaintext]}
 
         renew = client.post(_api(f"/api-keys/{key_id}/renew"), headers=user)
         assert renew.status_code == 200
