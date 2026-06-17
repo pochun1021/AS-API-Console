@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from db.migrations.helpers import constraint_exists
+from db.migrations.helpers import column_exists, constraint_exists
 
 revision: str = "0043_duration_days_contract"
 down_revision: str | None = "0042_add_announcements"
@@ -22,89 +22,114 @@ def _drop_check_constraint_if_exists(name: str) -> None:
         op.execute(sa.text(f"ALTER TABLE api_key_applications DROP CONSTRAINT {name}"))
 
 
+def _current_duration_columns() -> tuple[str, str]:
+    duration_column = "duration_days" if column_exists("api_key_applications", "duration_days") else "duration_months"
+    original_duration_column = (
+        "original_duration_days"
+        if column_exists("api_key_applications", "original_duration_days")
+        else "original_duration_months"
+    )
+    return duration_column, original_duration_column
+
+
 def upgrade() -> None:
     _drop_check_constraint_if_exists("ck_applications_duration_months")
     _drop_check_constraint_if_exists("ck_applications_original_duration_months")
+    duration_column, original_duration_column = _current_duration_columns()
 
     op.execute(
-        """
+        sa.text(
+            f"""
         UPDATE api_key_applications
-        SET duration_months = CASE duration_months
+        SET {duration_column} = CASE {duration_column}
             WHEN 1 THEN 30
             WHEN 6 THEN 180
             WHEN 12 THEN 360
-            ELSE duration_months
+            ELSE {duration_column}
         END,
-        original_duration_months = CASE original_duration_months
+        {original_duration_column} = CASE {original_duration_column}
             WHEN 1 THEN 30
             WHEN 6 THEN 180
             WHEN 12 THEN 360
-            ELSE original_duration_months
+            ELSE {original_duration_column}
         END
         """
+        )
     )
 
-    op.alter_column(
-        "api_key_applications",
-        "duration_months",
-        new_column_name="duration_days",
-        existing_type=sa.Integer(),
-        existing_nullable=False,
-    )
-    op.alter_column(
-        "api_key_applications",
-        "original_duration_months",
-        new_column_name="original_duration_days",
-        existing_type=sa.Integer(),
-        existing_nullable=False,
-    )
-    op.create_check_constraint("ck_applications_duration_days", "api_key_applications", "duration_days in (30, 180, 360)")
-    op.create_check_constraint(
-        "ck_applications_original_duration_days",
-        "api_key_applications",
-        "original_duration_days in (30, 180, 360)",
-    )
+    if duration_column == "duration_months":
+        op.alter_column(
+            "api_key_applications",
+            "duration_months",
+            new_column_name="duration_days",
+            existing_type=sa.Integer(),
+            existing_nullable=False,
+        )
+    if original_duration_column == "original_duration_months":
+        op.alter_column(
+            "api_key_applications",
+            "original_duration_months",
+            new_column_name="original_duration_days",
+            existing_type=sa.Integer(),
+            existing_nullable=False,
+        )
+    if not constraint_exists("api_key_applications", "ck_applications_duration_days", type_="check"):
+        op.create_check_constraint("ck_applications_duration_days", "api_key_applications", "duration_days in (30, 180, 360)")
+    if not constraint_exists("api_key_applications", "ck_applications_original_duration_days", type_="check"):
+        op.create_check_constraint(
+            "ck_applications_original_duration_days",
+            "api_key_applications",
+            "original_duration_days in (30, 180, 360)",
+        )
 
 
 def downgrade() -> None:
     _drop_check_constraint_if_exists("ck_applications_duration_days")
     _drop_check_constraint_if_exists("ck_applications_original_duration_days")
-    op.alter_column(
-        "api_key_applications",
-        "duration_days",
-        new_column_name="duration_months",
-        existing_type=sa.Integer(),
-        existing_nullable=False,
-    )
-    op.alter_column(
-        "api_key_applications",
-        "original_duration_days",
-        new_column_name="original_duration_months",
-        existing_type=sa.Integer(),
-        existing_nullable=False,
-    )
+    duration_column, original_duration_column = _current_duration_columns()
+    if duration_column == "duration_days":
+        op.alter_column(
+            "api_key_applications",
+            "duration_days",
+            new_column_name="duration_months",
+            existing_type=sa.Integer(),
+            existing_nullable=False,
+        )
+    if original_duration_column == "original_duration_days":
+        op.alter_column(
+            "api_key_applications",
+            "original_duration_days",
+            new_column_name="original_duration_months",
+            existing_type=sa.Integer(),
+            existing_nullable=False,
+        )
+    duration_column, original_duration_column = _current_duration_columns()
 
     op.execute(
-        """
+        sa.text(
+            f"""
         UPDATE api_key_applications
-        SET duration_months = CASE duration_months
+        SET {duration_column} = CASE {duration_column}
             WHEN 30 THEN 1
             WHEN 180 THEN 6
             WHEN 360 THEN 12
-            ELSE duration_months
+            ELSE {duration_column}
         END,
-        original_duration_months = CASE original_duration_months
+        {original_duration_column} = CASE {original_duration_column}
             WHEN 30 THEN 1
             WHEN 180 THEN 6
             WHEN 360 THEN 12
-            ELSE original_duration_months
+            ELSE {original_duration_column}
         END
         """
+        )
     )
 
-    op.create_check_constraint("ck_applications_duration_months", "api_key_applications", "duration_months > 0")
-    op.create_check_constraint(
-        "ck_applications_original_duration_months",
-        "api_key_applications",
-        "original_duration_months > 0",
-    )
+    if not constraint_exists("api_key_applications", "ck_applications_duration_months", type_="check"):
+        op.create_check_constraint("ck_applications_duration_months", "api_key_applications", "duration_months > 0")
+    if not constraint_exists("api_key_applications", "ck_applications_original_duration_months", type_="check"):
+        op.create_check_constraint(
+            "ck_applications_original_duration_months",
+            "api_key_applications",
+            "original_duration_months > 0",
+        )
