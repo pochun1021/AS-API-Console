@@ -65,6 +65,16 @@
 - 正式路由為 `/usage-examples`。
 - 正式入口使用既有主導覽列中的「服務使用說明」項目；第一版不另外要求在 Apply Page 提供快捷入口。
 - 主導覽列中的「服務使用說明」入口需緊接在「系統公告」右側。
+- 登入後共用主導覽列需支援 responsive 版型：
+  - 桌機寬度維持頂部 horizontal navigation。
+  - 較小寬度需切換為 hamburger menu + Drawer，不再把所有導覽項目硬塞在同一列。
+  - desktop nav 與 Drawer nav 需共用同一組導覽項定義；`user`、`admin` 的可見項目規則不得分叉。
+- responsive 主導覽列驗收規則：
+  - 小螢幕下導覽標籤不得互相重疊、擠壓到不可讀，且不得造成水平 overflow。
+  - active route 標示在桌機與 Drawer 內都需維持正確。
+  - 語言切換與登出在較小寬度下仍需可直接操作。
+  - mobile 導覽不得依賴 hover。
+  - 第一版不採水平可捲動導覽列，也不以多排換行 top nav 作為主要解法。
 - 頁面需同時呈現兩類資訊：
   - 服務使用說明文件（靜態內容）
   - 可用模型清單（動態資料）
@@ -117,6 +127,7 @@
 - `System Announcements Page`：
   - `user` 與 `admin` 都可使用，且主導覽列中的「系統公告」入口需位於最左側。
   - 主導覽列中的「服務使用說明」入口需位於「系統公告」右側，作為固定相鄰入口。
+  - 主導覽列在較小寬度下切換為 Drawer 時，`系統公告` 與 `服務使用說明` 仍需維持前兩個共享入口順序。
   - `user` 進入此頁時，僅可查看目前有效公告；不得看到 inactive、未上架、已下架公告，也不得看到新增、編輯、刪除等管理操作。
   - `user` 與 `admin` 的公告列表都需使用表格式呈現，且公告內文不得直接常駐於列表中。
   - `user` 與 `admin` 都可點擊公告 `title` 開啟 modal 查看完整 `body`。
@@ -1257,6 +1268,8 @@ Base path：`/main/api/v1`
 46A. `POST /main/api/v1/institutes/sync` 需具備全域 single-flight 與 cooldown 保護：同時間只允許一個手動同步執行；執行中需回 `429 INSTITUTE_SYNC_IN_PROGRESS`，冷卻中需回 `429 INSTITUTE_SYNC_COOLDOWN`，且 `429` 回應至少包含 `retry_after_seconds` 與 `next_allowed_at`。成功後冷卻 `15` 分鐘，失敗後冷卻 `1` 分鐘；成功回應 shape 仍僅包含既有同步統計欄位。
 46B. `GET /main/api/v1/institutes/sync-status` 需回傳 DB 持久化的手動同步狀態，供前端重新整理頁面後立即恢復 cooldown 倒數與按鈕 disable 狀態。
 47. `user` 與 `admin` 都需可從主導覽列進入「服務使用說明」頁；正式路由為 `/usage-examples`，且頁面中的 `GET /main/api/v1/models` 需允許兩種角色成功呼叫。
+47A. 登入後共用主導覽列需支援 responsive 行為：桌機維持頂部 horizontal navigation；較小寬度切換為 hamburger menu + Drawer，且 `系統公告`、`服務使用說明` 仍需維持前兩個共享入口順序。
+47B. responsive 主導覽列不得在小螢幕產生導覽標籤重疊、不可讀文字或水平 overflow；active route、語言切換與登出在桌機與 Drawer 內都需可正確使用。
 48. `GET /main/api/v1/models` 遇到 provider OpenAI-style `data` 陣列時，需正規化為 `{ id, label }` 清單；provider 回傳字串陣列時也需正規化成功，並去除空值、去重與依字母排序。
 49. `GET /main/api/v1/models` 若 provider timeout 或 `5xx`，需回傳 `503 PROVIDER_UNAVAILABLE`；若 provider payload 無法辨識，需走受控錯誤流程，且不得洩漏原始 payload。
 50. 服務使用說明頁中的模型清單區塊在 mount 時需自動查詢一次；手動重新整理與每 `15` 分鐘自動刷新需重用同一查詢流程；頁面離開時需清除 timer。
