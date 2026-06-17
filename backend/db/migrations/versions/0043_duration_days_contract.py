@@ -32,6 +32,32 @@ def _current_duration_columns() -> tuple[str, str]:
     return duration_column, original_duration_column
 
 
+def _normalized_duration_sql(column_name: str) -> str:
+    return f"""
+        CASE
+            WHEN {column_name} IN (30, 180, 360) THEN {column_name}
+            WHEN {column_name} = 1 THEN 30
+            WHEN {column_name} = 6 THEN 180
+            WHEN {column_name} = 12 THEN 360
+            WHEN {column_name} IS NULL OR {column_name} <= 0 THEN 30
+            WHEN {column_name} < 30 THEN 30
+            WHEN {column_name} < 180 THEN 180
+            ELSE 360
+        END
+    """
+
+
+def _effective_duration_sql(duration_column: str, original_duration_column: str) -> str:
+    normalized_original = _normalized_duration_sql(original_duration_column)
+    return f"""
+        CASE
+            WHEN {duration_column} IN (30, 180, 360) THEN {duration_column}
+            WHEN {duration_column} IN (1, 6, 12) THEN {_normalized_duration_sql(duration_column)}
+            ELSE {normalized_original}
+        END
+    """
+
+
 def upgrade() -> None:
     _drop_check_constraint_if_exists("ck_applications_duration_months")
     _drop_check_constraint_if_exists("ck_applications_original_duration_months")
@@ -41,18 +67,8 @@ def upgrade() -> None:
         sa.text(
             f"""
         UPDATE api_key_applications
-        SET {duration_column} = CASE {duration_column}
-            WHEN 1 THEN 30
-            WHEN 6 THEN 180
-            WHEN 12 THEN 360
-            ELSE {duration_column}
-        END,
-        {original_duration_column} = CASE {original_duration_column}
-            WHEN 1 THEN 30
-            WHEN 6 THEN 180
-            WHEN 12 THEN 360
-            ELSE {original_duration_column}
-        END
+        SET {duration_column} = {_effective_duration_sql(duration_column, original_duration_column)},
+            {original_duration_column} = {_normalized_duration_sql(original_duration_column)}
         """
         )
     )
