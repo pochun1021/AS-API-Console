@@ -18,7 +18,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("api_key_applications") as batch_op:
+    with op.batch_alter_table("api_key_applications", recreate="always") as batch_op:
         if constraint_exists("api_key_applications", "ck_applications_duration_months", type_="check"):
             batch_op.drop_constraint("ck_applications_duration_months", type_="check")
         if constraint_exists("api_key_applications", "ck_applications_original_duration_months", type_="check"):
@@ -42,7 +42,7 @@ def upgrade() -> None:
         """
     )
 
-    with op.batch_alter_table("api_key_applications") as batch_op:
+    with op.batch_alter_table("api_key_applications", recreate="always") as batch_op:
         batch_op.alter_column("duration_months", new_column_name="duration_days", existing_type=sa.Integer())
         batch_op.alter_column(
             "original_duration_months",
@@ -57,7 +57,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("api_key_applications") as batch_op:
+    with op.batch_alter_table("api_key_applications", recreate="always") as batch_op:
         if constraint_exists("api_key_applications", "ck_applications_duration_days", type_="check"):
             batch_op.drop_constraint("ck_applications_duration_days", type_="check")
         if constraint_exists("api_key_applications", "ck_applications_original_duration_days", type_="check"):
@@ -87,7 +87,7 @@ def downgrade() -> None:
         """
     )
 
-    with op.batch_alter_table("api_key_applications") as batch_op:
+    with op.batch_alter_table("api_key_applications", recreate="always") as batch_op:
         batch_op.create_check_constraint("ck_applications_duration_months", "duration_months > 0")
         batch_op.create_check_constraint(
             "ck_applications_original_duration_months",
