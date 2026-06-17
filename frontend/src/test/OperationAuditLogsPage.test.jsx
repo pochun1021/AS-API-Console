@@ -43,6 +43,19 @@ test("admin can switch to login logs tab and view login entries", async () => {
   expect(screen.getByRole("columnheader", { name: "Provider" })).toBeInTheDocument();
 });
 
+test("admin can switch to scheduler logs tab and view scheduler entries", async () => {
+  const user = userEvent.setup();
+  renderPage(<OperationAuditLogsPage auth={adminAuth} />);
+
+  expect(await screen.findByText("操作稽核 Log")).toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "排程器 Log" }));
+
+  expect(await screen.findByText("event=usage_sync mode=sync processed_keys=10 success=8 failed=2")).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "Job" })).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "檔案" })).toBeInTheDocument();
+  expect(screen.getByLabelText("檔案日期")).toHaveAttribute("aria-disabled", "true");
+});
+
 test("admin can open failure detail dialog for operation audit logs", async () => {
   const user = userEvent.setup();
   renderPage(<OperationAuditLogsPage auth={adminAuth} />);
@@ -114,6 +127,45 @@ test("login audit filters send full server-side query params", async () => {
         role: "user",
         sort_by: "account",
         sort_dir: "asc"
+      }),
+      adminAuth
+    );
+  });
+});
+
+test("scheduler audit filters send full server-side query params and open raw line dialog", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(mockApiProvider, "listSchedulerLogs");
+  renderPage(<OperationAuditLogsPage auth={adminAuth} />);
+
+  expect(await screen.findByText("操作稽核 Log")).toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "排程器 Log" }));
+  expect(await screen.findByText("event=usage_sync mode=sync processed_keys=10 success=8 failed=2")).toBeInTheDocument();
+
+  await user.click(screen.getByLabelText("Job"));
+  await user.click(await screen.findByRole("option", { name: "sync_api_key_usage" }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("檔案日期")).toHaveTextContent("2026-06-17.log");
+  });
+  await user.click(screen.getByLabelText("Level"));
+  await user.click(await screen.findByRole("option", { name: "ERROR" }));
+  await user.type(screen.getByLabelText("關鍵字"), "failed=2");
+  await user.click(await screen.findByRole("button", { name: "查看原始行" }));
+
+  expect(await screen.findByRole("dialog", { name: "排程器 Log 詳情" })).toBeInTheDocument();
+  expect(screen.getByDisplayValue("[2026-06-17T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2")).toBeInTheDocument();
+  expect(screen.getAllByDisplayValue("2026-06-17.log").length).toBeGreaterThan(0);
+
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        file_mode: "date",
+        from: "2026-06-17",
+        to: "2026-06-17",
+        job: "sync_api_key_usage",
+        level: "ERROR",
+        q: "failed=2",
+        sort_dir: "desc"
       }),
       adminAuth
     );

@@ -1153,21 +1153,26 @@ Base path：`/main/api/v1`
 - `GET /main/api/v1/scheduler-logs`
 - 規則：僅 `admin` 可使用。
 - 查詢模式：此端點為 `server-side table` contract；分頁、排序與欄位篩選需由後端對完整資料集處理。
+- Scheduler Logs tab 在 `file_mode=date` 時，前端需先讓使用者選擇 `job`，再以後端回傳的可用檔案清單選擇單一 `YYYY-MM-DD.log`；不得要求使用者手動輸入或從日曆自由挑選不存在的日期。
 - 資料來源：僅允許讀取既有檔案式 scheduler logs；日誌根目錄使用 `SCHEDULER_LOG_ROOT`，未設定時 fallback `/home/app/log`。
 - 支援 `job` 白名單：
   - `sync_expired_api_keys`
   - `sync_api_key_usage`
   - `send_expiration_reminders`
-- 查詢參數：`page`、`page_size`、`job`、`from`、`to`、`level`、`q`、`sort_dir`。
+- 查詢參數：`page`、`page_size`、`job`、`file_mode`、`from`、`to`、`level`、`q`、`sort_dir`。
 - 欄位語意：
   - `job` 為 exact match，且僅允許白名單值。
-  - `from`、`to` 格式為 `YYYY-MM-DD`，以 `Asia/Taipei` 日曆日對應日誌檔日期；未提供時預設查最近 7 天。
+  - `file_mode` 僅允許 `date|all|latest`，預設 `date`。
+  - `file_mode=date` 時，`from`、`to` 格式為 `YYYY-MM-DD`，以 `Asia/Taipei` 日曆日對應日誌檔日期；未提供時預設查最近 7 天。
+  - `file_mode=all` 時，忽略 `from`、`to`，改為讀取目標 `job` 目錄下全部符合 `YYYY-MM-DD.log` 的檔案；若未指定 `job`，則對全部白名單 job 各自讀取全部檔案後合併。
+  - `file_mode=latest` 時，忽略 `from`、`to`，改為只讀取目標 `job` 目錄下最新一個符合 `YYYY-MM-DD.log` 的檔案；若未指定 `job`，則對全部白名單 job 各自讀取最新檔後合併。
   - `level` 僅允許 `INFO|WARNING|ERROR|CRITICAL`，為 exact match。
   - `q` 為 case-insensitive `contains`，同時比對 parsed `message` 與 `raw_line`。
   - `sort_dir` 僅允許 `asc|desc`，預設 `desc`。
 - 檔案處理規則：
   - 僅可由白名單 `job` 映射到白名單目錄，不得接受任意路徑或檔名輸入。
-  - 需依日期區間展開對應 daily log file 清單，缺少的日誌檔視為空資料，不得回錯。
+  - `file_mode=date` 需依日期區間展開對應 daily log file 清單，缺少的日誌檔視為空資料，不得回錯。
+  - `file_mode=all|latest` 僅可接受符合 `YYYY-MM-DD.log` 命名規則的檔案；其他檔名一律忽略。
   - 需解析既有 log format：`[timestamp] level=LEVEL message`；若僅能部分解析，仍需保留 `raw_line`。
   - 合併多檔結果後，再統一套用 filter、sort 與 pagination。
 - 排序：
@@ -1176,11 +1181,18 @@ Base path：`/main/api/v1`
 - Response（200）：
 ```json
 {
+  "available_files": [
+    {
+      "log_date": "2026-06-17",
+      "source_file": "2026-06-17.log"
+    }
+  ],
   "items": [
     {
       "id": "sync_api_key_usage:2026-06-17:12",
       "job": "sync_api_key_usage",
       "log_date": "2026-06-17",
+      "source_file": "2026-06-17.log",
       "timestamp": "2026-06-17T00:05:01+08:00",
       "level": "INFO",
       "message": "event=usage_sync mode=sync processed_keys=10 success=9 failed=1",

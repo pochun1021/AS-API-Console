@@ -1,13 +1,18 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from zoneinfo import ZoneInfo
 
 from app.core.config import get_settings
 from db.models.auth_audit_logs import AuthAuditLog
 from db.models.operation_audit_logs import OperationAuditLog
 from tests.conftest import api_path
+
+
+TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 
 
 def _engine():
@@ -66,6 +71,12 @@ def _assert_utc_string(value: str) -> None:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     assert parsed.tzinfo is not None
     assert value.endswith("Z") or value.endswith("+00:00")
+
+
+def _write_scheduler_log(log_root: Path, job: str, log_date: str, lines: list[str]) -> None:
+    log_dir = log_root / job
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / f"{log_date}.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 test_cases = [
@@ -209,3 +220,127 @@ def test_audit_logs_reject_invalid_sort_fields(client, admin_headers):
     auth = client.get(api_path("/auth-audit-logs?sort_dir=sideways"), headers=admin_headers)
     assert auth.status_code == 422
     assert auth.json()["error"]["message"] == "sort_dir must be asc or desc"
+
+
+def test_scheduler_logs_admin_only(client, admin_headers, user_headers, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.services.scheduler_log_query_service.get_settings", lambda: type("S", (), {"scheduler_log_root": str(tmp_path)})())
+    _write_scheduler_log(
+        tmp_path,
+        "sync_expired_api_keys",
+        "2026-06-17",
+        ["[2026-06-17T00:05:01+08:00] level=INFO event=expired_key_sync updated_count=3 status=success"],
+    )
+
+    denied = client.get(api_path("/scheduler-logs"), headers=user_headers)
+    assert denied.status_code == 403
+
+    ok = client.get(api_path("/scheduler-logs"), headers=admin_headers)
+    assert ok.status_code == 200
+    body = ok.json()
+    assert body["available_files"] == []
+    assert body["total"] == 1
+    assert body["items"][0]["job"] == "sync_expired_api_keys"
+
+
+def test_scheduler_logs_support_default_window_filters_sort_and_pagination(client, admin_headers, tmp_path, monkeypatch):
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            frozen = datetime(2026, 6, 17, 9, 30, tzinfo=TAIPEI_TZ)
+            return frozen if tz is None else frozen.astimezone(tz)
+
+    monkeypatch.setattr("app.services.scheduler_log_query_service.get_settings", lambda: type("S", (), {"scheduler_log_root": str(tmp_path)})())
+    monkeypatch.setattr("app.services.scheduler_log_query_service.datetime", _FrozenDateTime)
+    _write_scheduler_log(
+        tmp_path,
+        "sync_api_key_usage",
+        "2026-06-17",
+        [
+            "[2026-06-17T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1",
+            "[2026-06-17T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2",
+        ],
+    )
+    _write_scheduler_log(
+        tmp_path,
+        "send_expiration_reminders",
+        "2026-06-16",
+        ["[2026-06-16T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1"],
+    )
+    _write_scheduler_log(
+        tmp_path,
+        "sync_expired_api_keys",
+        "2026-06-10",
+        ["[2026-06-10T00:05:01+08:00] level=INFO event=expired_key_sync updated_count=3 status=success"],
+    )
+
+    resp = client.get(api_path("/scheduler-logs"), headers=admin_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["available_files"] == []
+    assert body["total"] == 3
+    assert [item["job"] for item in body["items"]] == [
+        "sync_api_key_usage",
+        "sync_api_key_usage",
+        "send_expiration_reminders",
+    ]
+    assert body["items"][0]["source_file"] == "2026-06-17.log"
+    assert body["items"][0]["timestamp"] == "2026-06-17T00:15:01+08:00"
+    assert body["items"][0]["raw_line"].startswith("[2026-06-17T00:15:01+08:00] level=ERROR")
+
+    filtered = client.get(
+        api_path("/scheduler-logs?job=sync_api_key_usage&level=ERROR&q=failed=2"),
+        headers=admin_headers,
+    )
+    assert filtered.status_code == 200
+    filtered_body = filtered.json()
+    assert filtered_body["available_files"] == [{"log_date": "2026-06-17", "source_file": "2026-06-17.log"}]
+    assert filtered_body["total"] == 1
+    assert filtered_body["items"][0]["level"] == "ERROR"
+    assert filtered_body["items"][0]["message"] == "event=usage_sync mode=sync processed_keys=10 success=8 failed=2"
+
+    asc = client.get(api_path("/scheduler-logs?sort_dir=asc&page=1&page_size=2"), headers=admin_headers)
+    assert asc.status_code == 200
+    asc_body = asc.json()
+    assert asc_body["total"] == 3
+    assert len(asc_body["items"]) == 2
+    assert asc_body["items"][0]["timestamp"] == "2026-06-16T08:00:00+08:00"
+    assert asc_body["items"][1]["timestamp"] == "2026-06-17T00:05:01+08:00"
+
+    missing = client.get(
+        api_path("/scheduler-logs?job=sync_expired_api_keys&from=2026-06-15&to=2026-06-15"),
+        headers=admin_headers,
+    )
+    assert missing.status_code == 200
+    assert missing.json()["total"] == 0
+
+    latest = client.get(api_path("/scheduler-logs?file_mode=latest"), headers=admin_headers)
+    assert latest.status_code == 200
+    latest_body = latest.json()
+    assert latest_body["total"] == 4
+    assert {item["source_file"] for item in latest_body["items"]} == {"2026-06-17.log", "2026-06-16.log", "2026-06-10.log"}
+
+    all_logs = client.get(api_path("/scheduler-logs?job=sync_api_key_usage&file_mode=all"), headers=admin_headers)
+    assert all_logs.status_code == 200
+    all_body = all_logs.json()
+    assert all_body["total"] == 2
+    assert {item["source_file"] for item in all_body["items"]} == {"2026-06-17.log"}
+
+
+def test_scheduler_logs_reject_invalid_query_params(client, admin_headers, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.services.scheduler_log_query_service.get_settings", lambda: type("S", (), {"scheduler_log_root": str(tmp_path)})())
+
+    invalid_job = client.get(api_path("/scheduler-logs?job=bad-job"), headers=admin_headers)
+    assert invalid_job.status_code == 422
+    assert invalid_job.json()["error"]["message"] == "job is invalid"
+
+    invalid_level = client.get(api_path("/scheduler-logs?level=DEBUG"), headers=admin_headers)
+    assert invalid_level.status_code == 422
+    assert invalid_level.json()["error"]["message"] == "level is invalid"
+
+    invalid_file_mode = client.get(api_path("/scheduler-logs?file_mode=recent"), headers=admin_headers)
+    assert invalid_file_mode.status_code == 422
+    assert invalid_file_mode.json()["error"]["message"] == "file_mode is invalid"
+
+    invalid_sort_dir = client.get(api_path("/scheduler-logs?sort_dir=sideways"), headers=admin_headers)
+    assert invalid_sort_dir.status_code == 422
+    assert invalid_sort_dir.json()["error"]["message"] == "sort_dir must be asc or desc"

@@ -131,6 +131,7 @@ export const apiClient = {
   listApiKeyUserStatistics: (params, auth) => provider.listApiKeyUserStatistics(params, auth),
   listOperationAuditLogs: (params, auth) => provider.listOperationAuditLogs(params, auth),
   listAuthAuditLogs: (params, auth) => provider.listAuthAuditLogs(params, auth),
+  listSchedulerLogs: (params, auth) => provider.listSchedulerLogs(params, auth),
   listAdmins: (paramsOrAuth, maybeAuth) => provider.listAdmins(paramsOrAuth, maybeAuth),
   listAnnouncements: (paramsOrAuth, maybeAuth) => provider.listAnnouncements(paramsOrAuth, maybeAuth),
   listInstitutes: (auth) => {
