@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_constraint, safe_drop_index
 
 revision: str = "0024_api_key_renew_link"
 down_revision: str | None = "0023_rm_notifications_issue_mode"
@@ -74,8 +75,8 @@ def downgrade() -> None:
     if not _table_exists("api_keys"):
         return
 
-    op.drop_constraint("fk_api_keys_renewed_to_key_id", "api_keys", type_="foreignkey")
+    safe_drop_constraint("fk_api_keys_renewed_to_key_id", "api_keys", type_="foreignkey")
     if _index_exists("api_keys", "ix_api_keys_renewed_to_key_id"):
-        op.drop_index("ix_api_keys_renewed_to_key_id", table_name="api_keys")
+        safe_drop_index("ix_api_keys_renewed_to_key_id", table_name="api_keys")
     if _column_exists("api_keys", "renewed_to_key_id"):
         op.drop_column("api_keys", "renewed_to_key_id")

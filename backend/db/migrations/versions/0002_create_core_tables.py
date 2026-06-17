@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_index, safe_drop_table
 
 revision: str = "0002_create_core_tables"
 down_revision: str | None = "0001_init_empty"
@@ -98,17 +99,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_api_keys_application_id", table_name="api_keys")
-    op.drop_table("api_keys")
+    safe_drop_index("ix_api_keys_application_id", table_name="api_keys")
+    safe_drop_table("api_keys")
 
-    op.drop_index("ix_api_key_applications_user_id", table_name="api_key_applications")
-    op.drop_index("ix_api_key_applications_sysid", table_name="api_key_applications")
-    op.drop_index("ix_api_key_applications_email", table_name="api_key_applications")
-    op.drop_table("api_key_applications")
+    safe_drop_index("ix_api_key_applications_user_id", table_name="api_key_applications")
+    safe_drop_index("ix_api_key_applications_sysid", table_name="api_key_applications")
+    safe_drop_index("ix_api_key_applications_email", table_name="api_key_applications")
+    safe_drop_table("api_key_applications")
 
-    op.drop_index("ix_api_key_whitelist_email", table_name="api_key_whitelist")
-    op.drop_table("api_key_whitelist")
+    safe_drop_index("ix_api_key_whitelist_email", table_name="api_key_whitelist")
+    safe_drop_table("api_key_whitelist")
 
-    op.drop_index("ix_users_email", table_name="users")
-    op.drop_index("ix_users_account", table_name="users")
-    op.drop_table("users")
+    safe_drop_index("ix_users_email", table_name="users")
+    safe_drop_index("ix_users_account", table_name="users")
+    safe_drop_table("users")

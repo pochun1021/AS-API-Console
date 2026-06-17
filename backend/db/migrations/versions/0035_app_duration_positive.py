@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 from alembic import op
 import sqlalchemy as sa
+from db.migrations.helpers import constraint_exists
 
 
 revision: str = "0035_app_duration_positive"
@@ -19,7 +20,8 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     with op.batch_alter_table("api_key_applications") as batch_op:
-        batch_op.drop_constraint("ck_applications_duration_months", type_="check")
+        if constraint_exists("api_key_applications", "ck_applications_duration_months", type_="check"):
+            batch_op.drop_constraint("ck_applications_duration_months", type_="check")
         batch_op.create_check_constraint("ck_applications_duration_months", "duration_months > 0")
 
 
@@ -34,5 +36,6 @@ def downgrade() -> None:
         )
     )
     with op.batch_alter_table("api_key_applications") as batch_op:
-        batch_op.drop_constraint("ck_applications_duration_months", type_="check")
+        if constraint_exists("api_key_applications", "ck_applications_duration_months", type_="check"):
+            batch_op.drop_constraint("ck_applications_duration_months", type_="check")
         batch_op.create_check_constraint("ck_applications_duration_months", "duration_months in (1, 6, 12)")

@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import constraint_exists
 
 revision: str = "0043_duration_days_contract"
 down_revision: str | None = "0042_add_announcements"
@@ -18,8 +19,10 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     with op.batch_alter_table("api_key_applications") as batch_op:
-        batch_op.drop_constraint("ck_applications_duration_months", type_="check")
-        batch_op.drop_constraint("ck_applications_original_duration_months", type_="check")
+        if constraint_exists("api_key_applications", "ck_applications_duration_months", type_="check"):
+            batch_op.drop_constraint("ck_applications_duration_months", type_="check")
+        if constraint_exists("api_key_applications", "ck_applications_original_duration_months", type_="check"):
+            batch_op.drop_constraint("ck_applications_original_duration_months", type_="check")
 
     op.execute(
         """
@@ -55,8 +58,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     with op.batch_alter_table("api_key_applications") as batch_op:
-        batch_op.drop_constraint("ck_applications_duration_days", type_="check")
-        batch_op.drop_constraint("ck_applications_original_duration_days", type_="check")
+        if constraint_exists("api_key_applications", "ck_applications_duration_days", type_="check"):
+            batch_op.drop_constraint("ck_applications_duration_days", type_="check")
+        if constraint_exists("api_key_applications", "ck_applications_original_duration_days", type_="check"):
+            batch_op.drop_constraint("ck_applications_original_duration_days", type_="check")
         batch_op.alter_column("duration_days", new_column_name="duration_months", existing_type=sa.Integer())
         batch_op.alter_column(
             "original_duration_days",

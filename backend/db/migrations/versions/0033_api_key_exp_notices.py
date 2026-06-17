@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_index, safe_drop_table
 
 revision: str = "0033_api_key_exp_notices"
 down_revision: str | None = "0032_rm_app_issue_cols"
@@ -66,7 +67,7 @@ def downgrade() -> None:
 
     indexes = {idx["name"] for idx in inspector.get_indexes("api_key_expiration_notices")}
     if "ix_api_key_expiration_notices_application_id" in indexes:
-        op.drop_index("ix_api_key_expiration_notices_application_id", table_name="api_key_expiration_notices")
+        safe_drop_index("ix_api_key_expiration_notices_application_id", table_name="api_key_expiration_notices")
     if "ix_api_key_expiration_notices_key_id" in indexes:
-        op.drop_index("ix_api_key_expiration_notices_key_id", table_name="api_key_expiration_notices")
-    op.drop_table("api_key_expiration_notices")
+        safe_drop_index("ix_api_key_expiration_notices_key_id", table_name="api_key_expiration_notices")
+    safe_drop_table("api_key_expiration_notices")

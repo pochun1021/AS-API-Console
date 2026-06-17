@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_index, safe_drop_table
 
 revision: str = "0018_user_preferences"
 down_revision: str | None = "0017_auth_audit_logs"
@@ -30,5 +31,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_user_preferences_sysid", table_name="user_preferences")
-    op.drop_table("user_preferences")
+    safe_drop_index("ix_user_preferences_sysid", table_name="user_preferences")
+    safe_drop_table("user_preferences")

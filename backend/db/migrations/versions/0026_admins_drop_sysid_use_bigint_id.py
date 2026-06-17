@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_index
 
 revision: str = "0026_admins_id_bigint"
 down_revision: str | None = "0025_institutes_table"
@@ -29,7 +30,7 @@ def _ensure_admin_ids_numeric_or_raise() -> None:
 
 def upgrade() -> None:
     _ensure_admin_ids_numeric_or_raise()
-    op.drop_index("ix_admins_sysid", table_name="admins")
+    safe_drop_index("ix_admins_sysid", table_name="admins")
     op.drop_column("admins", "sysid")
     with op.batch_alter_table("admins", recreate="always") as batch_op:
         batch_op.alter_column("id", existing_type=sa.String(length=36), type_=sa.BigInteger(), nullable=False)

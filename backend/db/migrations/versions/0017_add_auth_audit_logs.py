@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_index, safe_drop_table
 
 revision: str = "0017_auth_audit_logs"
 down_revision: str | None = "0016_notifications_sysid"
@@ -40,7 +41,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_auth_audit_logs_sysid", table_name="auth_audit_logs")
-    op.drop_index("ix_auth_audit_logs_result", table_name="auth_audit_logs")
-    op.drop_index("ix_auth_audit_logs_request_id", table_name="auth_audit_logs")
-    op.drop_table("auth_audit_logs")
+    safe_drop_index("ix_auth_audit_logs_sysid", table_name="auth_audit_logs")
+    safe_drop_index("ix_auth_audit_logs_result", table_name="auth_audit_logs")
+    safe_drop_index("ix_auth_audit_logs_request_id", table_name="auth_audit_logs")
+    safe_drop_table("auth_audit_logs")

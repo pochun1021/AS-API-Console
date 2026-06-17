@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_table
 
 revision: str = "0009_ls_global_cfg"
 down_revision: str | None = "0008_strategy_templates"
@@ -41,4 +42,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("limit_strategy_config")
+    safe_drop_table("limit_strategy_config")

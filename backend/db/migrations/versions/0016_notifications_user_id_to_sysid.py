@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_index
 
 revision: str = "0016_notifications_sysid"
 down_revision: str | None = "0015_drop_users_table"
@@ -30,7 +31,7 @@ def upgrade() -> None:
         op.alter_column("notifications", "sysid", existing_type=sa.String(length=36), type_=sa.String(length=100))
 
     if "ix_notifications_user_id" in indexes:
-        op.drop_index("ix_notifications_user_id", table_name="notifications")
+        safe_drop_index("ix_notifications_user_id", table_name="notifications")
 
     indexes = {idx["name"] for idx in sa.inspect(bind).get_indexes("notifications")}
     if "ix_notifications_sysid" not in indexes:
@@ -47,7 +48,7 @@ def downgrade() -> None:
     indexes = {idx["name"] for idx in inspector.get_indexes("notifications")}
 
     if "ix_notifications_sysid" in indexes:
-        op.drop_index("ix_notifications_sysid", table_name="notifications")
+        safe_drop_index("ix_notifications_sysid", table_name="notifications")
 
     if "sysid" in columns and "user_id" not in columns:
         op.alter_column("notifications", "sysid", new_column_name="user_id", existing_type=sa.String(length=100))

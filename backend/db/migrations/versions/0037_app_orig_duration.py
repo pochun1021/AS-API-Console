@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import constraint_exists
 
 revision: str = "0037_app_orig_duration"
 down_revision: str | None = "0041_usage_snapshot_col_order"
@@ -40,5 +41,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     with op.batch_alter_table("api_key_applications") as batch_op:
-        batch_op.drop_constraint("ck_applications_original_duration_months", type_="check")
+        if constraint_exists("api_key_applications", "ck_applications_original_duration_months", type_="check"):
+            batch_op.drop_constraint("ck_applications_original_duration_months", type_="check")
         batch_op.drop_column("original_duration_months")

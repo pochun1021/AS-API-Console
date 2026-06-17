@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from db.migrations.helpers import safe_drop_constraint
 
 
 # revision identifiers, used by Alembic.
@@ -28,5 +29,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("ck_users_preferred_locale", "users", type_="check")
+    safe_drop_constraint("ck_users_preferred_locale", "users", type_="check")
     op.drop_column("users", "preferred_locale")

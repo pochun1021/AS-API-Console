@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_index, safe_drop_table
 
 revision: str = "0022_operation_audit_logs"
 down_revision: str | None = "0021_sysid_bigint"
@@ -44,9 +45,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_operation_audit_logs_result", table_name="operation_audit_logs")
-    op.drop_index("ix_operation_audit_logs_request_id", table_name="operation_audit_logs")
-    op.drop_index("ix_operation_audit_logs_event_type", table_name="operation_audit_logs")
-    op.drop_index("ix_operation_audit_logs_created_at", table_name="operation_audit_logs")
-    op.drop_index("ix_operation_audit_logs_actor_sysid", table_name="operation_audit_logs")
-    op.drop_table("operation_audit_logs")
+    safe_drop_index("ix_operation_audit_logs_result", table_name="operation_audit_logs")
+    safe_drop_index("ix_operation_audit_logs_request_id", table_name="operation_audit_logs")
+    safe_drop_index("ix_operation_audit_logs_event_type", table_name="operation_audit_logs")
+    safe_drop_index("ix_operation_audit_logs_created_at", table_name="operation_audit_logs")
+    safe_drop_index("ix_operation_audit_logs_actor_sysid", table_name="operation_audit_logs")
+    safe_drop_table("operation_audit_logs")

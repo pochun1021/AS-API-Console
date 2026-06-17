@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_index
 
 revision: str = "0031_app_proxy_operator"
 down_revision: str | None = "0030_limit_cfg_default"
@@ -44,9 +45,9 @@ def upgrade() -> None:
     )
 
     if _has_index(inspector, "api_key_applications", "ix_api_key_applications_operator_sysid"):
-        op.drop_index("ix_api_key_applications_operator_sysid", table_name="api_key_applications")
+        safe_drop_index("ix_api_key_applications_operator_sysid", table_name="api_key_applications")
     if _has_index(inspector, "api_key_applications", "ix_api_key_applications_user_id"):
-        op.drop_index("ix_api_key_applications_user_id", table_name="api_key_applications")
+        safe_drop_index("ix_api_key_applications_user_id", table_name="api_key_applications")
 
     with op.batch_alter_table("api_key_applications") as batch_op:
         if _has_column(inspector, "api_key_applications", "user_id"):

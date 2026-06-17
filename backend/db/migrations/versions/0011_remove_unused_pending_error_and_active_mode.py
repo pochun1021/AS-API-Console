@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_constraint
 
 revision: str = "0011_rm_pending_active"
 down_revision: str | None = "0010_application_selected_mode"
@@ -28,10 +29,7 @@ def upgrade() -> None:
 
     cfg_columns = {col["name"] for col in inspector.get_columns("limit_strategy_config")}
     if "active_mode" in cfg_columns:
-        try:
-            op.drop_constraint("ck_limit_strategy_config_active_mode", "limit_strategy_config", type_="check")
-        except Exception:
-            pass
+        safe_drop_constraint("ck_limit_strategy_config_active_mode", "limit_strategy_config", type_="check")
         op.drop_column("limit_strategy_config", "active_mode")
 
 

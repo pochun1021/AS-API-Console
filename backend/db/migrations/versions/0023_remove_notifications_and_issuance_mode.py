@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_index, safe_drop_table
 
 revision: str = "0023_rm_notifications_issue_mode"
 down_revision: str | None = "0022_operation_audit_logs"
@@ -44,10 +45,10 @@ def upgrade() -> None:
 
     if _table_exists("notifications"):
         if _index_exists("notifications", "ix_notifications_sysid"):
-            op.drop_index("ix_notifications_sysid", table_name="notifications")
+            safe_drop_index("ix_notifications_sysid", table_name="notifications")
         if _index_exists("notifications", "ix_notifications_user_id"):
-            op.drop_index("ix_notifications_user_id", table_name="notifications")
-        op.drop_table("notifications")
+            safe_drop_index("ix_notifications_user_id", table_name="notifications")
+        safe_drop_table("notifications")
 
 
 def downgrade() -> None:

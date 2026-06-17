@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_table
 
 revision: str = "0037_inst_sync_control"
 down_revision: str | None = "0036_max_parallel_req"
@@ -72,4 +73,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     if _table_exists("institute_sync_control"):
-        op.drop_table("institute_sync_control")
+        safe_drop_table("institute_sync_control")

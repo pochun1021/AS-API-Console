@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_index
 
 revision: str = "0020_application_operator"
 down_revision: str | None = "0019_whitelist_sysid"
@@ -49,7 +50,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_api_key_applications_operator_sysid", table_name="api_key_applications")
+    safe_drop_index("ix_api_key_applications_operator_sysid", table_name="api_key_applications")
     op.drop_column("api_key_applications", "operator_sysid")
     op.drop_column("api_key_applications", "operator_department")
     op.drop_column("api_key_applications", "operator_email")

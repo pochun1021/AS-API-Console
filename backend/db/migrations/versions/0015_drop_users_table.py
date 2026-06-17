@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_constraint, safe_drop_index, safe_drop_table
 
 revision: str = "0015_drop_users_table"
 down_revision: str | None = "0014_admins_detach_user_fks"
@@ -24,7 +25,7 @@ def _drop_fk_to_users(table_name: str) -> None:
     for fk in inspector.get_foreign_keys(table_name):
         fk_name = fk.get("name")
         if fk.get("referred_table") == "users" and fk_name:
-            op.drop_constraint(fk_name, table_name, type_="foreignkey")
+            safe_drop_constraint(fk_name, table_name, type_="foreignkey")
 
 
 def upgrade() -> None:
@@ -39,10 +40,10 @@ def upgrade() -> None:
 
     existing_indexes = {idx["name"] for idx in inspector.get_indexes("users")}
     if "ix_users_email" in existing_indexes:
-        op.drop_index("ix_users_email", table_name="users")
+        safe_drop_index("ix_users_email", table_name="users")
     if "ix_users_account" in existing_indexes:
-        op.drop_index("ix_users_account", table_name="users")
-    op.drop_table("users")
+        safe_drop_index("ix_users_account", table_name="users")
+    safe_drop_table("users")
 
 
 def downgrade() -> None:

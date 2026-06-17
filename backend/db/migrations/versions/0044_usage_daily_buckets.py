@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_constraint, safe_drop_index
 
 revision: str = "0044_usage_daily_buckets"
 down_revision: str | None = "0043_duration_days_contract"
@@ -43,8 +44,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("uq_api_key_usage_snapshots_bucket", "api_key_usage_snapshots", type_="unique")
-    op.drop_index("ix_api_key_usage_snapshots_bucket_start_utc", table_name="api_key_usage_snapshots")
+    safe_drop_constraint("uq_api_key_usage_snapshots_bucket", "api_key_usage_snapshots", type_="unique")
+    safe_drop_index("ix_api_key_usage_snapshots_bucket_start_utc", table_name="api_key_usage_snapshots")
     op.drop_column("api_key_usage_snapshots", "bucket_end_utc")
     op.drop_column("api_key_usage_snapshots", "bucket_start_utc")
     op.drop_column("api_key_usage_snapshots", "bucket_granularity")

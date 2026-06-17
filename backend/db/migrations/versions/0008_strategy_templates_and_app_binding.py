@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from db.migrations.helpers import safe_drop_constraint, safe_drop_index, safe_drop_table
 
 revision: str = "0008_strategy_templates"
 down_revision: str | None = "0007_app_strategy_pending"
@@ -66,7 +67,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_applications_limit_strategy_template_id", "api_key_applications", type_="foreignkey")
-    op.drop_index("ix_api_key_applications_limit_strategy_template_id", table_name="api_key_applications")
+    safe_drop_constraint("fk_applications_limit_strategy_template_id", "api_key_applications", type_="foreignkey")
+    safe_drop_index("ix_api_key_applications_limit_strategy_template_id", table_name="api_key_applications")
     op.drop_column("api_key_applications", "limit_strategy_template_id")
-    op.drop_table("limit_strategy_templates")
+    safe_drop_table("limit_strategy_templates")
