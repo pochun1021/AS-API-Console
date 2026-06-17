@@ -311,7 +311,7 @@
   - 日期欄位僅允許區間查詢，使用 `from/to` 或 `<field>_from/<field>_to`；不得把 DataGrid 原生日期 operator 直接暴露成公開 API。
   - 數字/識別碼欄位（如 `sysid`）僅允許 exact match。
 - 本 repo 現階段 Data Table 分類如下：
-  - `server-side table`：`My API Keys Page`、`Whitelist Admin Page`、`Admin List Page`（管理者名單主表格）、`Admin Dashboard Page`、`Operation Audit Logs Page`、`Auth Audit Logs Page`、`System Announcements Page`
+  - `server-side table`：`My API Keys Page`、`Whitelist Admin Page`、`Admin List Page`（管理者名單主表格）、`Admin Dashboard Page`、`Operation Audit Logs Page`（含 Scheduler Logs tab）、`Auth Audit Logs Page`、`System Announcements Page`
   - `local-full-dataset table`：`Admin List Page`（新增管理者查詢候選表格）、`Institute View Page`
 
 ## 功能需求
@@ -1149,7 +1149,54 @@ Base path：`/main/api/v1`
 - `created_at` 格式需為 UTC `date-time`（RFC 3339，例如 `2026-05-21T08:28:20Z`）。
 - 回傳不得包含敏感憑證資訊（access token、refresh token、password、client secret）。
 
-### 6-4) 時間欄位輸出規則
+### 6-4) 排程器日誌熱資料查詢（v1）
+- `GET /main/api/v1/scheduler-logs`
+- 規則：僅 `admin` 可使用。
+- 查詢模式：此端點為 `server-side table` contract；分頁、排序與欄位篩選需由後端對完整資料集處理。
+- 資料來源：僅允許讀取既有檔案式 scheduler logs；日誌根目錄使用 `SCHEDULER_LOG_ROOT`，未設定時 fallback `/home/app/log`。
+- 支援 `job` 白名單：
+  - `sync_expired_api_keys`
+  - `sync_api_key_usage`
+  - `send_expiration_reminders`
+- 查詢參數：`page`、`page_size`、`job`、`from`、`to`、`level`、`q`、`sort_dir`。
+- 欄位語意：
+  - `job` 為 exact match，且僅允許白名單值。
+  - `from`、`to` 格式為 `YYYY-MM-DD`，以 `Asia/Taipei` 日曆日對應日誌檔日期；未提供時預設查最近 7 天。
+  - `level` 僅允許 `INFO|WARNING|ERROR|CRITICAL`，為 exact match。
+  - `q` 為 case-insensitive `contains`，同時比對 parsed `message` 與 `raw_line`。
+  - `sort_dir` 僅允許 `asc|desc`，預設 `desc`。
+- 檔案處理規則：
+  - 僅可由白名單 `job` 映射到白名單目錄，不得接受任意路徑或檔名輸入。
+  - 需依日期區間展開對應 daily log file 清單，缺少的日誌檔視為空資料，不得回錯。
+  - 需解析既有 log format：`[timestamp] level=LEVEL message`；若僅能部分解析，仍需保留 `raw_line`。
+  - 合併多檔結果後，再統一套用 filter、sort 與 pagination。
+- 排序：
+  - `desc`：`timestamp desc`
+  - `asc`：`timestamp asc`
+- Response（200）：
+```json
+{
+  "items": [
+    {
+      "id": "sync_api_key_usage:2026-06-17:12",
+      "job": "sync_api_key_usage",
+      "log_date": "2026-06-17",
+      "timestamp": "2026-06-17T00:05:01+08:00",
+      "level": "INFO",
+      "message": "event=usage_sync mode=sync processed_keys=10 success=9 failed=1",
+      "raw_line": "[2026-06-17T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1"
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "total": 1
+}
+```
+- 錯誤回應：
+  - `403 FORBIDDEN`：非 `admin`
+  - `422 VALIDATION_ERROR`：`job`、`level`、`sort_dir` 或日期參數不合法
+
+### 6-5) 時間欄位輸出規則
 - 所有對外 API response 的 datetime 欄位（如 `created_at`、`updated_at`、`issued_at`、`expires_at`、`expiration_notice_sent_at`）都需輸出為 UTC `date-time`（RFC 3339，例如 `2026-05-21T08:28:20Z`）。
 - 若內部資料來源為無時區 datetime，序列化時仍需以 UTC 語意輸出，不得回傳省略時區的 datetime 字串。
 
@@ -1294,6 +1341,8 @@ Base path：`/main/api/v1`
 59. `GET /main/api/v1/users` 與 `POST /main/api/v1/api-keys/applications`、`revoke`、`renew`、`extend`、`whitelists`、`admins`、`announcements`、`limit-strategy-config`、`institutes/sync` 等關鍵操作 API 成功與失敗都需寫入 `operation_audit_logs`，且需可辨識 `error_code`；failure 事件另需提供可供管理者除錯的 `error_detail` 與 `request_id`。其中 `GET /main/api/v1/users` 需以 `lookup_context` 區分 `proxy_application|admin_create|whitelist_create` 用途。
 60. `operation_audit_logs` 不得包含 API key 明文或其他敏感憑證；`metadata_json` 與 `error_detail` 僅允許白名單安全內容，不得包含 stack trace、SQL、完整第三方 payload。若 audit 寫入失敗，不得改變主流程成功或失敗語意。
 61. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 僅 `admin` 可使用；未提供 `from/to` 時預設回傳最近 7 天熱資料，結果依 `created_at desc` 排序，並支援分頁與既定篩選條件。
+61A. `GET /main/api/v1/scheduler-logs` 僅 `admin` 可使用；未提供 `from/to` 時預設回傳以 `Asia/Taipei` 日曆日計算的最近 7 天 scheduler log 熱資料，並依 `timestamp desc` 排序。
+61B. `GET /main/api/v1/scheduler-logs` 僅可讀取 `sync_expired_api_keys`、`sync_api_key_usage`、`send_expiration_reminders` 三種既有 job 的檔案式日誌；缺少 daily log file 視為空資料，不得作為錯誤，且不得開放任意 filesystem path 存取。
 62. `GET /main/api/v1/users?q=...` 的 `q` 長度不得超過 `100` 字元。
 63. 對所有 `server-side table` 頁面，前端 DataGrid 欄位篩選不得只作用於當前頁 rows；`items`、`total`、頁數、排序與篩選結果都必須來自完整資料集的後端查詢。
 64. `GET /main/api/v1/api-keys` 的 `owner_account`、`owner_name`、`key_alias` 篩選需採 case-insensitive `contains`；`application_date_from/application_date_to` 與 `expires_from/expires_to` 需分別正確套用到 `application_date` 與 `expires_at`；`sort_by/sort_dir` 僅允許既定白名單欄位與 `asc|desc`。
@@ -1308,6 +1357,7 @@ Base path：`/main/api/v1`
 65H. `/usage` 頁在日期區間超過 `31` 個日曆日時，X 軸仍需對齊完整日期區間且缺資料日不得補 `0`；主圖預設顯示 `31` 天視窗，並提供底部 slider 讓使用者以 `1..31` 天的範圍調整主圖區間，且調整後仍可左右平移瀏覽整段區間。
 65I. `/usage` 頁底部 slider 的開始/結束日期 label 在常見桌機與手機寬度下需完整可見，不得因 slider 寬度或端點對齊而被裁切。
 66. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 需支援欄位級 server-side sorting/filtering；若某欄位未支援後端 query contract，對應前端欄位必須禁用 filter 或 sort，不得回退成 local table 行為。
+66A. `/operation-audit-logs` 頁需沿用既有 admin-only 路由，並新增 Scheduler Logs 第三個 tab；該 tab 的篩選、排序與分頁需完全依賴 `GET /main/api/v1/scheduler-logs`，不得回退成 local table 或另開新路由。
 67. 關鍵操作稽核功能、申請人識別欄位調整、統計、`GET /main/api/v1/models` 與 lifecycle 擴充，均不得改動既有受保護 API 路徑與角色模型（`user|admin`）；若需擴充對外 error response，僅允許增加相容性的 optional 欄位（如 `error.details`），不得破壞既有 `error.code` / `error.message` 契約或既有 success response shape。
 
 ## Roadmap
