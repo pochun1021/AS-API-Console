@@ -36,6 +36,12 @@ def _named_constraints(constraints: Iterable[dict]) -> set[str]:
     return {constraint["name"] for constraint in constraints if constraint.get("name")}
 
 
+def _current_schema_name(bind) -> str | None:
+    if bind.dialect.name not in {"mysql", "mariadb"}:
+        return None
+    return bind.execute(sa.text("SELECT DATABASE()")).scalar_one_or_none()
+
+
 def constraint_exists(
     table_name: str,
     constraint_name: str,
@@ -46,6 +52,36 @@ def constraint_exists(
     active_inspector = inspector or get_inspector()
     if not table_exists(table_name, inspector=active_inspector):
         return False
+
+    bind = op.get_bind()
+    schema_name = _current_schema_name(bind)
+    if schema_name is not None:
+        type_map = {
+            "check": "CHECK",
+            "foreignkey": "FOREIGN KEY",
+            "unique": "UNIQUE",
+            "primary": "PRIMARY KEY",
+        }
+        row = bind.execute(
+            sa.text(
+                """
+                SELECT 1
+                FROM information_schema.TABLE_CONSTRAINTS
+                WHERE TABLE_SCHEMA = :schema_name
+                  AND TABLE_NAME = :table_name
+                  AND CONSTRAINT_NAME = :constraint_name
+                  AND CONSTRAINT_TYPE = :constraint_type
+                LIMIT 1
+                """
+            ),
+            {
+                "schema_name": schema_name,
+                "table_name": table_name,
+                "constraint_name": constraint_name,
+                "constraint_type": type_map[type_],
+            },
+        ).first()
+        return row is not None
 
     if type_ == "check":
         return constraint_name in _named_constraints(active_inspector.get_check_constraints(table_name))

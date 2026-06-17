@@ -17,12 +17,14 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _drop_check_constraint_if_exists(name: str) -> None:
+    if constraint_exists("api_key_applications", name, type_="check"):
+        op.execute(sa.text(f"ALTER TABLE api_key_applications DROP CONSTRAINT {name}"))
+
+
 def upgrade() -> None:
-    with op.batch_alter_table("api_key_applications", recreate="always") as batch_op:
-        if constraint_exists("api_key_applications", "ck_applications_duration_months", type_="check"):
-            batch_op.drop_constraint("ck_applications_duration_months", type_="check")
-        if constraint_exists("api_key_applications", "ck_applications_original_duration_months", type_="check"):
-            batch_op.drop_constraint("ck_applications_original_duration_months", type_="check")
+    _drop_check_constraint_if_exists("ck_applications_duration_months")
+    _drop_check_constraint_if_exists("ck_applications_original_duration_months")
 
     op.execute(
         """
@@ -42,32 +44,45 @@ def upgrade() -> None:
         """
     )
 
-    with op.batch_alter_table("api_key_applications", recreate="always") as batch_op:
-        batch_op.alter_column("duration_months", new_column_name="duration_days", existing_type=sa.Integer())
-        batch_op.alter_column(
-            "original_duration_months",
-            new_column_name="original_duration_days",
-            existing_type=sa.Integer(),
-        )
-        batch_op.create_check_constraint("ck_applications_duration_days", "duration_days in (30, 180, 360)")
-        batch_op.create_check_constraint(
-            "ck_applications_original_duration_days",
-            "original_duration_days in (30, 180, 360)",
-        )
+    op.alter_column(
+        "api_key_applications",
+        "duration_months",
+        new_column_name="duration_days",
+        existing_type=sa.Integer(),
+        existing_nullable=False,
+    )
+    op.alter_column(
+        "api_key_applications",
+        "original_duration_months",
+        new_column_name="original_duration_days",
+        existing_type=sa.Integer(),
+        existing_nullable=False,
+    )
+    op.create_check_constraint("ck_applications_duration_days", "api_key_applications", "duration_days in (30, 180, 360)")
+    op.create_check_constraint(
+        "ck_applications_original_duration_days",
+        "api_key_applications",
+        "original_duration_days in (30, 180, 360)",
+    )
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("api_key_applications", recreate="always") as batch_op:
-        if constraint_exists("api_key_applications", "ck_applications_duration_days", type_="check"):
-            batch_op.drop_constraint("ck_applications_duration_days", type_="check")
-        if constraint_exists("api_key_applications", "ck_applications_original_duration_days", type_="check"):
-            batch_op.drop_constraint("ck_applications_original_duration_days", type_="check")
-        batch_op.alter_column("duration_days", new_column_name="duration_months", existing_type=sa.Integer())
-        batch_op.alter_column(
-            "original_duration_days",
-            new_column_name="original_duration_months",
-            existing_type=sa.Integer(),
-        )
+    _drop_check_constraint_if_exists("ck_applications_duration_days")
+    _drop_check_constraint_if_exists("ck_applications_original_duration_days")
+    op.alter_column(
+        "api_key_applications",
+        "duration_days",
+        new_column_name="duration_months",
+        existing_type=sa.Integer(),
+        existing_nullable=False,
+    )
+    op.alter_column(
+        "api_key_applications",
+        "original_duration_days",
+        new_column_name="original_duration_months",
+        existing_type=sa.Integer(),
+        existing_nullable=False,
+    )
 
     op.execute(
         """
@@ -87,9 +102,9 @@ def downgrade() -> None:
         """
     )
 
-    with op.batch_alter_table("api_key_applications", recreate="always") as batch_op:
-        batch_op.create_check_constraint("ck_applications_duration_months", "duration_months > 0")
-        batch_op.create_check_constraint(
-            "ck_applications_original_duration_months",
-            "original_duration_months > 0",
-        )
+    op.create_check_constraint("ck_applications_duration_months", "api_key_applications", "duration_months > 0")
+    op.create_check_constraint(
+        "ck_applications_original_duration_months",
+        "api_key_applications",
+        "original_duration_months > 0",
+    )
