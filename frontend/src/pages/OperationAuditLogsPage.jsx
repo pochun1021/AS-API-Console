@@ -738,22 +738,6 @@ export default function OperationAuditLogsPage({ auth }) {
                 ))}
               </TextField>
             ) : null}
-            {schedulerFileMode !== SCHEDULER_FILE_MODE_DATE ? (
-              <DateRangeFilterField
-                label={t("auditlogs_from")}
-                fromValue={schedulerFromDate}
-                toValue={schedulerToDate}
-                startLabel={t("auditlogs_from")}
-                endLabel={t("auditlogs_to")}
-                clearLabel={t("common_clear")}
-                closeLabel={t("common_close")}
-                onChange={({ from, to }) => {
-                  setSchedulerFromDate(from);
-                  setSchedulerToDate(to);
-                  setSchedulerPage(0);
-                }}
-              />
-            ) : null}
             <TextField
               select
               label={t("schedulerlogs_level")}
@@ -778,7 +762,11 @@ export default function OperationAuditLogsPage({ auth }) {
                 setSchedulerPage(0);
               }}
             />
-            <Button variant="outlined" onClick={clearSchedulerFilters}>
+            <Button
+              variant="outlined"
+              onClick={clearSchedulerFilters}
+              sx={{ height: 56, alignSelf: { xs: "stretch", md: "flex-start" } }}
+            >
               {t("common_clear")}
             </Button>
           </Stack>

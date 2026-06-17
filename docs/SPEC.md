@@ -1154,6 +1154,7 @@ Base path：`/main/api/v1`
 - 規則：僅 `admin` 可使用。
 - 查詢模式：此端點為 `server-side table` contract；分頁、排序與欄位篩選需由後端對完整資料集處理。
 - Scheduler Logs tab 在 `file_mode=date` 時，前端需先讓使用者選擇 `job`，再以後端回傳的可用檔案清單選擇單一 `YYYY-MM-DD.log`；不得要求使用者手動輸入或從日曆自由挑選不存在的日期。
+- Scheduler Logs tab 在 `file_mode=all|latest` 時，前端不顯示日期選擇器與檔案選單；查詢條件僅保留 `job`、`level`、`q` 與排序/分頁。
 - 資料來源：僅允許讀取既有檔案式 scheduler logs；日誌根目錄使用 `SCHEDULER_LOG_ROOT`，未設定時 fallback `/home/app/log`。
 - 支援 `job` 白名單：
   - `sync_expired_api_keys`

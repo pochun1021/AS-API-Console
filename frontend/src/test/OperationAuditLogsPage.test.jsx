@@ -56,6 +56,23 @@ test("admin can switch to scheduler logs tab and view scheduler entries", async 
   expect(screen.getByLabelText("檔案日期")).toHaveAttribute("aria-disabled", "true");
 });
 
+test("scheduler file scope hides file picker outside date mode", async () => {
+  const user = userEvent.setup();
+  renderPage(<OperationAuditLogsPage auth={adminAuth} />);
+
+  expect(await screen.findByText("操作稽核 Log")).toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "排程器 Log" }));
+  await user.click(screen.getByLabelText("查詢檔案"));
+  await user.click(await screen.findByRole("option", { name: "最新 log" }));
+
+  expect(screen.queryByLabelText("檔案日期")).not.toBeInTheDocument();
+
+  await user.click(screen.getByLabelText("查詢檔案"));
+  await user.click(await screen.findByRole("option", { name: "全部 log" }));
+
+  expect(screen.queryByLabelText("檔案日期")).not.toBeInTheDocument();
+});
+
 test("admin can open failure detail dialog for operation audit logs", async () => {
   const user = userEvent.setup();
   renderPage(<OperationAuditLogsPage auth={adminAuth} />);
