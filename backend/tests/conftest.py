@@ -6,7 +6,7 @@ import sys
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -58,9 +58,13 @@ def _seed_default_limit_strategy_config(db: Session) -> None:
 def _reset_test_schema(engine) -> None:
     with engine.begin() as conn:
         conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
-        for table in reversed(Base.metadata.sorted_tables):
-            conn.execute(text(f"DROP TABLE IF EXISTS `{table.name}`"))
-        conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
+        try:
+            inspector = inspect(conn)
+            existing_tables = inspector.get_table_names()
+            for table_name in reversed(existing_tables):
+                conn.execute(text(f"DROP TABLE IF EXISTS `{table_name}`"))
+        finally:
+            conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
     Base.metadata.create_all(bind=engine)
 
 

@@ -26,11 +26,7 @@ def _fetch_usage_snapshot_rows(key_id: str) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def test_usage_sync_script_records_daily_bucket_history_and_cache(client, admin_headers, user_headers, monkeypatch):
-    from scripts import sync_api_key_usage
-
-    monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
-
+def _create_whitelist_for_user(client, admin_headers, user_headers) -> None:
     whitelist_resp = client.post(
         _api("/whitelists"),
         headers=admin_headers,
@@ -43,6 +39,14 @@ def test_usage_sync_script_records_daily_bucket_history_and_cache(client, admin_
         },
     )
     assert whitelist_resp.status_code == 201
+
+
+def test_usage_sync_script_records_daily_bucket_history_and_cache(client, admin_headers, user_headers, monkeypatch):
+    from scripts import sync_api_key_usage
+
+    monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
+
+    _create_whitelist_for_user(client, admin_headers, user_headers)
 
     create_resp = client.post(
         _api("/api-keys/applications"),
@@ -147,18 +151,7 @@ def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(cli
 
     monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
 
-    whitelist_resp = client.post(
-        _api("/whitelists"),
-        headers=admin_headers,
-        json={
-            "sysid": int(user_headers["x-sysid"]),
-            "account": user_headers["x-account"],
-            "name": user_headers["x-name"],
-            "email": user_headers["x-email"],
-            "note": "seed",
-        },
-    )
-    assert whitelist_resp.status_code == 201
+    _create_whitelist_for_user(client, admin_headers, user_headers)
     client.post(
         _api("/api-keys/applications"),
         headers=user_headers,
@@ -220,18 +213,7 @@ def test_usage_sync_script_fetches_multiple_provider_pages(client, admin_headers
 
     monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
 
-    whitelist_resp = client.post(
-        _api("/whitelists"),
-        headers=admin_headers,
-        json={
-            "sysid": int(user_headers["x-sysid"]),
-            "account": user_headers["x-account"],
-            "name": user_headers["x-name"],
-            "email": user_headers["x-email"],
-            "note": "seed",
-        },
-    )
-    assert whitelist_resp.status_code == 201
+    _create_whitelist_for_user(client, admin_headers, user_headers)
 
     create_resp = client.post(
         _api("/api-keys/applications"),
@@ -306,6 +288,181 @@ def test_usage_sync_script_fetches_multiple_provider_pages(client, admin_headers
     assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] == 200
     assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] == 50
     assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 250
+
+
+def test_usage_sync_script_processes_all_active_keys_across_batches(client, admin_headers, user_headers, monkeypatch):
+    from scripts import sync_api_key_usage
+
+    monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
+    _create_whitelist_for_user(client, admin_headers, user_headers)
+
+    created_keys: list[tuple[str, str]] = []
+    for index in range(3):
+        create_resp = client.post(
+            _api("/api-keys/applications"),
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_days": 30, "purpose": f"batch-{index}"},
+        )
+        assert create_resp.status_code == 201
+
+    listed = client.get(_api("/api-keys"), headers=user_headers).json()["items"]
+    for item in listed:
+        created_keys.append((item["id"], item["key_alias"]))
+
+    sync_now = datetime(2026, 6, 18, 4, 0, 0, tzinfo=UTC)
+    budget_reset_at = sync_now + timedelta(days=1)
+    call_aliases: list[str] = []
+
+    class _FakeProviderClient:
+        def list_spend_logs(self, query: dict) -> dict:
+            call_aliases.append(query["key_alias"])
+            return {
+                "data": [
+                    {
+                        "status": "success",
+                        "spend": 0.2,
+                        "prompt_tokens": 20,
+                        "completion_tokens": 10,
+                        "total_tokens": 30,
+                        "startTime": sync_now.isoformat(),
+                        "endTime": sync_now.isoformat(),
+                    }
+                ],
+                "total": 1,
+                "page": 1,
+                "page_size": 100,
+                "total_pages": 1,
+                "budget_reset_at": budget_reset_at.isoformat(),
+            }
+
+    monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
+    monkeypatch.setattr(sync_api_key_usage, "_now_utc", lambda: sync_now)
+
+    assert sync_api_key_usage.run_once(batch_size=2, dry_run=False) == 3
+
+    assert sorted(call_aliases) == sorted([key_alias for _, key_alias in created_keys])
+    for key_id, _ in created_keys:
+        key_row = _fetch_key_row(key_id)
+        assert key_row["usage_synced_at"].replace(tzinfo=UTC) == sync_now
+        assert key_row["usage_total_tokens"] == 30
+
+
+def test_usage_sync_script_repair_missing_cache_targets_only_incomplete_active_keys(client, admin_headers, user_headers, monkeypatch):
+    from scripts import sync_api_key_usage
+
+    monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
+    _create_whitelist_for_user(client, admin_headers, user_headers)
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "repair target"},
+    )
+    assert create_resp.status_code == 201
+    target_item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
+    target_key_id = target_item["id"]
+    target_key_alias = target_item["key_alias"]
+
+    second_create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "already synced"},
+    )
+    assert second_create_resp.status_code == 201
+    all_items = client.get(_api("/api-keys"), headers=user_headers).json()["items"]
+    synced_item = next(item for item in all_items if item["id"] != target_key_id)
+    synced_key_id = synced_item["id"]
+
+    history_synced_at = datetime(2026, 6, 18, 4, 5, 0, tzinfo=UTC)
+    with begin_connection() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO api_key_usage_snapshots (
+                    id, api_key_id, bucket_granularity, bucket_start_utc, bucket_end_utc,
+                    spend, prompt_tokens, completion_tokens, total_tokens, budget_reset_at, synced_at, created_at
+                ) VALUES (
+                    :id, :api_key_id, 'day', :bucket_start_utc, :bucket_end_utc,
+                    :spend, :prompt_tokens, :completion_tokens, :total_tokens, :budget_reset_at, :synced_at, :created_at
+                )
+                """
+            ),
+            {
+                "id": "repair-history-1",
+                "api_key_id": target_key_id,
+                "bucket_start_utc": datetime(2026, 6, 17, 16, 0, 0, tzinfo=UTC),
+                "bucket_end_utc": datetime(2026, 6, 18, 16, 0, 0, tzinfo=UTC),
+                "spend": 0.42,
+                "prompt_tokens": 120,
+                "completion_tokens": 30,
+                "total_tokens": 150,
+                "budget_reset_at": None,
+                "synced_at": history_synced_at,
+                "created_at": history_synced_at,
+            },
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE api_keys
+                SET usage_spend = :usage_spend,
+                    usage_prompt_tokens = :usage_prompt_tokens,
+                    usage_completion_tokens = :usage_completion_tokens,
+                    usage_total_tokens = :usage_total_tokens,
+                    usage_budget_reset_at = :usage_budget_reset_at,
+                    usage_synced_at = :usage_synced_at
+                WHERE id = :id
+                """
+            ),
+            {
+                "id": synced_key_id,
+                "usage_spend": 0.55,
+                "usage_prompt_tokens": 200,
+                "usage_completion_tokens": 50,
+                "usage_total_tokens": 250,
+                "usage_budget_reset_at": datetime(2026, 6, 19, 8, 0, 0, tzinfo=UTC),
+                "usage_synced_at": history_synced_at,
+            },
+        )
+        conn.commit()
+
+    sync_now = datetime(2026, 6, 18, 4, 10, 0, tzinfo=UTC)
+    budget_reset_at = datetime(2026, 6, 19, 8, 0, 0, tzinfo=UTC)
+    call_aliases: list[str] = []
+
+    class _FakeProviderClient:
+        def list_spend_logs(self, query: dict) -> dict:
+            call_aliases.append(query["key_alias"])
+            return {
+                "data": [
+                    {
+                        "status": "success",
+                        "spend": 0.42,
+                        "prompt_tokens": 120,
+                        "completion_tokens": 30,
+                        "total_tokens": 150,
+                        "startTime": sync_now.isoformat(),
+                        "endTime": sync_now.isoformat(),
+                    }
+                ],
+                "total": 1,
+                "page": 1,
+                "page_size": 100,
+                "total_pages": 1,
+                "budget_reset_at": budget_reset_at.isoformat(),
+            }
+
+    monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
+    monkeypatch.setattr(sync_api_key_usage, "_now_utc", lambda: sync_now)
+
+    assert sync_api_key_usage.run_once(batch_size=1, dry_run=False, repair_missing_cache=True) == 1
+
+    assert call_aliases == [target_key_alias]
+    repaired_key = _fetch_key_row(target_key_id)
+    assert repaired_key["usage_synced_at"].replace(tzinfo=UTC) == sync_now
+    assert repaired_key["usage_total_tokens"] == 150
+    untouched_key = _fetch_key_row(synced_key_id)
+    assert untouched_key["usage_total_tokens"] == 250
 
 
 def test_usage_sync_script_excludes_pre_reset_logs_from_current_cycle_cache(client, admin_headers, user_headers, monkeypatch):

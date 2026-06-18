@@ -11,7 +11,7 @@ import sys
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Select, func, inspect, literal, select, update
+from sqlalchemy import Select, and_, exists, func, inspect, literal, or_, select, update
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 LOG_TZ = ZoneInfo("Asia/Taipei")
@@ -35,6 +35,15 @@ from app.services.provider_client import ProviderBadRequestError, ProviderClient
 class UsageSyncCandidate:
     key_id: str
     key_alias: str
+
+
+@dataclass(slots=True)
+class SyncRunStats:
+    candidate_key_count: int = 0
+    processed_key_count: int = 0
+    history_written_count: int = 0
+    cache_written_count: int = 0
+    cache_skipped_count: int = 0
 
 
 @dataclass(slots=True)
@@ -148,23 +157,100 @@ def _normalize_budget_reset_at(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync API key usage snapshots from provider spend logs.")
-    parser.add_argument("--batch-size", type=int, default=100, help="Maximum active keys to sync per run (default: 100).")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=100,
+        help="Chunk size for each active-key batch and provider page size expectation (default: 100).",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Compute candidate count without writing snapshots.")
+    parser.add_argument(
+        "--repair-missing-cache",
+        action="store_true",
+        help="Only process active keys whose current-cycle usage cache is missing or incomplete.",
+    )
     return parser.parse_args()
 
 
-def _collect_candidates(*, batch_size: int) -> list[UsageSyncCandidate]:
+def _collect_candidates(*, batch_size: int, offset: int = 0, repair_missing_cache: bool = False) -> list[UsageSyncCandidate]:
     effective_key_alias = func.coalesce(ApiKey.key_alias, literal("for_") + ApiKeyApplication.account).label("effective_key_alias")
     stmt: Select = (
         select(ApiKey.id, effective_key_alias)
         .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
         .where(ApiKey.status == "active")
         .order_by(ApiKey.created_at.asc(), ApiKey.id.asc())
+        .offset(offset)
         .limit(batch_size)
     )
+    if repair_missing_cache:
+        has_usage_history = exists(
+            select(ApiKeyUsageSnapshot.id).where(
+                ApiKeyUsageSnapshot.api_key_id == ApiKey.id,
+                ApiKeyUsageSnapshot.bucket_granularity == "day",
+            )
+        )
+        stmt = stmt.where(
+            and_(
+                has_usage_history,
+                or_(
+                    ApiKey.usage_synced_at.is_(None),
+                    ApiKey.usage_budget_reset_at.is_(None),
+                    and_(
+                        ApiKey.usage_spend.is_(None),
+                        ApiKey.usage_prompt_tokens.is_(None),
+                        ApiKey.usage_completion_tokens.is_(None),
+                        ApiKey.usage_total_tokens.is_(None),
+                    ),
+                ),
+            )
+        )
     with SessionLocal() as session:
         rows = session.execute(stmt).all()
     return [UsageSyncCandidate(key_id=row.id, key_alias=row.effective_key_alias) for row in rows]
+
+
+def _count_candidates(*, repair_missing_cache: bool = False) -> int:
+    stmt = select(func.count(ApiKey.id)).join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id).where(ApiKey.status == "active")
+    if repair_missing_cache:
+        has_usage_history = exists(
+            select(ApiKeyUsageSnapshot.id).where(
+                ApiKeyUsageSnapshot.api_key_id == ApiKey.id,
+                ApiKeyUsageSnapshot.bucket_granularity == "day",
+            )
+        )
+        stmt = stmt.where(
+            and_(
+                has_usage_history,
+                or_(
+                    ApiKey.usage_synced_at.is_(None),
+                    ApiKey.usage_budget_reset_at.is_(None),
+                    and_(
+                        ApiKey.usage_spend.is_(None),
+                        ApiKey.usage_prompt_tokens.is_(None),
+                        ApiKey.usage_completion_tokens.is_(None),
+                        ApiKey.usage_total_tokens.is_(None),
+                    ),
+                ),
+            )
+        )
+    with SessionLocal() as session:
+        return int(session.scalar(stmt) or 0)
+
+
+def _collect_all_candidates(*, batch_size: int, repair_missing_cache: bool = False) -> list[UsageSyncCandidate]:
+    candidates: list[UsageSyncCandidate] = []
+    offset = 0
+    while True:
+        batch = _collect_candidates(
+            batch_size=batch_size,
+            offset=offset,
+            repair_missing_cache=repair_missing_cache,
+        )
+        if not batch:
+            break
+        candidates.extend(batch)
+        offset += len(batch)
+    return candidates
 
 
 def _ensure_usage_snapshot_schema(session) -> None:
@@ -460,8 +546,27 @@ def _upsert_daily_bucket(
     session.add(existing)
 
 
-def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = None) -> int:
-    candidates = _collect_candidates(batch_size=batch_size)
+def _log_cache_skipped(
+    *,
+    logger: logging.Logger | None,
+    candidate: UsageSyncCandidate,
+    reason: str,
+) -> None:
+    if logger is None:
+        return
+    logger.warning(
+        "event=api_key_usage_sync key_id=%s key_alias=%s status=cache_skipped reason=%s",
+        candidate.key_id,
+        candidate.key_alias,
+        reason,
+    )
+
+
+def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = False, logger: logging.Logger | None = None) -> int:
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+
+    candidates = _collect_all_candidates(batch_size=batch_size, repair_missing_cache=repair_missing_cache)
     if dry_run or not candidates:
         return len(candidates)
 
@@ -471,7 +576,7 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
 
     provider_client = ProviderClient()
     now = _now_utc()
-    updated = 0
+    stats = SyncRunStats(candidate_key_count=len(candidates))
     for candidate in candidates:
         try:
             records, budget_reset_at = _fetch_spend_buckets(
@@ -523,32 +628,58 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
                 )
             )
             session.commit()
-        updated += 1
-    return updated
+
+        stats.processed_key_count += 1
+        stats.history_written_count += len(daily_buckets)
+        if current_cycle is not None:
+            stats.cache_written_count += 1
+        else:
+            stats.cache_skipped_count += 1
+            reason = "missing_budget_reset_at" if normalized_budget_reset_at is None else "unsupported_budget_duration"
+            _log_cache_skipped(logger=logger, candidate=candidate, reason=reason)
+
+    if logger is not None:
+        logger.info(
+            "event=api_key_usage_sync mode=%s candidate_key_count=%s processed_key_count=%s history_written_count=%s cache_written_count=%s cache_skipped_count=%s status=success",
+            "repair-missing-cache" if repair_missing_cache else "sync",
+            stats.candidate_key_count,
+            stats.processed_key_count,
+            stats.history_written_count,
+            stats.cache_written_count,
+            stats.cache_skipped_count,
+        )
+    return stats.processed_key_count
 
 
 def main() -> None:
     args = parse_args()
     logger = _build_logger()
-    mode = "dry-run" if args.dry_run else "sync"
+    mode = "dry-run" if args.dry_run else ("repair-missing-cache" if args.repair_missing_cache else "sync")
     try:
-        updated = run_once(batch_size=args.batch_size, dry_run=args.dry_run, logger=logger)
+        updated = run_once(
+            batch_size=args.batch_size,
+            dry_run=args.dry_run,
+            repair_missing_cache=args.repair_missing_cache,
+            logger=logger,
+        )
     except Exception:
         logger.exception(
-            "event=api_key_usage_sync mode=%s batch_size=%s dry_run=%s status=failed",
+            "event=api_key_usage_sync mode=%s batch_size=%s dry_run=%s repair_missing_cache=%s status=failed",
             mode,
             args.batch_size,
             args.dry_run,
+            args.repair_missing_cache,
         )
         raise SystemExit(1)
 
     print(f"api-key-usage-{mode} updated_count={updated} batch_size={args.batch_size}")
     logger.info(
-        "event=api_key_usage_sync mode=%s updated_count=%s batch_size=%s dry_run=%s status=success",
+        "event=api_key_usage_sync mode=%s updated_count=%s batch_size=%s dry_run=%s repair_missing_cache=%s status=success",
         mode,
         updated,
         args.batch_size,
         args.dry_run,
+        args.repair_missing_cache,
     )
 
 

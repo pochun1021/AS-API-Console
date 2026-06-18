@@ -264,7 +264,14 @@ def _fetch_key_row(key_id: str) -> dict:
         row = conn.execute(
             text(
                 """
-                SELECT id, created_at, usage_budget_reset_at, usage_synced_at
+                SELECT id,
+                       created_at,
+                       usage_spend,
+                       usage_prompt_tokens,
+                       usage_completion_tokens,
+                       usage_total_tokens,
+                       usage_budget_reset_at,
+                       usage_synced_at
                 FROM api_keys
                 WHERE id = :key_id
                 """

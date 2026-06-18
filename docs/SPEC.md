@@ -860,15 +860,18 @@ Base path：`/main/api/v1`
 - 歷史值規則：`GET /main/api/v1/api-keys/usage-series` 一律讀取 `api_key_usage_snapshots` 的 daily bucket 歷史；`GET /main/api/v1/api-keys` 則使用 `api_keys.usage_*` 快取鏡像與目前 limit strategy config 組成 `usage_summary`。
 - 額度重置推算規則：私服器的預算重置作業固定於重置日 `Asia/Taipei 08:00` 執行；因此 `GET /main/api/v1/api-keys` 在 snapshot 缺失或已因較新的 `limit_strategy_config.updated_at` 失效時，需依目前 `budget_duration` 與最新起算基準即時計算 `budget_reset_at`，不得要求前端自行推算。
 - 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每 `5` 分鐘執行一次。
+- 全量遍歷規則：每次執行需遍歷全部 `active` keys；腳本參數 `batch_size` 僅代表單次 DB 候選批次大小與 provider 分頁預期大小，不得把 `batch_size` 視為整次同步只處理前 N 把 key 的上限。
+- 修復模式：腳本需支援維運修復模式，用於補齊 `api_keys.usage_*` current-cycle cache 缺失的 `active` keys。修復模式仍需以 provider `/spend/logs/v2` 為資料來源，不得直接以 `api_key_usage_snapshots` daily bucket 反推摘要，避免 `Asia/Taipei 08:00` reset boundary 與日曆日 bucket 口徑混淆。
 - 容錯：
   - 單把 key provider 查詢失敗時，需記錄錯誤並繼續同步其他 keys。
   - provider `/spend/logs/v2` 回傳的 `total`、`page`、`page_size`、`total_pages` 需納入同步完整性檢查；若單頁 metadata 與 request 或實際 records 明顯不一致，該 key 本次回應視為不可信，需記 warning 並跳過該 key，不得覆蓋其既有 daily bucket 與最新快取鏡像。
   - daily bucket 歷史仍維持以 `Asia/Taipei` 日曆日聚合；即使 budget reset 發生在同一天中途，`/usage-series` 的單日 bucket 仍保留完整日曆日成功 usage，不得切分成半天 bucket。
   - 最新快取的 current-cycle aggregate 需直接由 provider success logs 依 cycle window 計算：當 provider 提供 `budget_reset_at` 時，以其作為下一次 reset boundary，並依目前 `budget_duration` 回推 cycle start；只有 `startTime` 落在該 window 內的 success logs 可寫入 `api_keys.usage_*`。
   - 若某把 key 在目前 cycle 內查無 success logs，但已知有效 `budget_reset_at` 與 `budget_duration`，最新快取需寫入 `spend=0` 與 token totals `0`，不得以 `null` 保留前一 cycle 舊值；既有 daily bucket 不需補造假資料。
+  - 若某把 key 的 daily bucket 歷史已成功寫入，但 provider 缺少可用 `budget_reset_at` 或 `budget_duration` 無法判定 current cycle，該 key 本輪可保留 history 寫入結果，但需明確跳過 `api_keys.usage_*` 覆寫，並記錄 `cache_skipped` 類型的維運訊息。
   - provider timeout、5xx、payload 無法辨識時，不得覆蓋該 key 既有成功 daily bucket 或最新快取鏡像。
   - 非 `active` key 不再同步新的 usage bucket，但既有歷史資料需保留供查詢。
-- 稽核與維運：排程需輸出執行時間、處理 key 數、成功/失敗 key 數、寫入 snapshot 筆數與錯誤訊息，供維運追蹤。
+- 稽核與維運：排程需輸出執行時間、候選 key 數、實際處理 key 數、history 寫入筆數、cache 寫入/跳過 key 數與錯誤訊息，供維運追蹤。
 
 ### 4) 停用 API Key
 - `POST /main/api/v1/api-keys/{id}/revoke`

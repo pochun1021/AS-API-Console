@@ -299,6 +299,12 @@ ENV_FILE=/home/app/config/.env uv run alembic upgrade head
 cd backend
 ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh --dry-run
 ```
+- `--batch-size` 僅代表單次 DB 候選批次大小與 provider 分頁預期大小；腳本每次執行仍會遍歷全部 `active` keys。
+- 若要補齊「`/usage` 有 history，但列表 `usage_summary` 沒 cache」的 key，可執行 repair mode：
+```bash
+cd backend
+ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh --repair-missing-cache
+```
 
 ### 2) 檢查排程日誌
 - 日誌目錄：專案根目錄 `log/sync_api_key_usage/`
@@ -312,6 +318,16 @@ tail -n 50 ../log/sync_api_key_usage/$(TZ=Asia/Taipei date +%F).log
 ```bash
 sudo -u asapic tail -n 50 /home/app/log/sync_api_key_usage/$(TZ=Asia/Taipei date +%F).log
 ```
+- 正常情況需至少能看到：
+  - `candidate_key_count`
+  - `processed_key_count`
+  - `history_written_count`
+  - `cache_written_count`
+  - `cache_skipped_count`
+- 若發現 `/usage` 圖表有值但列表摘要仍為 `最後同步時間: 未知`，優先檢查：
+  - 該 key 是否未被處理
+  - 是否有 `status=cache_skipped`
+  - `reason` 是否為 `missing_budget_reset_at`
 
 ### 3) 檢查最新 snapshot 與歷史
 ```bash
@@ -319,6 +335,16 @@ mariadb -h <host> -u <user> -p as_api_console -e "
 SELECT api_key_id, spend, budget_reset_at, synced_at
 FROM api_key_usage_snapshots
 ORDER BY synced_at DESC
+LIMIT 20;
+"
+```
+如需同時檢查列表摘要來源快取，可再查：
+```bash
+mariadb -h <host> -u <user> -p as_api_console -e "
+SELECT id, usage_spend, usage_prompt_tokens, usage_completion_tokens, usage_total_tokens, usage_budget_reset_at, usage_synced_at
+FROM api_keys
+WHERE status = 'active'
+ORDER BY usage_synced_at DESC, created_at DESC
 LIMIT 20;
 "
 ```
