@@ -151,6 +151,8 @@
 - `Health` 欄位為目前 quota 健康度摘要，僅允許 `healthy|low_budget|exhausted|unknown` 四種狀態；可使用獨立文案與顏色呈現，但不得把健康度語意塞回 Usage icon。
 - `Usage` 明細入口需放在操作區，並使用中性、非 color-coded 的 icon；不得以 icon 顏色取代 `Health` 欄位。
 - 點擊 `Usage` icon 需開啟 popover；popover 需顯示 `spend`、`max_budget`、`remaining_budget`、`budget_reset_at`、`synced_at`。`tpm_limit`、`rpm_limit`、`max_parallel_requests` 不在此 popover 顯示；其中 `max_budget` 需對齊目前金鑰管理（limit strategy config）設定值。
+- `usage_summary`（含 popover 顯示內容）僅代表目前 reset 週期內的使用量；若已跨過當期 reset 邊界，不得再顯示重置前歷史累計。
+- `usage_summary` 的 reset 邊界判定優先使用 provider 回傳或同步鏡像的 `budget_reset_at`；若缺失、過舊或不可用，後端需依目前 `budget_duration` 與 `Asia/Taipei 08:00` 推算目前週期。
 - `Usage` popover 需提供可直接導向 `/usage` 的入口，並帶出目前這把 key 作為預選目標；使用者進入 `Usage Page` 後不得還需要重新手動選同一把 key 才能查圖。
 - `Usage` popover 在 `max_budget > 0` 時，需額外顯示 budget progress bar；若 `spend` 缺值則以前端 `0` 顯示，並以 `spend / max_budget` 呈現已使用比例，同步顯示已使用百分比與剩餘百分比。
 - 已使用百分比需採無條件進位到小數第 2 位，且顯示時不強制補尾零；例如 `85%` 保持 `85%`、`84.001%` 顯示 `84.01%`。
@@ -199,6 +201,7 @@
 - 頁面需提供 Loading、Empty、Error（含 Retry）狀態。
 - 若查詢區間內無資料，需顯示空狀態，不得以 `0` 補滿整段日期區間形成假資料。
 - 前端查圖資料需使用既有後端 API，不新增前端自行聚合 provider logs 的流程。
+- `/usage` 圖表屬於日期區間歷史查詢，不因 `usage_summary` 的 reset 週期口徑而自動裁切或隱藏重置前日 bucket。
 
 ### 4) API Key Detail Dialog（詳情視窗）
 - 顯示完整申請資訊與狀態。

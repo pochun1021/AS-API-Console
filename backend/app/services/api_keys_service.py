@@ -282,11 +282,12 @@ def _resolve_current_cycle_usage(
     if budget_reset_at is None or duration_days is None:
         return spend, prompt_tokens, completion_tokens, total_tokens
 
-    normalized_reset_at = _normalized_utc_datetime(budget_reset_at)
-    if normalized_reset_at > datetime.now(UTC):
+    current_cycle_end = _normalized_utc_datetime(budget_reset_at)
+    current_cycle_start = current_cycle_end - timedelta(days=duration_days)
+    if synced_at is None:
         return spend, prompt_tokens, completion_tokens, total_tokens
 
-    if synced_at is None or _normalized_utc_datetime(synced_at) < normalized_reset_at:
+    if _normalized_utc_datetime(synced_at) < current_cycle_start:
         return 0.0, 0, 0, 0
 
     return spend, prompt_tokens, completion_tokens, total_tokens
@@ -309,6 +310,13 @@ def _build_usage_summary(
     synced_at: datetime | None,
 ) -> dict:
     max_budget = _parse_optional_budget(max_budget_raw)
+    budget_reset_at_value = _derive_budget_reset_at(
+        budget_duration=budget_duration,
+        key_created_at=key_created_at,
+        config_updated_at=config_updated_at,
+        mirrored_budget_reset_at=budget_reset_at,
+        synced_at=synced_at,
+    )
     current_cycle_spend, current_cycle_prompt_tokens, current_cycle_completion_tokens, current_cycle_total_tokens = (
         _resolve_current_cycle_usage(
             budget_duration=budget_duration,
@@ -316,16 +324,9 @@ def _build_usage_summary(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
-            budget_reset_at=budget_reset_at,
+            budget_reset_at=budget_reset_at_value,
             synced_at=synced_at,
         )
-    )
-    budget_reset_at_value = _derive_budget_reset_at(
-        budget_duration=budget_duration,
-        key_created_at=key_created_at,
-        config_updated_at=config_updated_at,
-        mirrored_budget_reset_at=budget_reset_at,
-        synced_at=synced_at,
     )
     remaining_budget: float | None = None
     if max_budget is not None and current_cycle_spend is not None:

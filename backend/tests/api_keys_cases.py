@@ -286,6 +286,74 @@ def test_list_api_keys_keeps_current_cycle_usage_after_reset_when_sync_is_fresh(
         )
 
 
+def test_build_usage_summary_zeroes_stale_usage_when_provider_reset_missing():
+    from app.services.api_keys_service import _build_usage_summary
+
+    reference_now = datetime.now(UTC).replace(microsecond=0)
+    key_created_at = reference_now - timedelta(days=3)
+    budget_reset_at = datetime.fromisoformat(
+        _expected_rolled_budget_reset_at(key_created_at, "daily", now=reference_now).replace("Z", "+00:00")
+    )
+    synced_at = budget_reset_at - timedelta(days=1, minutes=1)
+
+    usage_summary = _build_usage_summary(
+        max_budget_raw="1000",
+        budget_duration="daily",
+        key_created_at=key_created_at,
+        config_updated_at=None,
+        tpm_limit=10000,
+        rpm_limit=500,
+        max_parallel_requests=0,
+        spend=123.45,
+        prompt_tokens=123,
+        completion_tokens=45,
+        total_tokens=168,
+        budget_reset_at=None,
+        synced_at=synced_at,
+    )
+
+    assert usage_summary["spend"] == 0.0
+    assert usage_summary["prompt_tokens"] == 0
+    assert usage_summary["completion_tokens"] == 0
+    assert usage_summary["total_tokens"] == 0
+    assert usage_summary["remaining_budget"] == 1000.0
+    assert usage_summary["budget_reset_at"] == budget_reset_at
+
+
+def test_build_usage_summary_keeps_current_cycle_usage_when_provider_reset_missing_but_sync_is_fresh():
+    from app.services.api_keys_service import _build_usage_summary
+
+    reference_now = datetime.now(UTC).replace(microsecond=0)
+    key_created_at = reference_now - timedelta(days=3)
+    budget_reset_at = datetime.fromisoformat(
+        _expected_rolled_budget_reset_at(key_created_at, "daily", now=reference_now).replace("Z", "+00:00")
+    )
+    synced_at = budget_reset_at - timedelta(hours=12)
+
+    usage_summary = _build_usage_summary(
+        max_budget_raw="1000",
+        budget_duration="daily",
+        key_created_at=key_created_at,
+        config_updated_at=None,
+        tpm_limit=10000,
+        rpm_limit=500,
+        max_parallel_requests=0,
+        spend=123.45,
+        prompt_tokens=123,
+        completion_tokens=45,
+        total_tokens=168,
+        budget_reset_at=None,
+        synced_at=synced_at,
+    )
+
+    assert usage_summary["spend"] == 123.45
+    assert usage_summary["prompt_tokens"] == 123
+    assert usage_summary["completion_tokens"] == 45
+    assert usage_summary["total_tokens"] == 168
+    assert usage_summary["remaining_budget"] == 876.55
+    assert usage_summary["budget_reset_at"] == budget_reset_at
+
+
 def test_list_api_keys_uses_api_keys_usage_cache_not_snapshot_history(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
