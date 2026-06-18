@@ -4,12 +4,19 @@
 
 This page explains how logged-in users can integrate with the AS API Console service after obtaining an API key. It is intended for users who have completed the application flow and are ready to call the model service.
 
+## Usage Limits
+
+- Request rate: Each API key can send up to `10` API requests per minute (`10 RPM`).
+- Daily quota: Each API key can use up to `2,000,000` tokens per day.
+- Concurrent connections: Each API key is limited to `3` concurrent connections.
+- Context window: `128K`.
+
 ## What to Prepare Before Use
 
-- An account that can sign in to AS API Console
-- A clear application purpose
-- The desired key duration
-- A secure place to store the API key, such as a local `.env` file or a managed secret store
+- An account that can sign in to AS API Console.
+- A clear application purpose.
+- The desired key duration.
+- A secure place to store the API key, such as a local `.env` file or a managed secret store.
 
 ## Integration Steps
 
@@ -66,4 +73,5 @@ if __name__ == "__main__":
 - The plaintext API key is shown only once at creation time, so save it immediately.
 - Do not hardcode the API key in frontend code or commit it into version control.
 - Use environment variables, deployment secrets, or another managed secret mechanism to store the key.
+- Plan request rate, concurrency, and prompt size according to the usage limits above.
 - If a request fails, first verify the `BASE_URL`, Bearer token, and payload shape.

@@ -86,6 +86,7 @@
   - 這份文件用途與適用對象
   - 申請 API Key 前需要準備的資訊
   - 串接步驟摘要
+  - 用量限額，至少需明示每筆 API Key 的 RPM、每日 token 額度、同時連線數與上下文視窗
   - 至少一組 Python 範例
   - 注意事項，例如明文 key 只顯示一次、應立即保存、不要把 key 寫死在前端、建議用環境變數管理
 - 第一版 Python 範例內容需參考既有測試腳本 `../AI-Api-test/afs_chat_completions.py`，但畫面不得依賴 repo 外檔案；需將可顯示版本收斂並維護在 repo 內文件。
@@ -1345,6 +1346,7 @@ Base path：`/main/api/v1`
 49. `GET /main/api/v1/models` 若 provider timeout 或 `5xx`，需回傳 `503 PROVIDER_UNAVAILABLE`；若 provider payload 無法辨識，需走受控錯誤流程，且不得洩漏原始 payload。
 50. 服務使用說明頁中的模型清單區塊在 mount 時需自動查詢一次；手動重新整理與每 `15` 分鐘自動刷新需重用同一查詢流程；頁面離開時需清除 timer。
 51. 服務使用說明頁需正確呈現 Loading、Empty、Error、Retry 狀態；第一版模型列表僅顯示一欄 `Model`，內容來自 API 回傳的 `label`，且同頁需顯示 repo 內維護的服務說明與至少一組 Python code block。
+51AA. 服務使用說明文件需明示每筆 API Key 的用量限額：每分鐘最多 `10` 次請求（`10 RPM`）、每日 token 額度上限 `2,000,000`、同時連線數上限 `3`、上下文視窗 `128K`。
 51A. 登入後共用版型不得直接顯示系統公告區塊；系統公告需集中於 `/announcements` 頁，且該頁固定提供連往 `/usage-examples` 的服務使用說明入口。
 51B. `GET /main/api/v1/announcements` 對 `user` 與未帶 `scope=all` 的 `admin`，只可回目前有效公告；`inactive`、未到 `publish_from`、或已超過 `publish_to` 的公告不得出現在前台。
 51C. `POST /main/api/v1/announcements`、`PATCH /main/api/v1/announcements/{id}`、`DELETE /main/api/v1/announcements/{id}` 僅 `admin` 可使用；非 `admin` 需回 `403`。
