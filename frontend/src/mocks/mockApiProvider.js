@@ -706,23 +706,12 @@ function buildUsageSummary(item) {
   };
 }
 
-function deriveHealthStatus(usageSummary) {
-  if (usageSummary.synced_at == null || usageSummary.max_budget == null || usageSummary.remaining_budget == null) {
-    return "unknown";
-  }
-  if (usageSummary.max_budget === 0) return "healthy";
-  if (usageSummary.remaining_budget <= 0) return "exhausted";
-  if (usageSummary.remaining_budget <= usageSummary.max_budget * 0.2) return "low_budget";
-  return "healthy";
-}
-
 function decorateApiKey(item, auth) {
   const usageSummary = buildUsageSummary(item);
   return {
     ...item,
     key_alias: normalizeAlias(item),
     extend_eligible: isExtendEligible(item, auth),
-    health_status: deriveHealthStatus(usageSummary),
     usage_summary: usageSummary,
   };
 }

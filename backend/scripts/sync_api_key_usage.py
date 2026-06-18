@@ -125,6 +125,27 @@ def _budget_duration_days(duration: str | None) -> int | None:
     return None
 
 
+def _normalize_budget_reset_at(
+    budget_reset_at: datetime | None,
+    *,
+    budget_duration: str | None,
+    now: datetime,
+) -> datetime | None:
+    duration_days = _budget_duration_days(budget_duration)
+    if budget_reset_at is None or duration_days is None:
+        return budget_reset_at
+
+    normalized_reset_at = budget_reset_at.astimezone(UTC)
+    current_time = now.astimezone(UTC)
+    if normalized_reset_at > current_time:
+        return normalized_reset_at
+
+    cycle = timedelta(days=duration_days)
+    elapsed = current_time - normalized_reset_at
+    steps = int(elapsed // cycle) + 1
+    return normalized_reset_at + cycle * steps
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync API key usage snapshots from provider spend logs.")
     parser.add_argument("--batch-size", type=int, default=100, help="Maximum active keys to sync per run (default: 100).")
@@ -468,10 +489,16 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
                 )
             continue
 
+        normalized_budget_reset_at = _normalize_budget_reset_at(
+            budget_reset_at,
+            budget_duration=budget_duration,
+            now=now,
+        )
+
         daily_buckets = _build_daily_buckets(records)
         current_cycle = _build_current_cycle_aggregate(
             records,
-            budget_reset_at=budget_reset_at,
+            budget_reset_at=normalized_budget_reset_at,
             budget_duration=budget_duration,
         )
         with SessionLocal() as session:
@@ -480,7 +507,7 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
                     session=session,
                     key_id=candidate.key_id,
                     item=bucket,
-                    budget_reset_at=budget_reset_at,
+                    budget_reset_at=normalized_budget_reset_at,
                     synced_at=now,
                 )
             session.execute(
@@ -491,7 +518,7 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
                     usage_prompt_tokens=current_cycle.prompt_tokens if current_cycle is not None else None,
                     usage_completion_tokens=current_cycle.completion_tokens if current_cycle is not None else None,
                     usage_total_tokens=current_cycle.total_tokens if current_cycle is not None else None,
-                    usage_budget_reset_at=budget_reset_at if current_cycle is not None else None,
+                    usage_budget_reset_at=normalized_budget_reset_at if current_cycle is not None else None,
                     usage_synced_at=now if current_cycle is not None else None,
                 )
             )

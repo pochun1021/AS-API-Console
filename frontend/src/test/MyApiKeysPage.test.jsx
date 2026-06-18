@@ -95,7 +95,6 @@ test("shows applicant account and name columns for admin list", async () => {
   expect(await screen.findByRole("columnheader", { name: "帳號" })).toBeInTheDocument();
   expect(await screen.findByRole("columnheader", { name: "姓名" })).toBeInTheDocument();
   expect(await screen.findByRole("columnheader", { name: "Key Alias" })).toBeInTheDocument();
-  expect(await screen.findByRole("columnheader", { name: "健康度" })).toBeInTheDocument();
   expect(screen.queryByRole("columnheader", { name: "用量" })).not.toBeInTheDocument();
   expect((await screen.findAllByText("jane.doe")).length).toBeGreaterThan(0);
   expect((await screen.findAllByText("Jane Doe")).length).toBeGreaterThan(0);
@@ -167,7 +166,6 @@ test("usage and health labels switch to english locale", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={adminAuth} />, { locale: "en" });
 
-  expect(await screen.findByRole("columnheader", { name: "Health" })).toBeInTheDocument();
   expect(screen.queryByRole("columnheader", { name: "Usage" })).not.toBeInTheDocument();
 
   await user.click(screen.getByLabelText("Status"));

@@ -75,7 +75,6 @@ class ApiKeyListItemResponse(BaseModel):
     owner_account: str
     owner_name: str
     expires_at: datetime
-    health_status: str
     usage_summary: UsageSummaryResponse
     expiration_notice_sent_at: datetime | None = None
     extend_eligible: bool = False

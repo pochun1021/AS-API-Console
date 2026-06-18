@@ -118,7 +118,6 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert len(item["masked_key"]) == 10
     assert "expiration_notice_sent_at" in item
     assert "extend_eligible" in item
-    assert item["health_status"] == "unknown"
     assert item["usage_summary"] == {
         "spend": None,
         "prompt_tokens": None,
@@ -135,7 +134,7 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     _assert_utc_datetime_string(item["expires_at"])
 
 
-def test_list_api_keys_returns_usage_summary_and_low_budget_health(client, admin_headers, user_headers):
+def test_list_api_keys_returns_usage_summary(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
     create_resp = client.post(
@@ -161,7 +160,6 @@ def test_list_api_keys_returns_usage_summary_and_low_budget_health(client, admin
 
     assert listed.status_code == 200
     item = listed.json()["items"][0]
-    assert item["health_status"] == "low_budget"
     assert item["usage_summary"]["spend"] == 850.25
     assert item["usage_summary"]["prompt_tokens"] == 1000
     assert item["usage_summary"]["completion_tokens"] == 500
@@ -210,7 +208,6 @@ def test_list_api_keys_zeroes_stale_previous_cycle_usage_after_reset(client, adm
 
         assert listed.status_code == 200
         item = listed.json()["items"][0]
-        assert item["health_status"] == "healthy"
         assert item["usage_summary"]["spend"] == 0.0
         assert item["usage_summary"]["prompt_tokens"] == 0
         assert item["usage_summary"]["completion_tokens"] == 0
@@ -266,7 +263,6 @@ def test_list_api_keys_keeps_current_cycle_usage_after_reset_when_sync_is_fresh(
 
         assert listed.status_code == 200
         item = listed.json()["items"][0]
-        assert item["health_status"] == "healthy"
         assert item["usage_summary"]["spend"] == 25.5
         assert item["usage_summary"]["prompt_tokens"] == 80
         assert item["usage_summary"]["completion_tokens"] == 20
@@ -398,7 +394,6 @@ def test_list_api_keys_uses_api_keys_usage_cache_not_snapshot_history(client, ad
     assert item["usage_summary"]["total_tokens"] == 777
     assert item["usage_summary"]["remaining_budget"] == 0.01
     assert item["usage_summary"]["max_parallel_requests"] == 0
-    assert item["health_status"] == "low_budget"
     _assert_utc_datetime_string(item["usage_summary"]["budget_reset_at"])
     _assert_utc_datetime_string(item["usage_summary"]["synced_at"])
 
@@ -592,7 +587,7 @@ def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(
         )
 
 
-def test_list_api_keys_unlimited_budget_stays_healthy_and_zero_remaining(client, admin_headers, user_headers):
+def test_list_api_keys_unlimited_budget_zero_remaining(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
     create_resp = client.post(
@@ -623,7 +618,6 @@ def test_list_api_keys_unlimited_budget_stays_healthy_and_zero_remaining(client,
 
         assert listed.status_code == 200
         item = listed.json()["items"][0]
-        assert item["health_status"] == "healthy"
         assert item["usage_summary"] == {
             "spend": 9999.99,
             "prompt_tokens": None,

@@ -147,9 +147,8 @@
 
 ### 3) My API Keys Page（一般使用者我的紀錄頁）
 - 顯示範圍：僅本人帳號歷史紀錄（`active|revoked|expired`）；若舊 key 已被 renew，對一般使用者隱藏。
-- 顯示欄位：申請日期、生效時長、狀態、Health、到期時間、遮罩 key、操作（其中包含 Usage icon；`APP_ENV=prod` 為 `sk-...` + 後 4 碼；`dev/test` 為 `AS-...` + 後 4 碼）。
-- `Health` 欄位為目前 quota 健康度摘要，僅允許 `healthy|low_budget|exhausted|unknown` 四種狀態；可使用獨立文案與顏色呈現，但不得把健康度語意塞回 Usage icon。
-- `Usage` 明細入口需放在操作區，並使用中性、非 color-coded 的 icon；不得以 icon 顏色取代 `Health` 欄位。
+- 顯示欄位：申請日期、生效時長、狀態、到期時間、遮罩 key、操作（其中包含 Usage icon；`APP_ENV=prod` 為 `sk-...` + 後 4 碼；`dev/test` 為 `AS-...` + 後 4 碼）。
+- `Usage` 明細入口需放在操作區，並使用中性、非 color-coded 的 icon。
 - 點擊 `Usage` icon 需開啟 popover；popover 需顯示 `spend`、`max_budget`、`remaining_budget`、`budget_reset_at`、`synced_at`。`tpm_limit`、`rpm_limit`、`max_parallel_requests` 不在此 popover 顯示；其中 `max_budget` 需對齊目前金鑰管理（limit strategy config）設定值。
 - `usage_summary`（含 popover 顯示內容）僅代表目前 reset 週期內的使用量；若已跨過當期 reset 邊界，不得再顯示重置前歷史累計。
 - `usage_summary` 的 reset 邊界判定優先使用 provider 回傳或同步鏡像的 `budget_reset_at`；若缺失、過舊或不可用，後端需依目前 `budget_duration` 與 `Asia/Taipei 08:00` 推算目前週期。
@@ -161,7 +160,7 @@
 - 當 `Usage` popover 已顯示 budget progress bar 時，不需再重複顯示獨立的 `spend`、`max_budget`、`remaining_budget` 三行文字；`Unlimited` 或其他未顯示 progress bar 的情況才保留這三行文字摘要。
 - 當剩餘額度比例 `<= 20%` 時，budget progress bar 需改用警示樣式並顯示明確警示文案；此提示僅屬視覺警示，不得阻擋任何操作。
 - 列表不得額外展開成 `spend / budget / TPM / RPM` 多個 raw numeric 欄位，避免表格過度擁擠。
-- 若某筆資料缺少 usage snapshot，該列仍需顯示可點擊的 `Usage` icon；`Health` 顯示 `Unknown`，popover 內各欄位顯示 `Unknown` 或 `-`。
+- 若某筆資料缺少 usage snapshot，該列仍需顯示可點擊的 `Usage` icon；popover 內各欄位顯示 `Unknown` 或 `-`。
 - 當 `max_budget=0` 時，前端需視為 unlimited，顯示 `Unlimited`，不得顯示為 `0` 的有限額度。
 - `Unlimited`（`max_budget=0`）在 `Usage` popover 內不得渲染百分比 progress bar，需改以純文字狀態呈現；若 `max_budget > 0` 但缺少 usage snapshot 或 `spend`，仍需顯示 progress bar，並以前端 `0%` / `0 / budget` 呈現。
 - 清單查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
@@ -695,11 +694,11 @@ Base path：`/main/api/v1`
 - 規則：`user` 僅回傳 auth 使用者本人的資料；`admin` 可查全部資料。
 - 查詢模式：此端點為 `server-side table` contract，前端欄位排序、分頁與篩選都必須由此端點對完整資料集處理。
 - 到期口徑：`expires_at` 早於查詢當下（UTC）且原始狀態為 `active` 時，API 對外狀態需視為 `expired`（即使 DB 原始欄位尚未同步更新）。
-- Usage summary 與 health status 需使用本地週期性同步/快取資料；此列表端點不得對每列即時呼叫外部 provider 取 usage。
+- Usage summary 需使用本地週期性同步/快取資料；此列表端點不得對每列即時呼叫外部 provider 取 usage。
 - usage 歷史資料需落地保存於獨立表 `api_key_usage_snapshots`，作為 `/usage` 與 `GET /main/api/v1/api-keys/usage-series` 的每日聚合歷史來源。
 - `api_key_usage_snapshots` 最少需保存：`api_key_id`、`bucket_granularity`、`bucket_start_utc`、`bucket_end_utc`、`spend`、`prompt_tokens`、`completion_tokens`、`total_tokens`、`budget_reset_at`、`synced_at`。
 - `api_key_usage_snapshots` 第一版固定只寫入 `bucket_granularity=day` 的資料，且需以 `(api_key_id, bucket_granularity, bucket_start_utc)` 維持唯一性。
-- 既有 `api_keys.usage_*` 欄位保留作為最新快取鏡像，持續提供 `GET /main/api/v1/api-keys` 的 `usage_summary` 與 `health_status`；歷史圖表不得直接讀 `api_keys.usage_*`。
+- 既有 `api_keys.usage_*` 欄位保留作為最新快取鏡像，持續提供 `GET /main/api/v1/api-keys` 的 `usage_summary`；歷史圖表不得直接讀 `api_keys.usage_*`。
 - usage 同步以 `key_alias` 作為 provider `/spend/logs/v2` 查詢鍵；若本地 `key_alias` 為空，需以系統預設 alias `for_{owner_account}` 查詢。
 - usage 同步時僅累計 provider spend logs 中 `status=success` 的紀錄；`failure` 紀錄不得計入 `spend`。
 - usage 同步排程預設每 `5` 分鐘執行一次，僅同步目前 `active` keys；若 provider 查詢失敗，不得中斷其他 keys 的同步。
@@ -726,7 +725,6 @@ Base path：`/main/api/v1`
       "owner_account": "jane.doe",
       "owner_name": "Jane Doe",
       "expires_at": "...",
-      "health_status": "healthy",
       "usage_summary": {
         "spend": 200.0,
         "prompt_tokens": 1200,
@@ -747,7 +745,6 @@ Base path：`/main/api/v1`
   "total": 1
 }
 ```
-- `health_status` allowed: `healthy|low_budget|exhausted|unknown`
 - `usage_summary` 欄位語意：
   - `spend`：目前 budget cycle 的累計已花費金額（USD）；未知時為 `null`
   - `prompt_tokens`、`completion_tokens`、`total_tokens`：目前 budget cycle 的 token totals；未知時為 `null`
@@ -757,11 +754,6 @@ Base path：`/main/api/v1`
   - `max_parallel_requests`：目前金鑰管理（limit strategy config）的最大平行請求數設定值；`0` 表示 unlimited；未知時為 `null`
   - `budget_reset_at`：下次額度重置時間。若最新 usage snapshot 已反映目前金鑰條件管理設定，沿用 snapshot/provider 值，但若鏡像中的 reset boundary 已過去，列表端點仍需依目前 `budget_duration` 往前推到下一個未來 boundary，不得回傳已過去的重置時間。若 reset 時間已過且本地快取 `synced_at` 仍早於該 reset boundary，則 `usage_summary` 需視為新 cycle 尚未同步完成，`spend` 與 token totals 一律顯示為 `0`，不得繼續顯示前一個 cycle 的舊值。若快取無法沿用，後端需以 `max(api_keys.created_at, limit_strategy_config.updated_at)` 為起算基準，依目前 `budget_duration` 推算下一次重置時間，並固定落在 `Asia/Taipei` 當日上午 `08:00`；此時若缺少可沿用的 provider/mirror `budget_reset_at`，列表端點不得把既有正數 `usage_*` 快取直接視為當前 cycle 用量，需保守顯示為 `0`，避免把舊 cycle 資料帶入摘要。因此新建 key 或剛更新金鑰條件管理後，即使尚未有新的 usage sync，列表端點也需能回傳推算後的重置時間。
   - `synced_at`：本地 usage snapshot 最後同步時間；未知時為 `null`
-- `health_status` 判定規則：
-  - `unknown`：缺少 usage snapshot，或缺少足以判定健康度的必要資料
-  - `exhausted`：`max_budget > 0` 且 `remaining_budget <= 0`
-  - `low_budget`：`max_budget > 0` 且 `0 < remaining_budget <= 20% of max_budget`
-  - `healthy`：其餘已可判定的情況；`max_budget=0`（unlimited）且 snapshot 存在時也屬於 `healthy`
 - `total` 定義為符合目前篩選條件的總筆數（非當頁 `items` 長度）。
 
 ### 2-1) 查詢 API Key 使用量時序
@@ -858,13 +850,13 @@ Base path：`/main/api/v1`
 - 稽核與維運：排程需輸出執行時間、更新筆數、錯誤訊息，供維運追蹤。
 
 ### 3-2) 背景同步（API Key Usage Snapshot）
-- 目的：週期性自 provider `/spend/logs/v2` 同步每把 `active` API Key 的最新 usage 快取與每日 bucket 歷史，供列表 `Usage` / `Health` 與 `/usage` 圖表共同使用。
+- 目的：週期性自 provider `/spend/logs/v2` 同步每把 `active` API Key 的最新 usage 快取與每日 bucket 歷史，供列表 `Usage` 與 `/usage` 圖表共同使用。
 - 查詢鍵：以本地 `key_alias` 查 provider；若本地未存 alias，需以系統預設 alias `for_{owner_account}` 查詢。
 - 查詢時間窗：每次同步需抓取最近 `30` 天的 rolling window，並需對 provider 一併帶 `start_date`、`end_date`；格式固定為 `YYYY-MM-DD HH:MM:SS`。
 - 聚合規則：只累計 `status=success` 的 spend logs；需先依 `Asia/Taipei` 日曆日聚合後，再寫入對應的 daily bucket。`failure` logs 僅供維運排查，不得寫入 usage snapshot。
 - token 聚合規則：`prompt_tokens`、`completion_tokens`、`total_tokens` 皆只累計 `status=success` 的 spend logs；若單筆 log 缺少個別 token 欄位，該欄位以 `0` 累計，不得因缺欄中止整把 key 的 snapshot 寫入。
 - 落地規則：每次同步需對 rolling window 內各日 bucket 做 upsert；同一天 bucket 允許後續同步覆寫更新，不得重複插入相同 `(api_key_id, bucket_granularity, bucket_start_utc)`。
-- 最新快取規則：同步完成後，需同步覆寫 `api_keys.usage_*` 作為列表與 health 的最新快取鏡像；其語意為「目前 budget cycle aggregate」，不得再只複製最新單日 bucket。
+- 最新快取規則：同步完成後，需同步覆寫 `api_keys.usage_*` 作為列表的最新快取鏡像；其語意為「目前 budget cycle aggregate」，不得再只複製最新單日 bucket。
 - 歷史值規則：`GET /main/api/v1/api-keys/usage-series` 一律讀取 `api_key_usage_snapshots` 的 daily bucket 歷史；`GET /main/api/v1/api-keys` 則使用 `api_keys.usage_*` 快取鏡像與目前 limit strategy config 組成 `usage_summary`。
 - 額度重置推算規則：私服器的預算重置作業固定於重置日 `Asia/Taipei 08:00` 執行；因此 `GET /main/api/v1/api-keys` 在 snapshot 缺失或已因較新的 `limit_strategy_config.updated_at` 失效時，需依目前 `budget_duration` 與最新起算基準即時計算 `budget_reset_at`，不得要求前端自行推算。
 - 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每 `5` 分鐘執行一次。
@@ -1380,9 +1372,9 @@ Base path：`/main/api/v1`
 63. 對所有 `server-side table` 頁面，前端 DataGrid 欄位篩選不得只作用於當前頁 rows；`items`、`total`、頁數、排序與篩選結果都必須來自完整資料集的後端查詢。
 64. `GET /main/api/v1/api-keys` 的 `owner_account`、`owner_name`、`key_alias` 篩選需採 case-insensitive `contains`；`application_date_from/application_date_to` 與 `expires_from/expires_to` 需分別正確套用到 `application_date` 與 `expires_at`；`sort_by/sort_dir` 僅允許既定白名單欄位與 `asc|desc`。
 65. `GET /main/api/v1/api-keys/statistics/users` 的 `q` 僅作全域搜尋；`owner_account`、`owner_name`、`owner_email`、`owner_department` 欄位篩選需彼此獨立且採 case-insensitive `contains`；切換圖表與表格視圖時查詢口徑需保持一致。
-65A. `GET /main/api/v1/api-keys` 每筆資料需回傳 `health_status` 與 `usage_summary`；`health_status` 僅允許 `healthy|low_budget|exhausted|unknown`，且需由後端依 `api_keys.usage_*` 最新快取與額度計算，不得要求前端自行重算。
+65A. `GET /main/api/v1/api-keys` 每筆資料需回傳 `usage_summary`，且需由後端依 `api_keys.usage_*` 最新快取與額度資料組成，不得要求前端自行重算。
 65B. `usage_summary.remaining_budget` 不得為負值；`max_budget=0`、`tpm_limit=0`、`rpm_limit=0` 代表 unlimited，對外仍維持 `0`，由前端顯示 `Unlimited`。
-65C. `GET /main/api/v1/api-keys` 缺少 usage snapshot 時，`health_status` 需回傳 `unknown`，`usage_summary.synced_at` 需為 `null`，但前端仍需保留可開啟的 Usage popover。
+65C. `GET /main/api/v1/api-keys` 缺少 usage snapshot 時，`usage_summary.synced_at` 需為 `null`，但前端仍需保留可開啟的 Usage popover。
 65D. `GET /main/api/v1/api-keys` 的 `usage_summary.max_budget`、`usage_summary.tpm_limit`、`usage_summary.rpm_limit`、`usage_summary.max_parallel_requests` 必須回傳目前金鑰管理（limit strategy config）設定值，不得沿用個別 key 歷史申請當下的快照值；更新全域金鑰條件後，列表端點下一次讀取即需反映新值，不得等待 usage sync 排程。
 65E. `GET /main/api/v1/api-keys/usage-series` 僅允許 `granularity=day`，且需依 `Asia/Taipei` 日曆日回傳每日 token/spend 聚合；DB 內部 UTC bucket 與前端日期語意不得互相衝突。
 65F. `api_key_usage_snapshots` 需作為正式 daily usage 歷史來源；同一 `(api_key_id, bucket_granularity, bucket_start_utc)` 只允許一筆有效 bucket，rolling window 重抓時需覆寫既有 bucket，不得產生重複列。

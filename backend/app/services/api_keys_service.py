@@ -368,20 +368,6 @@ def _build_usage_summary(
     }
 
 
-def _derive_health_status(usage_summary: dict) -> str:
-    synced_at = usage_summary.get("synced_at")
-    max_budget = usage_summary.get("max_budget")
-    remaining_budget = usage_summary.get("remaining_budget")
-    if synced_at is None or max_budget is None or remaining_budget is None:
-        return "unknown"
-    if max_budget == 0:
-        return "healthy"
-    if remaining_budget <= 0:
-        return "exhausted"
-    if remaining_budget <= max_budget * 0.2:
-        return "low_budget"
-    return "healthy"
-
 class ApiKeysService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -841,7 +827,6 @@ class ApiKeysService:
                     "owner_account": item.owner_account,
                     "owner_name": item.owner_name,
                     "expires_at": item.expires_at,
-                    "health_status": _derive_health_status(usage_summary),
                     "usage_summary": usage_summary,
                     "expiration_notice_sent_at": item.expiration_notice_sent_at,
                     "extend_eligible": _is_extend_eligible(

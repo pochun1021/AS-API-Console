@@ -64,13 +64,6 @@ function statusColor(status) {
   return "default";
 }
 
-function healthColor(status) {
-  if (status === "healthy") return "success";
-  if (status === "low_budget") return "warning";
-  if (status === "exhausted") return "error";
-  return "default";
-}
-
 function formatMaskedKey(value) {
   if (!value) return "-";
   return String(value);
@@ -500,17 +493,6 @@ export default function MyApiKeysPage({ auth }) {
           minWidth: 120,
           filterable: false,
           renderCell: (params) => <Chip size="small" label={getStatusLabel(params.value, t)} color={statusColor(params.value)} />
-        },
-        {
-          field: "health_status",
-          headerName: t("mykeys_col_health"),
-          flex: 1,
-          minWidth: 130,
-          sortable: false,
-          filterable: false,
-          renderCell: (params) => (
-            <Chip size="small" label={t(`mykeys_health_${params.value}`)} color={healthColor(params.value)} />
-          )
         },
         {
           field: "expires_at",
