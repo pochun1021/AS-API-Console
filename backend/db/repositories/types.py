@@ -47,6 +47,7 @@ class ApiKeyListItem:
     status: str
     masked_key: str
     key_alias: str | None
+    created_at: datetime
     application_date: date
     duration_days: int
     original_duration_days: int
@@ -59,6 +60,9 @@ class ApiKeyListItem:
     rpm_limit: int | None
     max_parallel_requests: int | None
     usage_spend: float | None
+    usage_prompt_tokens: int | None
+    usage_completion_tokens: int | None
+    usage_total_tokens: int | None
     usage_budget_reset_at: datetime | None
     usage_synced_at: datetime | None
 

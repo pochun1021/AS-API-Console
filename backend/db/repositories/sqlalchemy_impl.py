@@ -554,6 +554,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
                     status=row.effective_status,
                     masked_key=row.ApiKey.masked_key,
                     key_alias=row.ApiKey.key_alias,
+                    created_at=row.ApiKey.created_at,
                     application_date=row.ApiKeyApplication.application_date,
                     duration_days=row.ApiKeyApplication.duration_days,
                     original_duration_days=row.ApiKeyApplication.original_duration_days,
@@ -566,6 +567,9 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
                     rpm_limit=row.ApiKeyApplication.rpm_limit,
                     max_parallel_requests=row.ApiKeyApplication.max_parallel_requests,
                     usage_spend=float(row.ApiKey.usage_spend) if row.ApiKey.usage_spend is not None else None,
+                    usage_prompt_tokens=row.ApiKey.usage_prompt_tokens,
+                    usage_completion_tokens=row.ApiKey.usage_completion_tokens,
+                    usage_total_tokens=row.ApiKey.usage_total_tokens,
                     usage_budget_reset_at=row.ApiKey.usage_budget_reset_at,
                     usage_synced_at=row.ApiKey.usage_synced_at,
                 )

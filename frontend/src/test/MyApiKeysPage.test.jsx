@@ -70,6 +70,12 @@ async function setDateRange(triggerLabel, startLabel, endLabel, startValue, endV
   }
 }
 
+async function selectStatusFilter(optionName, label = "狀態") {
+  const user = userEvent.setup();
+  await user.click(screen.getByLabelText(label));
+  await user.click(await screen.findByRole("option", { name: optionName }));
+}
+
 test("shows revoke button only for active rows", async () => {
   renderPage(<MyApiKeysPage auth={auth} />);
 
@@ -79,7 +85,7 @@ test("shows revoke button only for active rows", async () => {
   expect(screen.queryByRole("button", { name: "停用金鑰" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "更新金鑰" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "展延金鑰" })).not.toBeInTheDocument();
-  expect(await screen.findAllByRole("button", { name: "查看詳情" })).toHaveLength(2);
+  expect(await screen.findAllByRole("button", { name: "查看詳情" })).toHaveLength(1);
   expect(screen.queryByRole("columnheader", { name: "建立時間" })).not.toBeInTheDocument();
 });
 
@@ -101,6 +107,8 @@ test("usage popover is opened from actions and shows snapshot details in zh-TW",
   const user = userEvent.setup();
   const rendered = renderPage(<MyApiKeysPage auth={adminAuth} />);
 
+  await selectStatusFilter("全部狀態");
+
   const usageRow = (await screen.findByText("AS-...mn56")).closest('[data-id="key_002"]');
   expect(usageRow).toBeTruthy();
   const usageButton = usageRow?.querySelector('button[aria-label="查看用量"]');
@@ -109,8 +117,8 @@ test("usage popover is opened from actions and shows snapshot details in zh-TW",
 
   expect(await screen.findByText("用量摘要")).toBeInTheDocument();
   expect(await screen.findByRole("progressbar", { name: "額度使用進度" })).toBeInTheDocument();
-  expect(await screen.findByText("85% 已使用")).toBeInTheDocument();
-  expect(await screen.findByText("剩餘 14.98%")).toBeInTheDocument();
+  expect(await screen.findByText("85.03% 已使用 (1,500 tokens)")).toBeInTheDocument();
+  expect(await screen.findByText("剩餘 14.97%")).toBeInTheDocument();
   expect(await screen.findByText("剩餘額度偏低")).toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "已用額度: 850.25 USD")).not.toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "額度: 1000 USD")).not.toBeInTheDocument();
@@ -168,13 +176,18 @@ test("usage and health labels switch to english locale", async () => {
   const moreActionButtons = await screen.findAllByRole("button", { name: "More actions" });
   expect(moreActionButtons.length).toBeGreaterThan(0);
 
-  const usageButtons = await screen.findAllByRole("button", { name: "View Usage" });
-  await user.click(usageButtons[1]);
+  await selectStatusFilter("All statuses", "Status");
+
+  const usageRow = (await screen.findByText("AS-...mn56")).closest('[data-id="key_002"]');
+  expect(usageRow).toBeTruthy();
+  const usageButton = usageRow?.querySelector('button[aria-label="View Usage"]');
+  expect(usageButton).toBeTruthy();
+  await user.click(usageButton);
 
   expect(await screen.findByText("Usage Summary")).toBeInTheDocument();
   expect(await screen.findByRole("progressbar", { name: "Budget usage progress" })).toBeInTheDocument();
-  expect(await screen.findByText("85% used")).toBeInTheDocument();
-  expect(await screen.findByText("14.98% remaining")).toBeInTheDocument();
+  expect(await screen.findByText("85.03% used (1,500 tokens)")).toBeInTheDocument();
+  expect(await screen.findByText("14.97% remaining")).toBeInTheDocument();
   expect(await screen.findByText("Budget running low")).toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "Spend: 850.25 USD")).not.toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "Budget: 1000 USD")).not.toBeInTheDocument();
@@ -287,6 +300,8 @@ test("user renew hides old key from list", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={auth} />);
 
+  await selectStatusFilter("全部狀態");
+
   expect(await screen.findByText("AS-...mn56")).toBeInTheDocument();
   const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
   await user.click(moreActionButtons[1]);
@@ -304,8 +319,13 @@ test("renewed key dialog stays open on backdrop click and escape", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={auth} />);
 
-  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
-  await user.click(moreActionButtons[1]);
+  await selectStatusFilter("全部狀態");
+
+  const renewRow = (await screen.findByText("AS-...mn56")).closest('[data-id="key_002"]');
+  expect(renewRow).toBeTruthy();
+  const renewRowActionButton = renewRow?.querySelector('button[aria-label="更多操作"]');
+  expect(renewRowActionButton).toBeTruthy();
+  await user.click(renewRowActionButton);
   await user.click(await screen.findByRole("menuitem", { name: "更新金鑰" }));
   await user.click(screen.getByRole("button", { name: "確認" }));
 
@@ -355,6 +375,8 @@ test("expired key shows renew instead of extend", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
+  await selectStatusFilter("全部狀態");
+
   const expiredRow = (await screen.findByText("AS-...du03")).closest('[data-id="key_010"]');
   expect(expiredRow).toBeTruthy();
   const expiredRowActionButton = expiredRow?.querySelector('button[aria-label="更多操作"]');
@@ -364,33 +386,45 @@ test("expired key shows renew instead of extend", async () => {
   expect(screen.queryByRole("menuitem", { name: "展延金鑰" })).not.toBeInTheDocument();
 });
 
-test.each([
-  {
-    name: "user can see extend action for active key outside near-expiry window",
-    buttonIndex: 0,
-    shouldSeeExtend: true,
-  },
-  {
-    name: "user cannot see extend action for expired key",
-    buttonIndex: 2,
-    shouldSeeExtend: false,
-  },
-  {
-    name: "user can see extend action for active key within near-expiry window",
-    buttonIndex: 3,
-    shouldSeeExtend: true,
-  },
-])("$name", async ({ buttonIndex, shouldSeeExtend }) => {
+test("user can see extend action for active key outside near-expiry window", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
-  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
-  await user.click(moreActionButtons[buttonIndex]);
-  if (shouldSeeExtend) {
-    expect(await screen.findByRole("menuitem", { name: "展延金鑰" })).toBeInTheDocument();
-  } else {
-    expect(screen.queryByRole("menuitem", { name: "展延金鑰" })).not.toBeInTheDocument();
-  }
+  const targetCell = await screen.findByText("AS-...du01");
+  const targetRow = targetCell.closest('[data-id="key_008"]');
+  expect(targetRow).toBeTruthy();
+  const actionButton = targetRow?.querySelector('button[aria-label="更多操作"]');
+  expect(actionButton).toBeTruthy();
+  await user.click(actionButton);
+  expect(await screen.findByRole("menuitem", { name: "展延金鑰" })).toBeInTheDocument();
+});
+
+test("user cannot see extend action for expired key", async () => {
+  const user = userEvent.setup();
+  renderPage(<MyApiKeysPage auth={devUserAuth} />);
+
+  await selectStatusFilter("全部狀態");
+
+  const targetCell = await screen.findByText("AS-...du03");
+  const targetRow = targetCell.closest('[data-id="key_010"]');
+  expect(targetRow).toBeTruthy();
+  const actionButton = targetRow?.querySelector('button[aria-label="更多操作"]');
+  expect(actionButton).toBeTruthy();
+  await user.click(actionButton);
+  expect(screen.queryByRole("menuitem", { name: "展延金鑰" })).not.toBeInTheDocument();
+});
+
+test("user can see extend action for active key within near-expiry window", async () => {
+  const user = userEvent.setup();
+  renderPage(<MyApiKeysPage auth={devUserAuth} />);
+
+  const targetCell = await screen.findByText("AS-...du04");
+  const targetRow = targetCell.closest('[data-id="key_011"]');
+  expect(targetRow).toBeTruthy();
+  const actionButton = targetRow?.querySelector('button[aria-label="更多操作"]');
+  expect(actionButton).toBeTruthy();
+  await user.click(actionButton);
+  expect(await screen.findByRole("menuitem", { name: "展延金鑰" })).toBeInTheDocument();
 });
 
 test("admin can see extend action for active key outside near-expiry window", async () => {
@@ -409,6 +443,8 @@ test("renders timestamps in Asia/Taipei on list and detail views", async () => {
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={devUserAuth} />);
 
+  await selectStatusFilter("全部狀態");
+
   expect(await screen.findByText("2026-03-10")).toBeInTheDocument();
 
   const detailButtons = await screen.findAllByRole("button", { name: "查看詳情" });
@@ -417,6 +453,19 @@ test("renders timestamps in Asia/Taipei on list and detail views", async () => {
   expect(await screen.findByText(/起算日期: 2026-02-10/)).toBeInTheDocument();
   expect(await screen.findByText(/建立時間: 2026-05-02 19:00:00/)).toBeInTheDocument();
   expect(await screen.findByText(/到期時間: 2026-03-10/)).toBeInTheDocument();
+});
+
+test("list defaults status filter to active on first load", async () => {
+  const spy = vi.spyOn(mockApiProvider, "listApiKeys");
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
+
+  expect(await screen.findByText("API Keys")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "active", page: 1, page_size: 10 }),
+      adminAuth
+    );
+  });
 });
 
 test("list uses server pagination params", async () => {
@@ -492,7 +541,13 @@ test("clear filters button resets api key list filters", async () => {
 
   expect(await screen.findByText("API Keys")).toBeInTheDocument();
   const clearButton = screen.getByRole("button", { name: "清除篩選" });
-  expect(clearButton).toBeDisabled();
+  expect(clearButton).toBeEnabled();
+  await waitFor(() => {
+    expect(spy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "active" }),
+      adminAuth
+    );
+  });
 
   await user.type(screen.getByLabelText("帳號"), "ktu");
   await waitFor(() => {

@@ -3,7 +3,7 @@ import logging
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
@@ -207,29 +207,82 @@ def _round_money(value: float) -> float:
     return float(Decimal(str(value)).quantize(Decimal("0.01")))
 
 
+def _budget_duration_days(duration: str | None) -> int | None:
+    normalized = str(duration or "").strip().lower()
+    if normalized == "daily":
+        return 1
+    if normalized == "weekly":
+        return 7
+    if normalized == "monthly":
+        return 30
+    return None
+
+
+def _derive_budget_reset_at(
+    *,
+    budget_duration: str | None,
+    key_created_at: datetime,
+    config_updated_at: datetime | None,
+    mirrored_budget_reset_at: datetime | None,
+    synced_at: datetime | None,
+) -> datetime | None:
+    if mirrored_budget_reset_at is not None and synced_at is not None:
+        if config_updated_at is None or _normalized_utc_datetime(synced_at) >= _normalized_utc_datetime(config_updated_at):
+            return mirrored_budget_reset_at
+
+    duration_days = _budget_duration_days(budget_duration)
+    if duration_days is None:
+        return mirrored_budget_reset_at
+
+    anchor = _normalized_utc_datetime(key_created_at)
+    if config_updated_at is not None:
+        anchor = max(anchor, _normalized_utc_datetime(config_updated_at))
+
+    local_anchor = anchor.astimezone(TAIPEI_TZ)
+    reset_date = local_anchor.date() + timedelta(days=duration_days)
+    reset_local = datetime.combine(reset_date, time(hour=8), tzinfo=TAIPEI_TZ)
+    return reset_local.astimezone(UTC)
+
+
 def _build_usage_summary(
     *,
     max_budget_raw: str | None,
+    budget_duration: str | None,
+    key_created_at: datetime,
+    config_updated_at: datetime | None,
     tpm_limit: int | None,
     rpm_limit: int | None,
     max_parallel_requests: int | None,
     spend: float | None,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    total_tokens: int | None,
     budget_reset_at: datetime | None,
     synced_at: datetime | None,
 ) -> dict:
     max_budget = _parse_optional_budget(max_budget_raw)
+    budget_reset_at_value = _derive_budget_reset_at(
+        budget_duration=budget_duration,
+        key_created_at=key_created_at,
+        config_updated_at=config_updated_at,
+        mirrored_budget_reset_at=budget_reset_at,
+        synced_at=synced_at,
+    )
     remaining_budget: float | None = None
     if max_budget is not None and spend is not None:
         remaining_budget = 0.0 if max_budget == 0 else _round_money(max(max_budget - spend, 0.0))
 
     return {
         "spend": _round_money(spend) if spend is not None else None,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
         "max_budget": max_budget,
         "remaining_budget": remaining_budget,
         "tpm_limit": tpm_limit,
         "rpm_limit": rpm_limit,
         "max_parallel_requests": max_parallel_requests,
-        "budget_reset_at": budget_reset_at,
+        "budget_reset_at": budget_reset_at_value,
         "synced_at": synced_at,
     }
 
@@ -682,10 +735,16 @@ class ApiKeysService:
             effective_status = _effective_status(status=item.status, expires_at=item.expires_at)
             usage_summary = _build_usage_summary(
                 max_budget_raw=limit_config.budget_max_budget,
+                budget_duration=limit_config.budget_duration,
+                key_created_at=item.created_at,
+                config_updated_at=limit_config.updated_at,
                 tpm_limit=limit_config.rate_limit_tpm,
                 rpm_limit=limit_config.rate_limit_rpm,
                 max_parallel_requests=limit_config.max_parallel_requests,
                 spend=item.usage_spend,
+                prompt_tokens=item.usage_prompt_tokens,
+                completion_tokens=item.usage_completion_tokens,
+                total_tokens=item.usage_total_tokens,
                 budget_reset_at=item.usage_budget_reset_at,
                 synced_at=item.usage_synced_at,
             )

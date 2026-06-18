@@ -143,6 +143,9 @@ def test_usage_sync_script_records_daily_bucket_history_and_cache(client, admin_
     listed = client.get(_api("/api-keys"), headers=user_headers)
     assert listed.status_code == 200
     assert listed.json()["items"][0]["usage_summary"]["spend"] == 0.5
+    assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] == 200
+    assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] == 20
+    assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 220
 
 
 def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(client, admin_headers, user_headers, monkeypatch):
@@ -218,6 +221,10 @@ def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(cli
     assert len(rows) == 1
     assert float(rows[0]["spend"]) == 0.75
     assert rows[0]["total_tokens"] == 300
+
+    listed = client.get(_api("/api-keys"), headers=user_headers)
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 300
 
 
 def test_usage_sync_script_fails_fast_when_daily_bucket_columns_are_missing(monkeypatch):

@@ -88,6 +88,24 @@ function formatPercent(value, digits = 0) {
   return rounded.toFixed(digits).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
 }
 
+function formatPercentCeil(value, digits = 2) {
+  if (!Number.isFinite(value)) return null;
+  const factor = 10 ** digits;
+  const ceiled = Math.ceil((value - Number.EPSILON) * factor) / factor;
+  return ceiled.toFixed(digits).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+}
+
+function ceilPercentValue(value, digits = 2) {
+  if (!Number.isFinite(value)) return null;
+  const factor = 10 ** digits;
+  return Math.ceil((value - Number.EPSILON) * factor) / factor;
+}
+
+function formatGroupedInteger(value) {
+  if (!Number.isFinite(value)) return null;
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+}
+
 function buildBudgetProgress(usageSummary) {
   const maxBudget = usageSummary?.max_budget;
   if (maxBudget == null || maxBudget <= 0) {
@@ -97,15 +115,15 @@ function buildBudgetProgress(usageSummary) {
   const spend = Math.max(usageSummary?.spend ?? 0, 0);
   const remainingBudget = Math.max(usageSummary?.remaining_budget ?? (maxBudget - spend), 0);
   const usedRatio = Math.min(Math.max(spend / maxBudget, 0), 1);
-  const remainingRatio = Math.min(Math.max(remainingBudget / maxBudget, 0), 1);
+  const usedPercentValue = ceilPercentValue(usedRatio * 100, 2);
+  const remainingPercentValue = usedPercentValue == null ? null : Math.max(100 - usedPercentValue, 0);
   return {
     value: usedRatio * 100,
-    usedPercentLabel: formatPercent(usedRatio * 100, 0),
-    remainingPercentLabel: formatPercent(remainingRatio * 100, 2),
-    spendLabel: formatPercent(spend, 2),
-    budgetLabel: formatPercent(maxBudget, 2),
-    isLowBudget: remainingRatio <= 0.2,
-    isExhausted: remainingRatio <= 0,
+    usedPercentLabel: formatPercentCeil(usedRatio * 100, 2),
+    remainingPercentLabel: formatPercent(remainingPercentValue, 2),
+    totalTokensLabel: formatGroupedInteger(usageSummary?.total_tokens),
+    isLowBudget: remainingBudget / maxBudget <= 0.2,
+    isExhausted: remainingBudget <= 0,
   };
 }
 
@@ -154,12 +172,13 @@ function getPredictedExtendExpiresAt(item) {
 export default function MyApiKeysPage({ auth }) {
   const { gridLocaleText, locale, t } = useLocale();
   const { formatDepartment } = useDepartmentDisplay(auth);
+  const defaultStatusFilter = "active";
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [sortModel, setSortModel] = useState([]);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState(defaultStatusFilter);
   const [applicationDateFrom, setApplicationDateFrom] = useState("");
   const [applicationDateTo, setApplicationDateTo] = useState("");
   const [expiresDateFrom, setExpiresDateFrom] = useState("");
@@ -593,6 +612,9 @@ export default function MyApiKeysPage({ auth }) {
     || keyAliasFilter.trim()
   );
   const usageProgress = buildBudgetProgress(usageRow?.usage_summary);
+  const usageUsedText = usageProgress
+    ? `${t("mykeys_usage_used_percent", { percent: usageProgress.usedPercentLabel })}${usageProgress.totalTokensLabel ? ` (${usageProgress.totalTokensLabel} tokens)` : ""}`
+    : "";
 
   return (
     <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
@@ -785,7 +807,7 @@ export default function MyApiKeysPage({ auth }) {
               />
               <Stack direction="row" justifyContent="space-between" spacing={1}>
                 <Typography variant="caption">
-                  {t("mykeys_usage_used_percent", { percent: usageProgress.usedPercentLabel })}
+                  {usageUsedText}
                 </Typography>
                 <Typography variant="caption">
                   {t("mykeys_usage_remaining_percent", { percent: usageProgress.remainingPercentLabel })}

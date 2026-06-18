@@ -334,6 +334,9 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
                 .where(ApiKey.id == candidate.key_id)
                 .values(
                     usage_spend=latest_bucket.spend if latest_bucket is not None else None,
+                    usage_prompt_tokens=latest_bucket.prompt_tokens if latest_bucket is not None else None,
+                    usage_completion_tokens=latest_bucket.completion_tokens if latest_bucket is not None else None,
+                    usage_total_tokens=latest_bucket.total_tokens if latest_bucket is not None else None,
                     usage_budget_reset_at=budget_reset_at if latest_bucket is not None else None,
                     usage_synced_at=now if latest_bucket is not None else None,
                 )

@@ -48,6 +48,9 @@ class ApplicationCreateResponse(BaseModel):
 class ApiKeyListItemResponse(BaseModel):
     class UsageSummaryResponse(BaseModel):
         spend: float | None = None
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
+        total_tokens: int | None = None
         max_budget: float | None = None
         remaining_budget: float | None = None
         tpm_limit: int | None = None

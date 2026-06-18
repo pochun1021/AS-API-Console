@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -30,6 +30,9 @@ class ApiKey(Base):
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     expiration_notice_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     usage_spend: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    usage_prompt_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    usage_completion_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    usage_total_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     usage_budget_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     usage_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

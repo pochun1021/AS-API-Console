@@ -1,6 +1,7 @@
 import logging
 from types import SimpleNamespace
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -16,6 +17,7 @@ from tests.api_keys_test_utils import (
     _fetch_application_row,
     _fetch_application_row_for_key,
     _fetch_expiration_notice_rows,
+    _fetch_key_row,
     _fetch_key_notice_state,
     _fetch_key_status_row,
     _insert_key_usage_snapshot_history,
@@ -29,6 +31,19 @@ from tests.api_keys_test_utils import (
     _set_limit_strategy_config,
 )
 from tests.conftest import api_path as _api, build_headers
+
+
+def _expected_budget_reset_at(reference_at: datetime, duration: str) -> str:
+    if reference_at.tzinfo is None:
+        reference_at = reference_at.replace(tzinfo=UTC)
+    reference_local = reference_at.astimezone(ZoneInfo("Asia/Taipei"))
+    days = {"daily": 1, "weekly": 7, "monthly": 30}[duration]
+    reset_local = datetime.combine(
+        reference_local.date() + timedelta(days=days),
+        datetime.min.time(),
+        tzinfo=ZoneInfo("Asia/Taipei"),
+    ).replace(hour=8)
+    return reset_local.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def test_extend_resets_application_date_for_new_effective_window():
@@ -95,12 +110,15 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     assert item["health_status"] == "unknown"
     assert item["usage_summary"] == {
         "spend": None,
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "total_tokens": None,
         "max_budget": 1000.0,
         "remaining_budget": None,
         "tpm_limit": 10000,
         "rpm_limit": 500,
         "max_parallel_requests": 0,
-        "budget_reset_at": None,
+        "budget_reset_at": _expected_budget_reset_at(_fetch_key_row(item["id"])["created_at"].replace(tzinfo=UTC), "monthly"),
         "synced_at": None,
     }
     _assert_utc_datetime_string(item["expires_at"])
@@ -121,6 +139,9 @@ def test_list_api_keys_returns_usage_summary_and_low_budget_health(client, admin
     _set_key_usage_snapshot(
         key_id,
         usage_spend="850.25",
+        usage_prompt_tokens=1000,
+        usage_completion_tokens=500,
+        usage_total_tokens=1500,
         usage_budget_reset_at=budget_reset_at,
         usage_synced_at=synced_at,
     )
@@ -131,6 +152,9 @@ def test_list_api_keys_returns_usage_summary_and_low_budget_health(client, admin
     item = listed.json()["items"][0]
     assert item["health_status"] == "low_budget"
     assert item["usage_summary"]["spend"] == 850.25
+    assert item["usage_summary"]["prompt_tokens"] == 1000
+    assert item["usage_summary"]["completion_tokens"] == 500
+    assert item["usage_summary"]["total_tokens"] == 1500
     assert item["usage_summary"]["max_budget"] == 1000.0
     assert item["usage_summary"]["remaining_budget"] == 149.75
     assert item["usage_summary"]["tpm_limit"] == 10000
@@ -152,7 +176,15 @@ def test_list_api_keys_uses_api_keys_usage_cache_not_snapshot_history(client, ad
     key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
     stale_synced_at = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=1)
     fresh_synced_at = stale_synced_at + timedelta(minutes=30)
-    _set_key_usage_snapshot(key_id, usage_spend="999.99", usage_budget_reset_at=stale_synced_at + timedelta(days=7), usage_synced_at=stale_synced_at)
+    _set_key_usage_snapshot(
+        key_id,
+        usage_spend="999.99",
+        usage_prompt_tokens=333,
+        usage_completion_tokens=444,
+        usage_total_tokens=777,
+        usage_budget_reset_at=stale_synced_at + timedelta(days=7),
+        usage_synced_at=stale_synced_at,
+    )
     _insert_key_usage_snapshot_history(
         key_id,
         spend="12.34",
@@ -171,6 +203,9 @@ def test_list_api_keys_uses_api_keys_usage_cache_not_snapshot_history(client, ad
     assert listed.status_code == 200
     item = listed.json()["items"][0]
     assert item["usage_summary"]["spend"] == 999.99
+    assert item["usage_summary"]["prompt_tokens"] == 333
+    assert item["usage_summary"]["completion_tokens"] == 444
+    assert item["usage_summary"]["total_tokens"] == 777
     assert item["usage_summary"]["remaining_budget"] == 0.01
     assert item["usage_summary"]["max_parallel_requests"] == 0
     assert item["health_status"] == "low_budget"
@@ -326,6 +361,7 @@ def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(
         assert item["usage_summary"]["tpm_limit"] == 43210
         assert item["usage_summary"]["rpm_limit"] == 321
         assert item["usage_summary"]["max_parallel_requests"] == 12
+        assert item["usage_summary"]["budget_reset_at"] is not None
 
         snapshot_synced_at = datetime.now(UTC).replace(microsecond=0)
         _set_key_usage_snapshot(
@@ -340,6 +376,7 @@ def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(
             rate_limit_tpm=54321,
             rate_limit_rpm=654,
             max_parallel_requests=9,
+            updated_at=snapshot_synced_at + timedelta(minutes=5),
         )
 
         refreshed = client.get(_api("/api-keys"), headers=user_headers)
@@ -351,6 +388,10 @@ def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(
         assert refreshed_item["usage_summary"]["tpm_limit"] == 54321
         assert refreshed_item["usage_summary"]["rpm_limit"] == 654
         assert refreshed_item["usage_summary"]["max_parallel_requests"] == 9
+        assert refreshed_item["usage_summary"]["budget_reset_at"] == _expected_budget_reset_at(
+            snapshot_synced_at + timedelta(minutes=5),
+            "monthly",
+        )
     finally:
         _set_limit_strategy_config(
             budget_max_budget="1000",
@@ -395,12 +436,15 @@ def test_list_api_keys_unlimited_budget_stays_healthy_and_zero_remaining(client,
         assert item["health_status"] == "healthy"
         assert item["usage_summary"] == {
             "spend": 9999.99,
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
             "max_budget": 0.0,
             "remaining_budget": 0.0,
             "tpm_limit": 0,
             "rpm_limit": 0,
             "max_parallel_requests": 0,
-            "budget_reset_at": None,
+            "budget_reset_at": _expected_budget_reset_at(_fetch_key_row(key_id)["created_at"].replace(tzinfo=UTC), "monthly"),
             "synced_at": synced_at.isoformat().replace("+00:00", "Z"),
         }
     finally:

@@ -112,6 +112,9 @@ def _set_key_usage_snapshot(
     usage_spend: str | None,
     usage_budget_reset_at: datetime | None,
     usage_synced_at: datetime | None,
+    usage_prompt_tokens: int | None = None,
+    usage_completion_tokens: int | None = None,
+    usage_total_tokens: int | None = None,
 ) -> None:
     with _db_begin() as conn:
         conn.execute(
@@ -119,6 +122,9 @@ def _set_key_usage_snapshot(
                 """
                 UPDATE api_keys
                 SET usage_spend = :usage_spend,
+                    usage_prompt_tokens = :usage_prompt_tokens,
+                    usage_completion_tokens = :usage_completion_tokens,
+                    usage_total_tokens = :usage_total_tokens,
                     usage_budget_reset_at = :usage_budget_reset_at,
                     usage_synced_at = :usage_synced_at
                 WHERE id = :key_id
@@ -126,6 +132,9 @@ def _set_key_usage_snapshot(
             ),
             {
                 "usage_spend": usage_spend,
+                "usage_prompt_tokens": usage_prompt_tokens,
+                "usage_completion_tokens": usage_completion_tokens,
+                "usage_total_tokens": usage_total_tokens,
                 "usage_budget_reset_at": usage_budget_reset_at,
                 "usage_synced_at": usage_synced_at,
                 "key_id": key_id,
@@ -229,7 +238,9 @@ def _set_limit_strategy_config(
     rate_limit_tpm: int,
     rate_limit_rpm: int,
     max_parallel_requests: int,
+    updated_at: datetime | None = None,
 ) -> None:
+    effective_updated_at = updated_at or datetime.now(UTC)
     with _db_begin() as conn:
         conn.execute(
             text(
@@ -239,7 +250,8 @@ def _set_limit_strategy_config(
                     budget_duration = :budget_duration,
                     rate_limit_tpm = :rate_limit_tpm,
                     rate_limit_rpm = :rate_limit_rpm,
-                    max_parallel_requests = :max_parallel_requests
+                    max_parallel_requests = :max_parallel_requests,
+                    updated_at = COALESCE(:updated_at, updated_at)
                 WHERE id = 'global-limit-strategy-config'
                 """
             ),
@@ -249,8 +261,24 @@ def _set_limit_strategy_config(
                 "rate_limit_tpm": rate_limit_tpm,
                 "rate_limit_rpm": rate_limit_rpm,
                 "max_parallel_requests": max_parallel_requests,
+                "updated_at": effective_updated_at,
             },
         )
+
+
+def _fetch_key_row(key_id: str) -> dict:
+    with _db_begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, created_at, usage_budget_reset_at, usage_synced_at
+                FROM api_keys
+                WHERE id = :key_id
+                """
+            ),
+            {"key_id": key_id},
+        ).mappings().one()
+    return dict(row)
 
 
 def _set_key_secret_material(key_id: str, *, key_ciphertext: str | None, key_kek_version: str | None) -> None:
