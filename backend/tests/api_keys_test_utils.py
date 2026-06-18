@@ -4,11 +4,10 @@ from datetime import UTC, datetime, timedelta
 from contextlib import contextmanager
 from uuid import uuid4
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.pool import NullPool
+from sqlalchemy import text
 
-from app.core.config import get_settings
 from tests.conftest import api_path as _api
+from tests.db_runtime import begin_connection, get_test_engine
 
 
 def _create_whitelist(client, admin_headers, sysid: str | int) -> None:
@@ -28,19 +27,13 @@ def _create_whitelist(client, admin_headers, sysid: str | int) -> None:
 
 
 def _db_engine():
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    return create_engine(db_url, future=True, poolclass=NullPool)
+    return get_test_engine()
 
 
 @contextmanager
 def _db_begin():
-    engine = _db_engine()
-    try:
-        with engine.begin() as conn:
-            yield conn
-    finally:
-        engine.dispose()
+    with begin_connection() as conn:
+        yield conn
 
 
 def _set_key_expires_at_past(key_id: str) -> None:

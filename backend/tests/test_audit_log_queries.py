@@ -2,27 +2,19 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
 
-from app.core.config import get_settings
 from db.models.auth_audit_logs import AuthAuditLog
 from db.models.operation_audit_logs import OperationAuditLog
 from tests.conftest import api_path
+from tests.db_runtime import session_scope
 
 
 TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 
 
-def _engine():
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    return create_engine(db_url, future=True)
-
-
 def _insert_auth_log(created_at: datetime, provider: str, result: str) -> None:
-    with Session(_engine()) as session:
+    with session_scope() as session:
         row = AuthAuditLog(
             id=str(uuid4()),
             provider=provider,
@@ -43,7 +35,7 @@ def _insert_auth_log(created_at: datetime, provider: str, result: str) -> None:
 
 
 def _insert_operation_log(created_at: datetime, event_type: str, result: str) -> None:
-    with Session(_engine()) as session:
+    with session_scope() as session:
         request_id = f"req-{uuid4()}"
         row = OperationAuditLog(
             id=str(uuid4()),
@@ -148,7 +140,7 @@ def test_operation_audit_logs_support_full_server_side_query_contract(client, ad
     _insert_operation_log(now - timedelta(days=2), "api_key", "success")
     _insert_operation_log(now - timedelta(days=1), "whitelist", "failure")
 
-    with Session(_engine()) as session:
+    with session_scope() as session:
         rows = session.query(OperationAuditLog).order_by(OperationAuditLog.created_at.asc()).all()
         rows[0].action = "create"
         rows[0].actor_account = "alice.admin"
@@ -183,7 +175,7 @@ def test_auth_audit_logs_support_full_server_side_query_contract(client, admin_h
     _insert_auth_log(now - timedelta(days=2), "sso", "success")
     _insert_auth_log(now - timedelta(days=1), "sso", "failure")
 
-    with Session(_engine()) as session:
+    with session_scope() as session:
         rows = session.query(AuthAuditLog).order_by(AuthAuditLog.created_at.asc()).all()
         rows[0].account = "alice.user"
         rows[0].sysid = 501

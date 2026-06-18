@@ -1,6 +1,4 @@
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 from urllib.parse import parse_qs, urlparse
 
 from app.core.errors import ApiError
@@ -11,6 +9,7 @@ from db.models.admins import Admin
 from db.models.auth_audit_logs import AuthAuditLog
 from db.models.whitelist import ApiKeyWhitelist
 from tests.conftest import build_headers
+from tests.db_runtime import session_scope
 
 
 def _set_prod_oauth_env(monkeypatch) -> None:
@@ -24,18 +23,12 @@ def _set_prod_oauth_env(monkeypatch) -> None:
 
 
 def _latest_auth_audit() -> AuthAuditLog | None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with Session(engine) as session:
+    with session_scope() as session:
         return session.query(AuthAuditLog).order_by(AuthAuditLog.created_at.desc()).first()
 
 
 def _insert_whitelist(sysid: int) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with Session(engine) as session:
+    with session_scope() as session:
         session.add(
             ApiKeyWhitelist(
                 id=f"wl-{sysid}",
@@ -51,10 +44,7 @@ def _insert_whitelist(sysid: int) -> None:
 
 
 def _insert_admin(admin_id: int) -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with Session(engine) as session:
+    with session_scope() as session:
         session.add(
             Admin(
                 id=admin_id,

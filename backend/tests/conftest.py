@@ -14,16 +14,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
 
+from tests.db_test_utils import configure_worker_test_database_env, ensure_worker_test_database, worker_id
+
+configure_worker_test_database_env()
+
 from app.core.config import get_settings
+get_settings.cache_clear()
+
 from app.core.security import rate_limiter
 from db.base import Base
 from db import models  # noqa: F401
 from db.models.limit_strategy_config import LimitStrategyConfig
-from db.session import get_db
-from tests.db_test_utils import configure_worker_test_database_env, ensure_worker_test_database, worker_id
-
-configure_worker_test_database_env()
-get_settings.cache_clear()
+from db.session import get_db, reset_session_state
+from tests.db_runtime import reset_test_runtime
 
 from app.main import app
 
@@ -59,6 +62,39 @@ def _reset_test_schema(engine) -> None:
             conn.execute(text(f"DROP TABLE IF EXISTS `{table.name}`"))
         conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
     Base.metadata.create_all(bind=engine)
+
+
+def _clear_test_data(engine) -> None:
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        if dialect in {"mysql", "mariadb"}:
+            conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
+            try:
+                for table in reversed(Base.metadata.sorted_tables):
+                    conn.execute(text(f"DELETE FROM `{table.name}`"))
+            finally:
+                conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
+            return
+
+        if dialect == "postgresql":
+            conn.execute(text("SET session_replication_role = replica"))
+            try:
+                for table in reversed(Base.metadata.sorted_tables):
+                    conn.execute(text(f'DELETE FROM "{table.name}"'))
+            finally:
+                conn.execute(text("SET session_replication_role = DEFAULT"))
+            return
+
+        if dialect == "sqlite":
+            conn.execute(text("PRAGMA foreign_keys=OFF"))
+            try:
+                for table in reversed(Base.metadata.sorted_tables):
+                    conn.execute(text(f'DELETE FROM "{table.name}"'))
+            finally:
+                conn.execute(text("PRAGMA foreign_keys=ON"))
+            return
+
+        raise RuntimeError(f"unsupported test database dialect for reset: {dialect}")
 
 
 def _build_test_db_diagnostics(engine) -> dict[str, str | None]:
@@ -99,6 +135,20 @@ def _format_test_db_diagnostics(diagnostics: dict[str, str | None]) -> str:
 
 
 @pytest.fixture(autouse=True)
+def reset_test_environment(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
+    monkeypatch.delenv("ALLOW_HEADER_AUTH", raising=False)
+    get_settings.cache_clear()
+    reset_session_state()
+    reset_test_runtime()
+    yield
+    get_settings.cache_clear()
+    reset_session_state()
+    reset_test_runtime()
+
+
+@pytest.fixture(autouse=True)
 def disable_provider_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: False)
     rate_limiter.reset()
@@ -110,28 +160,55 @@ def prepare_worker_test_database() -> Generator[None, None, None]:
     yield
 
 
-@pytest.fixture()
-def client() -> Generator[TestClient, None, None]:
+@pytest.fixture(scope="session")
+def test_db_engine(prepare_worker_test_database) -> Generator:
     settings = get_settings()
     db_url = settings.test_database_url or settings.database_url
     if not db_url:
         pytest.skip("Set TEST_DATABASE_URL, TEST_DB_*, DATABASE_URL, or DB_* to run tests.")
 
     engine = create_engine(db_url, future=True, poolclass=NullPool)
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=Session)
     try:
         _reset_test_schema(engine)
+        yield engine
     except Exception as exc:
         diagnostics = _build_test_db_diagnostics(engine)
         raise RuntimeError(
-            "Failed to reset test schema before client setup: "
+            "Failed to prepare session-scoped test schema: "
             f"{_format_test_db_diagnostics(diagnostics)}"
         ) from exc
-    with TestingSessionLocal() as seed_db:
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def testing_session_local(test_db_engine):
+    return sessionmaker(bind=test_db_engine, autoflush=False, autocommit=False, class_=Session)
+
+
+@pytest.fixture(autouse=True)
+def reset_test_database(test_db_engine, testing_session_local) -> Generator[None, None, None]:
+    try:
+        _clear_test_data(test_db_engine)
+    except Exception as exc:
+        diagnostics = _build_test_db_diagnostics(test_db_engine)
+        raise RuntimeError(
+            "Failed to clear test data before test setup: "
+            f"{_format_test_db_diagnostics(diagnostics)}"
+        ) from exc
+
+    with testing_session_local() as seed_db:
         _seed_default_limit_strategy_config(seed_db)
 
+    yield
+
+
+@pytest.fixture()
+def client(testing_session_local) -> Generator[TestClient, None, None]:
+    reset_session_state()
+
     def override_get_db() -> Generator[Session, None, None]:
-        db = TestingSessionLocal()
+        db = testing_session_local()
         try:
             yield db
         finally:
@@ -141,18 +218,15 @@ def client() -> Generator[TestClient, None, None]:
         app.dependency_overrides[get_db] = override_get_db
         with TestClient(app) as test_client:
             yield test_client
+    except Exception as exc:
+        diagnostics = _build_test_db_diagnostics(testing_session_local.kw["bind"])
+        raise RuntimeError(
+            "Failed during client fixture setup: "
+            f"{_format_test_db_diagnostics(diagnostics)}"
+        ) from exc
     finally:
         app.dependency_overrides.clear()
-        try:
-            _reset_test_schema(engine)
-        except Exception as exc:
-            diagnostics = _build_test_db_diagnostics(engine)
-            raise RuntimeError(
-                "Failed to reset test schema during client teardown: "
-                f"{_format_test_db_diagnostics(diagnostics)}"
-            ) from exc
-        finally:
-            engine.dispose()
+        reset_session_state()
 
 
 def build_headers(

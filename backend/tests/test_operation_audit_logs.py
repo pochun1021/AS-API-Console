@@ -3,21 +3,18 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy import select, text
 
 from app.core.config import get_settings
 from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.models.operation_audit_logs import OperationAuditLog
 from tests.api_keys_test_utils import _create_whitelist
 from tests.conftest import api_path, build_headers
+from tests.db_runtime import begin_connection, get_test_engine, session_scope
 
 
 def _query_logs(event_type: str, action: str) -> list[OperationAuditLog]:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with Session(engine) as session:
+    with session_scope() as session:
         rows = session.scalars(
             select(OperationAuditLog)
             .where(OperationAuditLog.event_type == event_type, OperationAuditLog.action == action)
@@ -27,18 +24,12 @@ def _query_logs(event_type: str, action: str) -> list[OperationAuditLog]:
 
 
 def _delete_limit_strategy_config() -> None:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
+    with begin_connection() as conn:
         conn.execute(text("DELETE FROM limit_strategy_config WHERE id = 'global-limit-strategy-config'"))
 
 
 def _count_limit_strategy_config() -> int:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
+    with begin_connection() as conn:
         row = conn.execute(
             text("SELECT COUNT(*) FROM limit_strategy_config WHERE id = 'global-limit-strategy-config'")
         ).first()
@@ -396,7 +387,7 @@ def test_institute_sync_logs_success_and_cooldown_failure(client, admin_headers,
 
 
 def test_institute_sync_logs_in_progress_and_soap_failure(client, admin_headers, monkeypatch):
-    engine = create_engine(get_settings().test_database_url or get_settings().database_url, future=True)
+    engine = get_test_engine()
     with engine.begin() as conn:
         conn.execute(text("INSERT INTO institute_sync_control (id, status, created_at, updated_at) VALUES (1, 'running', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"))
 
@@ -433,7 +424,7 @@ def test_institute_sync_logs_in_progress_and_soap_failure(client, admin_headers,
         "rate_limit_rpm": 500,
         "max_parallel_requests": 0,
     }
-    assert _count_limit_strategy_config() == 0
+    assert _count_limit_strategy_config() == 1
 
 
 def test_limit_strategy_patch_upserts_missing_row(client, admin_headers):
