@@ -868,7 +868,8 @@ Base path：`/main/api/v1`
   - daily bucket 歷史仍維持以 `Asia/Taipei` 日曆日聚合；即使 budget reset 發生在同一天中途，`/usage-series` 的單日 bucket 仍保留完整日曆日成功 usage，不得切分成半天 bucket。
   - 最新快取的 current-cycle aggregate 需直接由 provider success logs 依 cycle window 計算：當 provider 提供 `budget_reset_at` 時，以其作為下一次 reset boundary，並依目前 `budget_duration` 回推 cycle start；只有 `startTime` 落在該 window 內的 success logs 可寫入 `api_keys.usage_*`。
   - 若某把 key 在目前 cycle 內查無 success logs，但已知有效 `budget_reset_at` 與 `budget_duration`，最新快取需寫入 `spend=0` 與 token totals `0`，不得以 `null` 保留前一 cycle 舊值；既有 daily bucket 不需補造假資料。
-  - 若某把 key 的 daily bucket 歷史已成功寫入，但 provider 缺少可用 `budget_reset_at` 或 `budget_duration` 無法判定 current cycle，該 key 本輪可保留 history 寫入結果，但需明確跳過 `api_keys.usage_*` 覆寫，並記錄 `cache_skipped` 類型的維運訊息。
+  - 若 provider 缺少可用 `budget_reset_at`，但目前 `budget_duration` 可判定，腳本仍需以 `max(api_keys.created_at, limit_strategy_config.updated_at)` 為起算基準，依 `budget_duration` 與 `Asia/Taipei 08:00` 推算目前 cycle boundary，並直接用本輪 provider success logs 計算 current-cycle aggregate 後覆寫 `api_keys.usage_*`；不得改以 `api_key_usage_snapshots` daily bucket 反推。
+  - 僅當 `budget_duration` 本身缺失或不支援、致使 current cycle 仍無法判定時，才可保留 history 寫入結果但跳過 `api_keys.usage_*` 覆寫，並記錄 `cache_skipped` 類型的維運訊息。
   - provider timeout、5xx、payload 無法辨識時，不得覆蓋該 key 既有成功 daily bucket 或最新快取鏡像。
   - 非 `active` key 不再同步新的 usage bucket，但既有歷史資料需保留供查詢。
 - 稽核與維運：排程需輸出執行時間、候選 key 數、實際處理 key 數、history 寫入筆數、cache 寫入/跳過 key 數與錯誤訊息，供維運追蹤。

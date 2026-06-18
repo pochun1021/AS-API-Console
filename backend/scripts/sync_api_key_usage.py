@@ -35,6 +35,7 @@ from app.services.provider_client import ProviderBadRequestError, ProviderClient
 class UsageSyncCandidate:
     key_id: str
     key_alias: str
+    key_created_at: datetime
 
 
 @dataclass(slots=True)
@@ -155,6 +156,31 @@ def _normalize_budget_reset_at(
     return normalized_reset_at + cycle * steps
 
 
+def _derive_budget_reset_at_from_local_config(
+    *,
+    budget_duration: str | None,
+    key_created_at: datetime,
+    config_updated_at: datetime | None,
+    now: datetime,
+) -> datetime | None:
+    duration_days = _budget_duration_days(budget_duration)
+    if duration_days is None:
+        return None
+
+    anchor = key_created_at.astimezone(UTC)
+    if config_updated_at is not None:
+        anchor = max(anchor, config_updated_at.astimezone(UTC))
+
+    local_anchor = anchor.astimezone(TAIPEI_TZ)
+    reset_date = local_anchor.date() + timedelta(days=duration_days)
+    reset_local = datetime.combine(reset_date, time(hour=8), tzinfo=TAIPEI_TZ)
+    return _normalize_budget_reset_at(
+        reset_local.astimezone(UTC),
+        budget_duration=budget_duration,
+        now=now,
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync API key usage snapshots from provider spend logs.")
     parser.add_argument(
@@ -175,7 +201,7 @@ def parse_args() -> argparse.Namespace:
 def _collect_candidates(*, batch_size: int, offset: int = 0, repair_missing_cache: bool = False) -> list[UsageSyncCandidate]:
     effective_key_alias = func.coalesce(ApiKey.key_alias, literal("for_") + ApiKeyApplication.account).label("effective_key_alias")
     stmt: Select = (
-        select(ApiKey.id, effective_key_alias)
+        select(ApiKey.id, effective_key_alias, ApiKey.created_at)
         .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
         .where(ApiKey.status == "active")
         .order_by(ApiKey.created_at.asc(), ApiKey.id.asc())
@@ -206,7 +232,14 @@ def _collect_candidates(*, batch_size: int, offset: int = 0, repair_missing_cach
         )
     with SessionLocal() as session:
         rows = session.execute(stmt).all()
-    return [UsageSyncCandidate(key_id=row.id, key_alias=row.effective_key_alias) for row in rows]
+    return [
+        UsageSyncCandidate(
+            key_id=row.id,
+            key_alias=row.effective_key_alias,
+            key_created_at=row.created_at,
+        )
+        for row in rows
+    ]
 
 
 def _count_candidates(*, repair_missing_cache: bool = False) -> int:
@@ -507,10 +540,15 @@ def _fetch_spend_buckets(
     return items, budget_reset_at
 
 
-def _get_budget_duration(session) -> str | None:
-    return session.scalar(
-        select(LimitStrategyConfig.budget_duration).where(LimitStrategyConfig.id == "global-limit-strategy-config")
-    )
+def _get_limit_strategy_state(session) -> tuple[str | None, datetime | None]:
+    row = session.execute(
+        select(LimitStrategyConfig.budget_duration, LimitStrategyConfig.updated_at).where(
+            LimitStrategyConfig.id == "global-limit-strategy-config"
+        )
+    ).first()
+    if row is None:
+        return None, None
+    return row.budget_duration, row.updated_at
 
 
 def _upsert_daily_bucket(
@@ -572,7 +610,7 @@ def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = Fal
 
     with SessionLocal() as session:
         _ensure_usage_snapshot_schema(session)
-        budget_duration = _get_budget_duration(session)
+        budget_duration, config_updated_at = _get_limit_strategy_state(session)
 
     provider_client = ProviderClient()
     now = _now_utc()
@@ -599,11 +637,17 @@ def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = Fal
             budget_duration=budget_duration,
             now=now,
         )
+        effective_budget_reset_at = normalized_budget_reset_at or _derive_budget_reset_at_from_local_config(
+            budget_duration=budget_duration,
+            key_created_at=candidate.key_created_at,
+            config_updated_at=config_updated_at,
+            now=now,
+        )
 
         daily_buckets = _build_daily_buckets(records)
         current_cycle = _build_current_cycle_aggregate(
             records,
-            budget_reset_at=normalized_budget_reset_at,
+            budget_reset_at=effective_budget_reset_at,
             budget_duration=budget_duration,
         )
         with SessionLocal() as session:
@@ -612,7 +656,7 @@ def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = Fal
                     session=session,
                     key_id=candidate.key_id,
                     item=bucket,
-                    budget_reset_at=normalized_budget_reset_at,
+                    budget_reset_at=effective_budget_reset_at,
                     synced_at=now,
                 )
             session.execute(
@@ -623,7 +667,7 @@ def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = Fal
                     usage_prompt_tokens=current_cycle.prompt_tokens if current_cycle is not None else None,
                     usage_completion_tokens=current_cycle.completion_tokens if current_cycle is not None else None,
                     usage_total_tokens=current_cycle.total_tokens if current_cycle is not None else None,
-                    usage_budget_reset_at=normalized_budget_reset_at if current_cycle is not None else None,
+                    usage_budget_reset_at=effective_budget_reset_at if current_cycle is not None else None,
                     usage_synced_at=now if current_cycle is not None else None,
                 )
             )
@@ -635,7 +679,7 @@ def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = Fal
             stats.cache_written_count += 1
         else:
             stats.cache_skipped_count += 1
-            reason = "missing_budget_reset_at" if normalized_budget_reset_at is None else "unsupported_budget_duration"
+            reason = "unsupported_budget_duration" if effective_budget_reset_at is None else "missing_current_cycle_window"
             _log_cache_skipped(logger=logger, candidate=candidate, reason=reason)
 
     if logger is not None:
