@@ -69,6 +69,10 @@ class UsageSnapshotSchemaError(RuntimeError):
     """Raised when usage snapshot schema is older than the script expects."""
 
 
+class ProviderPaginationMetadataError(RuntimeError):
+    """Raised when provider paging metadata is inconsistent or untrustworthy."""
+
+
 class TaipeiDateFormatter(logging.Formatter):
     def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
         dt = datetime.fromtimestamp(record.created, tz=LOG_TZ)
@@ -286,6 +290,53 @@ def _build_current_cycle_aggregate(
     )
 
 
+def _coerce_non_negative_int(value: object, field_name: str) -> int:
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ProviderPaginationMetadataError(f"invalid {field_name}") from exc
+    if normalized < 0:
+        raise ProviderPaginationMetadataError(f"invalid {field_name}")
+    return normalized
+
+
+def _validate_paging_metadata(
+    *,
+    payload: dict,
+    expected_page: int,
+    expected_page_size: int,
+    is_last_page: bool | None = None,
+) -> tuple[list[object], int, int, int, int]:
+    records = payload.get("data")
+    if not isinstance(records, list):
+        raise ProviderPaginationMetadataError("invalid data")
+
+    total = _coerce_non_negative_int(payload.get("total"), "total")
+    page = _coerce_non_negative_int(payload.get("page"), "page")
+    page_size = _coerce_non_negative_int(payload.get("page_size"), "page_size")
+    total_pages = _coerce_non_negative_int(payload.get("total_pages"), "total_pages")
+
+    if page < 1:
+        raise ProviderPaginationMetadataError("invalid page")
+    if page_size < 1:
+        raise ProviderPaginationMetadataError("invalid page_size")
+    if page != expected_page:
+        raise ProviderPaginationMetadataError("unexpected page")
+    if page_size != expected_page_size:
+        raise ProviderPaginationMetadataError("unexpected page_size")
+    if total_pages == 0:
+        if total != 0 or records:
+            raise ProviderPaginationMetadataError("inconsistent empty pagination")
+        return records, total, page, page_size, total_pages
+    if page > total_pages:
+        raise ProviderPaginationMetadataError("page exceeds total_pages")
+    if len(records) > page_size:
+        raise ProviderPaginationMetadataError("page contains more records than page_size")
+    if is_last_page is False and not records:
+        raise ProviderPaginationMetadataError("non-final page cannot be empty")
+    return records, total, page, page_size, total_pages
+
+
 def _fetch_spend_buckets(
     provider_client: ProviderClient,
     *,
@@ -294,11 +345,13 @@ def _fetch_spend_buckets(
 ) -> tuple[list[ProviderUsageRecord], datetime | None]:
     page = 1
     total_pages = 1
+    expected_page_size = 100
     budget_reset_at: datetime | None = None
     start_at, end_at_exclusive = _build_rolling_window(now)
     start_date = _format_provider_datetime(start_at)
     end_date = _format_provider_datetime(end_at_exclusive - timedelta(seconds=1))
     items: list[ProviderUsageRecord] = []
+    total_records_expected: int | None = None
 
     while page <= total_pages:
         payload = provider_client.list_spend_logs(
@@ -308,19 +361,41 @@ def _fetch_spend_buckets(
                 "key_alias": key_alias,
                 "status_filter": "success",
                 "page": page,
-                "page_size": 100,
+                "page_size": expected_page_size,
                 "sort_by": "startTime",
                 "sort_order": "desc",
             }
         )
         if not isinstance(payload, dict):
             raise ProviderUnavailableError("provider unavailable")
-        total_pages = int(payload.get("total_pages") or 1)
+        _, total, response_page, response_page_size, response_total_pages = _validate_paging_metadata(
+            payload=payload,
+            expected_page=page,
+            expected_page_size=expected_page_size,
+            is_last_page=None if total_pages == 1 else page == total_pages,
+        )
+        if total_records_expected is None:
+            total_records_expected = total
+        elif total != total_records_expected:
+            raise ProviderPaginationMetadataError("inconsistent total across pages")
+        total_pages = response_total_pages
+        _validate_paging_metadata(
+            payload=payload,
+            expected_page=response_page,
+            expected_page_size=response_page_size,
+            is_last_page=response_page == response_total_pages if response_total_pages > 0 else True,
+        )
         page_items, page_budget_reset_at = _extract_success_records(payload)
         if budget_reset_at is None:
             budget_reset_at = page_budget_reset_at
         items.extend(page_items)
         page += 1
+
+    if total_records_expected is not None:
+        if total_records_expected == 0 and items:
+            raise ProviderPaginationMetadataError("expected zero records but received data")
+        if len(items) > total_records_expected:
+            raise ProviderPaginationMetadataError("received more records than total")
 
     return items, budget_reset_at
 
@@ -383,7 +458,7 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
                 key_alias=candidate.key_alias,
                 now=now,
             )
-        except (ProviderUnavailableError, ProviderBadRequestError) as exc:
+        except (ProviderUnavailableError, ProviderBadRequestError, ProviderPaginationMetadataError) as exc:
             if logger is not None:
                 logger.warning(
                     "event=api_key_usage_sync key_id=%s key_alias=%s status=skipped error=%s",

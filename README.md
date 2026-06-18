@@ -250,6 +250,7 @@ ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run
 - 歷史模型：`api_key_usage_snapshots` 現在同時承擔 `/usage` 與 `GET /main/api/v1/api-keys/usage-series` 的 daily usage history；既有 `api_keys.usage_*` 欄位則保留作為 `My API Keys` 的最新快取鏡像。
 - 聚合規則：只累計 `status=success` 的 logs；`failure` logs 不納入 `usage_summary.spend`，也不納入 `prompt_tokens`、`completion_tokens`、`total_tokens` 歷史快照。
 - 同步視窗：每次同步重抓最近 `30` 天資料，按 `Asia/Taipei` 日曆日聚合成 daily bucket。
+- 分頁完整性：provider `/spend/logs/v2` 回傳的 `total`、`page`、`page_size`、`total_pages` 會一併檢查；若 metadata 與 request 或實際 records 明顯不一致，該 key 本次同步會被跳過，既有快取與歷史不覆蓋。
 - 覆寫規則：同一日 bucket 會以 upsert 方式覆寫更新，不會重複累加出多筆同日資料。
 - 內建腳本：
 ```bash

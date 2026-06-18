@@ -870,6 +870,7 @@ Base path：`/main/api/v1`
 - 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每 `5` 分鐘執行一次。
 - 容錯：
   - 單把 key provider 查詢失敗時，需記錄錯誤並繼續同步其他 keys。
+  - provider `/spend/logs/v2` 回傳的 `total`、`page`、`page_size`、`total_pages` 需納入同步完整性檢查；若單頁 metadata 與 request 或實際 records 明顯不一致，該 key 本次回應視為不可信，需記 warning 並跳過該 key，不得覆蓋其既有 daily bucket 與最新快取鏡像。
   - daily bucket 歷史仍維持以 `Asia/Taipei` 日曆日聚合；即使 budget reset 發生在同一天中途，`/usage-series` 的單日 bucket 仍保留完整日曆日成功 usage，不得切分成半天 bucket。
   - 最新快取的 current-cycle aggregate 需直接由 provider success logs 依 cycle window 計算：當 provider 提供 `budget_reset_at` 時，以其作為下一次 reset boundary，並依目前 `budget_duration` 回推 cycle start；只有 `startTime` 落在該 window 內的 success logs 可寫入 `api_keys.usage_*`。
   - 若某把 key 在目前 cycle 內查無 success logs，但已知有效 `budget_reset_at` 與 `budget_duration`，最新快取需寫入 `spend=0` 與 token totals `0`，不得以 `null` 保留前一 cycle 舊值；既有 daily bucket 不需補造假資料。

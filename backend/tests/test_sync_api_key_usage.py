@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import text
 
-from tests.api_keys_test_utils import _set_limit_strategy_config
+from tests.api_keys_test_utils import _fetch_key_row, _set_limit_strategy_config
 from tests.conftest import api_path as _api
 from tests.db_runtime import begin_connection, get_test_session_factory
 
@@ -57,14 +57,17 @@ def test_usage_sync_script_records_daily_bucket_history_and_cache(client, admin_
     log_time = datetime.now(UTC).replace(microsecond=0)
     prior_day_log_time = datetime(2026, 6, 7, 15, 30, 0, tzinfo=UTC)
     same_day_log_time = datetime(2026, 6, 8, 2, 0, 0, tzinfo=UTC)
-    sync_now = datetime(2026, 6, 8, 12, 34, 56, tzinfo=UTC)
+    sync_now = datetime.now(UTC).replace(microsecond=0)
     budget_reset_at = log_time + timedelta(days=7)
+    expected_start_at, expected_end_exclusive = sync_api_key_usage._build_rolling_window(sync_now)
 
     class _FakeProviderClient:
         def list_spend_logs(self, query: dict) -> dict:
             assert query["key_alias"] == key_alias
-            assert query["start_date"] == "2026-05-09 16:00:00"
-            assert query["end_date"] == "2026-06-08 15:59:59"
+            assert query["start_date"] == sync_api_key_usage._format_provider_datetime(expected_start_at)
+            assert query["end_date"] == sync_api_key_usage._format_provider_datetime(
+                expected_end_exclusive - timedelta(seconds=1)
+            )
             return {
                 "data": [
                     {
@@ -210,6 +213,99 @@ def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(cli
     listed = client.get(_api("/api-keys"), headers=user_headers)
     assert listed.status_code == 200
     assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 300
+
+
+def test_usage_sync_script_fetches_multiple_provider_pages(client, admin_headers, user_headers, monkeypatch):
+    from scripts import sync_api_key_usage
+
+    monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
+
+    whitelist_resp = client.post(
+        _api("/whitelists"),
+        headers=admin_headers,
+        json={
+            "sysid": int(user_headers["x-sysid"]),
+            "account": user_headers["x-account"],
+            "name": user_headers["x-name"],
+            "email": user_headers["x-email"],
+            "note": "seed",
+        },
+    )
+    assert whitelist_resp.status_code == 201
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "sync usage multi page"},
+    )
+    assert create_resp.status_code == 201
+    item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
+    key_id = item["id"]
+    key_alias = item["key_alias"]
+    sync_now = datetime.now(UTC).replace(microsecond=0)
+    first_page_log_time = datetime(2026, 6, 8, 2, 0, 0, tzinfo=UTC)
+    second_page_log_time = datetime(2026, 6, 8, 3, 0, 0, tzinfo=UTC)
+    budget_reset_at = sync_now + timedelta(days=1)
+
+    class _FakeProviderClient:
+        def list_spend_logs(self, query: dict) -> dict:
+            assert query["key_alias"] == key_alias
+            if query["page"] == 1:
+                return {
+                    "data": [
+                        {
+                            "status": "success",
+                            "spend": 0.25,
+                            "prompt_tokens": 80,
+                            "completion_tokens": 20,
+                            "total_tokens": 100,
+                            "startTime": first_page_log_time.isoformat(),
+                            "endTime": first_page_log_time.isoformat(),
+                        }
+                    ],
+                    "total": 2,
+                    "page": 1,
+                    "page_size": 100,
+                    "total_pages": 2,
+                    "budget_reset_at": budget_reset_at.isoformat(),
+                }
+            return {
+                "data": [
+                    {
+                        "status": "success",
+                        "spend": 0.75,
+                        "prompt_tokens": 120,
+                        "completion_tokens": 30,
+                        "total_tokens": 150,
+                        "startTime": second_page_log_time.isoformat(),
+                        "endTime": second_page_log_time.isoformat(),
+                    }
+                ],
+                "total": 2,
+                "page": 2,
+                "page_size": 100,
+                "total_pages": 2,
+                "budget_reset_at": budget_reset_at.isoformat(),
+            }
+
+    monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
+    monkeypatch.setattr(sync_api_key_usage, "_now_utc", lambda: sync_now)
+
+    assert sync_api_key_usage.run_once(batch_size=100, dry_run=False) == 1
+
+    rows = _fetch_usage_snapshot_rows(key_id)
+    assert len(rows) == 1
+    assert float(rows[0]["spend"]) == 1.0
+    assert rows[0]["prompt_tokens"] == 200
+    assert rows[0]["completion_tokens"] == 50
+    assert rows[0]["total_tokens"] == 250
+
+    listed = client.get(_api("/api-keys"), headers=user_headers)
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["usage_summary"]["spend"] == 1.0
+    assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] == 200
+    assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] == 50
+    assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 250
 
 
 def test_usage_sync_script_excludes_pre_reset_logs_from_current_cycle_cache(client, admin_headers, user_headers, monkeypatch):
@@ -387,3 +483,73 @@ def test_usage_sync_script_fails_fast_when_daily_bucket_columns_are_missing(monk
 
     assert "bucket_granularity" in str(exc_info.value)
     assert "alembic upgrade head" in str(exc_info.value)
+
+
+def test_usage_sync_script_skips_key_when_provider_paging_metadata_is_invalid(
+    client, admin_headers, user_headers, monkeypatch, caplog
+):
+    from scripts import sync_api_key_usage
+
+    monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
+
+    whitelist_resp = client.post(
+        _api("/whitelists"),
+        headers=admin_headers,
+        json={
+            "sysid": int(user_headers["x-sysid"]),
+            "account": user_headers["x-account"],
+            "name": user_headers["x-name"],
+            "email": user_headers["x-email"],
+            "note": "seed",
+        },
+    )
+    assert whitelist_resp.status_code == 201
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "invalid paging metadata"},
+    )
+    assert create_resp.status_code == 201
+    item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
+    key_id = item["id"]
+    key_alias = item["key_alias"]
+    sync_now = datetime(2026, 6, 8, 12, 34, 56, tzinfo=UTC)
+
+    class _FakeProviderClient:
+        def list_spend_logs(self, query: dict) -> dict:
+            assert query["key_alias"] == key_alias
+            return {
+                "data": [
+                    {
+                        "status": "success",
+                        "spend": 0.25,
+                        "prompt_tokens": 80,
+                        "completion_tokens": 20,
+                        "total_tokens": 100,
+                        "startTime": sync_now.isoformat(),
+                        "endTime": sync_now.isoformat(),
+                    }
+                ],
+                "total": 1,
+                "page": 2,
+                "page_size": 100,
+                "total_pages": 1,
+                "budget_reset_at": (sync_now + timedelta(days=1)).isoformat(),
+            }
+
+    monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
+    monkeypatch.setattr(sync_api_key_usage, "_now_utc", lambda: sync_now)
+
+    logger = sync_api_key_usage.logging.getLogger("test_usage_sync_invalid_paging")
+    logger.handlers = []
+    logger.propagate = True
+
+    with caplog.at_level("WARNING"):
+        assert sync_api_key_usage.run_once(batch_size=100, dry_run=False, logger=logger) == 0
+
+    assert _fetch_usage_snapshot_rows(key_id) == []
+    key_row = _fetch_key_row(key_id)
+    assert key_row["usage_budget_reset_at"] is None
+    assert key_row["usage_synced_at"] is None
+    assert "unexpected page" in caplog.text
