@@ -755,7 +755,7 @@ Base path：`/main/api/v1`
   - `remaining_budget`：由後端以 `max(max_budget - spend, 0)` 計算；`0` 可表示 exhausted，也可在 `max_budget=0` 時表示 unlimited；未知時為 `null`
   - `tpm_limit`、`rpm_limit`：目前金鑰管理（limit strategy config）的速率限制設定值；`0` 表示 unlimited；未知時為 `null`
   - `max_parallel_requests`：目前金鑰管理（limit strategy config）的最大平行請求數設定值；`0` 表示 unlimited；未知時為 `null`
-  - `budget_reset_at`：下次額度重置時間。若最新 usage snapshot 已反映目前金鑰條件管理設定，沿用 snapshot/provider 值，但若鏡像中的 reset boundary 已過去，列表端點仍需依目前 `budget_duration` 往前推到下一個未來 boundary，不得回傳已過去的重置時間。若 reset 時間已過且本地快取 `synced_at` 仍早於該 reset boundary，則 `usage_summary` 需視為新 cycle 尚未同步完成，`spend` 與 token totals 一律顯示為 `0`，不得繼續顯示前一個 cycle 的舊值。若快取無法沿用，後端需以 `max(api_keys.created_at, limit_strategy_config.updated_at)` 為起算基準，依目前 `budget_duration` 推算下一次重置時間，並固定落在 `Asia/Taipei` 當日上午 `08:00`。因此新建 key 或剛更新金鑰條件管理後，即使尚未有新的 usage sync，列表端點也需能回傳推算後的重置時間。
+  - `budget_reset_at`：下次額度重置時間。若最新 usage snapshot 已反映目前金鑰條件管理設定，沿用 snapshot/provider 值，但若鏡像中的 reset boundary 已過去，列表端點仍需依目前 `budget_duration` 往前推到下一個未來 boundary，不得回傳已過去的重置時間。若 reset 時間已過且本地快取 `synced_at` 仍早於該 reset boundary，則 `usage_summary` 需視為新 cycle 尚未同步完成，`spend` 與 token totals 一律顯示為 `0`，不得繼續顯示前一個 cycle 的舊值。若快取無法沿用，後端需以 `max(api_keys.created_at, limit_strategy_config.updated_at)` 為起算基準，依目前 `budget_duration` 推算下一次重置時間，並固定落在 `Asia/Taipei` 當日上午 `08:00`；此時若缺少可沿用的 provider/mirror `budget_reset_at`，列表端點不得把既有正數 `usage_*` 快取直接視為當前 cycle 用量，需保守顯示為 `0`，避免把舊 cycle 資料帶入摘要。因此新建 key 或剛更新金鑰條件管理後，即使尚未有新的 usage sync，列表端點也需能回傳推算後的重置時間。
   - `synced_at`：本地 usage snapshot 最後同步時間；未知時為 `null`
 - `health_status` 判定規則：
   - `unknown`：缺少 usage snapshot，或缺少足以判定健康度的必要資料

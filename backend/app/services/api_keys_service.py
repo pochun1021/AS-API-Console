@@ -268,8 +268,19 @@ def _derive_budget_reset_at(
     )
 
 
+def _has_authoritative_budget_reset_at(
+    *,
+    mirrored_budget_reset_at: datetime | None,
+    synced_at: datetime | None,
+) -> bool:
+    if mirrored_budget_reset_at is None or synced_at is None:
+        return False
+    return True
+
+
 def _resolve_current_cycle_usage(
     *,
+    can_trust_cached_cycle_usage: bool,
     budget_duration: str | None,
     spend: float | None,
     prompt_tokens: int | None,
@@ -278,6 +289,9 @@ def _resolve_current_cycle_usage(
     budget_reset_at: datetime | None,
     synced_at: datetime | None,
 ) -> tuple[float | None, int | None, int | None, int | None]:
+    if not can_trust_cached_cycle_usage:
+        return 0.0, 0, 0, 0
+
     duration_days = _budget_duration_days(budget_duration)
     if budget_reset_at is None or duration_days is None:
         return spend, prompt_tokens, completion_tokens, total_tokens
@@ -310,6 +324,10 @@ def _build_usage_summary(
     synced_at: datetime | None,
 ) -> dict:
     max_budget = _parse_optional_budget(max_budget_raw)
+    has_authoritative_budget_reset_at = _has_authoritative_budget_reset_at(
+        mirrored_budget_reset_at=budget_reset_at,
+        synced_at=synced_at,
+    )
     budget_reset_at_value = _derive_budget_reset_at(
         budget_duration=budget_duration,
         key_created_at=key_created_at,
@@ -319,6 +337,9 @@ def _build_usage_summary(
     )
     current_cycle_spend, current_cycle_prompt_tokens, current_cycle_completion_tokens, current_cycle_total_tokens = (
         _resolve_current_cycle_usage(
+            can_trust_cached_cycle_usage=bool(
+                has_authoritative_budget_reset_at or (max_budget is not None and max_budget == 0)
+            ),
             budget_duration=budget_duration,
             spend=spend,
             prompt_tokens=prompt_tokens,

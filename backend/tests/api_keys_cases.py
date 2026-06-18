@@ -346,11 +346,11 @@ def test_build_usage_summary_keeps_current_cycle_usage_when_provider_reset_missi
         synced_at=synced_at,
     )
 
-    assert usage_summary["spend"] == 123.45
-    assert usage_summary["prompt_tokens"] == 123
-    assert usage_summary["completion_tokens"] == 45
-    assert usage_summary["total_tokens"] == 168
-    assert usage_summary["remaining_budget"] == 876.55
+    assert usage_summary["spend"] == 0.0
+    assert usage_summary["prompt_tokens"] == 0
+    assert usage_summary["completion_tokens"] == 0
+    assert usage_summary["total_tokens"] == 0
+    assert usage_summary["remaining_budget"] == 1000.0
     assert usage_summary["budget_reset_at"] == budget_reset_at
 
 
