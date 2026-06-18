@@ -503,6 +503,7 @@ export const messages = {
     mykeys_usage_used_percent: "{percent}% 已使用",
     mykeys_usage_remaining_percent: "剩餘 {percent}%",
     mykeys_usage_low_budget_warning: "剩餘額度偏低",
+    mykeys_usage_open_usage_page: "查看這把 key 的使用量",
   },
   en: {
     nav_apply: "Apply",
@@ -1010,5 +1011,6 @@ export const messages = {
     mykeys_usage_used_percent: "{percent}% used",
     mykeys_usage_remaining_percent: "{percent}% remaining",
     mykeys_usage_low_budget_warning: "Budget running low",
+    mykeys_usage_open_usage_page: "Open usage for this key",
   },
 };

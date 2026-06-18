@@ -26,6 +26,7 @@ from db import models  # noqa: F401
 from db.models.api_key_usage_snapshots import ApiKeyUsageSnapshot
 from db.models.api_keys import ApiKey
 from db.models.applications import ApiKeyApplication
+from db.models.limit_strategy_config import LimitStrategyConfig
 from db.session import SessionLocal
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
 
@@ -41,6 +42,23 @@ class DailyUsageBucket:
     bucket_date: date
     bucket_start_utc: datetime
     bucket_end_utc: datetime
+    spend: float
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+@dataclass(slots=True)
+class ProviderUsageRecord:
+    start_time: datetime
+    spend: float
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+@dataclass(slots=True)
+class UsageAggregate:
     spend: float
     prompt_tokens: int
     completion_tokens: int
@@ -90,6 +108,17 @@ def _coerce_int(value: object) -> int:
     except (TypeError, ValueError):
         return 0
     return normalized if normalized >= 0 else 0
+
+
+def _budget_duration_days(duration: str | None) -> int | None:
+    normalized = str(duration or "").strip().lower()
+    if normalized == "daily":
+        return 1
+    if normalized == "weekly":
+        return 7
+    if normalized == "monthly":
+        return 30
+    return None
 
 
 def parse_args() -> argparse.Namespace:
@@ -153,14 +182,14 @@ def _bucket_bounds_for_local_day(bucket_date: date) -> tuple[datetime, datetime]
     return local_start.astimezone(UTC), local_end.astimezone(UTC)
 
 
-def _build_daily_buckets(payload: object) -> tuple[list[DailyUsageBucket], datetime | None]:
+def _extract_success_records(payload: object) -> tuple[list[ProviderUsageRecord], datetime | None]:
     if not isinstance(payload, dict):
         raise ProviderUnavailableError("provider unavailable")
     records = payload.get("data")
     if not isinstance(records, list):
         raise ProviderUnavailableError("provider unavailable")
 
-    grouped: dict[date, dict[str, Decimal | int]] = {}
+    items: list[ProviderUsageRecord] = []
     for record in records:
         if not isinstance(record, dict):
             continue
@@ -169,7 +198,28 @@ def _build_daily_buckets(payload: object) -> tuple[list[DailyUsageBucket], datet
         start_time = _coerce_datetime(record.get("startTime"))
         if start_time is None:
             continue
-        bucket_date = start_time.astimezone(TAIPEI_TZ).date()
+        try:
+            spend = _round_money(float(Decimal(str(record.get("spend") or 0))))
+        except Exception:  # noqa: BLE001
+            continue
+        items.append(
+            ProviderUsageRecord(
+                start_time=start_time,
+                spend=spend,
+                prompt_tokens=_coerce_int(record.get("prompt_tokens")),
+                completion_tokens=_coerce_int(record.get("completion_tokens")),
+                total_tokens=_coerce_int(record.get("total_tokens")),
+            )
+        )
+
+    budget_reset_at = _coerce_datetime(payload.get("budget_reset_at"))
+    return items, budget_reset_at
+
+
+def _build_daily_buckets(records: list[ProviderUsageRecord]) -> list[DailyUsageBucket]:
+    grouped: dict[date, dict[str, Decimal | int]] = {}
+    for record in records:
+        bucket_date = record.start_time.astimezone(TAIPEI_TZ).date()
         bucket = grouped.setdefault(
             bucket_date,
             {
@@ -179,15 +229,11 @@ def _build_daily_buckets(payload: object) -> tuple[list[DailyUsageBucket], datet
                 "total_tokens": 0,
             },
         )
-        try:
-            bucket["spend"] += Decimal(str(record.get("spend") or 0))
-        except Exception:  # noqa: BLE001
-            continue
-        bucket["prompt_tokens"] += _coerce_int(record.get("prompt_tokens"))
-        bucket["completion_tokens"] += _coerce_int(record.get("completion_tokens"))
-        bucket["total_tokens"] += _coerce_int(record.get("total_tokens"))
+        bucket["spend"] += Decimal(str(record.spend))
+        bucket["prompt_tokens"] += record.prompt_tokens
+        bucket["completion_tokens"] += record.completion_tokens
+        bucket["total_tokens"] += record.total_tokens
 
-    budget_reset_at = _coerce_datetime(payload.get("budget_reset_at"))
     items: list[DailyUsageBucket] = []
     for bucket_date in sorted(grouped.keys()):
         bucket_start_utc, bucket_end_utc = _bucket_bounds_for_local_day(bucket_date)
@@ -203,7 +249,41 @@ def _build_daily_buckets(payload: object) -> tuple[list[DailyUsageBucket], datet
                 total_tokens=int(aggregate["total_tokens"]),
             )
         )
-    return items, budget_reset_at
+    return items
+
+
+def _build_current_cycle_aggregate(
+    records: list[ProviderUsageRecord],
+    *,
+    budget_reset_at: datetime | None,
+    budget_duration: str | None,
+) -> UsageAggregate | None:
+    duration_days = _budget_duration_days(budget_duration)
+    if budget_reset_at is None or duration_days is None:
+        return None
+
+    cycle_start = budget_reset_at.astimezone(UTC) - timedelta(days=duration_days)
+    cycle_end = budget_reset_at.astimezone(UTC)
+    spend_total = Decimal("0")
+    prompt_tokens = 0
+    completion_tokens = 0
+    total_tokens = 0
+
+    for record in records:
+        record_time = record.start_time.astimezone(UTC)
+        if record_time < cycle_start or record_time >= cycle_end:
+            continue
+        spend_total += Decimal(str(record.spend))
+        prompt_tokens += record.prompt_tokens
+        completion_tokens += record.completion_tokens
+        total_tokens += record.total_tokens
+
+    return UsageAggregate(
+        spend=_round_money(float(spend_total)),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+    )
 
 
 def _fetch_spend_buckets(
@@ -211,14 +291,14 @@ def _fetch_spend_buckets(
     *,
     key_alias: str,
     now: datetime,
-) -> tuple[list[DailyUsageBucket], datetime | None]:
+) -> tuple[list[ProviderUsageRecord], datetime | None]:
     page = 1
     total_pages = 1
     budget_reset_at: datetime | None = None
     start_at, end_at_exclusive = _build_rolling_window(now)
     start_date = _format_provider_datetime(start_at)
     end_date = _format_provider_datetime(end_at_exclusive - timedelta(seconds=1))
-    grouped: dict[date, DailyUsageBucket] = {}
+    items: list[ProviderUsageRecord] = []
 
     while page <= total_pages:
         payload = provider_client.list_spend_logs(
@@ -236,26 +316,19 @@ def _fetch_spend_buckets(
         if not isinstance(payload, dict):
             raise ProviderUnavailableError("provider unavailable")
         total_pages = int(payload.get("total_pages") or 1)
-        items, page_budget_reset_at = _build_daily_buckets(payload)
+        page_items, page_budget_reset_at = _extract_success_records(payload)
         if budget_reset_at is None:
             budget_reset_at = page_budget_reset_at
-        for item in items:
-            existing = grouped.get(item.bucket_date)
-            if existing is None:
-                grouped[item.bucket_date] = item
-                continue
-            grouped[item.bucket_date] = DailyUsageBucket(
-                bucket_date=item.bucket_date,
-                bucket_start_utc=item.bucket_start_utc,
-                bucket_end_utc=item.bucket_end_utc,
-                spend=_round_money(existing.spend + item.spend),
-                prompt_tokens=existing.prompt_tokens + item.prompt_tokens,
-                completion_tokens=existing.completion_tokens + item.completion_tokens,
-                total_tokens=existing.total_tokens + item.total_tokens,
-            )
+        items.extend(page_items)
         page += 1
 
-    return [grouped[key] for key in sorted(grouped.keys())], budget_reset_at
+    return items, budget_reset_at
+
+
+def _get_budget_duration(session) -> str | None:
+    return session.scalar(
+        select(LimitStrategyConfig.budget_duration).where(LimitStrategyConfig.id == "global-limit-strategy-config")
+    )
 
 
 def _upsert_daily_bucket(
@@ -298,13 +371,14 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
 
     with SessionLocal() as session:
         _ensure_usage_snapshot_schema(session)
+        budget_duration = _get_budget_duration(session)
 
     provider_client = ProviderClient()
     now = _now_utc()
     updated = 0
     for candidate in candidates:
         try:
-            daily_buckets, budget_reset_at = _fetch_spend_buckets(
+            records, budget_reset_at = _fetch_spend_buckets(
                 provider_client,
                 key_alias=candidate.key_alias,
                 now=now,
@@ -319,7 +393,12 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
                 )
             continue
 
-        latest_bucket = daily_buckets[-1] if daily_buckets else None
+        daily_buckets = _build_daily_buckets(records)
+        current_cycle = _build_current_cycle_aggregate(
+            records,
+            budget_reset_at=budget_reset_at,
+            budget_duration=budget_duration,
+        )
         with SessionLocal() as session:
             for bucket in daily_buckets:
                 _upsert_daily_bucket(
@@ -333,12 +412,12 @@ def run_once(*, batch_size: int, dry_run: bool, logger: logging.Logger | None = 
                 update(ApiKey)
                 .where(ApiKey.id == candidate.key_id)
                 .values(
-                    usage_spend=latest_bucket.spend if latest_bucket is not None else None,
-                    usage_prompt_tokens=latest_bucket.prompt_tokens if latest_bucket is not None else None,
-                    usage_completion_tokens=latest_bucket.completion_tokens if latest_bucket is not None else None,
-                    usage_total_tokens=latest_bucket.total_tokens if latest_bucket is not None else None,
-                    usage_budget_reset_at=budget_reset_at if latest_bucket is not None else None,
-                    usage_synced_at=now if latest_bucket is not None else None,
+                    usage_spend=current_cycle.spend if current_cycle is not None else None,
+                    usage_prompt_tokens=current_cycle.prompt_tokens if current_cycle is not None else None,
+                    usage_completion_tokens=current_cycle.completion_tokens if current_cycle is not None else None,
+                    usage_total_tokens=current_cycle.total_tokens if current_cycle is not None else None,
+                    usage_budget_reset_at=budget_reset_at if current_cycle is not None else None,
+                    usage_synced_at=now if current_cycle is not None else None,
                 )
             )
             session.commit()

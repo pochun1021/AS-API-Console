@@ -2,18 +2,15 @@ from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import text
 
-from app.core.config import get_settings
+from tests.api_keys_test_utils import _set_limit_strategy_config
 from tests.conftest import api_path as _api
+from tests.db_runtime import begin_connection, get_test_session_factory
 
 
 def _fetch_usage_snapshot_rows(key_id: str) -> list[dict]:
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    engine = create_engine(db_url, future=True)
-    with engine.begin() as conn:
+    with begin_connection() as conn:
         rows = conn.execute(
             text(
                 """
@@ -32,13 +29,7 @@ def _fetch_usage_snapshot_rows(key_id: str) -> list[dict]:
 def test_usage_sync_script_records_daily_bucket_history_and_cache(client, admin_headers, user_headers, monkeypatch):
     from scripts import sync_api_key_usage
 
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    usage_engine = create_engine(db_url, future=True)
-    monkeypatch.setattr(
-        "scripts.sync_api_key_usage.SessionLocal",
-        sessionmaker(bind=usage_engine, autoflush=False, autocommit=False, class_=Session),
-    )
+    monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
 
     whitelist_resp = client.post(
         _api("/whitelists"),
@@ -142,22 +133,16 @@ def test_usage_sync_script_records_daily_bucket_history_and_cache(client, admin_
 
     listed = client.get(_api("/api-keys"), headers=user_headers)
     assert listed.status_code == 200
-    assert listed.json()["items"][0]["usage_summary"]["spend"] == 0.5
-    assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] == 200
-    assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] == 20
-    assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 220
+    assert listed.json()["items"][0]["usage_summary"]["spend"] == 0.51
+    assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] == 323
+    assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] == 65
+    assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 388
 
 
 def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(client, admin_headers, user_headers, monkeypatch):
     from scripts import sync_api_key_usage
 
-    settings = get_settings()
-    db_url = settings.test_database_url or settings.database_url
-    usage_engine = create_engine(db_url, future=True)
-    monkeypatch.setattr(
-        "scripts.sync_api_key_usage.SessionLocal",
-        sessionmaker(bind=usage_engine, autoflush=False, autocommit=False, class_=Session),
-    )
+    monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
 
     whitelist_resp = client.post(
         _api("/whitelists"),
@@ -179,8 +164,8 @@ def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(cli
     item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
     key_id = item["id"]
     key_alias = item["key_alias"]
-    sync_now = datetime(2026, 6, 8, 12, 34, 56, tzinfo=UTC)
-    bucket_log_time = datetime(2026, 6, 8, 2, 0, 0, tzinfo=UTC)
+    sync_now = datetime.now(UTC).replace(microsecond=0)
+    bucket_log_time = sync_now - timedelta(hours=2)
 
     class _FakeProviderClient:
         def __init__(self):
@@ -225,6 +210,165 @@ def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(cli
     listed = client.get(_api("/api-keys"), headers=user_headers)
     assert listed.status_code == 200
     assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 300
+
+
+def test_usage_sync_script_excludes_pre_reset_logs_from_current_cycle_cache(client, admin_headers, user_headers, monkeypatch):
+    from scripts import sync_api_key_usage
+
+    monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
+
+    try:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="daily",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+        )
+
+        whitelist_resp = client.post(
+            _api("/whitelists"),
+            headers=admin_headers,
+            json={
+                "sysid": int(user_headers["x-sysid"]),
+                "account": user_headers["x-account"],
+                "name": user_headers["x-name"],
+                "email": user_headers["x-email"],
+                "note": "seed",
+            },
+        )
+        assert whitelist_resp.status_code == 201
+
+        create_resp = client.post(
+            _api("/api-keys/applications"),
+            headers=user_headers,
+            json={"application_date": str(date.today()), "duration_days": 30, "purpose": "midday reset"},
+        )
+        assert create_resp.status_code == 201
+        item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
+        key_id = item["id"]
+        key_alias = item["key_alias"]
+
+        sync_now = datetime.now(UTC).replace(microsecond=0)
+        local_today = sync_now.astimezone(sync_api_key_usage.TAIPEI_TZ).date()
+        next_budget_reset_at = datetime.combine(
+            local_today + timedelta(days=1),
+            datetime.min.time(),
+            tzinfo=sync_api_key_usage.TAIPEI_TZ,
+        ).replace(hour=8).astimezone(UTC)
+        cycle_start = next_budget_reset_at - timedelta(days=1)
+        pre_reset_log_time = cycle_start - timedelta(minutes=30)
+        post_reset_log_time = cycle_start + timedelta(hours=1)
+
+        class _FakeProviderClient:
+            def list_spend_logs(self, query: dict) -> dict:
+                assert query["key_alias"] == key_alias
+                return {
+                    "data": [
+                        {
+                            "status": "success",
+                            "spend": 0.4,
+                            "prompt_tokens": 40,
+                            "completion_tokens": 10,
+                            "total_tokens": 50,
+                            "startTime": pre_reset_log_time.isoformat(),
+                            "endTime": pre_reset_log_time.isoformat(),
+                        },
+                        {
+                            "status": "success",
+                            "spend": 0.6,
+                            "prompt_tokens": 60,
+                            "completion_tokens": 15,
+                            "total_tokens": 75,
+                            "startTime": post_reset_log_time.isoformat(),
+                            "endTime": post_reset_log_time.isoformat(),
+                        },
+                    ],
+                    "total": 2,
+                    "page": 1,
+                    "page_size": 100,
+                    "total_pages": 1,
+                    "budget_reset_at": next_budget_reset_at.isoformat(),
+                }
+
+        monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
+        monkeypatch.setattr(sync_api_key_usage, "_now_utc", lambda: sync_now)
+
+        assert sync_api_key_usage.run_once(batch_size=100, dry_run=False) == 1
+
+        rows = _fetch_usage_snapshot_rows(key_id)
+        assert len(rows) == 1
+        assert float(rows[0]["spend"]) == 1.0
+        assert rows[0]["total_tokens"] == 125
+
+        listed = client.get(_api("/api-keys"), headers=user_headers)
+        assert listed.status_code == 200
+        assert listed.json()["items"][0]["usage_summary"]["spend"] == 0.6
+        assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] == 60
+        assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] == 15
+        assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 75
+    finally:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+        )
+
+
+def test_usage_sync_script_writes_zero_current_cycle_cache_when_boundary_known(client, admin_headers, user_headers, monkeypatch):
+    from scripts import sync_api_key_usage
+
+    monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
+
+    whitelist_resp = client.post(
+        _api("/whitelists"),
+        headers=admin_headers,
+        json={
+            "sysid": int(user_headers["x-sysid"]),
+            "account": user_headers["x-account"],
+            "name": user_headers["x-name"],
+            "email": user_headers["x-email"],
+            "note": "seed",
+        },
+    )
+    assert whitelist_resp.status_code == 201
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "zero cycle"},
+    )
+    assert create_resp.status_code == 201
+    item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
+    key_alias = item["key_alias"]
+    sync_now = datetime.now(UTC).replace(microsecond=0)
+    next_budget_reset_at = sync_now + timedelta(days=7)
+
+    class _FakeProviderClient:
+        def list_spend_logs(self, query: dict) -> dict:
+            assert query["key_alias"] == key_alias
+            return {
+                "data": [],
+                "total": 0,
+                "page": 1,
+                "page_size": 100,
+                "total_pages": 1,
+                "budget_reset_at": next_budget_reset_at.isoformat(),
+            }
+
+    monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
+    monkeypatch.setattr(sync_api_key_usage, "_now_utc", lambda: sync_now)
+
+    assert sync_api_key_usage.run_once(batch_size=100, dry_run=False) == 1
+
+    listed = client.get(_api("/api-keys"), headers=user_headers)
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["usage_summary"]["spend"] == 0.0
+    assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] == 0
+    assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] == 0
+    assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 0
 
 
 def test_usage_sync_script_fails_fast_when_daily_bucket_columns_are_missing(monkeypatch):

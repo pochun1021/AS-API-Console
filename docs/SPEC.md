@@ -150,7 +150,8 @@
 - 顯示欄位：申請日期、生效時長、狀態、Health、到期時間、遮罩 key、操作（其中包含 Usage icon；`APP_ENV=prod` 為 `sk-...` + 後 4 碼；`dev/test` 為 `AS-...` + 後 4 碼）。
 - `Health` 欄位為目前 quota 健康度摘要，僅允許 `healthy|low_budget|exhausted|unknown` 四種狀態；可使用獨立文案與顏色呈現，但不得把健康度語意塞回 Usage icon。
 - `Usage` 明細入口需放在操作區，並使用中性、非 color-coded 的 icon；不得以 icon 顏色取代 `Health` 欄位。
-- 點擊 `Usage` icon 需開啟 popover；popover 需顯示 `spend`、`max_budget`、`remaining_budget`、`tpm_limit`、`rpm_limit`、`max_parallel_requests`、`budget_reset_at`、`synced_at`；其中 `max_budget`、`tpm_limit`、`rpm_limit`、`max_parallel_requests` 需對齊目前金鑰管理（limit strategy config）設定值。
+- 點擊 `Usage` icon 需開啟 popover；popover 需顯示 `spend`、`max_budget`、`remaining_budget`、`budget_reset_at`、`synced_at`。`tpm_limit`、`rpm_limit`、`max_parallel_requests` 不在此 popover 顯示；其中 `max_budget` 需對齊目前金鑰管理（limit strategy config）設定值。
+- `Usage` popover 需提供可直接導向 `/usage` 的入口，並帶出目前這把 key 作為預選目標；使用者進入 `Usage Page` 後不得還需要重新手動選同一把 key 才能查圖。
 - `Usage` popover 在 `max_budget > 0` 時，需額外顯示 budget progress bar；若 `spend` 缺值則以前端 `0` 顯示，並以 `spend / max_budget` 呈現已使用比例，同步顯示已使用百分比與剩餘百分比。
 - 已使用百分比需採無條件進位到小數第 2 位，且顯示時不強制補尾零；例如 `85%` 保持 `85%`、`84.001%` 顯示 `84.01%`。
 - 剩餘百分比顯示需與已使用百分比互補，以上述「已使用顯示值」計算 `100 - used_percent_display`，避免兩者相加不為 `100%` 的視覺落差。
@@ -159,7 +160,7 @@
 - 當剩餘額度比例 `<= 20%` 時，budget progress bar 需改用警示樣式並顯示明確警示文案；此提示僅屬視覺警示，不得阻擋任何操作。
 - 列表不得額外展開成 `spend / budget / TPM / RPM` 多個 raw numeric 欄位，避免表格過度擁擠。
 - 若某筆資料缺少 usage snapshot，該列仍需顯示可點擊的 `Usage` icon；`Health` 顯示 `Unknown`，popover 內各欄位顯示 `Unknown` 或 `-`。
-- 當 `max_budget=0` 或 `tpm_limit=0` 或 `rpm_limit=0` 時，前端需視為 unlimited，顯示 `Unlimited`，不得顯示為 `0` 的有限額度/速率。
+- 當 `max_budget=0` 時，前端需視為 unlimited，顯示 `Unlimited`，不得顯示為 `0` 的有限額度。
 - `Unlimited`（`max_budget=0`）在 `Usage` popover 內不得渲染百分比 progress bar，需改以純文字狀態呈現；若 `max_budget > 0` 但缺少 usage snapshot 或 `spend`，仍需顯示 progress bar，並以前端 `0%` / `0 / budget` 呈現。
 - 清單查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；前端不得以當前頁 rows 執行 local filter。
 - 狀態篩選欄位初始值需為 `active`（啟用中）；首次進頁時預設僅顯示啟用中 keys。使用者可再切換成 `revoked`、`expired` 或清空為全部狀態。
@@ -745,13 +746,13 @@ Base path：`/main/api/v1`
 ```
 - `health_status` allowed: `healthy|low_budget|exhausted|unknown`
 - `usage_summary` 欄位語意：
-  - `spend`：目前 snapshot 記錄的已花費金額（USD）；未知時為 `null`
-  - `prompt_tokens`、`completion_tokens`、`total_tokens`：`api_keys` 最新快取鏡像中的 token totals；未知時為 `null`
+  - `spend`：目前 budget cycle 的累計已花費金額（USD）；未知時為 `null`
+  - `prompt_tokens`、`completion_tokens`、`total_tokens`：目前 budget cycle 的 token totals；未知時為 `null`
   - `max_budget`：目前金鑰管理（limit strategy config）的總額度（USD）；`0` 表示 unlimited；未知時為 `null`
   - `remaining_budget`：由後端以 `max(max_budget - spend, 0)` 計算；`0` 可表示 exhausted，也可在 `max_budget=0` 時表示 unlimited；未知時為 `null`
   - `tpm_limit`、`rpm_limit`：目前金鑰管理（limit strategy config）的速率限制設定值；`0` 表示 unlimited；未知時為 `null`
   - `max_parallel_requests`：目前金鑰管理（limit strategy config）的最大平行請求數設定值；`0` 表示 unlimited；未知時為 `null`
-  - `budget_reset_at`：下次額度重置時間。若最新 usage snapshot 已反映目前金鑰條件管理設定，沿用 snapshot/provider 值；否則後端需以 `max(api_keys.created_at, limit_strategy_config.updated_at)` 為起算基準，依目前 `budget_duration` 推算下一次重置時間，並固定落在 `Asia/Taipei` 當日上午 `08:00`。因此新建 key 或剛更新金鑰條件管理後，即使尚未有新的 usage sync，列表端點也需能回傳推算後的重置時間。
+  - `budget_reset_at`：下次額度重置時間。若最新 usage snapshot 已反映目前金鑰條件管理設定，沿用 snapshot/provider 值，但若鏡像中的 reset boundary 已過去，列表端點仍需依目前 `budget_duration` 往前推到下一個未來 boundary，不得回傳已過去的重置時間。若 reset 時間已過且本地快取 `synced_at` 仍早於該 reset boundary，則 `usage_summary` 需視為新 cycle 尚未同步完成，`spend` 與 token totals 一律顯示為 `0`，不得繼續顯示前一個 cycle 的舊值。若快取無法沿用，後端需以 `max(api_keys.created_at, limit_strategy_config.updated_at)` 為起算基準，依目前 `budget_duration` 推算下一次重置時間，並固定落在 `Asia/Taipei` 當日上午 `08:00`。因此新建 key 或剛更新金鑰條件管理後，即使尚未有新的 usage sync，列表端點也需能回傳推算後的重置時間。
   - `synced_at`：本地 usage snapshot 最後同步時間；未知時為 `null`
 - `health_status` 判定規則：
   - `unknown`：缺少 usage snapshot，或缺少足以判定健康度的必要資料
@@ -860,13 +861,15 @@ Base path：`/main/api/v1`
 - 聚合規則：只累計 `status=success` 的 spend logs；需先依 `Asia/Taipei` 日曆日聚合後，再寫入對應的 daily bucket。`failure` logs 僅供維運排查，不得寫入 usage snapshot。
 - token 聚合規則：`prompt_tokens`、`completion_tokens`、`total_tokens` 皆只累計 `status=success` 的 spend logs；若單筆 log 缺少個別 token 欄位，該欄位以 `0` 累計，不得因缺欄中止整把 key 的 snapshot 寫入。
 - 落地規則：每次同步需對 rolling window 內各日 bucket 做 upsert；同一天 bucket 允許後續同步覆寫更新，不得重複插入相同 `(api_key_id, bucket_granularity, bucket_start_utc)`。
-- 最新快取規則：同步完成後，需同步覆寫 `api_keys.usage_spend`、`usage_budget_reset_at`、`usage_synced_at` 作為列表與 health 的最新快取鏡像。
+- 最新快取規則：同步完成後，需同步覆寫 `api_keys.usage_*` 作為列表與 health 的最新快取鏡像；其語意為「目前 budget cycle aggregate」，不得再只複製最新單日 bucket。
 - 歷史值規則：`GET /main/api/v1/api-keys/usage-series` 一律讀取 `api_key_usage_snapshots` 的 daily bucket 歷史；`GET /main/api/v1/api-keys` 則使用 `api_keys.usage_*` 快取鏡像與目前 limit strategy config 組成 `usage_summary`。
 - 額度重置推算規則：私服器的預算重置作業固定於重置日 `Asia/Taipei 08:00` 執行；因此 `GET /main/api/v1/api-keys` 在 snapshot 缺失或已因較新的 `limit_strategy_config.updated_at` 失效時，需依目前 `budget_duration` 與最新起算基準即時計算 `budget_reset_at`，不得要求前端自行推算。
 - 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每 `5` 分鐘執行一次。
 - 容錯：
   - 單把 key provider 查詢失敗時，需記錄錯誤並繼續同步其他 keys。
-  - 若某把 key 在 rolling window 內查無 spend logs，既有 daily bucket 不需補造假資料；但最新快取可更新 `synced_at`，`spend` 可為 `0`，`budget_reset_at` 可為 `null`。
+  - daily bucket 歷史仍維持以 `Asia/Taipei` 日曆日聚合；即使 budget reset 發生在同一天中途，`/usage-series` 的單日 bucket 仍保留完整日曆日成功 usage，不得切分成半天 bucket。
+  - 最新快取的 current-cycle aggregate 需直接由 provider success logs 依 cycle window 計算：當 provider 提供 `budget_reset_at` 時，以其作為下一次 reset boundary，並依目前 `budget_duration` 回推 cycle start；只有 `startTime` 落在該 window 內的 success logs 可寫入 `api_keys.usage_*`。
+  - 若某把 key 在目前 cycle 內查無 success logs，但已知有效 `budget_reset_at` 與 `budget_duration`，最新快取需寫入 `spend=0` 與 token totals `0`，不得以 `null` 保留前一 cycle 舊值；既有 daily bucket 不需補造假資料。
   - provider timeout、5xx、payload 無法辨識時，不得覆蓋該 key 既有成功 daily bucket 或最新快取鏡像。
   - 非 `active` key 不再同步新的 usage bucket，但既有歷史資料需保留供查詢。
 - 稽核與維運：排程需輸出執行時間、處理 key 數、成功/失敗 key 數、寫入 snapshot 筆數與錯誤訊息，供維運追蹤。

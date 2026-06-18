@@ -32,6 +32,7 @@ import {
   Select
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
+import { Link as RouterLink } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import DateRangeFilterField from "../components/DateRangeFilterField";
@@ -75,10 +76,24 @@ function formatMaskedKey(value) {
   return String(value);
 }
 
+function parseUsageNumber(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function formatUsageNumber(value, { suffix = "", unlimitedText, unknownText } = {}) {
-  if (value == null) return unknownText;
-  if (value === 0 && unlimitedText) return unlimitedText;
-  return `${value}${suffix}`;
+  const numericValue = parseUsageNumber(value);
+  if (numericValue == null) return unknownText;
+  if (numericValue === 0 && unlimitedText) return unlimitedText;
+  return `${numericValue}${suffix}`;
 }
 
 function formatPercent(value, digits = 0) {
@@ -107,13 +122,13 @@ function formatGroupedInteger(value) {
 }
 
 function buildBudgetProgress(usageSummary) {
-  const maxBudget = usageSummary?.max_budget;
+  const maxBudget = parseUsageNumber(usageSummary?.max_budget);
   if (maxBudget == null || maxBudget <= 0) {
     return null;
   }
 
-  const spend = Math.max(usageSummary?.spend ?? 0, 0);
-  const remainingBudget = Math.max(usageSummary?.remaining_budget ?? (maxBudget - spend), 0);
+  const spend = Math.max(parseUsageNumber(usageSummary?.spend) ?? 0, 0);
+  const remainingBudget = Math.max(parseUsageNumber(usageSummary?.remaining_budget) ?? (maxBudget - spend), 0);
   const usedRatio = Math.min(Math.max(spend / maxBudget, 0), 1);
   const usedPercentValue = ceilPercentValue(usedRatio * 100, 2);
   const remainingPercentValue = usedPercentValue == null ? null : Math.max(100 - usedPercentValue, 0);
@@ -121,7 +136,7 @@ function buildBudgetProgress(usageSummary) {
     value: usedRatio * 100,
     usedPercentLabel: formatPercentCeil(usedRatio * 100, 2),
     remainingPercentLabel: formatPercent(remainingPercentValue, 2),
-    totalTokensLabel: formatGroupedInteger(usageSummary?.total_tokens),
+    totalTokensLabel: formatGroupedInteger(parseUsageNumber(usageSummary?.total_tokens)),
     isLowBudget: remainingBudget / maxBudget <= 0.2,
     isExhausted: remainingBudget <= 0,
   };
@@ -842,24 +857,6 @@ export default function MyApiKeysPage({ auth }) {
             </>
           ) : null}
           <Typography variant="body2">
-            {t("mykeys_usage_tpm")}: {formatUsageNumber(usageRow?.usage_summary?.tpm_limit, {
-              unlimitedText: t("mykeys_usage_unlimited"),
-              unknownText: t("mykeys_usage_unknown"),
-            })}
-          </Typography>
-          <Typography variant="body2">
-            {t("mykeys_usage_rpm")}: {formatUsageNumber(usageRow?.usage_summary?.rpm_limit, {
-              unlimitedText: t("mykeys_usage_unlimited"),
-              unknownText: t("mykeys_usage_unknown"),
-            })}
-          </Typography>
-          <Typography variant="body2">
-            {t("mykeys_usage_max_parallel_requests")}: {formatUsageNumber(usageRow?.usage_summary?.max_parallel_requests, {
-              unlimitedText: t("mykeys_usage_unlimited"),
-              unknownText: t("mykeys_usage_unknown"),
-            })}
-          </Typography>
-          <Typography variant="body2">
             {t("mykeys_usage_budget_reset_at")}: {formatDateTimeInTaipei(usageRow?.usage_summary?.budget_reset_at, { locale, fallback: "-" })}
           </Typography>
           <Typography variant="body2">
@@ -868,6 +865,18 @@ export default function MyApiKeysPage({ auth }) {
               fallback: t("mykeys_usage_unknown"),
             })}
           </Typography>
+          {usageRow?.id ? (
+            <Button
+              component={RouterLink}
+              to={`/usage?key_id=${encodeURIComponent(usageRow.id)}`}
+              size="small"
+              variant="outlined"
+              onClick={closeUsagePopover}
+              sx={{ alignSelf: "flex-start", mt: 0.5 }}
+            >
+              {t("mykeys_usage_open_usage_page")}
+            </Button>
+          ) : null}
         </Stack>
       </Popover>
 

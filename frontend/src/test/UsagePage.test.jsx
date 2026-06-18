@@ -38,12 +38,12 @@ function LocaleSetter({ locale }) {
   return null;
 }
 
-function renderPage(ui, { locale = "zh-TW" } = {}) {
+function renderPage(ui, { locale = "zh-TW", initialEntries = ["/"] } = {}) {
   return render(
     <LocaleProvider>
       <LocaleSetter locale={locale} />
       <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <MemoryRouter>{ui}</MemoryRouter>
+        <MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>
       </LocalizationProvider>
     </LocaleProvider>
   );
@@ -248,5 +248,35 @@ describe("UsagePage", () => {
 
     expect(await screen.findByText("shared_alias")).toBeInTheDocument();
     expect(screen.queryByText("for_jane.doe")).not.toBeInTheDocument();
+  });
+
+  test("preselects key from query string and auto-loads series", async () => {
+    const listKeysSpy = vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({
+      items: [
+        { id: "key_1", key_alias: "for_jane.doe", masked_key: "AS-...1234" },
+        { id: "key_2", key_alias: "shared_alias", masked_key: "AS-...9999" }
+      ]
+    });
+    const listSeriesSpy = vi.spyOn(apiClient, "listApiKeyUsageSeries").mockResolvedValue({
+      items: [
+        {
+          bucket_start: "2026-06-01T00:00:00+08:00",
+          bucket_label: "2026-06-01",
+          prompt_tokens: 100,
+          completion_tokens: 50,
+          total_tokens: 150,
+          spend: 1.25
+        }
+      ]
+    });
+
+    renderPage(<UsagePage auth={auth} />, { initialEntries: ["/usage?key_id=key_2"] });
+
+    await waitFor(() => expect(listKeysSpy).toHaveBeenCalled());
+    await waitFor(() => expect(listSeriesSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ key_id: "key_2", granularity: "day" }),
+      auth
+    ));
+    expect(await screen.findByDisplayValue("shared_alias (AS-...9999)")).toBeInTheDocument();
   });
 });

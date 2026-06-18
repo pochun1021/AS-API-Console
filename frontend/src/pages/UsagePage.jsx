@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Autocomplete, Box, Button, Card, CardContent, Slider, Stack, TextField, Typography } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
 import dayjs from "dayjs";
+import { useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import DateRangeFilterField from "../components/DateRangeFilterField";
@@ -158,6 +159,7 @@ export function formatUsageTooltip(item, t) {
 
 export default function UsagePage({ auth }) {
   const { t } = useLocale();
+  const [searchParams] = useSearchParams();
   const [keys, setKeys] = useState([]);
   const [selectedKeyId, setSelectedKeyId] = useState("");
   const [dateRange, setDateRange] = useState(defaultDateRange);
@@ -171,6 +173,7 @@ export default function UsagePage({ auth }) {
   const panHandleRef = useRef(null);
   const panStateRef = useRef(null);
   const [isPanning, setIsPanning] = useState(false);
+  const requestedKeyId = searchParams.get("key_id") || "";
 
   async function loadKeys() {
     setKeysLoading(true);
@@ -219,6 +222,12 @@ export default function UsagePage({ auth }) {
   useEffect(() => {
     loadKeys();
   }, []);
+
+  useEffect(() => {
+    if (!requestedKeyId || !keys.length) return;
+    if (!keys.some((item) => item.id === requestedKeyId)) return;
+    setSelectedKeyId((current) => (current === requestedKeyId ? current : requestedKeyId));
+  }, [keys, requestedKeyId]);
 
   useEffect(() => {
     if (!selectedKeyId) {

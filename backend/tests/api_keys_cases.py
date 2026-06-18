@@ -46,6 +46,17 @@ def _expected_budget_reset_at(reference_at: datetime, duration: str) -> str:
     return reset_local.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _expected_rolled_budget_reset_at(reference_at: datetime, duration: str, *, now: datetime | None = None) -> str:
+    if reference_at.tzinfo is None:
+        reference_at = reference_at.replace(tzinfo=UTC)
+    current_time = (now or datetime.now(UTC)).replace(microsecond=0)
+    step_days = {"daily": 1, "weekly": 7, "monthly": 30}[duration]
+    rolled = reference_at
+    while rolled <= current_time:
+        rolled += timedelta(days=step_days)
+    return rolled.isoformat().replace("+00:00", "Z")
+
+
 def test_extend_resets_application_date_for_new_effective_window():
     issued_at = datetime(2026, 6, 1, 0, 30, 0, tzinfo=UTC)
     now = datetime(2026, 6, 10, 12, 0, 0, tzinfo=UTC)
@@ -162,6 +173,117 @@ def test_list_api_keys_returns_usage_summary_and_low_budget_health(client, admin
     assert item["usage_summary"]["max_parallel_requests"] == 0
     _assert_utc_datetime_string(item["usage_summary"]["budget_reset_at"])
     _assert_utc_datetime_string(item["usage_summary"]["synced_at"])
+
+
+def test_list_api_keys_zeroes_stale_previous_cycle_usage_after_reset(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "stale cycle"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+    budget_reset_at = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=1)
+    synced_at = budget_reset_at - timedelta(minutes=5)
+    try:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+            updated_at=synced_at - timedelta(minutes=1),
+        )
+        _set_key_usage_snapshot(
+            key_id,
+            usage_spend="850.25",
+            usage_prompt_tokens=1000,
+            usage_completion_tokens=500,
+            usage_total_tokens=1500,
+            usage_budget_reset_at=budget_reset_at,
+            usage_synced_at=synced_at,
+        )
+
+        listed = client.get(_api("/api-keys"), headers=user_headers)
+
+        assert listed.status_code == 200
+        item = listed.json()["items"][0]
+        assert item["health_status"] == "healthy"
+        assert item["usage_summary"]["spend"] == 0.0
+        assert item["usage_summary"]["prompt_tokens"] == 0
+        assert item["usage_summary"]["completion_tokens"] == 0
+        assert item["usage_summary"]["total_tokens"] == 0
+        assert item["usage_summary"]["remaining_budget"] == 1000.0
+        assert item["usage_summary"]["synced_at"] == synced_at.isoformat().replace("+00:00", "Z")
+        assert item["usage_summary"]["budget_reset_at"] == _expected_rolled_budget_reset_at(
+            budget_reset_at,
+            "monthly",
+        )
+    finally:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+        )
+
+
+def test_list_api_keys_keeps_current_cycle_usage_after_reset_when_sync_is_fresh(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "fresh cycle"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+    budget_reset_at = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=1)
+    synced_at = budget_reset_at + timedelta(minutes=10)
+    try:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+            updated_at=synced_at - timedelta(minutes=1),
+        )
+        _set_key_usage_snapshot(
+            key_id,
+            usage_spend="25.50",
+            usage_prompt_tokens=80,
+            usage_completion_tokens=20,
+            usage_total_tokens=100,
+            usage_budget_reset_at=budget_reset_at,
+            usage_synced_at=synced_at,
+        )
+
+        listed = client.get(_api("/api-keys"), headers=user_headers)
+
+        assert listed.status_code == 200
+        item = listed.json()["items"][0]
+        assert item["health_status"] == "healthy"
+        assert item["usage_summary"]["spend"] == 25.5
+        assert item["usage_summary"]["prompt_tokens"] == 80
+        assert item["usage_summary"]["completion_tokens"] == 20
+        assert item["usage_summary"]["total_tokens"] == 100
+        assert item["usage_summary"]["remaining_budget"] == 974.5
+        assert item["usage_summary"]["budget_reset_at"] == _expected_rolled_budget_reset_at(
+            budget_reset_at,
+            "monthly",
+        )
+    finally:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+        )
 
 
 def test_list_api_keys_uses_api_keys_usage_cache_not_snapshot_history(client, admin_headers, user_headers):
