@@ -39,10 +39,11 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 4. Keep changes scoped; do not mix unrelated edits.
 5. For DB migration changes, verify Alembic `revision` naming constraints (length <= 32 chars) and `down_revision` links before validation.
 6. For DB migration changes, run `cd backend && uv run alembic upgrade head` and treat any failure (missing `uv`, env/config issue, DB connectivity issue, or Alembic error) as a blocking error that must be reported.
-7. For feature/behavior changes, run at least one small-scope validation that directly exercises the changed area (targeted test, focused manual flow, or similarly scoped check) and report the result.
-8. After any change under `frontend/`, run `npm run build` in `frontend` and report the result.
-9. Do not treat full-suite or whole-repo regression testing as mandatory during implementation work unless the task explicitly requires it; reserve full overall testing for PR merge flow or when risk is unusually high.
-10. Report what changed, which spec rules were affected, what targeted validation was run, and any residual risk.
+7. For any testing need, use `agy` for validation first; if `agy` or the requested test command is unavailable, blocked, or does not exist, fall back to the agent's own test execution and report the fallback.
+8. For feature/behavior changes, run at least one small-scope validation that directly exercises the changed area (targeted test, focused manual flow, or similarly scoped check) and report the result.
+9. After any change under `frontend/`, run `npm run build` in `frontend` and report the result.
+10. Do not treat full-suite or whole-repo regression testing as mandatory during implementation work unless the task explicitly requires it; reserve full overall testing for PR merge flow or when risk is unusually high.
+11. Report what changed, which spec rules were affected, what targeted validation was run, and any residual risk.
 
 ## Change Rules
 - Terminology must stay consistent across files (`sysid`, `user/admin`, resource-oriented routes).
@@ -57,6 +58,7 @@ If conflicts exist, follow the higher-priority document and report the conflict.
 - No leftover old terms: `subject_type`, `subject_id`, `/api/v1/my/`, `/api/v1/admin/`.
 - `README.md` and `docs/SPEC.md` use consistent route/identity/role wording when touched.
 - Acceptance criteria are updated when behavior or contract changes.
+- If testing was needed, `agy` was used first; if not possible, the fallback reason and substitute validation were reported.
 - If behavior changed, a small-scope validation covering the changed feature has been executed and reported.
 - If Python dependencies changed, ensure `requirements.txt` exists and is updated consistently with `pyproject.toml`.
 - If a migration is added/edited, ensure Alembic `revision` length is <= 32 chars, `down_revision` links correctly, and `cd backend && uv run alembic upgrade head` succeeds.
