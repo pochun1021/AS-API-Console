@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 from app.core.config import get_settings
 from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.models.operation_audit_logs import OperationAuditLog
-from tests.api_keys_test_utils import _create_whitelist
+from tests.api_keys_test_utils import _create_whitelist, _fetch_key_row
 from tests.conftest import api_path, build_headers
 from tests.db_runtime import begin_connection, get_test_engine, session_scope
 
@@ -533,6 +533,58 @@ def test_limit_strategy_patch_syncs_provider_team_update(client, admin_headers, 
                 "max_parallel_requests": None,
             },
         }
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
+
+
+def test_limit_strategy_patch_fails_when_provider_sync_verification_mismatches(
+    client, admin_headers, user_headers, monkeypatch
+):
+    payload = {
+        "budget_max_budget": "3000",
+        "budget_duration": "weekly",
+        "rate_limit_tpm": 13000,
+        "rate_limit_rpm": 700,
+        "max_parallel_requests": 0,
+    }
+    _create_whitelist(client, admin_headers, int(user_headers["x-sysid"]))
+    create_resp = client.post(
+        api_path("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "provider sync verify"},
+    )
+    assert create_resp.status_code == 201
+    key_item = client.get(api_path("/api-keys"), headers=user_headers).json()["items"][0]
+    key_row = _fetch_key_row(key_item["id"])
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "app.services.provider_client.ProviderClient.update_team_limits",
+        lambda self, provider_payload: SimpleNamespace(request_id="req-team", operation_id="op-team"),
+    )
+    monkeypatch.setattr(
+        "app.services.provider_client.ProviderClient.list_spend_keys",
+        lambda self: [
+            {
+                "token": key_row["key_hash"],
+                "key_alias": key_item["key_alias"],
+                "budget_duration": "daily",
+            }
+        ],
+    )
+
+    try:
+        resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
+        assert resp.status_code == 503
+        assert resp.json()["error"]["code"] == "PROVIDER_SYNC_MISMATCH"
+        current = client.get(api_path("/limit-strategy-config"), headers=admin_headers)
+        assert current.status_code == 200
+        assert current.json()["budget_duration"] == "monthly"
     finally:
         monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
         monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)

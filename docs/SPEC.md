@@ -685,6 +685,7 @@ Base path：`/main/api/v1`
   }
 }
 ```
+- `PATCH /main/api/v1/limit-strategy-config` 在 provider `bulk_update` 成功後，需立即回讀 provider `/spend/keys` 驗證目前 `active` keys 的 `budget_duration` 已與本地新設定一致；若回讀失敗、資料無法辨識、缺少對應 key，或任一 key 的 `budget_duration` 仍不一致，整次更新需視為失敗並回傳錯誤，不得只更新本地設定後靜默放行。
 - `PATCH /main/api/v1/limit-strategy-config` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
 - `PATCH /main/api/v1/limit-strategy-config` 的 `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm`、`max_parallel_requests` 僅接受 ASCII `0-9`；若為空字串、科學記號、小數、負號、全形數字、空白或混合字串，回 `422 VALIDATION_ERROR`。
 - 同步 `/team/key/bulk_update` 時，external provider mode 下缺少 `PROVIDER_TEAM_ID` 必須 fail fast，且不得送 request 給 provider。
@@ -854,7 +855,7 @@ Base path：`/main/api/v1`
 
 ### 3-2) 背景同步（API Key Usage Snapshot）
 - 目的：週期性自 provider `/spend/keys` 與 `/spend/logs/v2` 同步每把 `active` API Key 的最新 usage 快取與每日 bucket 歷史，供列表 `Usage` 與 `/usage` 圖表共同使用。
-- summary metadata 來源：`/spend/keys` 提供 `spend`、`budget_duration`、`budget_reset_at` 與 `updated_at`；其中 `budget_reset_at` 為 current-cycle reset boundary 的來源。
+- summary metadata 來源：`/spend/keys` 提供 `spend`、`budget_duration`、`budget_reset_at` 與 `updated_at`；其中 `budget_reset_at` 為 current-cycle reset boundary 的來源。`budget_duration` 僅作為 provider 同步一致性觀測用途，不作為本地 current-cycle window 計算依據。
 - history 來源：`/spend/logs/v2` 提供最近 `30` 天逐筆 usage logs，作為 daily bucket 歷史來源；列表 `usage_summary` 的 `spend` 與 token totals 皆需以本地 daily buckets 聚合產生，不得直接顯示舊 cache。
 - 查詢鍵：
   - `/spend/keys` 以 provider 回傳的 `token` 與本地 `key_hash` 優先對應；若對應失敗，再以 `key_alias` 補充比對。
@@ -865,6 +866,7 @@ Base path：`/main/api/v1`
 - 落地規則：每次同步需對 rolling window 內各日 bucket 做 upsert；同一天 bucket 允許後續同步覆寫更新，不得重複插入相同 `(api_key_id, bucket_granularity, bucket_start_utc)`。
 - 最新快取規則：同步完成後，可同步覆寫 `api_keys.usage_*` 作為 mirror / 維運快取；但 `GET /main/api/v1/api-keys` 對外回傳 `usage_summary` 時，不得直接把 `api_keys.usage_spend` 或其他 `usage_*` 快取值當作最終 truth source。
 - 歷史值規則：`GET /main/api/v1/api-keys/usage-series` 一律讀取 `api_key_usage_snapshots` 的 daily bucket 歷史；`GET /main/api/v1/api-keys` 需以 `usage_budget_reset_at` + 目前 `limit_strategy_config.budget_duration` 推回 current-cycle window，再對 `api_key_usage_snapshots` 的 daily buckets 聚合後組成 `usage_summary`。
+- current-cycle token cache 規則：usage sync 腳本在覆寫 `api_keys.usage_prompt_tokens`、`usage_completion_tokens`、`usage_total_tokens` 時，也需以本地 `limit_strategy_config.budget_duration` 搭配 provider `budget_reset_at` 判定 current-cycle window，不得改用 provider summary 內的 `budget_duration` 單獨決定週期。
 - 額度重置規則：`budget_reset_at` 一律以 provider `/spend/keys` 回傳值為準，語意固定為「下一次重置時間」；若 provider 未提供則為 `null`，本系統不得再自行推算。
 - 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每 `5` 分鐘執行一次。
 - 全量遍歷規則：每次執行需遍歷全部 `active` keys；腳本參數 `batch_size` 僅代表單次 DB 候選批次大小與 provider 分頁預期大小，不得把 `batch_size` 視為整次同步只處理前 N 把 key 的上限。

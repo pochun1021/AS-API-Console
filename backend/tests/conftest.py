@@ -56,6 +56,7 @@ def _seed_default_limit_strategy_config(db: Session) -> None:
 
 
 def _reset_test_schema(engine) -> None:
+    Base.metadata.drop_all(bind=engine, checkfirst=True)
     with engine.begin() as conn:
         conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
         try:
@@ -65,7 +66,7 @@ def _reset_test_schema(engine) -> None:
                 conn.execute(text(f"DROP TABLE IF EXISTS `{table_name}`"))
         finally:
             conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine, checkfirst=True)
 
 
 def _clear_test_data(engine) -> None:

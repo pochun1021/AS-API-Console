@@ -43,6 +43,7 @@ from db.repositories.types import (
 LIMIT_STRATEGY_CONFIG_ID = "global-limit-strategy-config"
 MAX_KEY_ALIAS_ATTEMPTS = 20
 TAIPEI_TZ = ZoneInfo("Asia/Taipei")
+logger = logging.getLogger(__name__)
 LIMIT_STRATEGY_DEFAULTS = {
     "budget_max_budget": "1000",
     "budget_duration": "monthly",
@@ -73,6 +74,12 @@ class UsageCycleAggregate:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+
+
+@dataclass(slots=True)
+class ActiveKeyProviderIdentifier:
+    key_hash: str
+    key_alias: str
 
 
 def _hash_key(plaintext: str) -> str:
@@ -130,6 +137,17 @@ def _to_provider_budget_duration(duration: str) -> str:
     if normalized == "monthly":
         return "30d"
     return normalized
+
+
+def _normalize_provider_budget_duration(duration: object) -> str | None:
+    normalized = str(duration or "").strip().lower()
+    if normalized in {"daily", "1d"}:
+        return "daily"
+    if normalized in {"weekly", "7d"}:
+        return "weekly"
+    if normalized in {"monthly", "30d"}:
+        return "monthly"
+    return None
 
 
 def _to_provider_duration(duration_days: int) -> str:
@@ -596,6 +614,75 @@ class ApiKeysService:
             updated_at=now,
         )
 
+    def _list_active_key_provider_identifiers(self) -> list[ActiveKeyProviderIdentifier]:
+        rows = (
+            self.session.query(ApiKey.key_hash, ApiKey.key_alias, ApiKeyApplication.account)
+            .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
+            .filter(ApiKey.status == "active")
+            .all()
+        )
+        return [
+            ActiveKeyProviderIdentifier(
+                key_hash=str(key_hash),
+                key_alias=(str(key_alias).strip() if key_alias else _default_alias(str(account))),
+            )
+            for key_hash, key_alias, account in rows
+        ]
+
+    def _verify_provider_limit_strategy_sync(self, *, expected_budget_duration: str) -> None:
+        active_keys = self._list_active_key_provider_identifiers()
+        if not active_keys:
+            return
+
+        try:
+            payload = self.provider_client.list_spend_keys()
+        except ProviderBadRequestError as exc:
+            raise ApiError("PROVIDER_UNAVAILABLE", "provider spend summaries unavailable", 503) from exc
+        except ProviderUnavailableError as exc:
+            raise ApiError("PROVIDER_UNAVAILABLE", "provider spend summaries unavailable", 503) from exc
+
+        if isinstance(payload, dict):
+            records = payload.get("data")
+        else:
+            records = payload
+        if not isinstance(records, list):
+            raise ApiError("PROVIDER_SYNC_MISMATCH", "provider spend summaries are invalid", 503)
+
+        matched_durations: dict[str, str | None] = {}
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            normalized_duration = _normalize_provider_budget_duration(record.get("budget_duration"))
+            token = str(record.get("token") or "").strip()
+            key_alias = str(record.get("key_alias") or "").strip()
+            if token:
+                matched_durations[f"token:{token}"] = normalized_duration
+            if key_alias:
+                matched_durations[f"alias:{key_alias}"] = normalized_duration
+
+        mismatched_keys: list[str] = []
+        missing_keys: list[str] = []
+        for key in active_keys:
+            matched_duration = matched_durations.get(f"token:{key.key_hash}")
+            if matched_duration is None:
+                matched_duration = matched_durations.get(f"alias:{key.key_alias}")
+            if matched_duration is None:
+                missing_keys.append(key.key_alias)
+                continue
+            if matched_duration != expected_budget_duration:
+                mismatched_keys.append(key.key_alias)
+
+        if missing_keys or mismatched_keys:
+            logger.error(
+                "provider limit strategy sync mismatch detected",
+                extra={
+                    "expected_budget_duration": expected_budget_duration,
+                    "missing_key_aliases": missing_keys,
+                    "mismatched_key_aliases": mismatched_keys,
+                },
+            )
+            raise ApiError("PROVIDER_SYNC_MISMATCH", "provider key limit sync verification failed", 503)
+
     def get_limit_strategy_config(self, current_user: CurrentUser) -> dict:
         if current_user.role != "admin":
             raise ApiError("FORBIDDEN", "admin role required", 403)
@@ -661,6 +748,9 @@ class ApiKeysService:
                             "max_parallel_requests": _to_provider_max_parallel_requests(config.max_parallel_requests),
                         },
                     }
+                )
+                self._verify_provider_limit_strategy_sync(
+                    expected_budget_duration=config.budget_duration,
                 )
             except ProviderBadRequestError as exc:
                 raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc

@@ -255,6 +255,7 @@ ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run
   - `budget_reset_at` 直接表示 provider 回傳的下一次重置時間，不做本地推算
   - 列表 `usage_summary` 顯示時，後端需先依 `budget_reset_at` + 目前生效的 `budget_duration` 推回 current-cycle window
   - `spend` 與 token totals 都需只加總本地 daily buckets 中符合 current-cycle window 的資料，不得直接把舊 `api_keys.usage_*` mirror 視為最終 truth source
+  - usage sync 腳本覆寫 current-cycle token cache 時，也需使用本地 `limit_strategy_config.budget_duration`，provider `/spend/keys.budget_duration` 僅作為同步一致性觀測用途
 - 同步視窗：每次同步重抓最近 `30` 天資料，按 `Asia/Taipei` 日曆日聚合成 daily bucket。
 - 分頁完整性：provider `/spend/logs/v2` 回傳的 `total`、`page`、`page_size`、`total_pages` 會一併檢查；若 metadata 與 request 或實際 records 明顯不一致，該 key 本次同步會被跳過，既有快取與歷史不覆蓋。
 - 覆寫規則：同一日 bucket 會以 upsert 方式覆寫更新，不會重複累加出多筆同日資料。
@@ -277,6 +278,7 @@ ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh --dry-run
   - `/spend/keys` 失敗時，仍會繼續執行 `/spend/logs/v2` history sync
   - `/spend/logs/v2` 失敗時，不會回滾已成功同步的 summary mirror
   - 日誌會區分 summary 與 history 階段錯誤
+  - 管理端更新全域金鑰條件設定後，系統會立即回讀 provider `/spend/keys` 驗證目前 active keys 的 `budget_duration` 是否已一致；若更新失敗或驗證不一致，該次設定更新會直接失敗
 - 預設建議頻率：每 `5` 分鐘一次。
 - 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 對應 usage sync 章節為準。
 

@@ -26,9 +26,11 @@ from db import models  # noqa: F401
 from db.models.api_key_usage_snapshots import ApiKeyUsageSnapshot
 from db.models.api_keys import ApiKey
 from db.models.applications import ApiKeyApplication
+from db.models.limit_strategy_config import LimitStrategyConfig
 from db.session import SessionLocal
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
 
+LIMIT_STRATEGY_CONFIG_ID = "global-limit-strategy-config"
 
 @dataclass(slots=True)
 class UsageSyncCandidate:
@@ -141,6 +143,15 @@ def _budget_duration_days(duration: str | None) -> int | None:
     if normalized == "monthly":
         return 30
     return None
+
+
+def _get_current_budget_duration() -> str:
+    with SessionLocal() as session:
+        config = session.get(LimitStrategyConfig, LIMIT_STRATEGY_CONFIG_ID)
+    if config is None:
+        return "monthly"
+    normalized = str(config.budget_duration or "").strip().lower()
+    return normalized or "monthly"
 
 
 def parse_args() -> argparse.Namespace:
@@ -605,6 +616,7 @@ def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = Fal
         if logger is not None:
             logger.warning("event=api_key_usage_sync stage=summary_sync status=failed error=%s", str(exc))
     now = _now_utc()
+    current_budget_duration = _get_current_budget_duration()
     stats = SyncRunStats(candidate_key_count=len(candidates))
     for candidate in candidates:
         try:
@@ -629,7 +641,7 @@ def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = Fal
         current_cycle = _build_current_cycle_aggregate(
             records,
             budget_reset_at=summary.budget_reset_at if summary is not None else None,
-            budget_duration=summary.budget_duration if summary is not None else None,
+            budget_duration=current_budget_duration,
         )
         with SessionLocal() as session:
             for bucket in daily_buckets:
