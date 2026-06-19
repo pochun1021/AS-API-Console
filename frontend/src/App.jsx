@@ -1,23 +1,25 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { apiClient } from "./api/client";
 import AppLayout from "./components/AppLayout";
+import { LoadingBlock } from "./components/StateBlocks";
 import { clearOAuthAuthContext, readOAuthAuthContext } from "./authContext";
 import { detectSystemLocale, useLocale } from "./i18n/locale";
-import ApplyPage from "./pages/ApplyPage";
-import LoginDeniedPage from "./pages/LoginDeniedPage";
-import LoginErrorPage from "./pages/LoginErrorPage";
-import MyApiKeysPage from "./pages/MyApiKeysPage";
-import AdminPage from "./pages/AdminPage";
-import AdminDashboardPage from "./pages/AdminDashboardPage";
-import LimitStrategiesPage from "./pages/LimitStrategiesPage";
-import InstituteViewPage from "./pages/InstituteViewPage";
-import ModelsPage from "./pages/ModelsPage";
-import OperationAuditLogsPage from "./pages/OperationAuditLogsPage";
-import SystemAnnouncementsPage from "./pages/SystemAnnouncementsPage";
-import UsagePage from "./pages/UsagePage";
-import WhitelistAdminPage from "./pages/WhitelistAdminPage";
 import { redirectToLogin } from "./utils/navigation";
+
+const ApplyPage = lazy(() => import("./pages/ApplyPage"));
+const LoginDeniedPage = lazy(() => import("./pages/LoginDeniedPage"));
+const LoginErrorPage = lazy(() => import("./pages/LoginErrorPage"));
+const MyApiKeysPage = lazy(() => import("./pages/MyApiKeysPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
+const LimitStrategiesPage = lazy(() => import("./pages/LimitStrategiesPage"));
+const InstituteViewPage = lazy(() => import("./pages/InstituteViewPage"));
+const ModelsPage = lazy(() => import("./pages/ModelsPage"));
+const OperationAuditLogsPage = lazy(() => import("./pages/OperationAuditLogsPage"));
+const SystemAnnouncementsPage = lazy(() => import("./pages/SystemAnnouncementsPage"));
+const UsagePage = lazy(() => import("./pages/UsagePage"));
+const WhitelistAdminPage = lazy(() => import("./pages/WhitelistAdminPage"));
 
 export default function App() {
   const location = useLocation();
@@ -26,7 +28,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [logoutInProgress, setLogoutInProgress] = useState(false);
   const [localeReady, setLocaleReady] = useState(false);
-  const { setLocale } = useLocale();
+  const { setLocale, t } = useLocale();
   const isLoginDeniedRoute = location.pathname === "/login-denied";
   const isLoginErrorRoute = location.pathname === "/login-error";
 
@@ -129,11 +131,13 @@ export default function App() {
 
   if (isLoginDeniedRoute || isLoginErrorRoute) {
     return (
-      <Routes>
-        <Route path="/login-denied" element={<LoginDeniedPage />} />
-        <Route path="/login-error" element={<LoginErrorPage />} />
-        <Route path="*" element={<Navigate to="/login-denied" replace />} />
-      </Routes>
+      <Suspense fallback={<LoadingBlock text={t("common_loading")} />}>
+        <Routes>
+          <Route path="/login-denied" element={<LoginDeniedPage />} />
+          <Route path="/login-error" element={<LoginErrorPage />} />
+          <Route path="*" element={<Navigate to="/login-denied" replace />} />
+        </Routes>
+      </Suspense>
     );
   }
 
@@ -148,77 +152,79 @@ export default function App() {
       onLogout={handleLogout}
       logoutInProgress={logoutInProgress}
     >
-      <Routes>
-        <Route path="/" element={<Navigate to="/announcements" replace />} />
-        <Route path="/apply" element={<ApplyPage auth={auth} />} />
-        <Route path="/api-keys" element={<MyApiKeysPage auth={auth} />} />
-        <Route path="/usage" element={<UsagePage auth={auth} />} />
-        <Route path="/usage-examples" element={<ModelsPage auth={auth} />} />
-        <Route
-          path="/whitelists"
-          element={
-            auth.role === "admin" ? (
-              <WhitelistAdminPage auth={auth} />
-            ) : (
-              <Navigate to="/apply" replace />
-            )
-          }
-        />
-        <Route
-          path="/institute-view"
-          element={
-            auth.role === "admin" ? (
-              <InstituteViewPage auth={auth} />
-            ) : (
-              <Navigate to="/apply" replace />
-            )
-          }
-        />
-        <Route
-          path="/limit-strategies"
-          element={
-            auth.role === "admin" ? (
-              <LimitStrategiesPage auth={auth} />
-            ) : (
-              <Navigate to="/apply" replace />
-            )
-          }
-        />
-        <Route
-          path="/users"
-          element={
-            auth.role === "admin" ? (
-              <AdminPage auth={auth} />
-            ) : (
-              <Navigate to="/apply" replace />
-            )
-          }
-        />
-        <Route
-          path="/admin-dashboard"
-          element={
-            auth.role === "admin" ? (
-              <AdminDashboardPage auth={auth} />
-            ) : (
-              <Navigate to="/apply" replace />
-            )
-          }
-        />
-        <Route
-          path="/operation-audit-logs"
-          element={
-            auth.role === "admin" ? (
-              <OperationAuditLogsPage auth={auth} />
-            ) : (
-              <Navigate to="/apply" replace />
-            )
-          }
-        />
-        <Route
-          path="/announcements"
-          element={<SystemAnnouncementsPage auth={auth} />}
-        />
-      </Routes>
+      <Suspense fallback={<LoadingBlock text={t("common_loading")} />}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/announcements" replace />} />
+          <Route path="/apply" element={<ApplyPage auth={auth} />} />
+          <Route path="/api-keys" element={<MyApiKeysPage auth={auth} />} />
+          <Route path="/usage" element={<UsagePage auth={auth} />} />
+          <Route path="/usage-examples" element={<ModelsPage auth={auth} />} />
+          <Route
+            path="/whitelists"
+            element={
+              auth.role === "admin" ? (
+                <WhitelistAdminPage auth={auth} />
+              ) : (
+                <Navigate to="/apply" replace />
+              )
+            }
+          />
+          <Route
+            path="/institute-view"
+            element={
+              auth.role === "admin" ? (
+                <InstituteViewPage auth={auth} />
+              ) : (
+                <Navigate to="/apply" replace />
+              )
+            }
+          />
+          <Route
+            path="/limit-strategies"
+            element={
+              auth.role === "admin" ? (
+                <LimitStrategiesPage auth={auth} />
+              ) : (
+                <Navigate to="/apply" replace />
+              )
+            }
+          />
+          <Route
+            path="/users"
+            element={
+              auth.role === "admin" ? (
+                <AdminPage auth={auth} />
+              ) : (
+                <Navigate to="/apply" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin-dashboard"
+            element={
+              auth.role === "admin" ? (
+                <AdminDashboardPage auth={auth} />
+              ) : (
+                <Navigate to="/apply" replace />
+              )
+            }
+          />
+          <Route
+            path="/operation-audit-logs"
+            element={
+              auth.role === "admin" ? (
+                <OperationAuditLogsPage auth={auth} />
+              ) : (
+                <Navigate to="/apply" replace />
+              )
+            }
+          />
+          <Route
+            path="/announcements"
+            element={<SystemAnnouncementsPage auth={auth} />}
+          />
+        </Routes>
+      </Suspense>
     </AppLayout>
   );
 }

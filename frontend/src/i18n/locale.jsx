@@ -1,5 +1,4 @@
 import { createContext, useContext, useMemo, useState } from "react";
-import { enUS, zhTW } from "@mui/x-data-grid/locales";
 import { messages } from "./messages";
 
 const LocaleContext = createContext(null);
@@ -21,7 +20,6 @@ function normalizeTranslationArgs(fallbackOrParams, maybeParams) {
 const fallbackLocaleContext = {
   locale: "zh-TW",
   setLocale: () => {},
-  gridLocaleText: zhTW.components.MuiDataGrid.defaultProps.localeText,
   t(key, fallbackOrParams = "", maybeParams = {}) {
     const dict = messages["zh-TW"];
     const { fallback, params } = normalizeTranslationArgs(fallbackOrParams, maybeParams);
@@ -51,14 +49,9 @@ export function LocaleProvider({ children }) {
 
   const value = useMemo(() => {
     const dict = messages[locale] || messages.en;
-    const gridLocaleText =
-      locale === "zh-TW"
-        ? zhTW.components.MuiDataGrid.defaultProps.localeText
-        : enUS.components.MuiDataGrid.defaultProps.localeText;
     return {
       locale,
       setLocale,
-      gridLocaleText,
       t(key, fallbackOrParams = "", maybeParams = {}) {
         const { fallback, params } = normalizeTranslationArgs(fallbackOrParams, maybeParams);
         return formatMessage(dict[key] || fallback || key, params);

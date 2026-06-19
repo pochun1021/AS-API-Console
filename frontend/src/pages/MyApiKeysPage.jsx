@@ -31,7 +31,7 @@ import {
   Popover,
   Select
 } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid } from "@mui/x-data-grid/DataGrid";
 import { Link as RouterLink } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
@@ -40,6 +40,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks"
 import { useLocale } from "../i18n/locale";
 import { formatDateInTaipei, formatDateTimeInTaipei } from "../utils/datetime";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
+import { getGridLocaleText } from "../utils/gridLocaleText";
 import { validatePersistedText } from "../utils/inputValidation";
 import {
   buildDateRange,
@@ -178,7 +179,8 @@ function getPredictedExtendExpiresAt(item) {
 }
 
 export default function MyApiKeysPage({ auth }) {
-  const { gridLocaleText, locale, t } = useLocale();
+  const { locale, t } = useLocale();
+  const gridLocaleText = getGridLocaleText(locale);
   const { formatDepartment } = useDepartmentDisplay(auth);
   const defaultStatusFilter = "active";
   const [items, setItems] = useState([]);

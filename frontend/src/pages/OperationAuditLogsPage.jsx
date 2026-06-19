@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid } from "@mui/x-data-grid/DataGrid";
 import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
@@ -9,6 +9,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks"
 import { useLocale } from "../i18n/locale";
 import { COMPACT_MAIN_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 import { formatDateTimeInTaipei } from "../utils/datetime";
+import { getGridLocaleText } from "../utils/gridLocaleText";
 
 function formatTs(value, locale) {
   return formatDateTimeInTaipei(value, { locale });
@@ -83,7 +84,8 @@ const loginSortFields = new Set([
 ]);
 
 export default function OperationAuditLogsPage({ auth }) {
-  const { gridLocaleText, locale, t } = useLocale();
+  const { locale, t } = useLocale();
+  const gridLocaleText = getGridLocaleText(locale);
   const hot = useMemo(defaultHotRange, []);
   const [activeTab, setActiveTab] = useState(TAB_OPERATION);
 

@@ -23,7 +23,7 @@ import {
   Typography
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid } from "@mui/x-data-grid/DataGrid";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import DateRangeFilterField from "../components/DateRangeFilterField";
@@ -31,6 +31,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks"
 import { useLocale } from "../i18n/locale";
 import { COMPACT_MAIN_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
+import { getGridLocaleText } from "../utils/gridLocaleText";
 
 function statusColor(status) {
   if (status === "active") return "success";
@@ -48,7 +49,8 @@ function formatMaskedKey(value) {
 }
 
 export default function AdminDashboardPage({ auth }) {
-  const { gridLocaleText, locale, t } = useLocale();
+  const { locale, t } = useLocale();
+  const gridLocaleText = getGridLocaleText(locale);
   const { departmentOptions, formatDepartment } = useDepartmentDisplay(auth);
   const scopeOptions = ["all", "active", "revoked", "expired"];
   const topNOptions = [5, 10, 20];

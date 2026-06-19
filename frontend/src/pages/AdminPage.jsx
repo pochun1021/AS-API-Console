@@ -21,7 +21,7 @@ import {
   Chip,
   useMediaQuery
 } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid } from "@mui/x-data-grid/DataGrid";
 import { useTheme } from "@mui/material/styles";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
@@ -30,6 +30,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks"
 import { useLocale } from "../i18n/locale";
 import { COMPACT_DIALOG_PAGE_SIZE_OPTIONS, COMPACT_LOCAL_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 import { formatDateTimeInTaipei } from "../utils/datetime";
+import { getGridLocaleText } from "../utils/gridLocaleText";
 import { buildTaipeiDateTimeRange, getServerSort } from "../utils/serverDataGrid";
 
 const actionCellSx = {
@@ -43,7 +44,8 @@ const actionCellSx = {
 };
 
 export default function AdminPage({ auth }) {
-  const { gridLocaleText, locale, t } = useLocale();
+  const { locale, t } = useLocale();
+  const gridLocaleText = getGridLocaleText(locale);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);

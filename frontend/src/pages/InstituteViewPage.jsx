@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Box, Button, Card, CardContent, Stack, Typography } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid } from "@mui/x-data-grid/DataGrid";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorAlert, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { COMPACT_LOCAL_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
+import { getGridLocaleText } from "../utils/gridLocaleText";
 
 function toRemainingSeconds(nextAllowedAt) {
   if (!nextAllowedAt) return 0;
@@ -26,7 +27,8 @@ function formatCooldown(seconds, t) {
 }
 
 export default function InstituteViewPage({ auth }) {
-  const { gridLocaleText, t } = useLocale();
+  const { locale, t } = useLocale();
+  const gridLocaleText = getGridLocaleText(locale);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);

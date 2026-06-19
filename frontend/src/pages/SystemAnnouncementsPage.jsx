@@ -23,7 +23,7 @@ import {
   Typography,
   useMediaQuery
 } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid } from "@mui/x-data-grid/DataGrid";
 import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 import { apiClient } from "../api/client";
@@ -33,6 +33,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks"
 import { useLocale } from "../i18n/locale";
 import { COMPACT_DIALOG_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 import { formatDateTimeInTaipei } from "../utils/datetime";
+import { getGridLocaleText } from "../utils/gridLocaleText";
 import { validatePersistedText } from "../utils/inputValidation";
 import { buildTaipeiDateTimeRange, getServerSort } from "../utils/serverDataGrid";
 
@@ -72,7 +73,8 @@ function buildDefaultForm() {
 }
 
 export default function SystemAnnouncementsPage({ auth }) {
-  const { gridLocaleText, locale, t } = useLocale();
+  const { locale, t } = useLocale();
+  const gridLocaleText = getGridLocaleText(locale);
   const isAdmin = auth.role === "admin";
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);

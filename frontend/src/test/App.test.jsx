@@ -151,8 +151,8 @@ describe("App public auth pages", () => {
 
     renderApp("/usage");
 
-    expect(await screen.findByText("API Key 使用量")).toBeInTheDocument();
-    expect(await screen.findByLabelText("API Key")).toBeInTheDocument();
+    expect(await screen.findByText("API Key 使用量", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(await screen.findByLabelText("API Key", {}, { timeout: 3000 })).toBeInTheDocument();
   });
 
   test("root route redirects user to /announcements", async () => {

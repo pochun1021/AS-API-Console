@@ -1,19 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Box, Button, Card, CardContent, Stack, Typography } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid } from "@mui/x-data-grid/DataGrid";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
-import MarkdownRenderer from "../components/MarkdownRenderer";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
 import { useLocale } from "../i18n/locale";
 import { COMPACT_LOCAL_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
+import { getGridLocaleText } from "../utils/gridLocaleText";
 import guideEn from "../../../docs/service-usage-guide.en.md?raw";
 import guideZhTw from "../../../docs/service-usage-guide.zh-TW.md?raw";
 
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+const MarkdownRenderer = lazy(() => import("../components/MarkdownRenderer"));
 
 export default function ModelsPage({ auth }) {
-  const { gridLocaleText, locale, t } = useLocale();
+  const { locale, t } = useLocale();
+  const gridLocaleText = getGridLocaleText(locale);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -76,7 +78,9 @@ export default function ModelsPage({ auth }) {
                 {t("models_guide_section")}
               </Typography>
             </Stack>
-            <MarkdownRenderer markdown={guideMarkdown} />
+            <Suspense fallback={<LoadingBlock text={t("common_loading")} />}>
+              <MarkdownRenderer markdown={guideMarkdown} />
+            </Suspense>
           </CardContent>
         </Card>
         <Card sx={{ display: "flex", flexDirection: "column", minHeight: 0 }}>

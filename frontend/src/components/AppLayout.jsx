@@ -46,6 +46,15 @@ function isNavItemActive(pathname, itemPath) {
   return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }
 
+function setScrollLeft(container, left) {
+  if (!container) return;
+  if (typeof container.scrollTo === "function") {
+    container.scrollTo({ left, behavior: "smooth" });
+    return;
+  }
+  container.scrollLeft = left;
+}
+
 export default function AppLayout({
   children,
   auth,
@@ -144,18 +153,12 @@ export default function AppLayout({
     if (!metrics || !item) return;
 
     if (index === 0) {
-      metrics.container.scrollTo({
-        left: 0,
-        behavior: "smooth"
-      });
+      setScrollLeft(metrics.container, 0);
       return;
     }
 
     if (index === visibleNavItems.length - 1) {
-      metrics.container.scrollTo({
-        left: metrics.maxScrollLeft,
-        behavior: "smooth"
-      });
+      setScrollLeft(metrics.container, metrics.maxScrollLeft);
       return;
     }
 
@@ -174,10 +177,7 @@ export default function AppLayout({
     }
 
     const clampedScrollLeft = Math.max(0, Math.min(nextScrollLeft, metrics.maxScrollLeft));
-    metrics.container.scrollTo({
-      left: clampedScrollLeft,
-      behavior: "smooth"
-    });
+    setScrollLeft(metrics.container, clampedScrollLeft);
   }
 
   function ensureActiveNavItemVisible() {
