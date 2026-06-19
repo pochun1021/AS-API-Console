@@ -258,5 +258,8 @@ class ProviderClient:
     def list_models(self) -> object:
         return self._perform_read_request(path="/models")
 
+    def list_spend_keys(self) -> object:
+        return self._perform_read_request(path="/spend/keys")
+
     def list_spend_logs(self, query: dict[str, object]) -> object:
         return self._perform_read_request(path="/spend/logs/v2", query=query)

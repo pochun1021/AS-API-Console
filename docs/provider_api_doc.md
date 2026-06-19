@@ -9,6 +9,7 @@
 | Endpoint | Method |
 |----------|---------|
 | `/models` | GET |
+| `/spend/keys` | GET |
 | `/spend/logs/v2` | GET |
 | `/key/generate` | POST |
 | `/key/update` | POST |
@@ -33,6 +34,35 @@ Query parameters:
 Response:
 - HTTP 200
 - HTTP 422 validation error
+
+---
+
+# /spend/keys
+
+Current reset-cycle summary query.
+
+用途：
+- 提供單把 key 在目前 reset 週期內的 summary 資訊
+- 本系統用於同步 `usage_summary.spend` 與 reset window metadata
+
+常見欄位：
+- `token`
+- `key_alias`
+- `team_id`
+- `spend`
+- `budget_duration`
+- `budget_reset_at`
+- `tpm_limit`
+- `rpm_limit`
+- `max_parallel_requests`
+- `updated_at`
+
+本系統使用方式：
+- 以 `token` 優先對應本地 `api_keys.key_hash`
+- 若 `token` 無法對應，再以 `key_alias` 作為輔助比對
+- `spend` 直接作為 current-cycle spend
+- `budget_reset_at` 直接視為「下一次重置時間」，不做本地推算或 rollover
+- `updated_at` 優先映射為本地 `usage_summary.synced_at`
 
 ---
 
@@ -72,6 +102,24 @@ Response contains:
   "total_pages": 0
 }
 ```
+
+常見 record 欄位：
+- `api_key`
+- `status`
+- `spend`
+- `prompt_tokens`
+- `completion_tokens`
+- `total_tokens`
+- `startTime`
+- `endTime`
+- `metadata.user_api_key_alias`
+
+本系統使用方式：
+- 以 `api_key` 作為主要查詢鍵，對應本地 `api_keys.key_hash`
+- 僅累計 `status=success` 的紀錄
+- `prompt_tokens`、`completion_tokens`、`total_tokens` 由目前 reset window 內的 logs 聚合得出
+- `startTime` 作為 current-cycle 篩選依據
+- 每日歷史 bucket 仍以 `Asia/Taipei` 日曆日聚合後寫入本地 `api_key_usage_snapshots`
 
 ---
 

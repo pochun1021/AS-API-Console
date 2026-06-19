@@ -266,6 +266,7 @@ def _fetch_key_row(key_id: str) -> dict:
                 """
                 SELECT id,
                        created_at,
+                       key_hash,
                        usage_spend,
                        usage_prompt_tokens,
                        usage_completion_tokens,

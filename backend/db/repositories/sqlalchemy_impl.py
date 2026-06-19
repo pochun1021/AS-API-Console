@@ -24,6 +24,7 @@ from db.repositories.types import (
     ApiKeyListFilter,
     ApiKeyListItem,
     ApiKeySecretMaterial,
+    ApiKeyUsageBucketItem,
     ApiKeyUsageSeriesItem,
     ApiKeyUserStatisticsFilter,
     ApiKeyUserStatisticsItem,
@@ -599,6 +600,48 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         rows = self.session.scalars(stmt).all()
         return [
             ApiKeyUsageSeriesItem(
+                bucket_start_utc=row.bucket_start_utc,
+                bucket_end_utc=row.bucket_end_utc,
+                prompt_tokens=row.prompt_tokens,
+                completion_tokens=row.completion_tokens,
+                total_tokens=row.total_tokens,
+                spend=float(row.spend) if row.spend is not None else None,
+            )
+            for row in rows
+            if row.bucket_start_utc is not None and row.bucket_end_utc is not None
+        ]
+
+    def list_usage_buckets_for_keys(
+        self,
+        *,
+        key_ids: list[str],
+        granularity: str,
+        bucket_start_from: datetime,
+        bucket_start_to: datetime,
+    ) -> list[ApiKeyUsageBucketItem]:
+        if not key_ids:
+            return []
+
+        stmt = (
+            select(ApiKeyUsageSnapshot)
+            .where(
+                ApiKeyUsageSnapshot.api_key_id.in_(key_ids),
+                ApiKeyUsageSnapshot.bucket_granularity == granularity,
+                ApiKeyUsageSnapshot.bucket_start_utc.is_not(None),
+                ApiKeyUsageSnapshot.bucket_end_utc.is_not(None),
+                ApiKeyUsageSnapshot.bucket_end_utc > bucket_start_from,
+                ApiKeyUsageSnapshot.bucket_start_utc < bucket_start_to,
+            )
+            .order_by(
+                ApiKeyUsageSnapshot.api_key_id.asc(),
+                ApiKeyUsageSnapshot.bucket_start_utc.asc(),
+                ApiKeyUsageSnapshot.id.asc(),
+            )
+        )
+        rows = self.session.scalars(stmt).all()
+        return [
+            ApiKeyUsageBucketItem(
+                api_key_id=row.api_key_id,
                 bucket_start_utc=row.bucket_start_utc,
                 bucket_end_utc=row.bucket_end_utc,
                 prompt_tokens=row.prompt_tokens,

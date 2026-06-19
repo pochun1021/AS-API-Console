@@ -118,7 +118,7 @@ export ENV_FILE=/home/app/config/.env
 - `PERSNL_SOAP_TIMEOUT_SECONDS`：可選，SOAP 呼叫 timeout 秒數（預設 `3.0`）
 - `API_KEY_ENCRYPTION_SECRET`：必填（正式環境），用於 API key 密文加解密的主密鑰來源
 - `API_KEY_KEK_VERSION`：可選，金鑰版本標記（預設 `v1`）
-- `PROVIDER_BASE_URL`：可選，外部 key provider base URL（例如 `https://provider.internal`）；系統會用於 `POST /key/generate`、`/key/update`、`/key/delete`、`/team/key/bulk_update`
+- `PROVIDER_BASE_URL`：可選，外部 key provider base URL（例如 `https://provider.internal`）；系統會用於 `POST /key/generate`、`/key/update`、`/key/delete`、`/team/key/bulk_update`、`GET /spend/keys`、`GET /spend/logs/v2`
 - `GET /main/api/v1/models` 在 `APP_ENV=dev/test` 會直接回內建測試資料 `gpt-4o`、`gpt-4o-mini`；`APP_ENV=prod` 才會讀取 provider `/models`
 - `PROVIDER_MASTER_KEY`：可選，provider Bearer token 值；系統會送出 `Authorization: Bearer ${PROVIDER_MASTER_KEY}`
 - `PROVIDER_TEAM_ID`：external provider mode 必填；create/renew 的 `POST /key/generate` payload 與 `PATCH /main/api/v1/limit-strategy-config` 對應的 `POST /team/key/bulk_update` payload 都會帶此值。若缺少此設定，系統需 fail fast，且不得呼叫 provider
@@ -246,9 +246,15 @@ ENV_FILE=/home/app/config/.env ./scripts/run_expire_sync.sh --dry-run
 - 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 第 16 節為準。
 
 ## API Key Usage 同步排程
-- 目的：每 `5` 分鐘用 `key_alias` 向 provider `/spend/logs/v2` 拉取 `active` keys 的 spend logs，將成功紀錄聚合後寫入本地最新快取與每日歷史表 `api_key_usage_snapshots`。
+- 目的：每 `5` 分鐘同步 `active` keys 的 current-cycle summary 與最近 `30` 天 usage history，寫回本地最新快取與每日歷史表 `api_key_usage_snapshots`。
+- summary 來源：provider `/spend/keys`，提供 `spend`、`budget_duration`、`budget_reset_at`、`updated_at` 等 current-cycle metadata。
+- history 來源：provider `/spend/logs/v2`，提供逐筆 usage logs，作為 `prompt_tokens`、`completion_tokens`、`total_tokens` 與 daily bucket 歷史來源。
 - 歷史模型：`api_key_usage_snapshots` 現在同時承擔 `/usage` 與 `GET /main/api/v1/api-keys/usage-series` 的 daily usage history；既有 `api_keys.usage_*` 欄位則保留作為 `My API Keys` 的最新快取鏡像。
 - 聚合規則：只累計 `status=success` 的 logs；`failure` logs 不納入 `usage_summary.spend`，也不納入 `prompt_tokens`、`completion_tokens`、`total_tokens` 歷史快照。
+- current-cycle summary 規則：
+  - `budget_reset_at` 直接表示 provider 回傳的下一次重置時間，不做本地推算
+  - 列表 `usage_summary` 顯示時，後端需先依 `budget_reset_at` + 目前生效的 `budget_duration` 推回 current-cycle window
+  - `spend` 與 token totals 都需只加總本地 daily buckets 中符合 current-cycle window 的資料，不得直接把舊 `api_keys.usage_*` mirror 視為最終 truth source
 - 同步視窗：每次同步重抓最近 `30` 天資料，按 `Asia/Taipei` 日曆日聚合成 daily bucket。
 - 分頁完整性：provider `/spend/logs/v2` 回傳的 `total`、`page`、`page_size`、`total_pages` 會一併檢查；若 metadata 與 request 或實際 records 明顯不一致，該 key 本次同步會被跳過，既有快取與歷史不覆蓋。
 - 覆寫規則：同一日 bucket 會以 upsert 方式覆寫更新，不會重複累加出多筆同日資料。
@@ -267,6 +273,10 @@ ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh --dry-run
 - 執行日誌：
   - 會寫入專案根目錄 `log/sync_api_key_usage/`。
   - 依 `Asia/Taipei` 日期切日，每日一檔：`YYYY-MM-DD.log`。
+- 容錯：
+  - `/spend/keys` 失敗時，仍會繼續執行 `/spend/logs/v2` history sync
+  - `/spend/logs/v2` 失敗時，不會回滾已成功同步的 summary mirror
+  - 日誌會區分 summary 與 history 階段錯誤
 - 預設建議頻率：每 `5` 分鐘一次。
 - 部署端排程指令與驗證步驟以 `docs/deploy-ubuntu-nginx.md` 對應 usage sync 章節為準。
 

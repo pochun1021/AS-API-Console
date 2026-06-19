@@ -26,7 +26,6 @@ from db import models  # noqa: F401
 from db.models.api_key_usage_snapshots import ApiKeyUsageSnapshot
 from db.models.api_keys import ApiKey
 from db.models.applications import ApiKeyApplication
-from db.models.limit_strategy_config import LimitStrategyConfig
 from db.session import SessionLocal
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
 
@@ -34,8 +33,8 @@ from app.services.provider_client import ProviderBadRequestError, ProviderClient
 @dataclass(slots=True)
 class UsageSyncCandidate:
     key_id: str
+    key_hash: str
     key_alias: str
-    key_created_at: datetime
 
 
 @dataclass(slots=True)
@@ -68,8 +67,17 @@ class ProviderUsageRecord:
 
 
 @dataclass(slots=True)
+class ProviderSpendKeySummary:
+    spend: float | None
+    budget_duration: str | None
+    budget_reset_at: datetime | None
+    synced_at: datetime | None
+    token: str | None
+    key_alias: str | None
+
+
+@dataclass(slots=True)
 class UsageAggregate:
-    spend: float
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
@@ -135,52 +143,6 @@ def _budget_duration_days(duration: str | None) -> int | None:
     return None
 
 
-def _normalize_budget_reset_at(
-    budget_reset_at: datetime | None,
-    *,
-    budget_duration: str | None,
-    now: datetime,
-) -> datetime | None:
-    duration_days = _budget_duration_days(budget_duration)
-    if budget_reset_at is None or duration_days is None:
-        return budget_reset_at
-
-    normalized_reset_at = budget_reset_at.astimezone(UTC)
-    current_time = now.astimezone(UTC)
-    if normalized_reset_at > current_time:
-        return normalized_reset_at
-
-    cycle = timedelta(days=duration_days)
-    elapsed = current_time - normalized_reset_at
-    steps = int(elapsed // cycle) + 1
-    return normalized_reset_at + cycle * steps
-
-
-def _derive_budget_reset_at_from_local_config(
-    *,
-    budget_duration: str | None,
-    key_created_at: datetime,
-    config_updated_at: datetime | None,
-    now: datetime,
-) -> datetime | None:
-    duration_days = _budget_duration_days(budget_duration)
-    if duration_days is None:
-        return None
-
-    anchor = key_created_at.astimezone(UTC)
-    if config_updated_at is not None:
-        anchor = max(anchor, config_updated_at.astimezone(UTC))
-
-    local_anchor = anchor.astimezone(TAIPEI_TZ)
-    reset_date = local_anchor.date() + timedelta(days=duration_days)
-    reset_local = datetime.combine(reset_date, time(hour=8), tzinfo=TAIPEI_TZ)
-    return _normalize_budget_reset_at(
-        reset_local.astimezone(UTC),
-        budget_duration=budget_duration,
-        now=now,
-    )
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync API key usage snapshots from provider spend logs.")
     parser.add_argument(
@@ -201,7 +163,7 @@ def parse_args() -> argparse.Namespace:
 def _collect_candidates(*, batch_size: int, offset: int = 0, repair_missing_cache: bool = False) -> list[UsageSyncCandidate]:
     effective_key_alias = func.coalesce(ApiKey.key_alias, literal("for_") + ApiKeyApplication.account).label("effective_key_alias")
     stmt: Select = (
-        select(ApiKey.id, effective_key_alias, ApiKey.created_at)
+        select(ApiKey.id, ApiKey.key_hash, effective_key_alias)
         .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
         .where(ApiKey.status == "active")
         .order_by(ApiKey.created_at.asc(), ApiKey.id.asc())
@@ -235,8 +197,8 @@ def _collect_candidates(*, batch_size: int, offset: int = 0, repair_missing_cach
     return [
         UsageSyncCandidate(
             key_id=row.id,
+            key_hash=row.key_hash,
             key_alias=row.effective_key_alias,
-            key_created_at=row.created_at,
         )
         for row in rows
     ]
@@ -326,7 +288,44 @@ def _bucket_bounds_for_local_day(bucket_date: date) -> tuple[datetime, datetime]
     return local_start.astimezone(UTC), local_end.astimezone(UTC)
 
 
-def _extract_success_records(payload: object) -> tuple[list[ProviderUsageRecord], datetime | None]:
+def _extract_spend_key_summaries(payload: object) -> dict[tuple[str, str], ProviderSpendKeySummary]:
+    if isinstance(payload, dict):
+        records = payload.get("data")
+        if not isinstance(records, list):
+            raise ProviderUnavailableError("provider unavailable")
+    elif isinstance(payload, list):
+        records = payload
+    else:
+        raise ProviderUnavailableError("provider unavailable")
+
+    summaries: dict[tuple[str, str], ProviderSpendKeySummary] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        token = str(record.get("token") or "").strip() or None
+        key_alias = str(record.get("key_alias") or "").strip() or None
+        spend_value: float | None = None
+        if record.get("spend") is not None:
+            try:
+                spend_value = _round_money(float(Decimal(str(record.get("spend")))))
+            except Exception:  # noqa: BLE001
+                spend_value = None
+        summary = ProviderSpendKeySummary(
+            spend=spend_value,
+            budget_duration=str(record.get("budget_duration") or "").strip().lower() or None,
+            budget_reset_at=_coerce_datetime(record.get("budget_reset_at")),
+            synced_at=_coerce_datetime(record.get("updated_at")),
+            token=token,
+            key_alias=key_alias,
+        )
+        if token is not None:
+            summaries[("token", token)] = summary
+        if key_alias is not None:
+            summaries[("alias", key_alias)] = summary
+    return summaries
+
+
+def _extract_success_records(payload: object) -> list[ProviderUsageRecord]:
     if not isinstance(payload, dict):
         raise ProviderUnavailableError("provider unavailable")
     records = payload.get("data")
@@ -356,8 +355,7 @@ def _extract_success_records(payload: object) -> tuple[list[ProviderUsageRecord]
             )
         )
 
-    budget_reset_at = _coerce_datetime(payload.get("budget_reset_at"))
-    return items, budget_reset_at
+    return items
 
 
 def _build_daily_buckets(records: list[ProviderUsageRecord]) -> list[DailyUsageBucket]:
@@ -408,7 +406,6 @@ def _build_current_cycle_aggregate(
 
     cycle_start = budget_reset_at.astimezone(UTC) - timedelta(days=duration_days)
     cycle_end = budget_reset_at.astimezone(UTC)
-    spend_total = Decimal("0")
     prompt_tokens = 0
     completion_tokens = 0
     total_tokens = 0
@@ -417,13 +414,11 @@ def _build_current_cycle_aggregate(
         record_time = record.start_time.astimezone(UTC)
         if record_time < cycle_start or record_time >= cycle_end:
             continue
-        spend_total += Decimal(str(record.spend))
         prompt_tokens += record.prompt_tokens
         completion_tokens += record.completion_tokens
         total_tokens += record.total_tokens
 
     return UsageAggregate(
-        spend=_round_money(float(spend_total)),
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
@@ -480,13 +475,12 @@ def _validate_paging_metadata(
 def _fetch_spend_buckets(
     provider_client: ProviderClient,
     *,
-    key_alias: str,
+    api_key: str,
     now: datetime,
-) -> tuple[list[ProviderUsageRecord], datetime | None]:
+) -> list[ProviderUsageRecord]:
     page = 1
     total_pages = 1
     expected_page_size = 100
-    budget_reset_at: datetime | None = None
     start_at, end_at_exclusive = _build_rolling_window(now)
     start_date = _format_provider_datetime(start_at)
     end_date = _format_provider_datetime(end_at_exclusive - timedelta(seconds=1))
@@ -498,7 +492,7 @@ def _fetch_spend_buckets(
             {
                 "start_date": start_date,
                 "end_date": end_date,
-                "key_alias": key_alias,
+                "api_key": api_key,
                 "status_filter": "success",
                 "page": page,
                 "page_size": expected_page_size,
@@ -525,9 +519,7 @@ def _fetch_spend_buckets(
             expected_page_size=response_page_size,
             is_last_page=response_page == response_total_pages if response_total_pages > 0 else True,
         )
-        page_items, page_budget_reset_at = _extract_success_records(payload)
-        if budget_reset_at is None:
-            budget_reset_at = page_budget_reset_at
+        page_items = _extract_success_records(payload)
         items.extend(page_items)
         page += 1
 
@@ -537,18 +529,12 @@ def _fetch_spend_buckets(
         if len(items) > total_records_expected:
             raise ProviderPaginationMetadataError("received more records than total")
 
-    return items, budget_reset_at
+    return items
 
 
-def _get_limit_strategy_state(session) -> tuple[str | None, datetime | None]:
-    row = session.execute(
-        select(LimitStrategyConfig.budget_duration, LimitStrategyConfig.updated_at).where(
-            LimitStrategyConfig.id == "global-limit-strategy-config"
-        )
-    ).first()
-    if row is None:
-        return None, None
-    return row.budget_duration, row.updated_at
+def _fetch_spend_key_summaries(provider_client: ProviderClient) -> dict[tuple[str, str], ProviderSpendKeySummary]:
+    payload = provider_client.list_spend_keys()
+    return _extract_spend_key_summaries(payload)
 
 
 def _upsert_daily_bucket(
@@ -610,16 +596,21 @@ def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = Fal
 
     with SessionLocal() as session:
         _ensure_usage_snapshot_schema(session)
-        budget_duration, config_updated_at = _get_limit_strategy_state(session)
 
     provider_client = ProviderClient()
+    try:
+        spend_key_summaries = _fetch_spend_key_summaries(provider_client)
+    except (ProviderUnavailableError, ProviderBadRequestError) as exc:
+        spend_key_summaries = {}
+        if logger is not None:
+            logger.warning("event=api_key_usage_sync stage=summary_sync status=failed error=%s", str(exc))
     now = _now_utc()
     stats = SyncRunStats(candidate_key_count=len(candidates))
     for candidate in candidates:
         try:
-            records, budget_reset_at = _fetch_spend_buckets(
+            records = _fetch_spend_buckets(
                 provider_client,
-                key_alias=candidate.key_alias,
+                api_key=candidate.key_hash,
                 now=now,
             )
         except (ProviderUnavailableError, ProviderBadRequestError, ProviderPaginationMetadataError) as exc:
@@ -632,23 +623,13 @@ def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = Fal
                 )
             continue
 
-        normalized_budget_reset_at = _normalize_budget_reset_at(
-            budget_reset_at,
-            budget_duration=budget_duration,
-            now=now,
-        )
-        effective_budget_reset_at = normalized_budget_reset_at or _derive_budget_reset_at_from_local_config(
-            budget_duration=budget_duration,
-            key_created_at=candidate.key_created_at,
-            config_updated_at=config_updated_at,
-            now=now,
-        )
+        summary = spend_key_summaries.get(("token", candidate.key_hash)) or spend_key_summaries.get(("alias", candidate.key_alias))
 
         daily_buckets = _build_daily_buckets(records)
         current_cycle = _build_current_cycle_aggregate(
             records,
-            budget_reset_at=effective_budget_reset_at,
-            budget_duration=budget_duration,
+            budget_reset_at=summary.budget_reset_at if summary is not None else None,
+            budget_duration=summary.budget_duration if summary is not None else None,
         )
         with SessionLocal() as session:
             for bucket in daily_buckets:
@@ -656,31 +637,37 @@ def run_once(*, batch_size: int, dry_run: bool, repair_missing_cache: bool = Fal
                     session=session,
                     key_id=candidate.key_id,
                     item=bucket,
-                    budget_reset_at=effective_budget_reset_at,
+                    budget_reset_at=summary.budget_reset_at if summary is not None else None,
                     synced_at=now,
                 )
-            session.execute(
-                update(ApiKey)
-                .where(ApiKey.id == candidate.key_id)
-                .values(
-                    usage_spend=current_cycle.spend if current_cycle is not None else None,
-                    usage_prompt_tokens=current_cycle.prompt_tokens if current_cycle is not None else None,
-                    usage_completion_tokens=current_cycle.completion_tokens if current_cycle is not None else None,
-                    usage_total_tokens=current_cycle.total_tokens if current_cycle is not None else None,
-                    usage_budget_reset_at=effective_budget_reset_at if current_cycle is not None else None,
-                    usage_synced_at=now if current_cycle is not None else None,
+            cache_values: dict[str, object] | None = None
+            if summary is not None:
+                cache_values = {
+                    "usage_spend": summary.spend,
+                    "usage_prompt_tokens": current_cycle.prompt_tokens if current_cycle is not None else None,
+                    "usage_completion_tokens": current_cycle.completion_tokens if current_cycle is not None else None,
+                    "usage_total_tokens": current_cycle.total_tokens if current_cycle is not None else None,
+                    "usage_budget_reset_at": summary.budget_reset_at,
+                    "usage_synced_at": summary.synced_at or now,
+                }
+            if cache_values is not None:
+                session.execute(
+                    update(ApiKey)
+                    .where(ApiKey.id == candidate.key_id)
+                    .values(**cache_values)
                 )
-            )
             session.commit()
 
         stats.processed_key_count += 1
         stats.history_written_count += len(daily_buckets)
-        if current_cycle is not None:
+        if summary is not None:
             stats.cache_written_count += 1
         else:
             stats.cache_skipped_count += 1
-            reason = "unsupported_budget_duration" if effective_budget_reset_at is None else "missing_current_cycle_window"
-            _log_cache_skipped(logger=logger, candidate=candidate, reason=reason)
+            _log_cache_skipped(logger=logger, candidate=candidate, reason="missing_spend_key_summary")
+        if summary is not None and current_cycle is None:
+            stats.cache_skipped_count += 1
+            _log_cache_skipped(logger=logger, candidate=candidate, reason="missing_current_cycle_window")
 
     if logger is not None:
         logger.info(

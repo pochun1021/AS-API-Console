@@ -2,11 +2,11 @@ import hashlib
 import logging
 import re
 import secrets
+from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
-
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
@@ -51,6 +51,7 @@ LIMIT_STRATEGY_DEFAULTS = {
     "max_parallel_requests": 0,
 }
 
+
 @dataclass(slots=True)
 class Pagination:
     page: int = 1
@@ -64,6 +65,14 @@ class IssuanceConfigValues:
     tpm_limit: int
     rpm_limit: int
     max_parallel_requests: int
+
+
+@dataclass(slots=True)
+class UsageCycleAggregate:
+    spend: float
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
 
 
 def _hash_key(plaintext: str) -> str:
@@ -218,93 +227,55 @@ def _budget_duration_days(duration: str | None) -> int | None:
     return None
 
 
-def _roll_budget_reset_forward(
-    reset_at: datetime | None,
-    *,
-    duration_days: int | None,
-    now: datetime | None = None,
-) -> datetime | None:
-    if reset_at is None or duration_days is None:
-        return reset_at
-    normalized_reset_at = _normalized_utc_datetime(reset_at)
-    current_time = _normalized_utc_datetime(now or datetime.now(UTC))
-    if normalized_reset_at > current_time:
-        return normalized_reset_at
-    cycle = timedelta(days=duration_days)
-    elapsed = current_time - normalized_reset_at
-    steps = int(elapsed // cycle) + 1
-    return normalized_reset_at + cycle * steps
-
-
-def _derive_budget_reset_at(
+def _resolve_current_cycle_window(
     *,
     budget_duration: str | None,
-    key_created_at: datetime,
-    config_updated_at: datetime | None,
-    mirrored_budget_reset_at: datetime | None,
-    synced_at: datetime | None,
-) -> datetime | None:
-    duration_days = _budget_duration_days(budget_duration)
-    if mirrored_budget_reset_at is not None and synced_at is not None:
-        if config_updated_at is None or _normalized_utc_datetime(synced_at) >= _normalized_utc_datetime(config_updated_at):
-            return _roll_budget_reset_forward(
-                mirrored_budget_reset_at,
-                duration_days=duration_days,
-            )
-
-    if duration_days is None:
-        return mirrored_budget_reset_at
-
-    anchor = _normalized_utc_datetime(key_created_at)
-    if config_updated_at is not None:
-        anchor = max(anchor, _normalized_utc_datetime(config_updated_at))
-
-    local_anchor = anchor.astimezone(TAIPEI_TZ)
-    reset_date = local_anchor.date() + timedelta(days=duration_days)
-    reset_local = datetime.combine(reset_date, time(hour=8), tzinfo=TAIPEI_TZ)
-    return _roll_budget_reset_forward(
-        reset_local.astimezone(UTC),
-        duration_days=duration_days,
-    )
-
-
-def _has_authoritative_budget_reset_at(
-    *,
-    mirrored_budget_reset_at: datetime | None,
-    synced_at: datetime | None,
-) -> bool:
-    if mirrored_budget_reset_at is None or synced_at is None:
-        return False
-    return True
-
-
-def _resolve_current_cycle_usage(
-    *,
-    can_trust_cached_cycle_usage: bool,
-    budget_duration: str | None,
-    spend: float | None,
-    prompt_tokens: int | None,
-    completion_tokens: int | None,
-    total_tokens: int | None,
     budget_reset_at: datetime | None,
-    synced_at: datetime | None,
-) -> tuple[float | None, int | None, int | None, int | None]:
-    if not can_trust_cached_cycle_usage:
-        return 0.0, 0, 0, 0
-
+) -> tuple[datetime, datetime] | None:
     duration_days = _budget_duration_days(budget_duration)
-    if budget_reset_at is None or duration_days is None:
-        return spend, prompt_tokens, completion_tokens, total_tokens
+    if duration_days is None or budget_reset_at is None:
+        return None
+    cycle_end = _normalized_utc_datetime(budget_reset_at)
+    cycle_start = cycle_end - timedelta(days=duration_days)
+    return cycle_start, cycle_end
 
-    current_cycle_end = _normalized_utc_datetime(budget_reset_at)
-    current_cycle_start = current_cycle_end - timedelta(days=duration_days)
-    if synced_at is None:
-        return spend, prompt_tokens, completion_tokens, total_tokens
 
-    if _normalized_utc_datetime(synced_at) < current_cycle_start:
-        return 0.0, 0, 0, 0
+def _bucket_overlaps_cycle(
+    *,
+    bucket_start_utc: datetime,
+    bucket_end_utc: datetime,
+    cycle_start_utc: datetime,
+    cycle_end_utc: datetime,
+) -> bool:
+    normalized_bucket_start = _normalized_utc_datetime(bucket_start_utc)
+    normalized_bucket_end = _normalized_utc_datetime(bucket_end_utc)
+    return normalized_bucket_end > cycle_start_utc and normalized_bucket_start < cycle_end_utc
 
-    return spend, prompt_tokens, completion_tokens, total_tokens
+
+def _aggregate_cycle_usage(buckets, *, cycle_start_utc: datetime, cycle_end_utc: datetime) -> UsageCycleAggregate:
+    spend_total = Decimal("0")
+    prompt_tokens = 0
+    completion_tokens = 0
+    total_tokens = 0
+    for bucket in buckets:
+        if not _bucket_overlaps_cycle(
+            bucket_start_utc=bucket.bucket_start_utc,
+            bucket_end_utc=bucket.bucket_end_utc,
+            cycle_start_utc=cycle_start_utc,
+            cycle_end_utc=cycle_end_utc,
+        ):
+            continue
+        if bucket.spend is not None:
+            spend_total += Decimal(str(bucket.spend))
+        prompt_tokens += bucket.prompt_tokens
+        completion_tokens += bucket.completion_tokens
+        total_tokens += bucket.total_tokens
+    return UsageCycleAggregate(
+        spend=_round_money(float(spend_total)),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+    )
 
 
 def _build_usage_summary(
@@ -324,46 +295,21 @@ def _build_usage_summary(
     synced_at: datetime | None,
 ) -> dict:
     max_budget = _parse_optional_budget(max_budget_raw)
-    has_authoritative_budget_reset_at = _has_authoritative_budget_reset_at(
-        mirrored_budget_reset_at=budget_reset_at,
-        synced_at=synced_at,
-    )
-    budget_reset_at_value = _derive_budget_reset_at(
-        budget_duration=budget_duration,
-        key_created_at=key_created_at,
-        config_updated_at=config_updated_at,
-        mirrored_budget_reset_at=budget_reset_at,
-        synced_at=synced_at,
-    )
-    current_cycle_spend, current_cycle_prompt_tokens, current_cycle_completion_tokens, current_cycle_total_tokens = (
-        _resolve_current_cycle_usage(
-            can_trust_cached_cycle_usage=bool(
-                has_authoritative_budget_reset_at or (max_budget is not None and max_budget == 0)
-            ),
-            budget_duration=budget_duration,
-            spend=spend,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-            budget_reset_at=budget_reset_at_value,
-            synced_at=synced_at,
-        )
-    )
     remaining_budget: float | None = None
-    if max_budget is not None and current_cycle_spend is not None:
-        remaining_budget = 0.0 if max_budget == 0 else _round_money(max(max_budget - current_cycle_spend, 0.0))
+    if max_budget is not None and spend is not None:
+        remaining_budget = 0.0 if max_budget == 0 else _round_money(max(max_budget - spend, 0.0))
 
     return {
-        "spend": _round_money(current_cycle_spend) if current_cycle_spend is not None else None,
-        "prompt_tokens": current_cycle_prompt_tokens,
-        "completion_tokens": current_cycle_completion_tokens,
-        "total_tokens": current_cycle_total_tokens,
+        "spend": _round_money(spend) if spend is not None else None,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
         "max_budget": max_budget,
         "remaining_budget": remaining_budget,
         "tpm_limit": tpm_limit,
         "rpm_limit": rpm_limit,
         "max_parallel_requests": max_parallel_requests,
-        "budget_reset_at": budget_reset_at_value,
+        "budget_reset_at": budget_reset_at,
         "synced_at": synced_at,
     }
 
@@ -797,9 +743,37 @@ class ApiKeysService:
             offset=offset,
         )
         limit_config = self._get_limit_strategy_config_for_issuance()
+        usage_windows_by_key: dict[str, tuple[datetime, datetime]] = {}
+        for item in items:
+            window = _resolve_current_cycle_window(
+                budget_duration=limit_config.budget_duration,
+                budget_reset_at=item.usage_budget_reset_at,
+            )
+            if window is not None:
+                usage_windows_by_key[item.id] = window
+
+        usage_buckets_by_key: dict[str, list] = defaultdict(list)
+        if usage_windows_by_key:
+            usage_buckets = self.key_repo.list_usage_buckets_for_keys(
+                key_ids=list(usage_windows_by_key.keys()),
+                granularity="day",
+                bucket_start_from=min(window[0] for window in usage_windows_by_key.values()),
+                bucket_start_to=max(window[1] for window in usage_windows_by_key.values()),
+            )
+            for bucket in usage_buckets:
+                usage_buckets_by_key[bucket.api_key_id].append(bucket)
+
         response_items = []
         for item in items:
             effective_status = _effective_status(status=item.status, expires_at=item.expires_at)
+            cycle_window = usage_windows_by_key.get(item.id)
+            cycle_usage = None
+            if cycle_window is not None:
+                cycle_usage = _aggregate_cycle_usage(
+                    usage_buckets_by_key.get(item.id, []),
+                    cycle_start_utc=cycle_window[0],
+                    cycle_end_utc=cycle_window[1],
+                )
             usage_summary = _build_usage_summary(
                 max_budget_raw=limit_config.budget_max_budget,
                 budget_duration=limit_config.budget_duration,
@@ -808,10 +782,10 @@ class ApiKeysService:
                 tpm_limit=limit_config.rate_limit_tpm,
                 rpm_limit=limit_config.rate_limit_rpm,
                 max_parallel_requests=limit_config.max_parallel_requests,
-                spend=item.usage_spend,
-                prompt_tokens=item.usage_prompt_tokens,
-                completion_tokens=item.usage_completion_tokens,
-                total_tokens=item.usage_total_tokens,
+                spend=cycle_usage.spend if cycle_usage is not None else None,
+                prompt_tokens=cycle_usage.prompt_tokens if cycle_usage is not None else None,
+                completion_tokens=cycle_usage.completion_tokens if cycle_usage is not None else None,
+                total_tokens=cycle_usage.total_tokens if cycle_usage is not None else None,
                 budget_reset_at=item.usage_budget_reset_at,
                 synced_at=item.usage_synced_at,
             )

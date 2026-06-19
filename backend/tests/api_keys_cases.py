@@ -128,7 +128,7 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
         "tpm_limit": 10000,
         "rpm_limit": 500,
         "max_parallel_requests": 0,
-        "budget_reset_at": _expected_budget_reset_at(_fetch_key_row(item["id"])["created_at"].replace(tzinfo=UTC), "monthly"),
+        "budget_reset_at": None,
         "synced_at": None,
     }
     _assert_utc_datetime_string(item["expires_at"])
@@ -148,12 +148,24 @@ def test_list_api_keys_returns_usage_summary(client, admin_headers, user_headers
     budget_reset_at = synced_at + timedelta(days=7)
     _set_key_usage_snapshot(
         key_id,
-        usage_spend="850.25",
-        usage_prompt_tokens=1000,
-        usage_completion_tokens=500,
-        usage_total_tokens=1500,
+        usage_spend="999.99",
+        usage_prompt_tokens=999,
+        usage_completion_tokens=999,
+        usage_total_tokens=1998,
         usage_budget_reset_at=budget_reset_at,
         usage_synced_at=synced_at,
+    )
+    _insert_key_usage_snapshot_history(
+        key_id,
+        spend="850.25",
+        budget_reset_at=budget_reset_at,
+        synced_at=synced_at,
+        bucket_granularity="day",
+        bucket_start_utc=synced_at - timedelta(hours=12),
+        bucket_end_utc=synced_at + timedelta(hours=12),
+        prompt_tokens=1000,
+        completion_tokens=500,
+        total_tokens=1500,
     )
 
     listed = client.get(_api("/api-keys"), headers=user_headers)
@@ -214,10 +226,7 @@ def test_list_api_keys_zeroes_stale_previous_cycle_usage_after_reset(client, adm
         assert item["usage_summary"]["total_tokens"] == 0
         assert item["usage_summary"]["remaining_budget"] == 1000.0
         assert item["usage_summary"]["synced_at"] == synced_at.isoformat().replace("+00:00", "Z")
-        assert item["usage_summary"]["budget_reset_at"] == _expected_rolled_budget_reset_at(
-            budget_reset_at,
-            "monthly",
-        )
+        assert item["usage_summary"]["budget_reset_at"] == budget_reset_at.isoformat().replace("+00:00", "Z")
     finally:
         _set_limit_strategy_config(
             budget_max_budget="1000",
@@ -251,12 +260,24 @@ def test_list_api_keys_keeps_current_cycle_usage_after_reset_when_sync_is_fresh(
         )
         _set_key_usage_snapshot(
             key_id,
-            usage_spend="25.50",
-            usage_prompt_tokens=80,
-            usage_completion_tokens=20,
-            usage_total_tokens=100,
+            usage_spend="999.99",
+            usage_prompt_tokens=999,
+            usage_completion_tokens=999,
+            usage_total_tokens=1998,
             usage_budget_reset_at=budget_reset_at,
             usage_synced_at=synced_at,
+        )
+        _insert_key_usage_snapshot_history(
+            key_id,
+            spend="25.50",
+            budget_reset_at=budget_reset_at,
+            synced_at=synced_at,
+            bucket_granularity="day",
+            bucket_start_utc=budget_reset_at - timedelta(hours=12),
+            bucket_end_utc=budget_reset_at + timedelta(hours=12),
+            prompt_tokens=80,
+            completion_tokens=20,
+            total_tokens=100,
         )
 
         listed = client.get(_api("/api-keys"), headers=user_headers)
@@ -268,10 +289,7 @@ def test_list_api_keys_keeps_current_cycle_usage_after_reset_when_sync_is_fresh(
         assert item["usage_summary"]["completion_tokens"] == 20
         assert item["usage_summary"]["total_tokens"] == 100
         assert item["usage_summary"]["remaining_budget"] == 974.5
-        assert item["usage_summary"]["budget_reset_at"] == _expected_rolled_budget_reset_at(
-            budget_reset_at,
-            "monthly",
-        )
+        assert item["usage_summary"]["budget_reset_at"] == budget_reset_at.isoformat().replace("+00:00", "Z")
     finally:
         _set_limit_strategy_config(
             budget_max_budget="1000",
@@ -282,15 +300,12 @@ def test_list_api_keys_keeps_current_cycle_usage_after_reset_when_sync_is_fresh(
         )
 
 
-def test_build_usage_summary_zeroes_stale_usage_when_provider_reset_missing():
+def test_build_usage_summary_keeps_values_when_provider_reset_missing():
     from app.services.api_keys_service import _build_usage_summary
 
     reference_now = datetime.now(UTC).replace(microsecond=0)
     key_created_at = reference_now - timedelta(days=3)
-    budget_reset_at = datetime.fromisoformat(
-        _expected_rolled_budget_reset_at(key_created_at, "daily", now=reference_now).replace("Z", "+00:00")
-    )
-    synced_at = budget_reset_at - timedelta(days=1, minutes=1)
+    synced_at = reference_now - timedelta(days=1, minutes=1)
 
     usage_summary = _build_usage_summary(
         max_budget_raw="1000",
@@ -308,23 +323,21 @@ def test_build_usage_summary_zeroes_stale_usage_when_provider_reset_missing():
         synced_at=synced_at,
     )
 
-    assert usage_summary["spend"] == 0.0
-    assert usage_summary["prompt_tokens"] == 0
-    assert usage_summary["completion_tokens"] == 0
-    assert usage_summary["total_tokens"] == 0
-    assert usage_summary["remaining_budget"] == 1000.0
-    assert usage_summary["budget_reset_at"] == budget_reset_at
+    assert usage_summary["spend"] == 123.45
+    assert usage_summary["prompt_tokens"] == 123
+    assert usage_summary["completion_tokens"] == 45
+    assert usage_summary["total_tokens"] == 168
+    assert usage_summary["remaining_budget"] == 876.55
+    assert usage_summary["budget_reset_at"] is None
 
 
-def test_build_usage_summary_keeps_current_cycle_usage_when_provider_reset_missing_but_sync_is_fresh():
+def test_build_usage_summary_returns_provider_budget_reset_at_without_rollover():
     from app.services.api_keys_service import _build_usage_summary
 
     reference_now = datetime.now(UTC).replace(microsecond=0)
     key_created_at = reference_now - timedelta(days=3)
-    budget_reset_at = datetime.fromisoformat(
-        _expected_rolled_budget_reset_at(key_created_at, "daily", now=reference_now).replace("Z", "+00:00")
-    )
-    synced_at = budget_reset_at - timedelta(hours=12)
+    budget_reset_at = reference_now - timedelta(hours=12)
+    synced_at = reference_now - timedelta(hours=1)
 
     usage_summary = _build_usage_summary(
         max_budget_raw="1000",
@@ -338,19 +351,19 @@ def test_build_usage_summary_keeps_current_cycle_usage_when_provider_reset_missi
         prompt_tokens=123,
         completion_tokens=45,
         total_tokens=168,
-        budget_reset_at=None,
+        budget_reset_at=budget_reset_at,
         synced_at=synced_at,
     )
 
-    assert usage_summary["spend"] == 0.0
-    assert usage_summary["prompt_tokens"] == 0
-    assert usage_summary["completion_tokens"] == 0
-    assert usage_summary["total_tokens"] == 0
-    assert usage_summary["remaining_budget"] == 1000.0
+    assert usage_summary["spend"] == 123.45
+    assert usage_summary["prompt_tokens"] == 123
+    assert usage_summary["completion_tokens"] == 45
+    assert usage_summary["total_tokens"] == 168
+    assert usage_summary["remaining_budget"] == 876.55
     assert usage_summary["budget_reset_at"] == budget_reset_at
 
 
-def test_list_api_keys_uses_api_keys_usage_cache_not_snapshot_history(client, admin_headers, user_headers):
+def test_list_api_keys_uses_snapshot_history_over_api_keys_usage_cache(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
     create_resp = client.post(
@@ -388,11 +401,11 @@ def test_list_api_keys_uses_api_keys_usage_cache_not_snapshot_history(client, ad
 
     assert listed.status_code == 200
     item = listed.json()["items"][0]
-    assert item["usage_summary"]["spend"] == 999.99
-    assert item["usage_summary"]["prompt_tokens"] == 333
-    assert item["usage_summary"]["completion_tokens"] == 444
-    assert item["usage_summary"]["total_tokens"] == 777
-    assert item["usage_summary"]["remaining_budget"] == 0.01
+    assert item["usage_summary"]["spend"] == 12.34
+    assert item["usage_summary"]["prompt_tokens"] == 12
+    assert item["usage_summary"]["completion_tokens"] == 22
+    assert item["usage_summary"]["total_tokens"] == 34
+    assert item["usage_summary"]["remaining_budget"] == 987.66
     assert item["usage_summary"]["max_parallel_requests"] == 0
     _assert_utc_datetime_string(item["usage_summary"]["budget_reset_at"])
     _assert_utc_datetime_string(item["usage_summary"]["synced_at"])
@@ -546,7 +559,7 @@ def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(
         assert item["usage_summary"]["tpm_limit"] == 43210
         assert item["usage_summary"]["rpm_limit"] == 321
         assert item["usage_summary"]["max_parallel_requests"] == 12
-        assert item["usage_summary"]["budget_reset_at"] is not None
+        assert item["usage_summary"]["budget_reset_at"] is None
 
         snapshot_synced_at = datetime.now(UTC).replace(microsecond=0)
         _set_key_usage_snapshot(
@@ -554,6 +567,18 @@ def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(
             usage_spend="850.25",
             usage_budget_reset_at=snapshot_synced_at + timedelta(days=7),
             usage_synced_at=snapshot_synced_at,
+        )
+        _insert_key_usage_snapshot_history(
+            item["id"],
+            spend="850.25",
+            budget_reset_at=snapshot_synced_at + timedelta(days=7),
+            synced_at=snapshot_synced_at,
+            bucket_granularity="day",
+            bucket_start_utc=snapshot_synced_at - timedelta(hours=12),
+            bucket_end_utc=snapshot_synced_at + timedelta(hours=12),
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
         )
         _set_limit_strategy_config(
             budget_max_budget="2000",
@@ -573,9 +598,9 @@ def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(
         assert refreshed_item["usage_summary"]["tpm_limit"] == 54321
         assert refreshed_item["usage_summary"]["rpm_limit"] == 654
         assert refreshed_item["usage_summary"]["max_parallel_requests"] == 9
-        assert refreshed_item["usage_summary"]["budget_reset_at"] == _expected_budget_reset_at(
-            snapshot_synced_at + timedelta(minutes=5),
-            "monthly",
+        assert (
+            refreshed_item["usage_summary"]["budget_reset_at"]
+            == (snapshot_synced_at + timedelta(days=7)).isoformat().replace("+00:00", "Z")
         )
     finally:
         _set_limit_strategy_config(
@@ -610,8 +635,20 @@ def test_list_api_keys_unlimited_budget_zero_remaining(client, admin_headers, us
         _set_key_usage_snapshot(
             key_id,
             usage_spend="9999.99",
-            usage_budget_reset_at=None,
+            usage_budget_reset_at=synced_at + timedelta(days=7),
             usage_synced_at=synced_at,
+        )
+        _insert_key_usage_snapshot_history(
+            key_id,
+            spend="9999.99",
+            budget_reset_at=synced_at + timedelta(days=7),
+            synced_at=synced_at,
+            bucket_granularity="day",
+            bucket_start_utc=synced_at - timedelta(hours=12),
+            bucket_end_utc=synced_at + timedelta(hours=12),
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
         )
 
         listed = client.get(_api("/api-keys"), headers=user_headers)
@@ -620,17 +657,80 @@ def test_list_api_keys_unlimited_budget_zero_remaining(client, admin_headers, us
         item = listed.json()["items"][0]
         assert item["usage_summary"] == {
             "spend": 9999.99,
-            "prompt_tokens": None,
-            "completion_tokens": None,
-            "total_tokens": None,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
             "max_budget": 0.0,
             "remaining_budget": 0.0,
             "tpm_limit": 0,
             "rpm_limit": 0,
             "max_parallel_requests": 0,
-            "budget_reset_at": _expected_budget_reset_at(_fetch_key_row(key_id)["created_at"].replace(tzinfo=UTC), "monthly"),
+            "budget_reset_at": (synced_at + timedelta(days=7)).isoformat().replace("+00:00", "Z"),
             "synced_at": synced_at.isoformat().replace("+00:00", "Z"),
         }
+    finally:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+        )
+
+
+def test_list_api_keys_uses_current_limit_strategy_window_for_cycle_aggregation(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "daily cycle window"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+    synced_at = datetime(2026, 6, 18, 6, 0, 0, tzinfo=UTC)
+    budget_reset_at = datetime(2026, 6, 19, 0, 0, 0, tzinfo=UTC)
+    try:
+        _set_key_usage_snapshot(
+            key_id,
+            usage_spend="777.77",
+            usage_prompt_tokens=777,
+            usage_completion_tokens=777,
+            usage_total_tokens=1554,
+            usage_budget_reset_at=budget_reset_at,
+            usage_synced_at=synced_at,
+        )
+        _insert_key_usage_snapshot_history(
+            key_id,
+            spend="12.34",
+            budget_reset_at=budget_reset_at,
+            synced_at=synced_at,
+            bucket_granularity="day",
+            bucket_start_utc=datetime(2026, 6, 15, 16, 0, 0, tzinfo=UTC),
+            bucket_end_utc=datetime(2026, 6, 16, 16, 0, 0, tzinfo=UTC),
+            prompt_tokens=123,
+            completion_tokens=45,
+            total_tokens=168,
+        )
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="daily",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+            updated_at=synced_at,
+        )
+
+        listed = client.get(_api("/api-keys"), headers=user_headers)
+
+        assert listed.status_code == 200
+        item = listed.json()["items"][0]
+        assert item["usage_summary"]["spend"] == 0.0
+        assert item["usage_summary"]["prompt_tokens"] == 0
+        assert item["usage_summary"]["completion_tokens"] == 0
+        assert item["usage_summary"]["total_tokens"] == 0
+        assert item["usage_summary"]["remaining_budget"] == 1000.0
+        assert item["usage_summary"]["budget_reset_at"] == budget_reset_at.isoformat().replace("+00:00", "Z")
     finally:
         _set_limit_strategy_config(
             budget_max_budget="1000",

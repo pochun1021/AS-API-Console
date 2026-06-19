@@ -581,7 +581,10 @@ sudo -u asapic tail -n 100 /home/app/log/sync_expired_api_keys/$(TZ=Asia/Taipei 
 
 usage sync 採本地 snapshot 歷史表策略：
 - 對外列表與 health status 讀取本地最新 snapshot，不在 request path 即時打 provider。
-- 透過排程執行 `backend/scripts/run_usage_sync.sh`，每 `5` 分鐘以 `key_alias` 查 provider `/spend/logs/v2` 並寫回本地。
+- 透過排程執行 `backend/scripts/run_usage_sync.sh`，每 `5` 分鐘分兩階段同步：
+  1. 呼叫 provider `/spend/keys` 同步 current-cycle summary
+  2. 呼叫 provider `/spend/logs/v2` 同步 daily history 與 current-cycle token aggregate
+- 部署環境的 `PROVIDER_BASE_URL` 與 `PROVIDER_MASTER_KEY` 必須同時可用於 `/spend/keys` 與 `/spend/logs/v2`。
 
 ### 16A.1 方案 A（建議）：systemd timer
 
@@ -629,6 +632,10 @@ sudo journalctl -u as-api-usage-sync.service -n 200 --no-pager
 sudo -u asapic tail -n 100 /home/app/log/sync_api_key_usage/$(TZ=Asia/Taipei date +%F).log
 ```
 
+執行結果判讀：
+- 若看到 `stage=summary_sync status=failed`，表示 `/spend/keys` 同步失敗，但腳本仍會繼續跑 history sync。
+- 若看到單把 key 的 `status=skipped error=...`，表示 `/spend/logs/v2` 該 key 的 history sync 被跳過，不代表整體排程失敗。
+
 ### 16A.2 方案 B：cron
 
 以 `asapic` 使用者設定 crontab：
@@ -661,6 +668,13 @@ sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/backend && ENV_FILE=/hom
 ```bash
 sudo -u asapic tail -n 100 /home/app/log/sync_api_key_usage/$(TZ=Asia/Taipei date +%F).log
 ```
+4. 驗證 provider 端點都可達：
+```bash
+sudo -u asapic -H bash -lc 'cd /home/app/AS-API-Console/backend && ENV_FILE=/home/app/config/.env ./scripts/run_usage_sync.sh --dry-run'
+```
+5. 驗證功能面：
+- `GET /main/api/v1/api-keys` 應可看到最新的 `usage_summary.spend` 與 `budget_reset_at`
+- `GET /main/api/v1/api-keys/usage-series` 應仍可看到 daily history buckets
 
 ## 17. 單位主檔同步排程部署
 

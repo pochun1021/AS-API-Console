@@ -15,6 +15,7 @@ from db.repositories.types import (
     ApiKeyListFilter,
     ApiKeyListItem,
     ApiKeySecretMaterial,
+    ApiKeyUsageBucketItem,
     ApiKeyUsageSeriesItem,
     ApiKeyUserStatisticsFilter,
     ApiKeyUserStatisticsItem,
@@ -95,6 +96,15 @@ class ApiKeyRepository(Protocol):
         bucket_start_from: datetime,
         bucket_start_to: datetime,
     ) -> list[ApiKeyUsageSeriesItem]: ...
+
+    def list_usage_buckets_for_keys(
+        self,
+        *,
+        key_ids: list[str],
+        granularity: str,
+        bucket_start_from: datetime,
+        bucket_start_to: datetime,
+    ) -> list[ApiKeyUsageBucketItem]: ...
 
     def get_key_secret_material(
         self, key_id: str, requester_role: str, requester_account: str

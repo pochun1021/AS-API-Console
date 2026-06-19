@@ -187,6 +187,24 @@ def test_list_spend_logs_uses_query_params(monkeypatch: pytest.MonkeyPatch) -> N
     ]
 
 
+def test_list_spend_keys_uses_get_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _build_client(monkeypatch)
+    fake_client = _FakeClient(_response([{"token": "abc123", "spend": 0.5}]))
+    monkeypatch.setattr("app.services.provider_client.build_safe_httpx_client", lambda **kwargs: fake_client)
+
+    payload = client.list_spend_keys()
+
+    assert payload == [{"token": "abc123", "spend": 0.5}]
+    assert fake_client.calls == [
+        {
+            "url": "/spend/keys",
+            "headers": {
+                "Authorization": "Bearer secret-token",
+            },
+        }
+    ]
+
+
 def test_update_key_accepts_string_response(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch)
     monkeypatch.setattr(

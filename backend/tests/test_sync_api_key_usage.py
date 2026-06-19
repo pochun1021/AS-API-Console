@@ -26,6 +26,20 @@ def _fetch_usage_snapshot_rows(key_id: str) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def _build_spend_key_summary(*, key_id: str, key_alias: str, spend: float | None, budget_duration: str | None, budget_reset_at: datetime | None, updated_at: datetime | None) -> list[dict]:
+    key_hash = _fetch_key_row(key_id)["key_hash"]
+    return [
+        {
+            "token": key_hash,
+            "key_alias": key_alias,
+            "spend": spend,
+            "budget_duration": budget_duration,
+            "budget_reset_at": budget_reset_at.isoformat() if budget_reset_at is not None else None,
+            "updated_at": updated_at.isoformat() if updated_at is not None else None,
+        }
+    ]
+
+
 def _create_whitelist_for_user(client, admin_headers, user_headers) -> None:
     whitelist_resp = client.post(
         _api("/whitelists"),
@@ -57,6 +71,7 @@ def test_usage_sync_script_records_daily_bucket_history_and_cache(client, admin_
     item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
     key_id = item["id"]
     key_alias = item["key_alias"]
+    key_hash = _fetch_key_row(key_id)["key_hash"]
 
     log_time = datetime.now(UTC).replace(microsecond=0)
     prior_day_log_time = datetime(2026, 6, 7, 15, 30, 0, tzinfo=UTC)
@@ -66,8 +81,18 @@ def test_usage_sync_script_records_daily_bucket_history_and_cache(client, admin_
     expected_start_at, expected_end_exclusive = sync_api_key_usage._build_rolling_window(sync_now)
 
     class _FakeProviderClient:
+        def list_spend_keys(self) -> list[dict]:
+            return _build_spend_key_summary(
+                key_id=key_id,
+                key_alias=key_alias,
+                spend=0.5099,
+                budget_duration="monthly",
+                budget_reset_at=budget_reset_at,
+                updated_at=sync_now,
+            )
+
         def list_spend_logs(self, query: dict) -> dict:
-            assert query["key_alias"] == key_alias
+            assert query["api_key"] == key_hash
             assert query["start_date"] == sync_api_key_usage._format_provider_datetime(expected_start_at)
             assert query["end_date"] == sync_api_key_usage._format_provider_datetime(
                 expected_end_exclusive - timedelta(seconds=1)
@@ -106,7 +131,6 @@ def test_usage_sync_script_records_daily_bucket_history_and_cache(client, admin_
                 "page": 1,
                 "page_size": 100,
                 "total_pages": 1,
-                "budget_reset_at": budget_reset_at.isoformat(),
             }
 
     monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
@@ -160,6 +184,7 @@ def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(cli
     item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
     key_id = item["id"]
     key_alias = item["key_alias"]
+    key_hash = _fetch_key_row(key_id)["key_hash"]
     sync_now = datetime.now(UTC).replace(microsecond=0)
     bucket_log_time = sync_now - timedelta(hours=2)
 
@@ -167,9 +192,20 @@ def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(cli
         def __init__(self):
             self.calls = 0
 
+        def list_spend_keys(self) -> list[dict]:
+            spend = 0.25 if self.calls == 0 else 0.75
+            return _build_spend_key_summary(
+                key_id=key_id,
+                key_alias=key_alias,
+                spend=spend,
+                budget_duration="monthly",
+                budget_reset_at=sync_now + timedelta(days=1),
+                updated_at=sync_now,
+            )
+
         def list_spend_logs(self, query: dict) -> dict:
             self.calls += 1
-            assert query["key_alias"] == key_alias
+            assert query["api_key"] == key_hash
             spend = 0.25 if self.calls == 1 else 0.75
             total_tokens = 100 if self.calls == 1 else 300
             return {
@@ -188,7 +224,6 @@ def test_usage_sync_script_re_run_updates_existing_bucket_without_duplicates(cli
                 "page": 1,
                 "page_size": 100,
                 "total_pages": 1,
-                "budget_reset_at": (sync_now + timedelta(days=1)).isoformat(),
             }
 
     fake_client = _FakeProviderClient()
@@ -224,14 +259,25 @@ def test_usage_sync_script_fetches_multiple_provider_pages(client, admin_headers
     item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
     key_id = item["id"]
     key_alias = item["key_alias"]
+    key_hash = _fetch_key_row(key_id)["key_hash"]
     sync_now = datetime.now(UTC).replace(microsecond=0)
     first_page_log_time = datetime(2026, 6, 8, 2, 0, 0, tzinfo=UTC)
     second_page_log_time = datetime(2026, 6, 8, 3, 0, 0, tzinfo=UTC)
     budget_reset_at = sync_now + timedelta(days=1)
 
     class _FakeProviderClient:
+        def list_spend_keys(self) -> list[dict]:
+                return _build_spend_key_summary(
+                    key_id=key_id,
+                    key_alias=key_alias,
+                    spend=1.0,
+                    budget_duration="monthly",
+                    budget_reset_at=budget_reset_at,
+                    updated_at=sync_now,
+                )
+
         def list_spend_logs(self, query: dict) -> dict:
-            assert query["key_alias"] == key_alias
+            assert query["api_key"] == key_hash
             if query["page"] == 1:
                 return {
                     "data": [
@@ -249,7 +295,6 @@ def test_usage_sync_script_fetches_multiple_provider_pages(client, admin_headers
                     "page": 1,
                     "page_size": 100,
                     "total_pages": 2,
-                    "budget_reset_at": budget_reset_at.isoformat(),
                 }
             return {
                 "data": [
@@ -267,7 +312,6 @@ def test_usage_sync_script_fetches_multiple_provider_pages(client, admin_headers
                 "page": 2,
                 "page_size": 100,
                 "total_pages": 2,
-                "budget_reset_at": budget_reset_at.isoformat(),
             }
 
     monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
@@ -296,7 +340,7 @@ def test_usage_sync_script_processes_all_active_keys_across_batches(client, admi
     monkeypatch.setattr("scripts.sync_api_key_usage.SessionLocal", get_test_session_factory())
     _create_whitelist_for_user(client, admin_headers, user_headers)
 
-    created_keys: list[tuple[str, str]] = []
+    created_keys: list[tuple[str, str, str]] = []
     for index in range(3):
         create_resp = client.post(
             _api("/api-keys/applications"),
@@ -307,15 +351,28 @@ def test_usage_sync_script_processes_all_active_keys_across_batches(client, admi
 
     listed = client.get(_api("/api-keys"), headers=user_headers).json()["items"]
     for item in listed:
-        created_keys.append((item["id"], item["key_alias"]))
+        created_keys.append((item["id"], item["key_alias"], _fetch_key_row(item["id"])["key_hash"]))
 
     sync_now = datetime(2026, 6, 18, 4, 0, 0, tzinfo=UTC)
     budget_reset_at = sync_now + timedelta(days=1)
-    call_aliases: list[str] = []
+    call_api_keys: list[str] = []
 
     class _FakeProviderClient:
+        def list_spend_keys(self) -> list[dict]:
+            return [
+                {
+                    "token": key_hash,
+                    "key_alias": key_alias,
+                    "spend": 0.2,
+                    "budget_duration": "daily",
+                    "budget_reset_at": budget_reset_at.isoformat(),
+                    "updated_at": sync_now.isoformat(),
+                }
+                for _, key_alias, key_hash in created_keys
+            ]
+
         def list_spend_logs(self, query: dict) -> dict:
-            call_aliases.append(query["key_alias"])
+            call_api_keys.append(query["api_key"])
             return {
                 "data": [
                     {
@@ -332,7 +389,6 @@ def test_usage_sync_script_processes_all_active_keys_across_batches(client, admi
                 "page": 1,
                 "page_size": 100,
                 "total_pages": 1,
-                "budget_reset_at": budget_reset_at.isoformat(),
             }
 
     monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
@@ -340,8 +396,8 @@ def test_usage_sync_script_processes_all_active_keys_across_batches(client, admi
 
     assert sync_api_key_usage.run_once(batch_size=2, dry_run=False) == 3
 
-    assert sorted(call_aliases) == sorted([key_alias for _, key_alias in created_keys])
-    for key_id, _ in created_keys:
+    assert sorted(call_api_keys) == sorted([key_hash for _, _, key_hash in created_keys])
+    for key_id, _, _ in created_keys:
         key_row = _fetch_key_row(key_id)
         assert key_row["usage_synced_at"].replace(tzinfo=UTC) == sync_now
         assert key_row["usage_total_tokens"] == 30
@@ -362,6 +418,7 @@ def test_usage_sync_script_repair_missing_cache_targets_only_incomplete_active_k
     target_item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
     target_key_id = target_item["id"]
     target_key_alias = target_item["key_alias"]
+    target_key_hash = _fetch_key_row(target_key_id)["key_hash"]
 
     second_create_resp = client.post(
         _api("/api-keys/applications"),
@@ -428,11 +485,21 @@ def test_usage_sync_script_repair_missing_cache_targets_only_incomplete_active_k
 
     sync_now = datetime(2026, 6, 18, 4, 10, 0, tzinfo=UTC)
     budget_reset_at = datetime(2026, 6, 19, 8, 0, 0, tzinfo=UTC)
-    call_aliases: list[str] = []
+    call_api_keys: list[str] = []
 
     class _FakeProviderClient:
+        def list_spend_keys(self) -> list[dict]:
+                return _build_spend_key_summary(
+                    key_id=target_key_id,
+                    key_alias=target_key_alias,
+                    spend=0.42,
+                    budget_duration="monthly",
+                    budget_reset_at=budget_reset_at,
+                    updated_at=sync_now,
+                )
+
         def list_spend_logs(self, query: dict) -> dict:
-            call_aliases.append(query["key_alias"])
+            call_api_keys.append(query["api_key"])
             return {
                 "data": [
                     {
@@ -449,7 +516,6 @@ def test_usage_sync_script_repair_missing_cache_targets_only_incomplete_active_k
                 "page": 1,
                 "page_size": 100,
                 "total_pages": 1,
-                "budget_reset_at": budget_reset_at.isoformat(),
             }
 
     monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
@@ -457,7 +523,7 @@ def test_usage_sync_script_repair_missing_cache_targets_only_incomplete_active_k
 
     assert sync_api_key_usage.run_once(batch_size=1, dry_run=False, repair_missing_cache=True) == 1
 
-    assert call_aliases == [target_key_alias]
+    assert call_api_keys == [target_key_hash]
     repaired_key = _fetch_key_row(target_key_id)
     assert repaired_key["usage_synced_at"].replace(tzinfo=UTC) == sync_now
     assert repaired_key["usage_total_tokens"] == 150
@@ -501,6 +567,7 @@ def test_usage_sync_script_excludes_pre_reset_logs_from_current_cycle_cache(clie
         item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
         key_id = item["id"]
         key_alias = item["key_alias"]
+        key_hash = _fetch_key_row(key_id)["key_hash"]
 
         sync_now = datetime.now(UTC).replace(microsecond=0)
         local_today = sync_now.astimezone(sync_api_key_usage.TAIPEI_TZ).date()
@@ -514,8 +581,18 @@ def test_usage_sync_script_excludes_pre_reset_logs_from_current_cycle_cache(clie
         post_reset_log_time = cycle_start + timedelta(hours=1)
 
         class _FakeProviderClient:
+            def list_spend_keys(self) -> list[dict]:
+                return _build_spend_key_summary(
+                    key_id=key_id,
+                    key_alias=key_alias,
+                    spend=0.6,
+                    budget_duration="daily",
+                    budget_reset_at=next_budget_reset_at,
+                    updated_at=sync_now,
+                )
+
             def list_spend_logs(self, query: dict) -> dict:
-                assert query["key_alias"] == key_alias
+                assert query["api_key"] == key_hash
                 return {
                     "data": [
                         {
@@ -541,7 +618,6 @@ def test_usage_sync_script_excludes_pre_reset_logs_from_current_cycle_cache(clie
                     "page": 1,
                     "page_size": 100,
                     "total_pages": 1,
-                    "budget_reset_at": next_budget_reset_at.isoformat(),
                 }
 
         monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
@@ -608,6 +684,7 @@ def test_usage_sync_script_accepts_past_reset_boundary_and_keeps_same_day_post_r
         item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
         key_id = item["id"]
         key_alias = item["key_alias"]
+        key_hash = _fetch_key_row(key_id)["key_hash"]
 
         sync_now = datetime.now(UTC).replace(microsecond=0)
         local_today = sync_now.astimezone(sync_api_key_usage.TAIPEI_TZ).date()
@@ -623,8 +700,18 @@ def test_usage_sync_script_accepts_past_reset_boundary_and_keeps_same_day_post_r
         post_reset_log_time = current_cycle_start + timedelta(hours=1)
 
         class _FakeProviderClient:
+            def list_spend_keys(self) -> list[dict]:
+                return _build_spend_key_summary(
+                    key_id=key_id,
+                    key_alias=key_alias,
+                    spend=0.6,
+                    budget_duration="daily",
+                    budget_reset_at=current_cycle_start,
+                    updated_at=sync_now,
+                )
+
             def list_spend_logs(self, query: dict) -> dict:
-                assert query["key_alias"] == key_alias
+                assert query["api_key"] == key_hash
                 return {
                     "data": [
                         {
@@ -650,7 +737,6 @@ def test_usage_sync_script_accepts_past_reset_boundary_and_keeps_same_day_post_r
                     "page": 1,
                     "page_size": 100,
                     "total_pages": 1,
-                    "budget_reset_at": current_cycle_start.isoformat(),
                 }
 
         monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
@@ -659,14 +745,14 @@ def test_usage_sync_script_accepts_past_reset_boundary_and_keeps_same_day_post_r
         assert sync_api_key_usage.run_once(batch_size=100, dry_run=False) == 1
 
         key_row = _fetch_key_row(key_id)
-        assert key_row["usage_budget_reset_at"].replace(tzinfo=UTC) == next_budget_reset_at
+        assert key_row["usage_budget_reset_at"].replace(tzinfo=UTC) == current_cycle_start
 
         listed = client.get(_api("/api-keys"), headers=user_headers)
         assert listed.status_code == 200
         assert listed.json()["items"][0]["usage_summary"]["spend"] == 0.6
-        assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] == 60
-        assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] == 15
-        assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 75
+        assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] == 40
+        assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] == 10
+        assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 50
     finally:
         _set_limit_strategy_config(
             budget_max_budget="1000",
@@ -702,20 +788,31 @@ def test_usage_sync_script_writes_zero_current_cycle_cache_when_boundary_known(c
     )
     assert create_resp.status_code == 201
     item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
+    key_id = item["id"]
     key_alias = item["key_alias"]
+    key_hash = _fetch_key_row(key_id)["key_hash"]
     sync_now = datetime.now(UTC).replace(microsecond=0)
     next_budget_reset_at = sync_now + timedelta(days=7)
 
     class _FakeProviderClient:
+        def list_spend_keys(self) -> list[dict]:
+            return _build_spend_key_summary(
+                key_id=key_id,
+                key_alias=key_alias,
+                spend=0.0,
+                budget_duration="weekly",
+                budget_reset_at=next_budget_reset_at,
+                updated_at=sync_now,
+            )
+
         def list_spend_logs(self, query: dict) -> dict:
-            assert query["key_alias"] == key_alias
+            assert query["api_key"] == key_hash
             return {
                 "data": [],
                 "total": 0,
                 "page": 1,
                 "page_size": 100,
                 "total_pages": 1,
-                "budget_reset_at": next_budget_reset_at.isoformat(),
             }
 
     monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
@@ -731,7 +828,7 @@ def test_usage_sync_script_writes_zero_current_cycle_cache_when_boundary_known(c
     assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 0
 
 
-def test_usage_sync_script_derives_current_cycle_boundary_when_provider_budget_reset_at_is_missing(
+def test_usage_sync_script_clears_cycle_summary_when_provider_budget_reset_at_is_missing(
     client, admin_headers, user_headers, monkeypatch
 ):
     from scripts import sync_api_key_usage
@@ -758,42 +855,40 @@ def test_usage_sync_script_derives_current_cycle_boundary_when_provider_budget_r
         item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
         key_id = item["id"]
         key_alias = item["key_alias"]
+        key_hash = _fetch_key_row(key_id)["key_hash"]
 
         sync_now = datetime(2026, 6, 18, 4, 30, 0, tzinfo=UTC)
-        current_cycle_start = datetime(2026, 6, 18, 0, 0, 0, tzinfo=UTC)
-        next_budget_reset_at = current_cycle_start + timedelta(days=1)
-        pre_reset_log_time = current_cycle_start - timedelta(minutes=30)
-        post_reset_log_time = current_cycle_start + timedelta(hours=1)
+        log_time = datetime(2026, 6, 18, 1, 0, 0, tzinfo=UTC)
 
         class _FakeProviderClient:
+            def list_spend_keys(self) -> list[dict]:
+                return _build_spend_key_summary(
+                    key_id=key_id,
+                    key_alias=key_alias,
+                    spend=0.6,
+                    budget_duration="daily",
+                    budget_reset_at=None,
+                    updated_at=sync_now,
+                )
+
             def list_spend_logs(self, query: dict) -> dict:
-                assert query["key_alias"] == key_alias
+                assert query["api_key"] == key_hash
                 return {
                     "data": [
-                        {
-                            "status": "success",
-                            "spend": 0.4,
-                            "prompt_tokens": 40,
-                            "completion_tokens": 10,
-                            "total_tokens": 50,
-                            "startTime": pre_reset_log_time.isoformat(),
-                            "endTime": pre_reset_log_time.isoformat(),
-                        },
                         {
                             "status": "success",
                             "spend": 0.6,
                             "prompt_tokens": 60,
                             "completion_tokens": 15,
                             "total_tokens": 75,
-                            "startTime": post_reset_log_time.isoformat(),
-                            "endTime": post_reset_log_time.isoformat(),
+                            "startTime": log_time.isoformat(),
+                            "endTime": log_time.isoformat(),
                         },
                     ],
-                    "total": 2,
+                    "total": 1,
                     "page": 1,
                     "page_size": 100,
                     "total_pages": 1,
-                    "budget_reset_at": None,
                 }
 
         monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
@@ -803,24 +898,24 @@ def test_usage_sync_script_derives_current_cycle_boundary_when_provider_budget_r
 
         key_row = _fetch_key_row(key_id)
         assert float(key_row["usage_spend"]) == 0.6
-        assert key_row["usage_prompt_tokens"] == 60
-        assert key_row["usage_completion_tokens"] == 15
-        assert key_row["usage_total_tokens"] == 75
-        assert key_row["usage_budget_reset_at"].replace(tzinfo=UTC) == next_budget_reset_at
+        assert key_row["usage_prompt_tokens"] is None
+        assert key_row["usage_completion_tokens"] is None
+        assert key_row["usage_total_tokens"] is None
+        assert key_row["usage_budget_reset_at"] is None
         assert key_row["usage_synced_at"].replace(tzinfo=UTC) == sync_now
 
         rows = _fetch_usage_snapshot_rows(key_id)
         assert len(rows) == 1
-        assert float(rows[0]["spend"]) == 1.0
-        assert rows[0]["total_tokens"] == 125
-        assert rows[0]["budget_reset_at"].replace(tzinfo=UTC) == next_budget_reset_at
+        assert float(rows[0]["spend"]) == 0.6
+        assert rows[0]["total_tokens"] == 75
+        assert rows[0]["budget_reset_at"] is None
 
         listed = client.get(_api("/api-keys"), headers=user_headers)
         assert listed.status_code == 200
-        assert listed.json()["items"][0]["usage_summary"]["spend"] == 0.6
-        assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] == 60
-        assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] == 15
-        assert listed.json()["items"][0]["usage_summary"]["total_tokens"] == 75
+        assert listed.json()["items"][0]["usage_summary"]["spend"] is None
+        assert listed.json()["items"][0]["usage_summary"]["prompt_tokens"] is None
+        assert listed.json()["items"][0]["usage_summary"]["completion_tokens"] is None
+        assert listed.json()["items"][0]["usage_summary"]["total_tokens"] is None
     finally:
         _set_limit_strategy_config(
             budget_max_budget="1000",
@@ -878,11 +973,22 @@ def test_usage_sync_script_skips_key_when_provider_paging_metadata_is_invalid(
     item = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
     key_id = item["id"]
     key_alias = item["key_alias"]
+    key_hash = _fetch_key_row(key_id)["key_hash"]
     sync_now = datetime(2026, 6, 8, 12, 34, 56, tzinfo=UTC)
 
     class _FakeProviderClient:
+        def list_spend_keys(self) -> list[dict]:
+            return _build_spend_key_summary(
+                key_id=key_id,
+                key_alias=key_alias,
+                spend=0.25,
+                budget_duration="daily",
+                budget_reset_at=sync_now + timedelta(days=1),
+                updated_at=sync_now,
+            )
+
         def list_spend_logs(self, query: dict) -> dict:
-            assert query["key_alias"] == key_alias
+            assert query["api_key"] == key_hash
             return {
                 "data": [
                     {
@@ -899,7 +1005,6 @@ def test_usage_sync_script_skips_key_when_provider_paging_metadata_is_invalid(
                 "page": 2,
                 "page_size": 100,
                 "total_pages": 1,
-                "budget_reset_at": (sync_now + timedelta(days=1)).isoformat(),
             }
 
     monkeypatch.setattr(sync_api_key_usage, "ProviderClient", lambda: _FakeProviderClient())
