@@ -49,7 +49,7 @@ function CountdownUnit({ label, value }) {
 }
 
 export default function LoginComingSoonPage() {
-  const { locale, t } = useLocale();
+  const { locale, setLocale, t } = useLocale();
   const [now, setNow] = useState(() => new Date());
   const goLiveAt = parseApiKeyApplicationGoLiveAt();
   const countdown = getApiKeyApplicationCountdown(goLiveAt, now);
@@ -81,6 +81,22 @@ export default function LoginComingSoonPage() {
         <Card sx={{ border: "1px solid", borderColor: "divider" }}>
           <CardContent sx={{ p: { xs: 3, md: 5 } }}>
             <Stack spacing={3}>
+              <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                <Button
+                  variant={locale === "zh-TW" ? "contained" : "outlined"}
+                  size="small"
+                  onClick={() => setLocale("zh-TW")}
+                >
+                  {t("lang_zh", "中文")}
+                </Button>
+                <Button
+                  variant={locale === "en" ? "contained" : "outlined"}
+                  size="small"
+                  onClick={() => setLocale("en")}
+                >
+                  {t("lang_en", "EN")}
+                </Button>
+              </Stack>
               <Stack spacing={1}>
                 <Typography
                   variant="h4"

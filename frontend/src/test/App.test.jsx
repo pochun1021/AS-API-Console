@@ -74,6 +74,16 @@ describe("App public auth pages", () => {
     expect(navigation.proceedToLogin).toHaveBeenCalledTimes(1);
   });
 
+  test("login coming soon page supports locale switching", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(false);
+    renderApp("/login-coming-soon");
+
+    await user.click(await screen.findByRole("button", { name: "中文" }));
+    expect(await screen.findByRole("heading", { name: "API Key 申請即將於 6 月 30 日上線" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "前往 FISA 登入" })).toBeInTheDocument();
+  });
+
   test("retry button on denied page redirects to /main/login", async () => {
     const user = userEvent.setup();
     renderApp("/login-denied?error=LOGIN_NOT_ELIGIBLE");
