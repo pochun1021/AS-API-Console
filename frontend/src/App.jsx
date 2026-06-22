@@ -1,26 +1,28 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { apiClient } from "./api/client";
 import AppLayout from "./components/AppLayout";
 import { LoadingBlock } from "./components/StateBlocks";
 import { clearOAuthAuthContext, readOAuthAuthContext } from "./authContext";
 import { detectSystemLocale, useLocale } from "./i18n/locale";
+import { lazyWithReload } from "./utils/lazyWithReload";
 import { redirectToLogin } from "./utils/navigation";
 
-const ApplyPage = lazy(() => import("./pages/ApplyPage"));
-const ApplyComingSoonPage = lazy(() => import("./pages/ApplyComingSoonPage"));
-const LoginDeniedPage = lazy(() => import("./pages/LoginDeniedPage"));
-const LoginErrorPage = lazy(() => import("./pages/LoginErrorPage"));
-const MyApiKeysPage = lazy(() => import("./pages/MyApiKeysPage"));
-const AdminPage = lazy(() => import("./pages/AdminPage"));
-const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
-const LimitStrategiesPage = lazy(() => import("./pages/LimitStrategiesPage"));
-const InstituteViewPage = lazy(() => import("./pages/InstituteViewPage"));
-const ModelsPage = lazy(() => import("./pages/ModelsPage"));
-const OperationAuditLogsPage = lazy(() => import("./pages/OperationAuditLogsPage"));
-const SystemAnnouncementsPage = lazy(() => import("./pages/SystemAnnouncementsPage"));
-const UsagePage = lazy(() => import("./pages/UsagePage"));
-const WhitelistAdminPage = lazy(() => import("./pages/WhitelistAdminPage"));
+const ApplyPage = lazyWithReload("ApplyPage", () => import("./pages/ApplyPage"));
+const ApplyComingSoonPage = lazyWithReload("ApplyComingSoonPage", () => import("./pages/ApplyComingSoonPage"));
+const LoginComingSoonPage = lazyWithReload("LoginComingSoonPage", () => import("./pages/LoginComingSoonPage"));
+const LoginDeniedPage = lazyWithReload("LoginDeniedPage", () => import("./pages/LoginDeniedPage"));
+const LoginErrorPage = lazyWithReload("LoginErrorPage", () => import("./pages/LoginErrorPage"));
+const MyApiKeysPage = lazyWithReload("MyApiKeysPage", () => import("./pages/MyApiKeysPage"));
+const AdminPage = lazyWithReload("AdminPage", () => import("./pages/AdminPage"));
+const AdminDashboardPage = lazyWithReload("AdminDashboardPage", () => import("./pages/AdminDashboardPage"));
+const LimitStrategiesPage = lazyWithReload("LimitStrategiesPage", () => import("./pages/LimitStrategiesPage"));
+const InstituteViewPage = lazyWithReload("InstituteViewPage", () => import("./pages/InstituteViewPage"));
+const ModelsPage = lazyWithReload("ModelsPage", () => import("./pages/ModelsPage"));
+const OperationAuditLogsPage = lazyWithReload("OperationAuditLogsPage", () => import("./pages/OperationAuditLogsPage"));
+const SystemAnnouncementsPage = lazyWithReload("SystemAnnouncementsPage", () => import("./pages/SystemAnnouncementsPage"));
+const UsagePage = lazyWithReload("UsagePage", () => import("./pages/UsagePage"));
+const WhitelistAdminPage = lazyWithReload("WhitelistAdminPage", () => import("./pages/WhitelistAdminPage"));
 
 export default function App() {
   const location = useLocation();
@@ -32,6 +34,7 @@ export default function App() {
   const { setLocale, t } = useLocale();
   const isLoginDeniedRoute = location.pathname === "/login-denied";
   const isLoginErrorRoute = location.pathname === "/login-error";
+  const isLoginComingSoonRoute = location.pathname === "/login-coming-soon";
 
   function navigateToLoginError(error) {
     const route = error?.payload?.route || "users_me";
@@ -67,7 +70,7 @@ export default function App() {
   useEffect(() => {
     let canceled = false;
     async function bootstrapAuth() {
-      if (isLoginDeniedRoute || isLoginErrorRoute) {
+      if (isLoginDeniedRoute || isLoginErrorRoute || isLoginComingSoonRoute) {
         if (!canceled) {
           setAuthReady(true);
           setLocale(detectSystemLocale());
@@ -98,7 +101,7 @@ export default function App() {
     return () => {
       canceled = true;
     };
-  }, [isLoginDeniedRoute, isLoginErrorRoute, navigate, setLocale]);
+  }, [isLoginDeniedRoute, isLoginErrorRoute, isLoginComingSoonRoute, navigate, setLocale]);
 
   useEffect(() => {
     if (!auth) return;
@@ -130,10 +133,11 @@ export default function App() {
     };
   }, [auth, setLocale]);
 
-  if (isLoginDeniedRoute || isLoginErrorRoute) {
+  if (isLoginDeniedRoute || isLoginErrorRoute || isLoginComingSoonRoute) {
     return (
       <Suspense fallback={<LoadingBlock text={t("common_loading")} />}>
         <Routes>
+          <Route path="/login-coming-soon" element={<LoginComingSoonPage />} />
           <Route path="/login-denied" element={<LoginDeniedPage />} />
           <Route path="/login-error" element={<LoginErrorPage />} />
           <Route path="*" element={<Navigate to="/login-denied" replace />} />

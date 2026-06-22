@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 import SystemAnnouncementsPage from "../pages/SystemAnnouncementsPage";
 import { mockApiProvider } from "../mocks/mockApiProvider";
+import * as apiKeyGoLive from "../utils/apiKeyGoLive";
 
 const adminAuth = {
   account: "john.admin",
@@ -37,6 +38,8 @@ function renderPage(ui) {
 
 beforeEach(() => {
   mockApiProvider.resetForTests();
+  vi.restoreAllMocks();
+  vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(true);
 });
 
 test("announcement page loads with admin scope and title filter", async () => {
@@ -116,6 +119,22 @@ test("announcement page renders read-only view for user", async () => {
     expect(lastCall?.[0]?.scope).toBeUndefined();
     expect(lastCall?.[1]).toEqual(userAuth);
   });
+});
+
+test("announcement page shows coming soon link for user before go-live", async () => {
+  vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(false);
+  renderPage(<SystemAnnouncementsPage auth={userAuth} />);
+
+  expect(await screen.findByText("系統公告")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "查看上線倒數" })).toHaveAttribute("href", "/apply/coming-soon");
+});
+
+test("announcement page hides coming soon link after go-live", async () => {
+  vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(true);
+  renderPage(<SystemAnnouncementsPage auth={userAuth} />);
+
+  expect(await screen.findByText("系統公告")).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "查看上線倒數" })).not.toBeInTheDocument();
 });
 
 test("announcement page lets user filter by publish-from date range", async () => {

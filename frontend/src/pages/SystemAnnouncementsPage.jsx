@@ -35,6 +35,7 @@ import { COMPACT_DIALOG_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } fro
 import { formatDateTimeInTaipei } from "../utils/datetime";
 import { getGridLocaleText } from "../utils/gridLocaleText";
 import { validatePersistedText } from "../utils/inputValidation";
+import { isApiKeyApplicationLive, parseApiKeyApplicationGoLiveAt } from "../utils/apiKeyGoLive";
 import { buildTaipeiDateTimeRange, getServerSort } from "../utils/serverDataGrid";
 
 const actionCellSx = {
@@ -76,6 +77,7 @@ export default function SystemAnnouncementsPage({ auth }) {
   const { locale, t } = useLocale();
   const gridLocaleText = getGridLocaleText(locale);
   const isAdmin = auth.role === "admin";
+  const shouldShowComingSoonLink = auth.role === "user" && !isApiKeyApplicationLive(parseApiKeyApplicationGoLiveAt());
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -362,17 +364,32 @@ export default function SystemAnnouncementsPage({ auth }) {
         ) : null}
       </Stack>
 
-      <Card variant="outlined">
-        <CardContent>
-          <Stack spacing={1.25} alignItems="flex-start">
-            <Typography variant="h6">{t("service_guide_card_title")}</Typography>
-            <Typography color="text.secondary">{t("service_guide_card_body")}</Typography>
-            <Button component={RouterLink} to="/usage-examples" variant="contained">
-              {t("service_guide_card_action")}
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+        <Card variant="outlined" sx={{ flex: 1 }}>
+          <CardContent>
+            <Stack spacing={1.25} alignItems="flex-start">
+              <Typography variant="h6">{t("service_guide_card_title")}</Typography>
+              <Typography color="text.secondary">{t("service_guide_card_body")}</Typography>
+              <Button component={RouterLink} to="/usage-examples" variant="contained">
+                {t("service_guide_card_action")}
+              </Button>
+            </Stack>
+          </CardContent>
+        </Card>
+        {shouldShowComingSoonLink ? (
+          <Card variant="outlined" sx={{ flex: 1 }}>
+            <CardContent>
+              <Stack spacing={1.25} alignItems="flex-start">
+                <Typography variant="h6">{t("announcement_coming_soon_card_title")}</Typography>
+                <Typography color="text.secondary">{t("announcement_coming_soon_card_body")}</Typography>
+                <Button component={RouterLink} to="/apply/coming-soon" variant="outlined">
+                  {t("announcement_coming_soon_card_action")}
+                </Button>
+              </Stack>
+            </CardContent>
+          </Card>
+        ) : null}
+      </Stack>
 
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 

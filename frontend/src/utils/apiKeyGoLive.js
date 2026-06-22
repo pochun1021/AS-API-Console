@@ -8,9 +8,13 @@ export function parseApiKeyApplicationGoLiveAt(rawValue) {
   return new Date(API_KEY_APPLICATION_GO_LIVE_AT);
 }
 
+export function isApiKeyApplicationLive(goLiveAt, now = new Date()) {
+  return goLiveAt.getTime() <= now.getTime();
+}
+
 export function getApiKeyApplicationCountdown(goLiveAt, now = new Date()) {
   const diffMs = goLiveAt.getTime() - now.getTime();
-  if (diffMs <= 0) {
+  if (isApiKeyApplicationLive(goLiveAt, now)) {
     return {
       isLive: true,
       days: 0,

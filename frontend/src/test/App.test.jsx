@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import App from "../App";
 import { setApiProvider } from "../api/client";
 import { LocaleProvider } from "../i18n/locale";
+import * as apiKeyGoLive from "../utils/apiKeyGoLive";
 import * as navigation from "../utils/navigation";
 
 function renderApp(initialPath = "/apply") {
@@ -42,7 +43,9 @@ describe("App public auth pages", () => {
     provider.listApiKeyUsageSeries.mockReset();
     provider.listModels.mockReset();
     provider.logout.mockReset();
+    vi.restoreAllMocks();
     setApiProvider(provider);
+    vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(true);
     vi.spyOn(navigation, "redirectToLogin").mockImplementation(() => {});
   });
 
@@ -51,6 +54,24 @@ describe("App public auth pages", () => {
 
     expect(await screen.findByRole("heading", { name: "Login Access Denied" })).toBeInTheDocument();
     expect(provider.getCurrentUser).not.toHaveBeenCalled();
+  });
+
+  test("does not call getCurrentUser on /login-coming-soon and renders public coming soon page", async () => {
+    vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(false);
+    renderApp("/login-coming-soon");
+
+    expect(await screen.findByRole("heading", { name: "API Key Applications Open on June 30" })).toBeInTheDocument();
+    expect(provider.getCurrentUser).not.toHaveBeenCalled();
+  });
+
+  test("login coming soon page continues to /main/login on button click", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(false);
+    vi.spyOn(navigation, "proceedToLogin").mockImplementation(() => {});
+    renderApp("/login-coming-soon");
+
+    await user.click(await screen.findByRole("button", { name: "Continue to FISA Sign-In" }));
+    expect(navigation.proceedToLogin).toHaveBeenCalledTimes(1);
   });
 
   test("retry button on denied page redirects to /main/login", async () => {
@@ -155,7 +176,33 @@ describe("App public auth pages", () => {
     expect(await screen.findByLabelText("API Key", {}, { timeout: 3000 })).toBeInTheDocument();
   });
 
-  test("root route redirects user to /announcements", async () => {
+  test("root route still redirects user to /announcements before go-live", async () => {
+    provider.getCurrentUser.mockResolvedValueOnce({
+      account: "user1",
+      name: "User One",
+      email: "user1@example.com",
+      department: "IT",
+      sysid: 2001,
+      role: "user"
+    });
+    provider.getLocalePreference.mockResolvedValueOnce({ preferred_locale: "zh-TW" });
+    provider.listAnnouncements.mockResolvedValue({
+      items: [{ id: "ann_1", title: "首頁公告", body: "公告內容", updated_at: "2026-06-15T08:00:00Z" }],
+      total: 1,
+      page: 1,
+      page_size: 20
+    });
+
+    renderApp("/");
+
+    await waitFor(() => {
+      expect(provider.listAnnouncements).toHaveBeenCalled();
+    });
+    expect(provider.listAnnouncements.mock.calls.some(([params]) => params?.scope === "all")).toBe(false);
+  });
+
+  test("root route redirects user to /announcements after go-live", async () => {
+    vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(true);
     provider.getCurrentUser.mockResolvedValueOnce({
       account: "user1",
       name: "User One",
@@ -182,6 +229,7 @@ describe("App public auth pages", () => {
   });
 
   test("root route redirects admin to /announcements", async () => {
+    vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(false);
     provider.getCurrentUser.mockResolvedValueOnce({
       account: "admin1",
       name: "Admin One",

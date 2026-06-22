@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Box, Button, Card, CardContent, Stack, Typography } from "@mui/material";
+import { Alert, Box, Card, CardContent, Stack, Typography } from "@mui/material";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useLocale } from "../i18n/locale";
 import {
@@ -120,12 +120,6 @@ export default function ApplyComingSoonPage() {
               <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
                 {t("apply_coming_soon_hint")}
               </Typography>
-            </Box>
-
-            <Box>
-              <Button variant="contained" onClick={() => navigate("/apply")}>
-                {t("apply_coming_soon_back")}
-              </Button>
             </Box>
           </Stack>
         </CardContent>
