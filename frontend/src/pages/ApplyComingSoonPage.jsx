@@ -91,9 +91,6 @@ export default function ApplyComingSoonPage() {
 
             <Alert severity="info" sx={{ alignItems: "flex-start" }}>
               <Stack spacing={1}>
-                <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                  {t("apply_coming_soon_teaser")}
-                </Typography>
                 <Typography variant="h5" sx={{ fontWeight: 800, lineHeight: 1.3 }}>
                   {t("apply_coming_soon_launch_at", {
                     datetime: formatApiKeyApplicationGoLiveAt(goLiveAt, locale),
