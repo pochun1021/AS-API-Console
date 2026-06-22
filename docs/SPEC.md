@@ -196,7 +196,7 @@
 - 當查詢區間超過 `31` 個日曆日時，主圖預設僅顯示自 `from` 起算的前 `31` 天視窗，並提供底部日期區間 slider；slider 視窗最大為 `31` 天、最小為 `1` 天，使用者可縮小顯示區間，且縮小後仍可整段左右平移瀏覽整個查詢範圍。
 - slider 互動需區分：拖曳 `start/end` thumb 用於調整開始/結束日期；拖曳中間已選取區塊（track）則以目前區間長度整段平移。
 - slider 兩端的開始/結束日期 label 需完整可見，不得被卡片或畫面邊界裁切。
-- 每個資料點的 tooltip 至少需顯示：`prompt_tokens`、`completion_tokens`、`total_tokens`、`spend`。
+- 每個資料點的 tooltip 至少需顯示：`prompt_tokens`、`completion_tokens`、`total_tokens`。
 - 頁面需提供 Loading、Empty、Error（含 Retry）狀態。
 - 若查詢區間內無資料，需顯示空狀態，不得以 `0` 補滿整段日期區間形成假資料。
 - 前端查圖資料需使用既有後端 API，不新增前端自行聚合 provider logs 的流程。
@@ -1392,7 +1392,7 @@ Base path：`/main/api/v1`
 65D. `GET /main/api/v1/api-keys` 的 `usage_summary.max_budget`、`usage_summary.tpm_limit`、`usage_summary.rpm_limit`、`usage_summary.max_parallel_requests` 必須回傳目前金鑰管理（limit strategy config）設定值，不得沿用個別 key 歷史申請當下的快照值；更新全域金鑰條件後，列表端點下一次讀取即需反映新值，不得等待 usage sync 排程。
 65E. `GET /main/api/v1/api-keys/usage-series` 僅允許 `granularity=day`，且需依 `Asia/Taipei` 日曆日回傳每日 token/spend 聚合；DB 內部 UTC bucket 與前端日期語意不得互相衝突。
 65F. `api_key_usage_snapshots` 需作為正式 daily usage 歷史來源；同一 `(api_key_id, bucket_granularity, bucket_start_utc)` 只允許一筆有效 bucket，rolling window 重抓時需覆寫既有 bucket，不得產生重複列。
-65G. `/usage` 頁需允許 `user` 與 `admin` 依 key + 日期區間查看每日使用量；初始日期區間預設為以 `Asia/Taipei` 計算的最近 `7` 個日曆日（含當日）且欄位不得為空，並需提供 `最近 7 日`、`最近 14 日`、`最近一個月` 快捷選日按鈕；主圖表指標為 `total_tokens`，tooltip 至少顯示 `prompt_tokens`、`completion_tokens`、`total_tokens`、`spend`，且無資料時需回空狀態而非偽造零值資料。
+65G. `/usage` 頁需允許 `user` 與 `admin` 依 key + 日期區間查看每日使用量；初始日期區間預設為以 `Asia/Taipei` 計算的最近 `7` 個日曆日（含當日）且欄位不得為空，並需提供 `最近 7 日`、`最近 14 日`、`最近一個月` 快捷選日按鈕；主圖表指標為 `total_tokens`，tooltip 至少顯示 `prompt_tokens`、`completion_tokens`、`total_tokens`，且無資料時需回空狀態而非偽造零值資料。
 65H. `/usage` 頁在日期區間超過 `31` 個日曆日時，X 軸仍需對齊完整日期區間且缺資料日不得補 `0`；主圖預設顯示 `31` 天視窗，並提供底部 slider 讓使用者以 `1..31` 天的範圍調整主圖區間，且調整後仍可左右平移瀏覽整段區間。
 65I. `/usage` 頁底部 slider 的開始/結束日期 label 在常見桌機與手機寬度下需完整可見，不得因 slider 寬度或端點對齊而被裁切。
 66. `GET /main/api/v1/operation-audit-logs` 與 `GET /main/api/v1/auth-audit-logs` 需支援欄位級 server-side sorting/filtering；若某欄位未支援後端 query contract，對應前端欄位必須禁用 filter 或 sort，不得回退成 local table 行為。

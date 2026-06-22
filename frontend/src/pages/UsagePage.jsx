@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Autocomplete, Box, Button, Card, CardContent, Slider, Stack, TextField, Typography } from "@mui/material";
+import { Autocomplete, Box, Button, Card, CardContent, Paper, Slider, Stack, TextField, Typography } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
+import { ChartsTooltipContainer, useAxesTooltip } from "@mui/x-charts/ChartsTooltip";
 import dayjs from "dayjs";
 import { useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
@@ -28,11 +29,6 @@ function buildTrailingDateRange(days) {
     from: today.subtract(safeDays - 1, "day").format("YYYY-MM-DD"),
     to: today.format("YYYY-MM-DD"),
   };
-}
-
-function formatSpend(value) {
-  if (value == null) return "-";
-  return `${Number(value).toFixed(2)} USD`;
 }
 
 function buildDateSeries(from, to) {
@@ -147,14 +143,43 @@ export function buildPanOverlayMetrics(currentWindow, totalDays) {
   };
 }
 
-export function formatUsageTooltip(item, t) {
-  if (!item?.hasData) return item?.bucket_label || "-";
+function formatTokenCount(value) {
+  return value == null ? "-" : String(value);
+}
+
+export function buildUsageTooltipRows(item, t) {
   return [
-    `${t("usage_tooltip_prompt_tokens")}: ${item.prompt_tokens}`,
-    `${t("usage_tooltip_completion_tokens")}: ${item.completion_tokens}`,
-    `${t("usage_tooltip_total_tokens")}: ${item.total_tokens}`,
-    `${t("usage_tooltip_spend")}: ${formatSpend(item.spend)}`,
-  ].join(" | ");
+    { label: t("usage_tooltip_prompt_tokens"), value: formatTokenCount(item?.hasData ? item.prompt_tokens : null) },
+    { label: t("usage_tooltip_completion_tokens"), value: formatTokenCount(item?.hasData ? item.completion_tokens : null) },
+    { label: t("usage_tooltip_total_tokens"), value: formatTokenCount(item?.hasData ? item.total_tokens : null) },
+  ];
+}
+
+function UsageChartTooltipContent({ chartDays, t }) {
+  const tooltipData = useAxesTooltip({ directions: ["x"] });
+
+  if (!tooltipData?.length) {
+    return null;
+  }
+
+  const hoveredAxis = tooltipData[0];
+  const item = chartDays[hoveredAxis.dataIndex] || null;
+  const rows = buildUsageTooltipRows(item, t);
+
+  return (
+    <Paper elevation={3} sx={{ px: 1.5, py: 1, minWidth: 220 }}>
+      <Stack spacing={0.75}>
+        <Typography variant="caption" color="text.secondary">
+          {hoveredAxis.axisFormattedValue}
+        </Typography>
+        {rows.map((row) => (
+          <Typography key={row.label} variant="body2">
+            {row.label}: {row.value}
+          </Typography>
+        ))}
+      </Stack>
+    </Paper>
+  );
 }
 
 export default function UsagePage({ auth }) {
@@ -318,11 +343,18 @@ export default function UsagePage({ auth }) {
     setIsPanning(false);
   }
 
+  function UsageChartTooltip(props) {
+    return (
+      <ChartsTooltipContainer {...props} trigger="axis">
+        <UsageChartTooltipContent chartDays={visibleChartDays} t={t} />
+      </ChartsTooltipContainer>
+    );
+  }
+
   return (
     <Stack spacing={2} sx={{ flex: 1, minHeight: 0 }}>
       <Stack spacing={0.5}>
         <Typography variant="h4">{t("usage_title")}</Typography>
-        <Typography color="text.secondary">{t("usage_subtitle")}</Typography>
       </Stack>
       <Card>
         <CardContent>
@@ -436,33 +468,40 @@ export default function UsagePage({ auth }) {
           ) : null}
           {!keysLoading && !keysError && keys.length > 0 && selectedKeyId && !seriesLoading && !seriesError && seriesItems.length > 0 ? (
             <Box sx={{ flex: 1, minHeight: 360 }}>
-              <BarChart
-                height={360}
-                xAxis={[
-                  {
-                    id: "usage-days",
-                    data: chartLabels,
-                    scaleType: "band",
-                    position: "bottom",
-                    tickLabelInterval: () => true,
-                    height: "auto",
-                    tickLabelStyle: {
-                      angle: -35,
-                      textAnchor: "end",
-                      fontSize: 12,
-                    },
-                  },
-                ]}
-                series={[
-                  {
-                    id: "total_tokens",
-                    label: t("usage_total_tokens_series"),
-                    data: chartValues,
-                    valueFormatter: (_, context) => formatUsageTooltip(visibleChartDays[context.dataIndex], t),
-                  },
-                ]}
-                margin={{ left: 80, right: 24, top: 24, bottom: 100 }}
-              />
+              <Stack spacing={3}>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    {t("usage_total_tokens_chart_title")}
+                  </Typography>
+                  <BarChart
+                    height={380}
+                    xAxis={[
+                      {
+                        id: "usage-days",
+                        data: chartLabels,
+                        scaleType: "band",
+                        position: "bottom",
+                        tickLabelInterval: () => true,
+                        height: "auto",
+                        tickLabelStyle: {
+                          angle: -35,
+                          textAnchor: "end",
+                          fontSize: 12,
+                        },
+                      },
+                    ]}
+                    series={[
+                      {
+                        id: "total_tokens",
+                        label: t("usage_total_tokens_series"),
+                        data: chartValues,
+                      },
+                    ]}
+                    slots={{ tooltip: UsageChartTooltip }}
+                    margin={{ left: 80, right: 24, top: 24, bottom: 100 }}
+                  />
+                </Box>
+              </Stack>
               {shouldShowWindowSlider ? (
                 <Stack spacing={1} sx={{ px: { xs: 2.5, md: 3 }, pb: 1, alignItems: "center" }}>
                   <Typography variant="caption" color="text.secondary">

@@ -9,12 +9,12 @@ import dayjs from "dayjs";
 import { apiClient } from "../api/client";
 import { LocaleProvider, useLocale } from "../i18n/locale";
 import UsagePage, {
+  buildUsageTooltipRows,
   buildPanOverlayMetrics,
   buildUsageChartDays,
   buildUsageWindow,
   clampVisibleWindow,
   defaultDateRange,
-  formatUsageTooltip,
   resolveVisibleWindowChange,
   shiftVisibleWindow,
 } from "../pages/UsagePage";
@@ -145,32 +145,39 @@ describe("UsagePage", () => {
     expect(await screen.findByText("此區間沒有使用量資料。")).toBeInTheDocument();
   });
 
-  test("formats tooltip details", () => {
+  test("builds tooltip rows without spend", () => {
     const t = (key) =>
       ({
         usage_tooltip_prompt_tokens: "Prompt Tokens",
         usage_tooltip_completion_tokens: "Completion Tokens",
         usage_tooltip_total_tokens: "Total Tokens",
-        usage_tooltip_spend: "Spend",
       })[key];
 
     expect(
-      formatUsageTooltip(
+      buildUsageTooltipRows(
         { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, spend: 1.25, hasData: true },
         t
       )
-    ).toBe("Prompt Tokens: 100 | Completion Tokens: 50 | Total Tokens: 150 | Spend: 1.25 USD");
+    ).toEqual([
+      { label: "Prompt Tokens", value: "100" },
+      { label: "Completion Tokens", value: "50" },
+      { label: "Total Tokens", value: "150" },
+    ]);
   });
 
-  test("formats tooltip for null bucket without fake zeros", () => {
+  test("builds placeholder tooltip rows for null bucket without fake zeros", () => {
     const t = (key) => key;
 
     expect(
-      formatUsageTooltip(
+      buildUsageTooltipRows(
         { bucket_label: "2026-05-02", prompt_tokens: null, completion_tokens: null, total_tokens: null, spend: null, hasData: false },
         t
       )
-    ).toBe("2026-05-02");
+    ).toEqual([
+      { label: "usage_tooltip_prompt_tokens", value: "-" },
+      { label: "usage_tooltip_completion_tokens", value: "-" },
+      { label: "usage_tooltip_total_tokens", value: "-" },
+    ]);
   });
 
   test("builds complete chart day sequence without zero-filling sparse usage rows", () => {
