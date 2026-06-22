@@ -5,6 +5,8 @@ from tests.api_keys_cases import (
     test_admin_proxy_application_target_account_not_unique,
     test_admin_proxy_application_validates_required_target_identity_fields,
     test_application_external_provider_requires_team_id,
+    test_application_not_live_blocks_user_submission,
+    test_application_not_live_does_not_block_admin_submission,
     test_application_provider_422_maps_to_validation_error,
     test_application_provider_timeout_returns_503,
     test_application_rejects_blank_purpose,

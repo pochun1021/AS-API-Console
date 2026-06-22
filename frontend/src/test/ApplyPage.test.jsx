@@ -3,9 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { vi } from "vitest";
 import { setApiProvider } from "../api/client";
 import { LocaleProvider, useLocale } from "../i18n/locale";
+import ApplyComingSoonPage from "../pages/ApplyComingSoonPage";
 import ApplyPage from "../pages/ApplyPage";
 
 const auth = {
@@ -27,11 +29,18 @@ function LocaleSetter({ locale }) {
   return null;
 }
 
-function renderPage(ui, { locale = "zh-TW" } = {}) {
+function renderPage(ui, { locale = "zh-TW", initialEntries = ["/apply"], routePath = "/apply", extraRoutes = [] } = {}) {
   return render(
     <LocaleProvider>
       <LocaleSetter locale={locale} />
-      <LocalizationProvider dateAdapter={AdapterDayjs}>{ui}</LocalizationProvider>
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <MemoryRouter initialEntries={initialEntries}>
+          <Routes>
+            <Route path={routePath} element={ui} />
+            {extraRoutes}
+          </Routes>
+        </MemoryRouter>
+      </LocalizationProvider>
     </LocaleProvider>
   );
 }
@@ -216,6 +225,65 @@ test("shows Chinese error message when API returns English message", async () =>
   await user.type(screen.getByLabelText("用途"), "integration test");
   await user.click(screen.getByRole("button", { name: "送出申請" }));
   expect(await screen.findByText("你目前不符合申請資格，無法申請 API Key。")).toBeInTheDocument();
+});
+
+test("redirects user to coming soon page when application is not live", async () => {
+  const user = userEvent.setup();
+  setApiProvider({
+    createApplication: vi.fn().mockRejectedValue({
+      payload: {
+        error: {
+          code: "APPLICATION_NOT_LIVE",
+          message: "application is not live yet",
+        },
+        go_live_at: "2026-06-30T00:00:00+08:00",
+      },
+    }),
+  });
+
+  renderPage(<ApplyPage auth={auth} />, {
+    extraRoutes: [<Route key="coming-soon" path="/apply/coming-soon" element={<ApplyComingSoonPage />} />],
+  });
+
+  await user.type(screen.getByLabelText("用途"), "integration test");
+  await user.click(screen.getByRole("button", { name: "送出申請" }));
+
+  expect(await screen.findByRole("heading", { name: "API Key 申請即將上線" })).toBeInTheDocument();
+  expect(screen.getByText("敬請期待")).toBeInTheDocument();
+});
+
+test("coming soon page redirects back to apply after go-live", async () => {
+  renderPage(<ApplyComingSoonPage />, {
+    initialEntries: [{ pathname: "/apply/coming-soon", state: { goLiveAt: "2000-01-01T00:00:00+08:00" } }],
+    routePath: "/apply/coming-soon",
+    extraRoutes: [<Route key="apply" path="/apply" element={<ApplyPage auth={auth} />} />],
+  });
+
+  expect(await screen.findByRole("heading", { name: "申請 API Key" })).toBeInTheDocument();
+});
+
+test("coming soon page shows animated countdown units", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-06-22T15:53:55+08:00"));
+
+  try {
+    renderPage(<ApplyComingSoonPage />, {
+      initialEntries: [{ pathname: "/apply/coming-soon", state: { goLiveAt: "2026-06-30T00:00:00+08:00" } }],
+      routePath: "/apply/coming-soon",
+    });
+
+    expect(screen.getByText("距離上線還剩")).toBeInTheDocument();
+    expect(screen.getByText("07")).toBeInTheDocument();
+    expect(screen.getByText("08")).toBeInTheDocument();
+    expect(screen.getByText("06")).toBeInTheDocument();
+    expect(screen.getByText("05")).toBeInTheDocument();
+    expect(screen.getByText("天")).toBeInTheDocument();
+    expect(screen.getByText("小時")).toBeInTheDocument();
+    expect(screen.getByText("分")).toBeInTheDocument();
+    expect(screen.getByText("秒")).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("shows actionable auth-context validation message", async () => {

@@ -356,6 +356,7 @@ class ApiKeysService:
         purpose: str,
         target_identity: dict | None = None,
     ) -> dict:
+        self._ensure_application_is_live_for_user(current_user)
         if application_date > date.today():
             raise ApiError("INVALID_APPLICATION_DATE", "application_date cannot be in the future", 422)
         if duration_days not in ALLOWED_DURATION_DAYS:
@@ -453,6 +454,24 @@ class ApiKeysService:
             "provider_request_id": provider_metadata.get("provider_request_id"),
             "provider_operation_id": provider_metadata.get("provider_operation_id"),
         }
+
+    def _resolve_api_key_application_go_live_at(self) -> datetime:
+        go_live_at = self.settings.api_key_application_go_live_at
+        if go_live_at.tzinfo is None:
+            return go_live_at.replace(tzinfo=TAIPEI_TZ)
+        return go_live_at.astimezone(TAIPEI_TZ)
+
+    def _ensure_application_is_live_for_user(self, current_user: CurrentUser) -> None:
+        if current_user.role == "admin":
+            return
+        go_live_at = self._resolve_api_key_application_go_live_at()
+        if datetime.now(TAIPEI_TZ) < go_live_at:
+            raise ApiError(
+                "APPLICATION_NOT_LIVE",
+                "application is not live yet",
+                403,
+                extra={"go_live_at": go_live_at.isoformat()},
+            )
 
     def _get_limit_strategy_values(self) -> IssuanceConfigValues:
         config = self._get_limit_strategy_config_for_issuance()

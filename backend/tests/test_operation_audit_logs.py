@@ -1,6 +1,7 @@
 import json
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select, text
@@ -71,6 +72,32 @@ def test_application_create_logs_success_and_failure(client, admin_headers, user
     assert failure_row.error_detail == "duration_days must be one of 30, 180, 360"
     failure_meta = json.loads(failure_row.metadata_json or "{}")
     assert failure_meta["duration_days"] == 2
+
+
+def test_application_create_logs_not_live_failure(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, int(user_headers["x-sysid"]))
+    get_settings.cache_clear()
+    settings = get_settings().model_copy(
+        update={"api_key_application_go_live_at": datetime(2099, 6, 30, 0, 0, tzinfo=ZoneInfo("Asia/Taipei"))}
+    )
+    monkeypatch.setattr("app.services.api_keys_service.get_settings", lambda: settings)
+
+    resp = client.post(
+        api_path("/api-keys/applications"),
+        headers={**user_headers, "x-request-id": "req-app-not-live"},
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "audit gate"},
+    )
+
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["error"]["code"] == "APPLICATION_NOT_LIVE"
+    assert body["go_live_at"] == "2099-06-30T00:00:00+08:00"
+
+    logs = _query_logs("api_key_application", "create")
+    target = next(row for row in logs if row.request_id == "req-app-not-live")
+    assert target.result == "failure"
+    assert target.error_code == "APPLICATION_NOT_LIVE"
+    assert target.error_detail == "application is not live yet"
 
 
 def test_revoke_logs_success_and_failure(client, admin_headers):

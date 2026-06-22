@@ -13,6 +13,7 @@ from sqlalchemy.pool import NullPool
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
+os.environ.setdefault("API_KEY_APPLICATION_GO_LIVE_AT", "2020-01-01T00:00:00+08:00")
 
 from tests.db_test_utils import configure_worker_test_database_env, ensure_worker_test_database, worker_id
 
@@ -143,6 +144,7 @@ def _format_test_db_diagnostics(diagnostics: dict[str, str | None]) -> str:
 def reset_test_environment(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
+    monkeypatch.setenv("API_KEY_APPLICATION_GO_LIVE_AT", "2020-01-01T00:00:00+08:00")
     monkeypatch.delenv("ALLOW_HEADER_AUTH", raising=False)
     get_settings.cache_clear()
     reset_session_state()

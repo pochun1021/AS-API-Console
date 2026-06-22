@@ -584,6 +584,7 @@ Base path：`/main/api/v1`
 - `POST /main/api/v1/api-keys/applications`
 - 前置條件：
   - 請求必須為已登入使用者（`account`、`name`、`email`、`department`、`sysid` 由 auth context 提供，並以 auth context 為準）
+  - 正式上線閘門：`user` 在 `2026-06-30 00:00 Asia/Taipei` 前送出申請時，必須回 `403 APPLICATION_NOT_LIVE`；`admin` 不受此限制
   - auth context 缺少任一必要欄位（`account`、`name`、`email`、`department`、`sysid`）時，回傳 `422 VALIDATION_ERROR`，且錯誤訊息需指出缺少欄位
   - `sysid` 必須為純數字且為正整數；若不合法，回傳 `422 VALIDATION_ERROR`，且錯誤訊息需指出格式問題
   - `user` 僅能以 auth context 申請本人；`admin` 可選擇代他人申請（透過 `target_identity`）
@@ -626,6 +627,18 @@ Base path：`/main/api/v1`
   }
 }
 ```
+- Response（403，尚未正式上線）：
+```json
+{
+  "error": {
+    "code": "APPLICATION_NOT_LIVE",
+    "message": "application is not live yet",
+    "details": "app.api.v1.api_keys:create_application"
+  },
+  "go_live_at": "2026-06-30T00:00:00+08:00"
+}
+```
+- 未上線閘門命中時，不得建立 `api_key_applications`、不得建立 `api_keys`、不得呼叫 provider。
 - Outbound（系統呼叫 provider `POST {PROVIDER_BASE_URL}/key/generate`）：
 ```json
 {
@@ -1391,6 +1404,7 @@ Base path：`/main/api/v1`
 65C. `GET /main/api/v1/api-keys` 缺少 usage snapshot 時，`usage_summary.synced_at` 需為 `null`，但前端仍需保留可開啟的 Usage popover。
 65D. `GET /main/api/v1/api-keys` 的 `usage_summary.max_budget`、`usage_summary.tpm_limit`、`usage_summary.rpm_limit`、`usage_summary.max_parallel_requests` 必須回傳目前金鑰管理（limit strategy config）設定值，不得沿用個別 key 歷史申請當下的快照值；更新全域金鑰條件後，列表端點下一次讀取即需反映新值，不得等待 usage sync 排程。
 65E. `GET /main/api/v1/api-keys/usage-series` 僅允許 `granularity=day`，且需依 `Asia/Taipei` 日曆日回傳每日 token/spend 聚合；DB 內部 UTC bucket 與前端日期語意不得互相衝突。
+65F. `POST /main/api/v1/api-keys/applications` 需實作正式上線閘門：`user` 在 `2026-06-30 00:00 Asia/Taipei` 前送出時回 `403 APPLICATION_NOT_LIVE` 並附 `go_live_at`；`admin` 維持可申請/代申請；閘門命中時不得建立任何申請或 key 資料，也不得呼叫 provider。
 65F. `api_key_usage_snapshots` 需作為正式 daily usage 歷史來源；同一 `(api_key_id, bucket_granularity, bucket_start_utc)` 只允許一筆有效 bucket，rolling window 重抓時需覆寫既有 bucket，不得產生重複列。
 65G. `/usage` 頁需允許 `user` 與 `admin` 依 key + 日期區間查看每日使用量；初始日期區間預設為以 `Asia/Taipei` 計算的最近 `7` 個日曆日（含當日）且欄位不得為空，並需提供 `最近 7 日`、`最近 14 日`、`最近一個月` 快捷選日按鈕；主圖表指標為 `total_tokens`，tooltip 至少顯示 `prompt_tokens`、`completion_tokens`、`total_tokens`，且無資料時需回空狀態而非偽造零值資料。
 65H. `/usage` 頁在日期區間超過 `31` 個日曆日時，X 軸仍需對齊完整日期區間且缺資料日不得補 `0`；主圖預設顯示 `31` 天視窗，並提供底部 slider 讓使用者以 `1..31` 天的範圍調整主圖區間，且調整後仍可左右平移瀏覽整段區間。

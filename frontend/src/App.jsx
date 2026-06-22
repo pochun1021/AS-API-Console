@@ -8,6 +8,7 @@ import { detectSystemLocale, useLocale } from "./i18n/locale";
 import { redirectToLogin } from "./utils/navigation";
 
 const ApplyPage = lazy(() => import("./pages/ApplyPage"));
+const ApplyComingSoonPage = lazy(() => import("./pages/ApplyComingSoonPage"));
 const LoginDeniedPage = lazy(() => import("./pages/LoginDeniedPage"));
 const LoginErrorPage = lazy(() => import("./pages/LoginErrorPage"));
 const MyApiKeysPage = lazy(() => import("./pages/MyApiKeysPage"));
@@ -156,6 +157,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/announcements" replace />} />
           <Route path="/apply" element={<ApplyPage auth={auth} />} />
+          <Route path="/apply/coming-soon" element={<ApplyComingSoonPage />} />
           <Route path="/api-keys" element={<MyApiKeysPage auth={auth} />} />
           <Route path="/usage" element={<UsagePage auth={auth} />} />
           <Route path="/usage-examples" element={<ModelsPage auth={auth} />} />

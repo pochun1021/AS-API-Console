@@ -1,6 +1,8 @@
+from datetime import datetime
 from functools import lru_cache
 import os
 from urllib.parse import quote_plus, urlsplit
+from zoneinfo import ZoneInfo
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -93,6 +95,7 @@ class Settings(BaseSettings):
     reveal_rate_limit: str = "5/hour"
     admin_mutation_rate_limit: str = "20/hour"
     scheduler_log_root: str = "/home/app/log"
+    api_key_application_go_live_at: datetime = datetime(2026, 6, 30, 0, 0, tzinfo=ZoneInfo("Asia/Taipei"))
 
     @field_validator("provider_base_url")
     @classmethod
@@ -127,6 +130,13 @@ class Settings(BaseSettings):
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("configured URL must be a valid http(s) URL")
         return normalized
+
+    @field_validator("api_key_application_go_live_at")
+    @classmethod
+    def validate_api_key_application_go_live_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("API_KEY_APPLICATION_GO_LIVE_AT must include timezone information")
+        return value
 
     @property
     def header_auth_enabled(self) -> bool:

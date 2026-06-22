@@ -26,8 +26,10 @@ import {
 } from "@mui/material";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
+import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { useLocale } from "../i18n/locale";
+import { API_KEY_APPLICATION_GO_LIVE_AT } from "../utils/apiKeyGoLive";
 import { useDepartmentDisplay } from "../utils/departmentDisplay";
 import { validatePersistedText } from "../utils/inputValidation";
 
@@ -121,6 +123,7 @@ function handlePersistentDialogClose(reason, closeDialog) {
 }
 
 export default function ApplyPage({ auth }) {
+  const navigate = useNavigate();
   const { locale, t } = useLocale();
   const isZh = locale === "zh-TW";
   const { formatDepartment } = useDepartmentDisplay(auth);
@@ -256,6 +259,17 @@ export default function ApplyPage({ auth }) {
       setCopySucceeded(false);
       setCopyError("");
     } catch (e) {
+      if (e?.payload?.error?.code === "APPLICATION_NOT_LIVE" && auth.role !== "admin") {
+        navigate("/apply/coming-soon", {
+          replace: true,
+          state: {
+            goLiveAt: typeof e?.payload?.go_live_at === "string"
+              ? e.payload.go_live_at
+              : API_KEY_APPLICATION_GO_LIVE_AT,
+          },
+        });
+        return;
+      }
       setError(toErrorMessage(e, t));
     } finally {
       setSubmitting(false);

@@ -134,6 +134,48 @@ def test_application_success_and_no_plaintext_in_queries(client, admin_headers, 
     _assert_utc_datetime_string(item["expires_at"])
 
 
+def test_application_not_live_blocks_user_submission(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    get_settings.cache_clear()
+    settings = get_settings().model_copy(
+        update={"api_key_application_go_live_at": datetime(2099, 6, 30, 0, 0, tzinfo=ZoneInfo("Asia/Taipei"))}
+    )
+    monkeypatch.setattr("app.services.api_keys_service.get_settings", lambda: settings)
+
+    resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "not live gate"},
+    )
+
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["error"]["code"] == "APPLICATION_NOT_LIVE"
+    assert body["error"]["message"] == "application is not live yet"
+    assert body["go_live_at"] == "2099-06-30T00:00:00+08:00"
+    list_resp = client.get(_api("/api-keys"), headers=user_headers)
+    assert list_resp.status_code == 200
+    assert list_resp.json()["items"] == []
+
+
+def test_application_not_live_does_not_block_admin_submission(client, admin_headers, monkeypatch):
+    get_settings.cache_clear()
+    settings = get_settings().model_copy(
+        update={"api_key_application_go_live_at": datetime(2099, 6, 30, 0, 0, tzinfo=ZoneInfo("Asia/Taipei"))}
+    )
+    monkeypatch.setattr("app.services.api_keys_service.get_settings", lambda: settings)
+
+    resp = client.post(
+        _api("/api-keys/applications"),
+        headers=admin_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "admin still allowed"},
+    )
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["application"]["account"] == admin_headers["x-account"]
+
+
 def test_list_api_keys_returns_usage_summary(client, admin_headers, user_headers):
     _create_whitelist(client, admin_headers, user_headers["x-sysid"])
 
