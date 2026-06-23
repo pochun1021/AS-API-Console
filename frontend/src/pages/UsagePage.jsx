@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Autocomplete, Box, Button, Card, CardContent, Paper, Slider, Stack, TextField, Typography } from "@mui/material";
+import { Autocomplete, Box, Button, Card, CardContent, Divider, Paper, Slider, Stack, TextField, Typography } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { ChartsTooltipContainer, useAxesTooltip } from "@mui/x-charts/ChartsTooltip";
 import dayjs from "dayjs";
@@ -144,7 +144,8 @@ export function buildPanOverlayMetrics(currentWindow, totalDays) {
 }
 
 function formatTokenCount(value) {
-  return value == null ? "-" : String(value);
+  if (value == null) return "-";
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
 }
 
 export function buildUsageTooltipRows(item, t) {
@@ -193,6 +194,9 @@ export default function UsagePage({ auth }) {
   const [seriesItems, setSeriesItems] = useState([]);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [seriesError, setSeriesError] = useState("");
+  const [usageTotal, setUsageTotal] = useState(null);
+  const [usageTotalLoading, setUsageTotalLoading] = useState(false);
+  const [usageTotalError, setUsageTotalError] = useState("");
   const [visibleWindow, setVisibleWindow] = useState([0, 0]);
   const sliderRootRef = useRef(null);
   const panHandleRef = useRef(null);
@@ -244,6 +248,20 @@ export default function UsagePage({ auth }) {
     }
   }
 
+  async function loadUsageTotal() {
+    setUsageTotalLoading(true);
+    setUsageTotalError("");
+    try {
+      const response = await apiClient.getApiKeyUsageTotal(auth);
+      setUsageTotal(response);
+    } catch (error) {
+      setUsageTotal(null);
+      setUsageTotalError(normalizeApiError(error, t("usage_total_load_failed")));
+    } finally {
+      setUsageTotalLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadKeys();
   }, []);
@@ -258,8 +276,10 @@ export default function UsagePage({ auth }) {
     if (!selectedKeyId) {
       setSeriesItems([]);
       setSeriesError("");
+      loadUsageTotal();
       return;
     }
+    setUsageTotalError("");
     loadSeries(selectedKeyId);
   }, [selectedKeyId, dateRange.from, dateRange.to]);
 
@@ -285,6 +305,14 @@ export default function UsagePage({ auth }) {
   const selectedKey = useMemo(
     () => keys.find((item) => item.id === selectedKeyId) || null,
     [keys, selectedKeyId]
+  );
+  const totalSummaryRows = useMemo(
+    () => [
+      { label: t("usage_total_prompt_tokens_label"), value: formatTokenCount(usageTotal?.prompt_tokens ?? 0) },
+      { label: t("usage_total_completion_tokens_label"), value: formatTokenCount(usageTotal?.completion_tokens ?? 0) },
+      { label: t("usage_total_key_count_label"), value: formatTokenCount(usageTotal?.key_count ?? 0) },
+    ],
+    [t, usageTotal]
   );
   const usageQuickRanges = useMemo(
     () => [
@@ -359,7 +387,7 @@ export default function UsagePage({ auth }) {
       <Card>
         <CardContent>
           <Stack direction={{ xs: "column", lg: "row" }} spacing={2} alignItems={{ xs: "stretch", lg: "center" }}>
-            <Autocomplete
+          <Autocomplete
               options={keys}
               value={selectedKey}
               onChange={(_, nextValue) => setSelectedKeyId(nextValue?.id || "")}
@@ -424,27 +452,31 @@ export default function UsagePage({ auth }) {
                 />
               )}
             />
-            <DateRangeFilterField
-              label={t("usage_date_range")}
-              fromValue={dateRange.from}
-              toValue={dateRange.to}
-              onChange={(next) => setDateRange(next)}
-              startLabel={t("usage_date_from")}
-              endLabel={t("usage_date_to")}
-              clearLabel={t("common_clear")}
-              closeLabel={t("common_close")}
-              minWidth={280}
-              quickRanges={usageQuickRanges}
-            />
-            <Box sx={{ display: "flex", justifyContent: { xs: "flex-start", lg: "flex-end" }, flex: 1 }}>
-              <Button
-                variant="contained"
-                onClick={() => loadSeries()}
-                disabled={!selectedKeyId || seriesLoading || keysLoading}
-              >
-                {t("usage_refresh")}
-              </Button>
-            </Box>
+            {selectedKeyId ? (
+              <>
+                <DateRangeFilterField
+                  label={t("usage_date_range")}
+                  fromValue={dateRange.from}
+                  toValue={dateRange.to}
+                  onChange={(next) => setDateRange(next)}
+                  startLabel={t("usage_date_from")}
+                  endLabel={t("usage_date_to")}
+                  clearLabel={t("common_clear")}
+                  closeLabel={t("common_close")}
+                  minWidth={280}
+                  quickRanges={usageQuickRanges}
+                />
+                <Box sx={{ display: "flex", justifyContent: { xs: "flex-start", lg: "flex-end" }, flex: 1 }}>
+                  <Button
+                    variant="contained"
+                    onClick={() => loadSeries()}
+                    disabled={!selectedKeyId || seriesLoading || keysLoading}
+                  >
+                    {t("usage_refresh")}
+                  </Button>
+                </Box>
+              </>
+            ) : null}
           </Stack>
         </CardContent>
       </Card>
@@ -454,8 +486,40 @@ export default function UsagePage({ auth }) {
           {keysLoading ? <LoadingBlock text={t("usage_loading_keys")} /> : null}
           {!keysLoading && keysError ? <ErrorBlock message={keysError} onRetry={loadKeys} /> : null}
           {!keysLoading && !keysError && keys.length === 0 ? <EmptyBlock text={t("usage_empty_keys")} /> : null}
-          {!keysLoading && !keysError && keys.length > 0 && !selectedKeyId ? (
-            <EmptyBlock text={t("usage_select_key_hint")} />
+          {!keysLoading && !keysError && keys.length > 0 && !selectedKeyId && usageTotalLoading ? (
+            <LoadingBlock text={t("usage_loading_total")} />
+          ) : null}
+          {!keysLoading && !keysError && keys.length > 0 && !selectedKeyId && !usageTotalLoading && usageTotalError ? (
+            <ErrorBlock message={usageTotalError} onRetry={loadUsageTotal} />
+          ) : null}
+          {!keysLoading && !keysError && keys.length > 0 && !selectedKeyId && !usageTotalLoading && !usageTotalError ? (
+            <Card variant="outlined">
+              <CardContent>
+                <Stack spacing={2}>
+                  <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
+                    <Typography variant="h6">{t("usage_total_card_title")}</Typography>
+                    <Button variant="outlined" onClick={loadUsageTotal} disabled={usageTotalLoading || keysLoading}>
+                      {t("usage_refresh_total")}
+                    </Button>
+                  </Stack>
+                  <Typography variant="body1" color="text.secondary">
+                    {t("usage_total_tokens_label")}
+                  </Typography>
+                  <Typography variant="h3">{formatTokenCount(usageTotal?.total_tokens ?? 0)}</Typography>
+                  <Divider />
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap flexWrap="wrap">
+                    {totalSummaryRows.map((row) => (
+                      <Box key={row.label} sx={{ minWidth: 160 }}>
+                        <Typography variant="body1" color="text.secondary">
+                          {row.label}
+                        </Typography>
+                        <Typography variant="body1">{row.value}</Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Stack>
+              </CardContent>
+            </Card>
           ) : null}
           {!keysLoading && !keysError && keys.length > 0 && selectedKeyId && seriesLoading ? (
             <LoadingBlock text={t("usage_loading_series")} />
@@ -471,7 +535,7 @@ export default function UsagePage({ auth }) {
               <Stack spacing={3}>
                 <Box>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    {t("usage_total_tokens_chart_title")}
+                    {t("usage_chart_key_title")}
                   </Typography>
                   <BarChart
                     height={380}

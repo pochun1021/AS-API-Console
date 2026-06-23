@@ -120,6 +120,10 @@ export const httpApiProvider = {
     return request(`${apiPath("/api-keys/usage-series")}?${query.toString()}`, { auth });
   },
 
+  getApiKeyUsageTotal(auth) {
+    return request(apiPath("/api-keys/usage-total"), { auth });
+  },
+
   getApiKeyById(id, auth) {
     return request(apiPath(`/api-keys/${id}`), { auth }).then((item) => ({ item }));
   },

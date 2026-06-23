@@ -69,6 +69,13 @@ describe("UsagePage", () => {
         { id: "key_2", key_alias: "shared_alias", masked_key: "AS-...9999" }
       ]
     });
+    vi.spyOn(apiClient, "getApiKeyUsageTotal").mockResolvedValue({
+      scope: "all_visible_keys",
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      key_count: 0,
+    });
     const listSeriesSpy = vi.spyOn(apiClient, "listApiKeyUsageSeries").mockResolvedValue({
       items: [
         {
@@ -89,31 +96,51 @@ describe("UsagePage", () => {
     await user.type(screen.getByRole("combobox", { name: "API Key" }), "shared");
     await clickOptionByAlias("shared_alias");
     await waitFor(() => expect(listSeriesSpy).toHaveBeenCalled());
-    expect(await screen.findByText("每日 total_tokens")).toBeInTheDocument();
+    expect(await screen.findByText("單一 API Key 每日使用量")).toBeInTheDocument();
     expect(container.querySelectorAll(".MuiChartsAxis-tickLabel").length).toBeGreaterThan(0);
     expect(screen.queryAllByRole("slider")).toHaveLength(0);
   });
 
   test("uses a non-empty local default date range on first render", async () => {
-    const listKeysSpy = vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({ items: [] });
+    vi.spyOn(apiClient, "getApiKeyUsageTotal").mockResolvedValue({
+      scope: "all_visible_keys",
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      key_count: 0,
+    });
+    const listKeysSpy = vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({
+      items: [{ id: "key_1", key_alias: "for_jane.doe", masked_key: "AS-...1234" }]
+    });
+    vi.spyOn(apiClient, "listApiKeyUsageSeries").mockResolvedValue({ items: [] });
 
-    renderPage(<UsagePage auth={auth} />);
+    renderPage(<UsagePage auth={auth} />, { initialEntries: ["/usage?key_id=key_1"] });
 
     const expectedRange = defaultDateRange();
     expect(expectedRange.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(expectedRange.to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(dayjs(expectedRange.to).diff(dayjs(expectedRange.from), "day")).toBe(6);
-    expect(screen.getByLabelText("日期區間")).toHaveValue(`${expectedRange.from} - ${expectedRange.to}`);
     await waitFor(() => expect(listKeysSpy).toHaveBeenCalled());
+    expect(await screen.findByLabelText("日期區間")).toHaveValue(`${expectedRange.from} - ${expectedRange.to}`);
   });
 
   test("shows usage quick range shortcuts and applies the selected range", async () => {
-    vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({ items: [] });
+    vi.spyOn(apiClient, "getApiKeyUsageTotal").mockResolvedValue({
+      scope: "all_visible_keys",
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      key_count: 0,
+    });
+    vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({
+      items: [{ id: "key_1", key_alias: "for_jane.doe", masked_key: "AS-...1234" }]
+    });
+    vi.spyOn(apiClient, "listApiKeyUsageSeries").mockResolvedValue({ items: [] });
     const user = userEvent.setup();
 
-    renderPage(<UsagePage auth={auth} />);
+    renderPage(<UsagePage auth={auth} />, { initialEntries: ["/usage?key_id=key_1"] });
 
-    await user.click(screen.getByLabelText("日期區間"));
+    await user.click(await screen.findByLabelText("日期區間"));
     expect(await screen.findByRole("button", { name: "最近7日" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "最近14日" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "最近一個月" })).toBeInTheDocument();
@@ -125,6 +152,13 @@ describe("UsagePage", () => {
   });
 
   test("shows error and retry flow for usage series", async () => {
+    vi.spyOn(apiClient, "getApiKeyUsageTotal").mockResolvedValue({
+      scope: "all_visible_keys",
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      key_count: 0,
+    });
     vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({
       items: [{ id: "key_1", key_alias: "for_jane.doe", masked_key: "AS-...1234" }]
     });
@@ -239,6 +273,13 @@ describe("UsagePage", () => {
   });
 
   test("filters api key options by typed keyword", async () => {
+    vi.spyOn(apiClient, "getApiKeyUsageTotal").mockResolvedValue({
+      scope: "all_visible_keys",
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      key_count: 0,
+    });
     vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({
       items: [
         { id: "key_1", key_alias: "for_jane.doe", masked_key: "AS-...1234" },
@@ -258,6 +299,13 @@ describe("UsagePage", () => {
   });
 
   test("preselects key from query string and auto-loads series", async () => {
+    vi.spyOn(apiClient, "getApiKeyUsageTotal").mockResolvedValue({
+      scope: "all_visible_keys",
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      key_count: 0,
+    });
     const listKeysSpy = vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({
       items: [
         { id: "key_1", key_alias: "for_jane.doe", masked_key: "AS-...1234" },
@@ -285,5 +333,24 @@ describe("UsagePage", () => {
       auth
     ));
     expect(await screen.findByDisplayValue("shared_alias (AS-...9999)")).toBeInTheDocument();
+  });
+
+  test("loads aggregate usage card by default when no key is selected", async () => {
+    vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({
+      items: [{ id: "key_1", key_alias: "for_jane.doe", masked_key: "AS-...1234" }]
+    });
+    const totalSpy = vi.spyOn(apiClient, "getApiKeyUsageTotal").mockResolvedValue({
+      scope: "all_visible_keys",
+      prompt_tokens: 120,
+      completion_tokens: 30,
+      total_tokens: 150,
+      key_count: 1,
+    });
+
+    renderPage(<UsagePage auth={auth} />);
+
+    await waitFor(() => expect(totalSpy).toHaveBeenCalledWith(auth));
+    expect(await screen.findByText("全部 API Keys 累計使用量")).toBeInTheDocument();
+    expect(screen.getByText("150")).toBeInTheDocument();
   });
 });

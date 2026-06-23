@@ -78,6 +78,14 @@ class ApiKeyUsageSeriesItem:
 
 
 @dataclass(slots=True)
+class ApiKeyUsageTotal:
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    key_count: int
+
+
+@dataclass(slots=True)
 class ApiKeyUsageBucketItem:
     api_key_id: str
     bucket_start_utc: datetime

@@ -972,6 +972,19 @@ class ApiKeysService:
             ],
         }
 
+    def get_usage_total(self, *, current_user: CurrentUser) -> dict:
+        totals = self.key_repo.get_usage_total(
+            requester_role=current_user.role,
+            requester_account=current_user.account,
+        )
+        return {
+            "scope": "all_visible_keys",
+            "prompt_tokens": totals.prompt_tokens,
+            "completion_tokens": totals.completion_tokens,
+            "total_tokens": totals.total_tokens,
+            "key_count": totals.key_count,
+        }
+
     def get_key_detail(self, current_user: CurrentUser, key_id: str) -> dict:
         detail = self.key_repo.get_key_detail(key_id, "admin", current_user.account)
         if detail is None:

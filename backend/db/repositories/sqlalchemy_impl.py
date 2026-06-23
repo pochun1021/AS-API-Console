@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Select, and_, case, func, literal, select
+from sqlalchemy import Select, and_, case, distinct, func, literal, select
 from sqlalchemy.orm import Session, aliased
 
 from db.models.api_key_usage_snapshots import ApiKeyUsageSnapshot
@@ -26,6 +26,7 @@ from db.repositories.types import (
     ApiKeySecretMaterial,
     ApiKeyUsageBucketItem,
     ApiKeyUsageSeriesItem,
+    ApiKeyUsageTotal,
     ApiKeyUserStatisticsFilter,
     ApiKeyUserStatisticsItem,
     ApplicationCreateInput,
@@ -652,6 +653,34 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             for row in rows
             if row.bucket_start_utc is not None and row.bucket_end_utc is not None
         ]
+
+    def get_usage_total(
+        self,
+        *,
+        requester_role: str,
+        requester_account: str,
+    ) -> ApiKeyUsageTotal:
+        stmt = (
+            select(
+                func.coalesce(func.sum(ApiKeyUsageSnapshot.prompt_tokens), 0),
+                func.coalesce(func.sum(ApiKeyUsageSnapshot.completion_tokens), 0),
+                func.coalesce(func.sum(ApiKeyUsageSnapshot.total_tokens), 0),
+                func.count(distinct(ApiKeyUsageSnapshot.api_key_id)),
+            )
+            .select_from(ApiKeyUsageSnapshot)
+            .join(ApiKey, ApiKey.id == ApiKeyUsageSnapshot.api_key_id)
+            .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
+        )
+        if requester_role == "user":
+            stmt = stmt.where(ApiKeyApplication.account == requester_account)
+            stmt = stmt.where(ApiKey.renewed_to_key_id.is_(None))
+        row = self.session.execute(stmt).one()
+        return ApiKeyUsageTotal(
+            prompt_tokens=int(row[0] or 0),
+            completion_tokens=int(row[1] or 0),
+            total_tokens=int(row[2] or 0),
+            key_count=int(row[3] or 0),
+        )
 
     def get_key_detail(self, key_id: str, requester_role: str, requester_account: str) -> ApiKeyDetail | None:
         now_utc = datetime.now(timezone.utc)

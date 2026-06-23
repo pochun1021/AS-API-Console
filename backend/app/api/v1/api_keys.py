@@ -15,6 +15,7 @@ from app.schemas.api_keys import (
     ApiKeyListResponse,
     ApiKeyRevealResponse,
     ApiKeyUsageSeriesResponse,
+    ApiKeyUsageTotalResponse,
     ApiKeyUserStatisticsResponse,
     LimitStrategyConfigResponse,
     LimitStrategyConfigUpdateRequest,
@@ -184,6 +185,15 @@ def list_api_key_usage_series(
         from_date=from_date,
         to_date=to_date,
     )
+
+
+@router.get("/api-keys/usage-total", response_model=ApiKeyUsageTotalResponse)
+def get_api_key_usage_total(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    service = ApiKeysService(db)
+    return service.get_usage_total(current_user=current_user)
 
 
 @router.get("/api-keys/statistics/users", response_model=ApiKeyUserStatisticsResponse)

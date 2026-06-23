@@ -572,6 +572,94 @@ def test_usage_series_rejects_invalid_query_and_permissions(client, admin_header
     assert invalid_window.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+def test_usage_total_returns_aggregate_for_visible_keys(client, admin_headers, user_headers):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    _create_whitelist(client, admin_headers, "3001")
+    client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "mine-a"},
+    )
+    client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "mine-b"},
+    )
+    other_headers = build_headers(
+        role="user",
+        account="other.user",
+        name="Other User",
+        email="other@example.com",
+        sysid="3001",
+    )
+    client.post(
+        _api("/api-keys/applications"),
+        headers=other_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "other"},
+    )
+    items = client.get(_api("/api-keys"), headers=admin_headers).json()["items"]
+    own_ids = [item["id"] for item in items if item["owner_account"] == user_headers["x-account"]]
+    other_id = next(item["id"] for item in items if item["owner_account"] == "other.user")
+
+    synced_at = datetime(2026, 6, 2, 2, 0, 0, tzinfo=UTC)
+    _insert_key_usage_snapshot_history(
+        own_ids[0],
+        spend="1.25",
+        budget_reset_at=synced_at + timedelta(days=7),
+        synced_at=synced_at,
+        bucket_granularity="day",
+        bucket_start_utc=datetime(2026, 5, 31, 16, 0, 0, tzinfo=UTC),
+        bucket_end_utc=datetime(2026, 6, 1, 16, 0, 0, tzinfo=UTC),
+        prompt_tokens=100,
+        completion_tokens=50,
+        total_tokens=150,
+    )
+    _insert_key_usage_snapshot_history(
+        own_ids[1],
+        spend="2.50",
+        budget_reset_at=synced_at + timedelta(days=7),
+        synced_at=synced_at,
+        bucket_granularity="day",
+        bucket_start_utc=datetime(2026, 6, 1, 16, 0, 0, tzinfo=UTC),
+        bucket_end_utc=datetime(2026, 6, 2, 16, 0, 0, tzinfo=UTC),
+        prompt_tokens=200,
+        completion_tokens=100,
+        total_tokens=300,
+    )
+    _insert_key_usage_snapshot_history(
+        other_id,
+        spend="3.75",
+        budget_reset_at=synced_at + timedelta(days=7),
+        synced_at=synced_at,
+        bucket_granularity="day",
+        bucket_start_utc=datetime(2026, 6, 2, 16, 0, 0, tzinfo=UTC),
+        bucket_end_utc=datetime(2026, 6, 3, 16, 0, 0, tzinfo=UTC),
+        prompt_tokens=400,
+        completion_tokens=200,
+        total_tokens=600,
+    )
+
+    user_resp = client.get(_api("/api-keys/usage-total"), headers=user_headers)
+    assert user_resp.status_code == 200
+    assert user_resp.json() == {
+        "scope": "all_visible_keys",
+        "prompt_tokens": 300,
+        "completion_tokens": 150,
+        "total_tokens": 450,
+        "key_count": 2,
+    }
+
+    admin_resp = client.get(_api("/api-keys/usage-total"), headers=admin_headers)
+    assert admin_resp.status_code == 200
+    assert admin_resp.json() == {
+        "scope": "all_visible_keys",
+        "prompt_tokens": 700,
+        "completion_tokens": 350,
+        "total_tokens": 1050,
+        "key_count": 3,
+    }
+
+
 def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(
     client, admin_headers, user_headers
 ):

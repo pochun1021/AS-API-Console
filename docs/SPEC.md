@@ -186,22 +186,27 @@
 ### 3-1) Usage Page（API Key 使用量頁）
 - 正式路由為 `/usage`。
 - `user` 與 `admin` 都可使用。
-- 進頁後需先選擇一把 API Key，才可載入使用量圖表。
+- 進頁後若未選擇 API Key，頁面預設顯示「全部可見 API Keys」的歷史累計使用量摘要，不限時間區段。
+- 「全部可見 API Keys」權限口徑：
+  - `user`：僅聚合本人全部 keys 的歷史 usage
+  - `admin`：可聚合系統內全部可見 keys 的歷史 usage
+- 未選 key 的全部模式不顯示每日圖表；改以 summary card 顯示至少 `total_tokens`，並同步顯示 `prompt_tokens`、`completion_tokens`。
 - `user` 僅可從自己的 keys 中選擇；`admin` 可選擇任意 key。
-- 頁面需提供可自訂的日期區間查詢，查詢口徑以 `Asia/Taipei` 的日曆日為準。
-- 進入 `/usage` 頁時，日期區間預設為以 `Asia/Taipei` 計算的最近 `7` 個日曆日（含當日），日期欄位不得顯示為空。
-- 日期區間 picker 需提供快捷選日按鈕：`最近 7 日`、`最近 14 日`、`最近一個月`，點擊後需立即套用對應區間。
-- 第一版圖表僅支援 `day` 粒度，不提供小時圖或其他 bucket 粒度切換。
-- 主圖表指標固定為 `total_tokens` 的每日趨勢。
-- 圖表 X 軸需對齊查詢日期區間的完整日曆日；前端可將缺資料日期補為 `null` bucket 以維持日期連續性，但不得補成 `0` 形成假用量。
-- 當查詢區間超過 `31` 個日曆日時，主圖預設僅顯示自 `from` 起算的前 `31` 天視窗，並提供底部日期區間 slider；slider 視窗最大為 `31` 天、最小為 `1` 天，使用者可縮小顯示區間，且縮小後仍可整段左右平移瀏覽整個查詢範圍。
-- slider 互動需區分：拖曳 `start/end` thumb 用於調整開始/結束日期；拖曳中間已選取區塊（track）則以目前區間長度整段平移。
-- slider 兩端的開始/結束日期 label 需完整可見，不得被卡片或畫面邊界裁切。
-- 每個資料點的 tooltip 至少需顯示：`prompt_tokens`、`completion_tokens`、`total_tokens`。
+- 選定單一 API Key 後，頁面切換為日期區間歷史查詢模式。
+- 單 key 模式需提供可自訂的日期區間查詢，查詢口徑以 `Asia/Taipei` 的日曆日為準。
+- 進入 `/usage` 頁時，單 key 模式的日期區間預設為以 `Asia/Taipei` 計算的最近 `7` 個日曆日（含當日），日期欄位不得顯示為空。
+- 單 key 模式的日期區間 picker 需提供快捷選日按鈕：`最近 7 日`、`最近 14 日`、`最近一個月`，點擊後需立即套用對應區間。
+- 第一版單 key 圖表僅支援 `day` 粒度，不提供小時圖或其他 bucket 粒度切換。
+- 單 key 模式主圖表指標固定為 `total_tokens` 的每日趨勢。
+- 單 key 模式圖表 X 軸需對齊查詢日期區間的完整日曆日；前端可將缺資料日期補為 `null` bucket 以維持日期連續性，但不得補成 `0` 形成假用量。
+- 當單 key 查詢區間超過 `31` 個日曆日時，主圖預設僅顯示自 `from` 起算的前 `31` 天視窗，並提供底部日期區間 slider；slider 視窗最大為 `31` 天、最小為 `1` 天，使用者可縮小顯示區間，且縮小後仍可整段左右平移瀏覽整個查詢範圍。
+- 單 key 模式 slider 互動需區分：拖曳 `start/end` thumb 用於調整開始/結束日期；拖曳中間已選取區塊（track）則以目前區間長度整段平移。
+- 單 key 模式 slider 兩端的開始/結束日期 label 需完整可見，不得被卡片或畫面邊界裁切。
+- 單 key 模式每個資料點的 tooltip 至少需顯示：`prompt_tokens`、`completion_tokens`、`total_tokens`。
 - 頁面需提供 Loading、Empty、Error（含 Retry）狀態。
-- 若查詢區間內無資料，需顯示空狀態，不得以 `0` 補滿整段日期區間形成假資料。
-- 前端查圖資料需使用既有後端 API，不新增前端自行聚合 provider logs 的流程。
-- `/usage` 圖表屬於日期區間歷史查詢，不因 `usage_summary` 的 reset 週期口徑而自動裁切或隱藏重置前日 bucket。
+- 單 key 模式若查詢區間內無資料，需顯示空狀態，不得以 `0` 補滿整段日期區間形成假資料。
+- 前端查圖與全部模式總量資料皆需使用既有後端 API，不新增前端自行聚合 provider logs 的流程。
+- 單 key 模式 `/usage` 圖表屬於日期區間歷史查詢，不因 `usage_summary` 的 reset 週期口徑而自動裁切或隱藏重置前日 bucket。
 
 ### 4) API Key Detail Dialog（詳情視窗）
 - 顯示完整申請資訊與狀態。
@@ -810,6 +815,25 @@ Base path：`/main/api/v1`
   - `403 FORBIDDEN` / `KEY_NOT_OWNED_BY_USER`：使用者不可查他人 key
   - `404 VALIDATION_ERROR`：key 不存在
   - `422 VALIDATION_ERROR`：查詢參數不合法
+
+### 2-1-1) 查詢全部可見 API Keys 歷史累計使用量
+- `GET /main/api/v1/api-keys/usage-total`
+- 規則：`user` 僅可聚合本人全部 keys；`admin` 可聚合全部可見 keys；不得回傳明文 key。
+- Query：第一版不提供日期區間或粒度查詢參數。
+- 聚合來源：僅使用本地 `api_key_usage_snapshots` 的歷史 bucket；不得即時呼叫 provider。
+- 聚合口徑：加總全部可見 keys 的全部歷史 bucket，回傳累計 `prompt_tokens`、`completion_tokens`、`total_tokens`。
+- 第一版回應不需回傳 daily buckets，也不需同時回傳 current-cycle summary。
+- Response（200）：
+```json
+{
+  "scope": "all_visible_keys",
+  "prompt_tokens": 1000,
+  "completion_tokens": 500,
+  "total_tokens": 1500,
+  "key_count": 3
+}
+```
+- `key_count` 定義為本次聚合範圍內實際納入統計的 distinct key 數；若完全無歷史資料則可為 `0`。
 
 ### 2-2) 查詢每位使用者 API Key 申請統計（Admin Dashboard）
 - `GET /main/api/v1/api-keys/statistics/users`

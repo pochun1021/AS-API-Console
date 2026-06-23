@@ -976,6 +976,32 @@ export const mockApiProvider = {
     };
   },
 
+  async getApiKeyUsageTotal(auth) {
+    await delay();
+    const visibleItems = filterKeysByAuth(apiKeys, auth);
+    const visibleIds = new Set(visibleItems.map((item) => item.id));
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let totalTokens = 0;
+    const countedKeys = new Set();
+
+    usageSeries.forEach((item) => {
+      if (!visibleIds.has(item.key_id)) return;
+      countedKeys.add(item.key_id);
+      promptTokens += item.prompt_tokens ?? 0;
+      completionTokens += item.completion_tokens ?? 0;
+      totalTokens += item.total_tokens ?? 0;
+    });
+
+    return {
+      scope: "all_visible_keys",
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: totalTokens,
+      key_count: countedKeys.size,
+    };
+  },
+
   async listApiKeyUserStatistics(params, auth) {
     await delay();
     ensureAdmin(auth);

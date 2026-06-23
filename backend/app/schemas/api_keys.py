@@ -116,6 +116,14 @@ class ApiKeyUsageSeriesResponse(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ApiKeyUsageTotalResponse(BaseModel):
+    scope: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    key_count: int
+
+
 class ApiKeyDetailResponse(BaseModel):
     id: str
     status: str

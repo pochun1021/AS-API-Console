@@ -16,6 +16,7 @@ from tests.api_keys_cases import (
     test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits,
     test_list_api_keys_zeroes_stale_previous_cycle_usage_after_reset,
     test_statistics_allows_query_range_longer_than_31_days,
+    test_usage_total_returns_aggregate_for_visible_keys,
     test_usage_series_rejects_invalid_query_and_permissions,
     test_usage_series_returns_daily_buckets_in_taipei_calendar,
     test_usage_series_returns_empty_items_without_zero_fill,

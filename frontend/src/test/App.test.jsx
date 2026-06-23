@@ -30,6 +30,7 @@ describe("App public auth pages", () => {
     listAnnouncements: vi.fn(),
     listApiKeys: vi.fn(),
     listApiKeyUsageSeries: vi.fn(),
+    getApiKeyUsageTotal: vi.fn(),
     listModels: vi.fn(),
     logout: vi.fn()
   };
@@ -41,6 +42,7 @@ describe("App public auth pages", () => {
     provider.listAnnouncements.mockReset();
     provider.listApiKeys.mockReset();
     provider.listApiKeyUsageSeries.mockReset();
+    provider.getApiKeyUsageTotal.mockReset();
     provider.listModels.mockReset();
     provider.logout.mockReset();
     vi.restoreAllMocks();
