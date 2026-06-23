@@ -248,7 +248,7 @@ test("redirects user to coming soon page when application is not live", async ()
   await user.type(screen.getByLabelText("用途"), "integration test");
   await user.click(screen.getByRole("button", { name: "送出申請" }));
 
-  expect(await screen.findByRole("heading", { name: "API Key 申請即將上線" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "API Key 申請即將於 6 月 30 日上線" })).toBeInTheDocument();
   expect(screen.getByText("敬請期待")).toBeInTheDocument();
 });
 

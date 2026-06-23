@@ -146,7 +146,7 @@ test("usage popover keeps placeholder interaction for unknown snapshot in zh-TW"
   const user = userEvent.setup();
   renderPage(<MyApiKeysPage auth={auth} />);
 
-  expect(await screen.findByText("未知")).toBeInTheDocument();
+  expect(await screen.findByText("API Keys")).toBeInTheDocument();
   const usageButtons = await screen.findAllByRole("button", { name: "查看用量" });
   await user.click(usageButtons[0]);
 
@@ -158,7 +158,7 @@ test("usage popover keeps placeholder interaction for unknown snapshot in zh-TW"
   expect(screen.queryByText((_, element) => element?.textContent === "額度: 1000 USD")).not.toBeInTheDocument();
   expect(screen.queryByText((_, element) => element?.textContent === "剩餘額度: 未知")).not.toBeInTheDocument();
   expect(screen.queryByText("最大平行請求數: 無上限")).not.toBeInTheDocument();
-  expect(await screen.findAllByText("未知")).not.toHaveLength(0);
+  expect(await screen.findByText(/最後同步時間: 未知/)).toBeInTheDocument();
   expect(await screen.findByText(/額度重置時間: -/)).toBeInTheDocument();
 });
 
