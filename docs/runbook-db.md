@@ -238,6 +238,70 @@ WHERE masked_key = 'AS-xxxx****xxxx';
 - 不加 `--no-reset` 時，腳本會清除既有 seed 範圍（指定 seed users 對應的 applications/keys 與 seed whitelist/users）後重建。
 - 使用 `--no-reset` 連續執行可能因 unique 約束（如 `users.account`、`users.email`）產生衝突，建議僅在明確需要追加時使用。
 
+## 正式環境業務資料清理
+
+### 用途
+- 正式上線前一次性清空既有業務資料，但保留 `admins` 與系統基底資料表。
+- 本流程不修改 schema、不重跑 migration、不處理 seed。
+
+### 清理範圍
+- 會清空：
+  - `api_key_usage_snapshots`
+  - `api_key_expiration_notices`
+  - `api_keys`
+  - `api_key_applications`
+  - `api_key_whitelist`
+  - `announcements`
+  - `auth_audit_logs`
+  - `operation_audit_logs`
+  - `user_preferences`
+- 會保留：
+  - `admins`
+  - `limit_strategy_config`
+  - `institutes`
+  - `institute_sync_control`
+
+### 執行方式
+- 預設 env 檔載入順序：
+  1. `ENV_FILE`
+  2. `/home/app/config/.env`
+  3. `backend/.env`
+- 若 env 檔已包含 DB 設定，可直接執行：
+```bash
+bash scripts/cleanup_prod_data.sh --confirm-wipe
+```
+- 若要明確指定 env 檔：
+```bash
+ENV_FILE=/home/app/config/.env bash scripts/cleanup_prod_data.sh --confirm-wipe
+```
+- 若不使用 env 檔，也可手動設定 DB 連線環境變數：
+```bash
+export DB_HOST=<host>
+export DB_PORT=3306
+export DB_USER=<user>
+export DB_PASSWORD=<password>
+export DB_NAME=<database>
+bash scripts/cleanup_prod_data.sh --confirm-wipe
+```
+
+### 執行內容
+- 腳本會先列出將被清理與保留的表。
+- 清理前會輸出目標表與保留表筆數。
+- 依外鍵安全順序執行 `DELETE`：
+  1. `api_key_usage_snapshots`
+  2. `api_key_expiration_notices`
+  3. `api_keys`
+  4. `api_key_applications`
+  5. 其餘獨立業務表
+- 清理後再次驗證：
+  - 目標清理表筆數全部為 `0`
+  - `admins` 仍保留
+
+### 注意事項
+- 此腳本預設使用 `DELETE`，不使用 `TRUNCATE`，避免外鍵相依造成失敗。
+- 若未帶 `--confirm-wipe`，腳本不會執行任何資料變更。
+- 執行失敗時應先保留終端輸出，再檢查外鍵、權限或 DB 連線設定。
+
 ## 常見問題
 
 ## Expired 回填作業驗證
