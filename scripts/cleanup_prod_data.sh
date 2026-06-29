@@ -212,8 +212,12 @@ SQL
 )
 
 CLEANUP_SQL=$(cat <<'SQL'
+SET FOREIGN_KEY_CHECKS = 0;
 DELETE FROM api_key_usage_snapshots;
 DELETE FROM api_key_expiration_notices;
+UPDATE api_keys
+SET renewed_to_key_id = NULL
+WHERE renewed_to_key_id IS NOT NULL;
 DELETE FROM api_keys;
 DELETE FROM api_key_applications;
 DELETE FROM api_key_whitelist;
@@ -221,6 +225,7 @@ DELETE FROM announcements;
 DELETE FROM auth_audit_logs;
 DELETE FROM operation_audit_logs;
 DELETE FROM user_preferences;
+SET FOREIGN_KEY_CHECKS = 1;
 SQL
 )
 
