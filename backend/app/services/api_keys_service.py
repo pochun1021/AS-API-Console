@@ -796,6 +796,8 @@ class ApiKeysService:
         key_alias: str | None = None,
         application_date_from: date | None = None,
         application_date_to: date | None = None,
+        issued_at_from: datetime | None = None,
+        issued_at_to: datetime | None = None,
         expires_from: datetime | None = None,
         expires_to: datetime | None = None,
         sort_by: str = "created_at",
@@ -819,6 +821,8 @@ class ApiKeysService:
             raise ApiError("VALIDATION_ERROR", "sort_by is invalid", 422)
         if sort_dir not in {"asc", "desc"}:
             raise ApiError("VALIDATION_ERROR", "sort_dir must be asc or desc", 422)
+        if issued_at_from is not None and issued_at_to is not None and issued_at_from > issued_at_to:
+            raise ApiError("VALIDATION_ERROR", "issued_at_from cannot be greater than issued_at_to", 422)
         if expires_from is not None and expires_to is not None and expires_from > expires_to:
             raise ApiError("VALIDATION_ERROR", "expires_from cannot be greater than expires_to", 422)
 
@@ -843,6 +847,8 @@ class ApiKeysService:
                 key_alias=normalized_key_alias or None,
                 application_date_from=application_date_from,
                 application_date_to=application_date_to,
+                issued_at_from=issued_at_from,
+                issued_at_to=issued_at_to,
                 expires_from=expires_from,
                 expires_to=expires_to,
                 sort_by=sort_by,

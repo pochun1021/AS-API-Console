@@ -192,6 +192,7 @@
   - `admin`：可聚合系統內全部可見 keys 的歷史 usage
 - 未選 key 的全部模式不顯示每日圖表；改以 summary card 顯示至少 `total_tokens`，並同步顯示 `prompt_tokens`、`completion_tokens`。
 - `user` 僅可從自己的 keys 中選擇；`admin` 可選擇任意 key。
+- API Key 下拉選單僅顯示正式上線後核發的 key；篩選基準為 `issued_at >= 2026-06-30 00:00:00 Asia/Taipei`（`2026-06-29T16:00:00Z`）。
 - 選定單一 API Key 後，頁面切換為日期區間歷史查詢模式。
 - 單 key 模式需提供可自訂的日期區間查詢，查詢口徑以 `Asia/Taipei` 的日曆日為準。
 - 進入 `/usage` 頁時，單 key 模式的日期區間預設為以 `Asia/Taipei` 計算的最近 `7` 個日曆日（含當日），日期欄位不得顯示為空。
@@ -727,12 +728,13 @@ Base path：`/main/api/v1`
 - usage 同步排程預設每 `5` 分鐘執行一次，僅同步目前 `active` keys；若 provider 查詢失敗，不得中斷其他 keys 的同步。
 - 讀取欄位語意：
 - 對曾 extend 的 key：`application_date` 需改為最近一次成功展延當日；`duration_days` 需重置為 `original_duration_days`，代表目前這一輪有效期時長；`expires_at` 為重新起算後的目前有效到期時間。
-- Query：`page`, `page_size`, `status`, `owner_account`, `owner_name`, `key_alias`, `application_date_from`, `application_date_to`, `expires_from`, `expires_to`, `sort_by`, `sort_dir`
+- Query：`page`, `page_size`, `status`, `owner_account`, `owner_name`, `key_alias`, `application_date_from`, `application_date_to`, `issued_at_from`, `issued_at_to`, `expires_from`, `expires_to`, `sort_by`, `sort_dir`
   - `page_size` 定義為每頁顯示筆數（非全量上限）。
   - `status` 為 exact match，allowed: `active|revoked|expired`
   - `/api-keys` 頁前端首次載入時，狀態篩選欄位預設為 `active`，因此初始查詢預設僅顯示啟用中 API Keys；使用者仍可切換為 `revoked`、`expired` 或清空成全部狀態。
   - `owner_account`、`owner_name`、`key_alias` 為 case-insensitive `contains` 語意；`owner_*` 僅 `admin` 可跨人查詢，`user` 不得用於越權查詢
   - `application_date_from`、`application_date_to` 格式為 `YYYY-MM-DD`，基準欄位為 `application_date`
+  - `issued_at_from`、`issued_at_to` 格式為 UTC `date-time`（RFC 3339），基準欄位為 `issued_at`
   - `expires_from`、`expires_to` 格式為 UTC `date-time`（RFC 3339），基準欄位為 `expires_at`
   - `sort_by` 僅允許既定欄位白名單；`sort_dir` 僅允許 `asc|desc`
   - 前端清單需採伺服器分頁，透過 `page/page_size` 可翻頁讀取完整資料集（不限於首 20 筆）。
@@ -833,7 +835,7 @@ Base path：`/main/api/v1`
   "key_count": 3
 }
 ```
-- `key_count` 定義為本次聚合範圍內實際納入統計的 distinct key 數；若完全無歷史資料則可為 `0`。
+- `key_count` 定義為本次聚合範圍內可見 API Key 總數；沒有歷史 usage bucket 的 key 仍需計入 `key_count`，但 token totals 貢獻為 `0`。
 
 ### 2-2) 查詢每位使用者 API Key 申請統計（Admin Dashboard）
 - `GET /main/api/v1/api-keys/statistics/users`
@@ -908,6 +910,7 @@ Base path：`/main/api/v1`
 - 額度重置規則：`budget_reset_at` 一律以 provider `/spend/keys` 回傳值為準，語意固定為「下一次重置時間」；若 provider 未提供則為 `null`，本系統不得再自行推算。
 - 執行方式：由排程觸發腳本（如 systemd timer 或 cron）；預設每 `5` 分鐘執行一次。
 - 全量遍歷規則：每次執行需遍歷全部 `active` keys；腳本參數 `batch_size` 僅代表單次 DB 候選批次大小與 provider 分頁預期大小，不得把 `batch_size` 視為整次同步只處理前 N 把 key 的上限。
+- 正式上線篩選規則：同步候選 key 僅包含 `issued_at >= 2026-06-30 00:00:00 Asia/Taipei`（`2026-06-29T16:00:00Z`）的 `active` keys；正式上線前核發的 key 不再呼叫 provider `/spend/keys` summary 對應或 `/spend/logs/v2` history 查詢。
 - 修復模式：腳本需支援維運修復模式，用於補齊 `api_keys.usage_*` current-cycle cache 缺失的 `active` keys。修復模式仍需以 provider `/spend/keys` + `/spend/logs/v2` 為資料來源，不得直接以 `api_key_usage_snapshots` daily bucket 反推摘要。
 - 容錯：
   - `/spend/keys` summary sync 失敗時，需記錄 `summary_sync_failed` 類型訊息，但不得中斷 `/spend/logs/v2` history sync。

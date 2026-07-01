@@ -93,6 +93,10 @@ describe("UsagePage", () => {
     const { container } = renderPage(<UsagePage auth={auth} />);
 
     await waitFor(() => expect(listKeysSpy).toHaveBeenCalled());
+    expect(listKeysSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ issued_at_from: "2026-06-29T16:00:00Z" }),
+      auth
+    );
     await user.type(screen.getByRole("combobox", { name: "API Key" }), "shared");
     await clickOptionByAlias("shared_alias");
     await waitFor(() => expect(listSeriesSpy).toHaveBeenCalled());

@@ -521,6 +521,10 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             base_stmt = base_stmt.where(ApiKeyApplication.application_date >= filters.application_date_from)
         if filters.application_date_to:
             base_stmt = base_stmt.where(ApiKeyApplication.application_date <= filters.application_date_to)
+        if filters.issued_at_from:
+            base_stmt = base_stmt.where(ApiKeyApplication.issued_at >= filters.issued_at_from)
+        if filters.issued_at_to:
+            base_stmt = base_stmt.where(ApiKeyApplication.issued_at <= filters.issued_at_to)
         if filters.expires_from:
             base_stmt = base_stmt.where(ApiKeyApplication.expires_at >= filters.expires_from)
         if filters.expires_to:
@@ -660,26 +664,31 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         requester_role: str,
         requester_account: str,
     ) -> ApiKeyUsageTotal:
-        stmt = (
+        usage_stmt = (
             select(
                 func.coalesce(func.sum(ApiKeyUsageSnapshot.prompt_tokens), 0),
                 func.coalesce(func.sum(ApiKeyUsageSnapshot.completion_tokens), 0),
                 func.coalesce(func.sum(ApiKeyUsageSnapshot.total_tokens), 0),
-                func.count(distinct(ApiKeyUsageSnapshot.api_key_id)),
             )
             .select_from(ApiKeyUsageSnapshot)
             .join(ApiKey, ApiKey.id == ApiKeyUsageSnapshot.api_key_id)
             .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
         )
+        key_count_stmt = select(func.count(distinct(ApiKey.id))).select_from(ApiKey).join(
+            ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id
+        )
         if requester_role == "user":
-            stmt = stmt.where(ApiKeyApplication.account == requester_account)
-            stmt = stmt.where(ApiKey.renewed_to_key_id.is_(None))
-        row = self.session.execute(stmt).one()
+            usage_stmt = usage_stmt.where(ApiKeyApplication.account == requester_account)
+            usage_stmt = usage_stmt.where(ApiKey.renewed_to_key_id.is_(None))
+            key_count_stmt = key_count_stmt.where(ApiKeyApplication.account == requester_account)
+            key_count_stmt = key_count_stmt.where(ApiKey.renewed_to_key_id.is_(None))
+        row = self.session.execute(usage_stmt).one()
+        key_count = int(self.session.scalar(key_count_stmt) or 0)
         return ApiKeyUsageTotal(
             prompt_tokens=int(row[0] or 0),
             completion_tokens=int(row[1] or 0),
             total_tokens=int(row[2] or 0),
-            key_count=int(row[3] or 0),
+            key_count=key_count,
         )
 
     def get_key_detail(self, key_id: str, requester_role: str, requester_account: str) -> ApiKeyDetail | None:

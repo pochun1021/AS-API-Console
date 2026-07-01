@@ -585,6 +585,11 @@ def test_usage_total_returns_aggregate_for_visible_keys(client, admin_headers, u
         headers=user_headers,
         json={"application_date": str(date.today()), "duration_days": 30, "purpose": "mine-b"},
     )
+    client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "mine-c-no-usage"},
+    )
     other_headers = build_headers(
         role="user",
         account="other.user",
@@ -646,7 +651,7 @@ def test_usage_total_returns_aggregate_for_visible_keys(client, admin_headers, u
         "prompt_tokens": 300,
         "completion_tokens": 150,
         "total_tokens": 450,
-        "key_count": 2,
+        "key_count": 3,
     }
 
     admin_resp = client.get(_api("/api-keys/usage-total"), headers=admin_headers)
@@ -656,8 +661,15 @@ def test_usage_total_returns_aggregate_for_visible_keys(client, admin_headers, u
         "prompt_tokens": 700,
         "completion_tokens": 350,
         "total_tokens": 1050,
-        "key_count": 3,
+        "key_count": 4,
     }
+
+    future_issued_resp = client.get(
+        _api("/api-keys?issued_at_from=2999-01-01T00:00:00Z"),
+        headers=admin_headers,
+    )
+    assert future_issued_resp.status_code == 200
+    assert future_issued_resp.json()["total"] == 0
 
 
 def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(

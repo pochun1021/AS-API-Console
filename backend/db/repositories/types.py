@@ -104,6 +104,8 @@ class ApiKeyListFilter:
     key_alias: str | None = None
     application_date_from: date | None = None
     application_date_to: date | None = None
+    issued_at_from: datetime | None = None
+    issued_at_to: datetime | None = None
     expires_from: datetime | None = None
     expires_to: datetime | None = None
     sort_by: str = "created_at"

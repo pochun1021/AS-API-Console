@@ -12,6 +12,7 @@ import { useLocale } from "../i18n/locale";
 
 const MAX_VISIBLE_DAYS = 31;
 const PAN_HIT_GAP_PX = 18;
+const API_KEY_USAGE_GO_LIVE_ISSUED_AT_FROM = "2026-06-29T16:00:00Z";
 
 export function defaultDateRange() {
   const today = dayjs();
@@ -209,7 +210,13 @@ export default function UsagePage({ auth }) {
     setKeysError("");
     try {
       const response = await apiClient.listApiKeys(
-        { page: 1, page_size: 100, sort_by: "created_at", sort_dir: "desc" },
+        {
+          page: 1,
+          page_size: 100,
+          issued_at_from: API_KEY_USAGE_GO_LIVE_ISSUED_AT_FROM,
+          sort_by: "created_at",
+          sort_dir: "desc",
+        },
         auth
       );
       setKeys(response.items || []);

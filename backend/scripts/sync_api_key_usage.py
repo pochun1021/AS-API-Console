@@ -20,6 +20,7 @@ LOG_DIR = LOG_ROOT / "sync_api_key_usage"
 LOGGER_NAME = "sync_api_key_usage"
 TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 ROLLING_DAYS = 30
+USAGE_SYNC_ISSUED_AT_CUTOFF_UTC = datetime(2026, 6, 30, 0, 0, 0, tzinfo=TAIPEI_TZ).astimezone(UTC)
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from db import models  # noqa: F401
@@ -177,6 +178,7 @@ def _collect_candidates(*, batch_size: int, offset: int = 0, repair_missing_cach
         select(ApiKey.id, ApiKey.key_hash, effective_key_alias)
         .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
         .where(ApiKey.status == "active")
+        .where(ApiKeyApplication.issued_at >= USAGE_SYNC_ISSUED_AT_CUTOFF_UTC)
         .order_by(ApiKey.created_at.asc(), ApiKey.id.asc())
         .offset(offset)
         .limit(batch_size)
@@ -216,7 +218,12 @@ def _collect_candidates(*, batch_size: int, offset: int = 0, repair_missing_cach
 
 
 def _count_candidates(*, repair_missing_cache: bool = False) -> int:
-    stmt = select(func.count(ApiKey.id)).join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id).where(ApiKey.status == "active")
+    stmt = (
+        select(func.count(ApiKey.id))
+        .join(ApiKeyApplication, ApiKey.application_id == ApiKeyApplication.id)
+        .where(ApiKey.status == "active")
+        .where(ApiKeyApplication.issued_at >= USAGE_SYNC_ISSUED_AT_CUTOFF_UTC)
+    )
     if repair_missing_cache:
         has_usage_history = exists(
             select(ApiKeyUsageSnapshot.id).where(

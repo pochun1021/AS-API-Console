@@ -101,6 +101,8 @@ export const httpApiProvider = {
     if (params.key_alias) query.set("key_alias", params.key_alias);
     if (params.application_date_from) query.set("application_date_from", params.application_date_from);
     if (params.application_date_to) query.set("application_date_to", params.application_date_to);
+    if (params.issued_at_from) query.set("issued_at_from", params.issued_at_from);
+    if (params.issued_at_to) query.set("issued_at_to", params.issued_at_to);
     if (params.expires_from) query.set("expires_from", params.expires_from);
     if (params.expires_to) query.set("expires_to", params.expires_to);
     if (params.from) query.set("from", params.from);
