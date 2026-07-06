@@ -193,6 +193,7 @@
 - 未選 key 的全部模式不顯示每日圖表；改以 summary card 顯示至少 `total_tokens`，並同步顯示 `prompt_tokens`、`completion_tokens`。
 - `user` 僅可從自己的 keys 中選擇；`admin` 可選擇任意 key。
 - API Key 下拉選單需顯示全部可見 API Keys，不限制核發時間或狀態；權限口徑同全部模式，`user` 僅可選本人 keys，`admin` 可選系統內全部可見 keys，且需包含 `active|revoked|expired`。
+- API Key 下拉選單中，`revoked` 與 `expired` key 需在 alias 後標示狀態以利辨識；`active` key 不需額外標示。
 - 選定單一 API Key 後，頁面切換為日期區間歷史查詢模式。
 - 單 key 模式需提供可自訂的日期區間查詢，查詢口徑以 `Asia/Taipei` 的日曆日為準。
 - 進入 `/usage` 頁時，單 key 模式的日期區間預設為以 `Asia/Taipei` 計算的最近 `7` 個日曆日（含當日），日期欄位不得顯示為空。

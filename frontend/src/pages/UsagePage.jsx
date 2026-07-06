@@ -149,6 +149,13 @@ function formatTokenCount(value) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
 }
 
+function formatKeyAliasWithStatus(option, t) {
+  if (!option) return "";
+  if (option.status === "revoked") return `${option.key_alias} (${t("mykeys_status_revoked")})`;
+  if (option.status === "expired") return `${option.key_alias} (${t("mykeys_status_expired")})`;
+  return option.key_alias;
+}
+
 export function buildUsageTooltipRows(item, t) {
   return [
     { label: t("usage_tooltip_prompt_tokens"), value: formatTokenCount(item?.hasData ? item.prompt_tokens : null) },
@@ -409,13 +416,13 @@ export default function UsagePage({ auth }) {
               options={keys}
               value={selectedKey}
               onChange={(_, nextValue) => setSelectedKeyId(nextValue?.id || "")}
-              getOptionLabel={(option) => `${option.key_alias} (${option.masked_key})`}
+              getOptionLabel={(option) => `${formatKeyAliasWithStatus(option, t)} (${option.masked_key})`}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               filterOptions={(options, state) => {
                 const keyword = state.inputValue.trim().toLowerCase();
                 if (!keyword) return options;
                 return options.filter((option) =>
-                  `${option.key_alias} ${option.masked_key}`.toLowerCase().includes(keyword)
+                  `${formatKeyAliasWithStatus(option, t)} ${option.masked_key}`.toLowerCase().includes(keyword)
                 );
               }}
               sx={{ minWidth: 280 }}
@@ -445,7 +452,7 @@ export default function UsagePage({ auth }) {
                       textOverflow: "ellipsis",
                     }}
                   >
-                    {option.key_alias}
+                    {formatKeyAliasWithStatus(option, t)}
                   </Typography>
                   <Typography
                     variant="caption"

@@ -151,8 +151,40 @@ describe("UsagePage", () => {
     );
     await user.type(screen.getByRole("combobox", { name: "API Key" }), "revoked");
 
-    expect(await screen.findByText("revoked_alias")).toBeInTheDocument();
+    expect(await screen.findByText("revoked_alias (已停用)")).toBeInTheDocument();
     expect(screen.queryByText("active_alias")).not.toBeInTheDocument();
+  });
+
+  test("marks revoked and expired key aliases in the usage key selector", async () => {
+    vi.spyOn(apiClient, "getApiKeyUsageTotal").mockResolvedValue({
+      scope: "all_visible_keys",
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      key_count: 0,
+    });
+    vi.spyOn(apiClient, "listApiKeys").mockResolvedValue({
+      items: [
+        { id: "key_1", status: "active", key_alias: "active_alias", masked_key: "AS-...1111" },
+        { id: "key_2", status: "revoked", key_alias: "revoked_alias", masked_key: "AS-...2222" },
+        { id: "key_3", status: "expired", key_alias: "expired_alias", masked_key: "AS-...3333" },
+      ],
+      page: 1,
+      page_size: 100,
+      total: 3,
+    });
+    vi.spyOn(apiClient, "listApiKeyUsageSeries").mockResolvedValue({ items: [] });
+    const user = userEvent.setup();
+
+    renderPage(<UsagePage auth={auth} />);
+
+    const input = await screen.findByRole("combobox", { name: "API Key" });
+    await user.type(input, "alias");
+
+    expect(await screen.findByText("active_alias")).toBeInTheDocument();
+    expect(screen.queryByText("active_alias (啟用中)")).not.toBeInTheDocument();
+    expect(screen.getByText("revoked_alias (已停用)")).toBeInTheDocument();
+    expect(screen.getByText("expired_alias (已到期)")).toBeInTheDocument();
   });
 
   test("uses a non-empty local default date range on first render", async () => {
