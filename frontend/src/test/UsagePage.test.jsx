@@ -94,15 +94,65 @@ describe("UsagePage", () => {
 
     await waitFor(() => expect(listKeysSpy).toHaveBeenCalled());
     expect(listKeysSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ issued_at_from: "2026-06-29T16:00:00Z" }),
+      expect.objectContaining({ page: 1, page_size: 100 }),
       auth
     );
+    expect(listKeysSpy.mock.calls[0][0]).not.toHaveProperty("issued_at_from");
     await user.type(screen.getByRole("combobox", { name: "API Key" }), "shared");
     await clickOptionByAlias("shared_alias");
     await waitFor(() => expect(listSeriesSpy).toHaveBeenCalled());
     expect(await screen.findByText("單一 API Key 每日使用量")).toBeInTheDocument();
     expect(container.querySelectorAll(".MuiChartsAxis-tickLabel").length).toBeGreaterThan(0);
     expect(screen.queryAllByRole("slider")).toHaveLength(0);
+  });
+
+  test("loads all paged key options including non-active keys", async () => {
+    vi.spyOn(apiClient, "getApiKeyUsageTotal").mockResolvedValue({
+      scope: "all_visible_keys",
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      key_count: 0,
+    });
+    const listKeysSpy = vi.spyOn(apiClient, "listApiKeys").mockImplementation(async (params) => {
+      if (params.page === 1) {
+        return {
+          items: [{ id: "key_1", status: "active", key_alias: "active_alias", masked_key: "AS-...1111" }],
+          page: 1,
+          page_size: 100,
+          total: 3,
+        };
+      }
+      return {
+        items: [
+          { id: "key_2", status: "revoked", key_alias: "revoked_alias", masked_key: "AS-...2222" },
+          { id: "key_3", status: "expired", key_alias: "expired_alias", masked_key: "AS-...3333" },
+        ],
+        page: 2,
+        page_size: 100,
+        total: 3,
+      };
+    });
+    vi.spyOn(apiClient, "listApiKeyUsageSeries").mockResolvedValue({ items: [] });
+    const user = userEvent.setup();
+
+    renderPage(<UsagePage auth={auth} />);
+
+    await waitFor(() => expect(listKeysSpy).toHaveBeenCalledTimes(2));
+    expect(listKeysSpy).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ page: 1, page_size: 100 }),
+      auth
+    );
+    expect(listKeysSpy).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ page: 2, page_size: 100 }),
+      auth
+    );
+    await user.type(screen.getByRole("combobox", { name: "API Key" }), "revoked");
+
+    expect(await screen.findByText("revoked_alias")).toBeInTheDocument();
+    expect(screen.queryByText("active_alias")).not.toBeInTheDocument();
   });
 
   test("uses a non-empty local default date range on first render", async () => {

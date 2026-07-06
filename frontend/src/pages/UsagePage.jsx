@@ -12,7 +12,7 @@ import { useLocale } from "../i18n/locale";
 
 const MAX_VISIBLE_DAYS = 31;
 const PAN_HIT_GAP_PX = 18;
-const API_KEY_USAGE_GO_LIVE_ISSUED_AT_FROM = "2026-06-29T16:00:00Z";
+const API_KEY_OPTIONS_PAGE_SIZE = 100;
 
 export function defaultDateRange() {
   const today = dayjs();
@@ -209,17 +209,28 @@ export default function UsagePage({ auth }) {
     setKeysLoading(true);
     setKeysError("");
     try {
-      const response = await apiClient.listApiKeys(
-        {
-          page: 1,
-          page_size: 100,
-          issued_at_from: API_KEY_USAGE_GO_LIVE_ISSUED_AT_FROM,
-          sort_by: "created_at",
-          sort_dir: "desc",
-        },
-        auth
-      );
-      setKeys(response.items || []);
+      const allItems = [];
+      let page = 1;
+      let total = null;
+
+      while (total == null || allItems.length < total) {
+        const response = await apiClient.listApiKeys(
+          {
+            page,
+            page_size: API_KEY_OPTIONS_PAGE_SIZE,
+            sort_by: "created_at",
+            sort_dir: "desc",
+          },
+          auth
+        );
+        const pageItems = response.items || [];
+        allItems.push(...pageItems);
+        total = Number(response.total ?? allItems.length);
+        if (pageItems.length === 0) break;
+        page += 1;
+      }
+
+      setKeys(allItems);
     } catch (error) {
       setKeys([]);
       setKeysError(normalizeApiError(error, t("usage_keys_load_failed")));
