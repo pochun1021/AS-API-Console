@@ -8,7 +8,7 @@ import sys
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -179,6 +179,9 @@ def _reset_seed_scope(session: Session) -> None:
     seed_sysids = [920000 + idx for idx in range(1, 7)] + [900001, 900002]
     app_ids = [row[0] for row in session.query(ApiKeyApplication.id).filter(ApiKeyApplication.sysid.in_(seed_sysids)).all()]
     if app_ids:
+        key_ids = [row[0] for row in session.query(ApiKey.id).filter(ApiKey.application_id.in_(app_ids)).all()]
+        if key_ids:
+            session.execute(update(ApiKey).where(ApiKey.renewed_to_key_id.in_(key_ids)).values(renewed_to_key_id=None))
         session.execute(delete(ApiKey).where(ApiKey.application_id.in_(app_ids)))
     session.execute(delete(ApiKeyApplication).where(ApiKeyApplication.sysid.in_(seed_sysids)))
     session.execute(delete(ApiKeyWhitelist).where(ApiKeyWhitelist.sysid.between(910001, 910199)))

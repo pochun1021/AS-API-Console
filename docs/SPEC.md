@@ -152,8 +152,10 @@
 - `Usage` 明細入口需放在操作區，並使用中性、非 color-coded 的 icon。
 - 點擊 `Usage` icon 需開啟 popover；popover 需顯示 `spend`、`max_budget`、`remaining_budget`、`budget_reset_at`、`synced_at`。`tpm_limit`、`rpm_limit`、`max_parallel_requests` 不在此 popover 顯示；其中 `max_budget` 需對齊目前金鑰管理（limit strategy config）設定值。
 - `usage_summary`（含 popover 顯示內容）僅代表目前 reset 週期內的使用量；若已跨過當期 reset 邊界，不得再顯示重置前歷史累計。
+- 若本地最後同步仍停在已跨過的 `budget_reset_at` 之前或當下，列表 `usage_summary` 需視為新週期尚無用量，回傳 `spend=0` 與 token totals `0`，但仍保留最後同步到的 `budget_reset_at` / `synced_at` metadata，不得自行推算下一次 reset。
 - `usage_summary.budget_reset_at` 直接使用 provider `/spend/keys` 回傳或其同步鏡像值，語意固定為「下一次重置時間」；若 provider 未提供則回傳 `null`，後端不得自行推算或 rollover。
 - `Usage` popover 需提供可直接導向 `/usage` 的入口，並帶出目前這把 key 作為預選目標；使用者進入 `Usage Page` 後不得還需要重新手動選同一把 key 才能查圖。
+- `admin` 可在 API Keys 操作中對單一 key 觸發「更新使用量」；一般 `user` 不得觸發手動同步。
 - `Usage` popover 在 `max_budget > 0` 時，需額外顯示 budget progress bar；若 `spend` 缺值則以前端 `0` 顯示，並以 `spend / max_budget` 呈現已使用比例，同步顯示已使用百分比與剩餘百分比。
 - 已使用百分比需採無條件進位到小數第 2 位，且顯示時不強制補尾零；例如 `85%` 保持 `85%`、`84.001%` 顯示 `84.01%`。
 - 剩餘百分比顯示需與已使用百分比互補，以上述「已使用顯示值」計算 `100 - used_percent_display`，避免兩者相加不為 `100%` 的視覺落差。
@@ -837,6 +839,34 @@ Base path：`/main/api/v1`
 }
 ```
 - `key_count` 定義為本次聚合範圍內可見 API Key 總數；沒有歷史 usage bucket 的 key 仍需計入 `key_count`，但 token totals 貢獻為 `0`。
+
+### 2-1-2) 手動同步單一 API Key 使用量
+- `POST /main/api/v1/api-keys/{id}/usage-sync`
+- 規則：僅 `admin` 可使用；`user` 呼叫需回 `403 FORBIDDEN`。
+- 用途：針對單一 key 從 provider 手動刷新當前週期 usage，供 API Keys 操作列使用。
+- 同步流程：先以 provider `/spend/keys` 取得目標 `key_alias` 的 `budget_reset_at` / `updated_at` metadata，再以目前生效的 `budget_duration` 推回 current-cycle window；接著呼叫 `/spend/logs/v2`，query 使用 `key_alias`、`start_date`、`end_date`、`status_filter=success`、pagination、`sort_by=startTime`、`sort_order=desc`。
+- 寫入規則：成功後 upsert `api_key_usage_snapshots` daily buckets，並更新 `api_keys.usage_*` current-cycle cache；provider 查詢失敗或 pagination metadata 不可信時不得覆蓋既有 usage snapshot/cache。
+- Response（200）：
+```json
+{
+  "key_id": "...",
+  "synced_at": "...",
+  "history_written_count": 1,
+  "usage_summary": {
+    "spend": 10.5,
+    "prompt_tokens": 1000,
+    "completion_tokens": 500,
+    "total_tokens": 1500,
+    "max_budget": 1000.0,
+    "remaining_budget": 989.5,
+    "tpm_limit": 10000,
+    "rpm_limit": 500,
+    "max_parallel_requests": 8,
+    "budget_reset_at": "...",
+    "synced_at": "..."
+  }
+}
+```
 
 ### 2-2) 查詢每位使用者 API Key 申請統計（Admin Dashboard）
 - `GET /main/api/v1/api-keys/statistics/users`

@@ -134,6 +134,10 @@ export const httpApiProvider = {
     return request(apiPath(`/api-keys/${id}`), { method: "PATCH", auth, body: payload }).then((item) => ({ item }));
   },
 
+  syncApiKeyUsage(id, auth) {
+    return request(apiPath(`/api-keys/${id}/usage-sync`), { method: "POST", auth });
+  },
+
   revokeApiKey(id, auth) {
     return request(apiPath(`/api-keys/${id}/revoke`), { method: "POST", auth });
   },

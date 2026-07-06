@@ -6,6 +6,7 @@ import AutorenewIcon from "@mui/icons-material/Autorenew";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import CheckIcon from "@mui/icons-material/Check";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import SyncIcon from "@mui/icons-material/Sync";
 import QueryStatsOutlinedIcon from "@mui/icons-material/QueryStatsOutlined";
 import {
   Alert,
@@ -207,6 +208,7 @@ export default function MyApiKeysPage({ auth }) {
   const [pendingRevokeId, setPendingRevokeId] = useState("");
   const [pendingRenewId, setPendingRenewId] = useState("");
   const [pendingExtendId, setPendingExtendId] = useState("");
+  const [syncingUsageKeyId, setSyncingUsageKeyId] = useState("");
   const [pendingAliasEditItem, setPendingAliasEditItem] = useState(null);
   const [aliasInputValue, setAliasInputValue] = useState("");
   const [aliasSaving, setAliasSaving] = useState(false);
@@ -338,6 +340,20 @@ export default function MyApiKeysPage({ auth }) {
       }
     } catch (e) {
       setBanner(e?.payload?.error?.message || t("mykeys_extend_failed"));
+    }
+  }
+
+  async function syncUsage(id) {
+    setBanner("");
+    setSyncingUsageKeyId(id);
+    try {
+      await apiClient.syncApiKeyUsage(id, auth);
+      setBanner(t("mykeys_usage_sync_done"));
+      await load();
+    } catch (e) {
+      setBanner(e?.payload?.error?.message || t("mykeys_usage_sync_failed"));
+    } finally {
+      setSyncingUsageKeyId("");
     }
   }
 
@@ -741,6 +757,21 @@ export default function MyApiKeysPage({ auth }) {
         open={Boolean(actionMenuAnchorEl && actionMenuRow)}
         onClose={closeActionMenu}
       >
+        {auth.role === "admin" ? (
+          <MenuItem
+            disabled={syncingUsageKeyId === actionMenuRow?.id}
+            onClick={() => {
+              const targetId = actionMenuRow?.id;
+              closeActionMenu();
+              if (targetId) {
+                syncUsage(targetId);
+              }
+            }}
+          >
+            <SyncIcon fontSize="small" sx={{ mr: 1 }} />
+            {syncingUsageKeyId === actionMenuRow?.id ? t("mykeys_usage_syncing") : t("mykeys_usage_sync")}
+          </MenuItem>
+        ) : null}
         {actionMenuRow?.status === "active" ? (
           <MenuItem
             onClick={() => {

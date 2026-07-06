@@ -1149,6 +1149,25 @@ export const mockApiProvider = {
     return { item: { ...target, key_alias: normalizeAlias(target) } };
   },
 
+  async syncApiKeyUsage(id, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const target = findApiKeyById(id);
+    if (!target) {
+      throw createError("VALIDATION_ERROR", "id not found", 404);
+    }
+    const syncedAt = new Date().toISOString();
+    target.usage_synced_at = syncedAt;
+    target.usage_budget_reset_at = target.usage_budget_reset_at || syncedAt;
+    const usageSummary = buildUsageSummary(target);
+    return {
+      key_id: id,
+      synced_at: syncedAt,
+      history_written_count: 0,
+      usage_summary: usageSummary,
+    };
+  },
+
   async revokeApiKey(id, auth) {
     await delay();
     const target = findApiKeyById(id);

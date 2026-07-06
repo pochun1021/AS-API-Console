@@ -2,6 +2,7 @@ from tests.api_keys_cases import (
     test_admin_can_filter_key_list_by_key_alias_expires_and_sort,
     test_admin_can_filter_key_list_by_owner_status_and_date,
     test_admin_can_list_global_keys,
+    test_admin_can_sync_single_key_usage_by_key_alias,
     test_admin_user_statistics_default_sort_scope_and_no_plaintext,
     test_admin_user_statistics_rejects_invalid_sort_by,
     test_admin_user_statistics_scope_date_range_and_forbidden,
@@ -20,4 +21,5 @@ from tests.api_keys_cases import (
     test_usage_series_rejects_invalid_query_and_permissions,
     test_usage_series_returns_daily_buckets_in_taipei_calendar,
     test_usage_series_returns_empty_items_without_zero_fill,
+    test_user_cannot_sync_single_key_usage,
 )

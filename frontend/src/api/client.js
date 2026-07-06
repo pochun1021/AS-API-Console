@@ -126,6 +126,7 @@ export const apiClient = {
   getApiKeyUsageTotal: (auth) => provider.getApiKeyUsageTotal(auth),
   getApiKeyById: (id, auth) => provider.getApiKeyById(id, auth),
   updateApiKey: (id, payload, auth) => provider.updateApiKey(id, payload, auth),
+  syncApiKeyUsage: (id, auth) => provider.syncApiKeyUsage(id, auth),
   revokeApiKey: (id, auth) => provider.revokeApiKey(id, auth),
   renewApiKey: (id, auth) => provider.renewApiKey(id, auth),
   extendApiKey: (id, auth) => provider.extendApiKey(id, auth),

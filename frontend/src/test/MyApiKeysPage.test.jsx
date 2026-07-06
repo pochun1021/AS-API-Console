@@ -102,6 +102,19 @@ test("shows applicant account and name columns for admin list", async () => {
   expect(await screen.findByText("尤凱婷")).toBeInTheDocument();
 });
 
+test("admin can trigger usage sync from action menu", async () => {
+  const user = userEvent.setup();
+  const syncSpy = vi.spyOn(mockApiProvider, "syncApiKeyUsage");
+  renderPage(<MyApiKeysPage auth={adminAuth} />);
+
+  const moreActionButtons = await screen.findAllByRole("button", { name: "更多操作" });
+  await user.click(moreActionButtons[0]);
+  await user.click(await screen.findByRole("menuitem", { name: "更新使用量" }));
+
+  expect(await screen.findByText("使用量已更新。")).toBeInTheDocument();
+  expect(syncSpy).toHaveBeenCalledTimes(1);
+});
+
 test("usage popover is opened from actions and shows snapshot details in zh-TW", async () => {
   const user = userEvent.setup();
   const rendered = renderPage(<MyApiKeysPage auth={adminAuth} />);

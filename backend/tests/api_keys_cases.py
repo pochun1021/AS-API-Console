@@ -257,6 +257,18 @@ def test_list_api_keys_zeroes_stale_previous_cycle_usage_after_reset(client, adm
             usage_budget_reset_at=budget_reset_at,
             usage_synced_at=synced_at,
         )
+        _insert_key_usage_snapshot_history(
+            key_id,
+            spend="850.25",
+            budget_reset_at=budget_reset_at,
+            synced_at=synced_at,
+            bucket_granularity="day",
+            bucket_start_utc=budget_reset_at - timedelta(hours=12),
+            bucket_end_utc=budget_reset_at + timedelta(hours=12),
+            prompt_tokens=40000,
+            completion_tokens=27401,
+            total_tokens=67401,
+        )
 
         listed = client.get(_api("/api-keys"), headers=user_headers)
 
@@ -670,6 +682,127 @@ def test_usage_total_returns_aggregate_for_visible_keys(client, admin_headers, u
     )
     assert future_issued_resp.status_code == 200
     assert future_issued_resp.json()["total"] == 0
+
+
+def test_admin_can_sync_single_key_usage_by_key_alias(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "manual usage sync"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=admin_headers).json()["items"][0]["id"]
+
+    now = datetime.now(UTC).replace(microsecond=0)
+    budget_reset_at = now + timedelta(days=1)
+    captured_queries: list[dict] = []
+    try:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="daily",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+            updated_at=now,
+        )
+
+        def _list_spend_keys(self):
+            return {
+                "data": [
+                    {
+                        "key_alias": "for_user1",
+                        "spend": 12.34,
+                        "budget_duration": "daily",
+                        "budget_reset_at": budget_reset_at.isoformat().replace("+00:00", "Z"),
+                        "updated_at": now.isoformat().replace("+00:00", "Z"),
+                    }
+                ]
+            }
+
+        def _list_spend_logs(self, query):
+            captured_queries.append(query)
+            return {
+                "data": [
+                    {
+                        "status": "success",
+                        "startTime": (now + timedelta(minutes=1)).isoformat().replace("+00:00", "Z"),
+                        "spend": "12.34",
+                        "prompt_tokens": 100,
+                        "completion_tokens": 50,
+                        "total_tokens": 150,
+                    },
+                    {
+                        "status": "failure",
+                        "startTime": (now + timedelta(minutes=2)).isoformat().replace("+00:00", "Z"),
+                        "spend": "99.99",
+                        "prompt_tokens": 999,
+                        "completion_tokens": 999,
+                        "total_tokens": 1998,
+                    },
+                ],
+                "total": 2,
+                "page": 1,
+                "page_size": 100,
+                "total_pages": 1,
+            }
+
+        monkeypatch.setattr("app.services.provider_client.ProviderClient.list_spend_keys", _list_spend_keys)
+        monkeypatch.setattr("app.services.provider_client.ProviderClient.list_spend_logs", _list_spend_logs)
+
+        synced = client.post(_api(f"/api-keys/{key_id}/usage-sync"), headers=admin_headers)
+
+        assert synced.status_code == 200
+        payload = synced.json()
+        assert payload["key_id"] == key_id
+        assert payload["history_written_count"] == 1
+        assert payload["usage_summary"]["spend"] == 12.34
+        assert payload["usage_summary"]["prompt_tokens"] == 100
+        assert payload["usage_summary"]["completion_tokens"] == 50
+        assert payload["usage_summary"]["total_tokens"] == 150
+        assert captured_queries
+        assert captured_queries[0]["key_alias"] == "for_user1"
+        assert captured_queries[0]["status_filter"] == "success"
+        assert captured_queries[0]["sort_by"] == "startTime"
+        assert captured_queries[0]["sort_order"] == "desc"
+        assert "api_key" not in captured_queries[0]
+
+        listed = client.get(_api("/api-keys"), headers=admin_headers)
+        assert listed.status_code == 200
+        usage_summary = listed.json()["items"][0]["usage_summary"]
+        assert usage_summary["spend"] == 12.34
+        assert usage_summary["prompt_tokens"] == 100
+        assert usage_summary["completion_tokens"] == 50
+        assert usage_summary["total_tokens"] == 150
+    finally:
+        _set_limit_strategy_config(
+            budget_max_budget="1000",
+            budget_duration="monthly",
+            rate_limit_tpm=10000,
+            rate_limit_rpm=500,
+            max_parallel_requests=0,
+        )
+
+
+def test_user_cannot_sync_single_key_usage(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    create_resp = client.post(
+        _api("/api-keys/applications"),
+        headers=user_headers,
+        json={"application_date": str(date.today()), "duration_days": 30, "purpose": "manual usage sync forbidden"},
+    )
+    assert create_resp.status_code == 201
+    key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
+
+    def _fail_provider_call(self):
+        raise AssertionError("provider must not be called")
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.list_spend_keys", _fail_provider_call)
+
+    resp = client.post(_api(f"/api-keys/{key_id}/usage-sync"), headers=user_headers)
+
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "FORBIDDEN"
 
 
 def test_list_api_keys_uses_current_limit_strategy_config_for_usage_limits(

@@ -15,6 +15,7 @@ from app.schemas.api_keys import (
     ApiKeyListResponse,
     ApiKeyRevealResponse,
     ApiKeyUsageSeriesResponse,
+    ApiKeyUsageSyncResponse,
     ApiKeyUsageTotalResponse,
     ApiKeyUserStatisticsResponse,
     LimitStrategyConfigResponse,
@@ -256,6 +257,71 @@ def get_api_key_detail(
 ) -> dict:
     service = ApiKeysService(db)
     return service.get_key_detail(current_user=current_user, key_id=key_id)
+
+
+@router.post(
+    "/api-keys/{key_id}/usage-sync",
+    response_model=ApiKeyUsageSyncResponse,
+    dependencies=[Depends(csrf_protected), enforce_rate_limit("api-key-usage-sync", settings.admin_mutation_rate_limit)],
+)
+def sync_api_key_usage(
+    key_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    audit = OperationAuditService(db)
+    context = extract_request_audit_context(request)
+    event_type = "api_key"
+    action = "usage_sync"
+    target_type = "api_key"
+    service = ApiKeysService(db)
+    try:
+        result = service.sync_key_usage(current_user=current_user, key_id=key_id)
+    except ApiError as exc:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code=exc.code,
+            error_detail=summarize_operation_audit_error(exc),
+            actor=current_user,
+            target_type=target_type,
+            target_id=key_id,
+            context=context,
+            metadata={"key_id": key_id},
+        )
+        raise
+    except Exception as exc:
+        db.rollback()
+        audit.log(
+            event_type=event_type,
+            action=action,
+            result="failure",
+            error_code="INTERNAL_ERROR",
+            error_detail=summarize_operation_audit_error(exc),
+            actor=current_user,
+            target_type=target_type,
+            target_id=key_id,
+            context=context,
+            metadata={"key_id": key_id},
+        )
+        raise
+    audit.log(
+        event_type=event_type,
+        action=action,
+        result="success",
+        actor=current_user,
+        target_type=target_type,
+        target_id=result["key_id"],
+        context=context,
+        metadata={
+            "key_id": result["key_id"],
+            "history_written_count": result["history_written_count"],
+        },
+    )
+    return result
 
 
 @router.post(

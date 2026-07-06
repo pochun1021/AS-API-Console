@@ -4,9 +4,11 @@ import re
 import secrets
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
+from uuid import uuid4
 from zoneinfo import ZoneInfo
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser
@@ -27,6 +29,7 @@ from app.services.directory_identity_service import (
 from app.services.login_eligibility_service import LoginEligibilityService
 from app.services.persnl_soap_service import PersnlSoapService, PersnlSoapUnavailableError
 from app.services.provider_client import ProviderBadRequestError, ProviderClient, ProviderUnavailableError
+from db.models.api_key_usage_snapshots import ApiKeyUsageSnapshot
 from db.models.applications import ApiKeyApplication
 from db.models.api_keys import ApiKey
 from db.models.limit_strategy_config import LimitStrategyConfig
@@ -74,6 +77,36 @@ class UsageCycleAggregate:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+
+
+@dataclass(slots=True)
+class ProviderSpendKeySummary:
+    spend: float | None
+    budget_reset_at: datetime | None
+    synced_at: datetime | None
+
+
+@dataclass(slots=True)
+class ProviderUsageRecord:
+    start_time: datetime
+    spend: float
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+@dataclass(slots=True)
+class DailyUsageBucket:
+    bucket_start_utc: datetime
+    bucket_end_utc: datetime
+    spend: float
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+class ProviderPaginationMetadataError(RuntimeError):
+    """Raised when provider usage pagination metadata is not trustworthy."""
 
 
 @dataclass(slots=True)
@@ -258,6 +291,22 @@ def _resolve_current_cycle_window(
     return cycle_start, cycle_end
 
 
+def _is_stale_usage_after_reset(
+    *,
+    budget_reset_at: datetime | None,
+    synced_at: datetime | None,
+    now: datetime,
+) -> bool:
+    if budget_reset_at is None:
+        return False
+    normalized_reset_at = _normalized_utc_datetime(budget_reset_at)
+    if _normalized_utc_datetime(now) < normalized_reset_at:
+        return False
+    if synced_at is None:
+        return True
+    return _normalized_utc_datetime(synced_at) <= normalized_reset_at
+
+
 def _bucket_overlaps_cycle(
     *,
     bucket_start_utc: datetime,
@@ -288,6 +337,260 @@ def _aggregate_cycle_usage(buckets, *, cycle_start_utc: datetime, cycle_end_utc:
         prompt_tokens += bucket.prompt_tokens
         completion_tokens += bucket.completion_tokens
         total_tokens += bucket.total_tokens
+    return UsageCycleAggregate(
+        spend=_round_money(float(spend_total)),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+    )
+
+
+def _coerce_usage_int(value: object) -> int:
+    try:
+        normalized = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return normalized if normalized >= 0 else 0
+
+
+def _round_usage_money(value: float) -> float:
+    return float(Decimal(str(value)).quantize(Decimal("0.0001")))
+
+
+def _coerce_provider_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _format_provider_datetime(value: datetime) -> str:
+    return _normalized_utc_datetime(value).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _fetch_provider_spend_key_summary(provider_client: ProviderClient, *, key_alias: str) -> ProviderSpendKeySummary:
+    payload = provider_client.list_spend_keys()
+    if isinstance(payload, dict):
+        records = payload.get("data")
+    elif isinstance(payload, list):
+        records = payload
+    else:
+        raise ProviderUnavailableError("provider unavailable")
+    if not isinstance(records, list):
+        raise ProviderUnavailableError("provider unavailable")
+
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("key_alias") or "").strip() != key_alias:
+            continue
+        spend: float | None = None
+        if record.get("spend") is not None:
+            try:
+                spend = _round_usage_money(float(Decimal(str(record.get("spend")))))
+            except Exception:  # noqa: BLE001
+                spend = None
+        return ProviderSpendKeySummary(
+            spend=spend,
+            budget_reset_at=_coerce_provider_datetime(record.get("budget_reset_at")),
+            synced_at=_coerce_provider_datetime(record.get("updated_at")),
+        )
+
+    raise ApiError("PROVIDER_SYNC_MISMATCH", "provider spend summary not found for key_alias", 503)
+
+
+def _coerce_non_negative_int(value: object, field_name: str) -> int:
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ProviderPaginationMetadataError(f"invalid {field_name}") from exc
+    if normalized < 0:
+        raise ProviderPaginationMetadataError(f"invalid {field_name}")
+    return normalized
+
+
+def _validate_provider_usage_paging(
+    *,
+    payload: dict,
+    expected_page: int,
+    expected_page_size: int,
+    is_last_page: bool | None = None,
+) -> tuple[int, int, int]:
+    records = payload.get("data")
+    if not isinstance(records, list):
+        raise ProviderPaginationMetadataError("invalid data")
+
+    total = _coerce_non_negative_int(payload.get("total"), "total")
+    page = _coerce_non_negative_int(payload.get("page"), "page")
+    page_size = _coerce_non_negative_int(payload.get("page_size"), "page_size")
+    total_pages = _coerce_non_negative_int(payload.get("total_pages"), "total_pages")
+
+    if page < 1 or page != expected_page:
+        raise ProviderPaginationMetadataError("unexpected page")
+    if page_size < 1 or page_size != expected_page_size:
+        raise ProviderPaginationMetadataError("unexpected page_size")
+    if total_pages == 0:
+        if total != 0 or records:
+            raise ProviderPaginationMetadataError("inconsistent empty pagination")
+        return total, page_size, total_pages
+    if page > total_pages:
+        raise ProviderPaginationMetadataError("page exceeds total_pages")
+    if len(records) > page_size:
+        raise ProviderPaginationMetadataError("page contains more records than page_size")
+    if is_last_page is False and not records:
+        raise ProviderPaginationMetadataError("non-final page cannot be empty")
+    return total, page_size, total_pages
+
+
+def _extract_provider_usage_records(payload: object) -> list[ProviderUsageRecord]:
+    if not isinstance(payload, dict):
+        raise ProviderUnavailableError("provider unavailable")
+    records = payload.get("data")
+    if not isinstance(records, list):
+        raise ProviderUnavailableError("provider unavailable")
+
+    items: list[ProviderUsageRecord] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("status") or "").strip().lower() != "success":
+            continue
+        start_time = _coerce_provider_datetime(record.get("startTime"))
+        if start_time is None:
+            continue
+        try:
+            spend = _round_usage_money(float(Decimal(str(record.get("spend") or 0))))
+        except Exception:  # noqa: BLE001
+            continue
+        items.append(
+            ProviderUsageRecord(
+                start_time=start_time,
+                spend=spend,
+                prompt_tokens=_coerce_usage_int(record.get("prompt_tokens")),
+                completion_tokens=_coerce_usage_int(record.get("completion_tokens")),
+                total_tokens=_coerce_usage_int(record.get("total_tokens")),
+            )
+        )
+    return items
+
+
+def _fetch_provider_usage_records(
+    provider_client: ProviderClient,
+    *,
+    key_alias: str,
+    start_at: datetime,
+    end_at: datetime,
+) -> list[ProviderUsageRecord]:
+    page = 1
+    total_pages = 1
+    expected_page_size = 100
+    items: list[ProviderUsageRecord] = []
+    expected_total: int | None = None
+
+    while page <= total_pages:
+        payload = provider_client.list_spend_logs(
+            {
+                "start_date": _format_provider_datetime(start_at),
+                "end_date": _format_provider_datetime(end_at),
+                "key_alias": key_alias,
+                "status_filter": "success",
+                "page": page,
+                "page_size": expected_page_size,
+                "sort_by": "startTime",
+                "sort_order": "desc",
+            }
+        )
+        if not isinstance(payload, dict):
+            raise ProviderUnavailableError("provider unavailable")
+        total, _, response_total_pages = _validate_provider_usage_paging(
+            payload=payload,
+            expected_page=page,
+            expected_page_size=expected_page_size,
+            is_last_page=None if total_pages == 1 else page == total_pages,
+        )
+        if expected_total is None:
+            expected_total = total
+        elif total != expected_total:
+            raise ProviderPaginationMetadataError("inconsistent total across pages")
+        total_pages = response_total_pages
+        _validate_provider_usage_paging(
+            payload=payload,
+            expected_page=page,
+            expected_page_size=expected_page_size,
+            is_last_page=page == total_pages if total_pages > 0 else True,
+        )
+        items.extend(_extract_provider_usage_records(payload))
+        page += 1
+
+    if expected_total is not None:
+        if expected_total == 0 and items:
+            raise ProviderPaginationMetadataError("expected zero records but received data")
+        if len(items) > expected_total:
+            raise ProviderPaginationMetadataError("received more records than total")
+    return items
+
+
+def _bucket_bounds_for_taipei_day(bucket_date: date) -> tuple[datetime, datetime]:
+    local_start = datetime.combine(bucket_date, time.min, tzinfo=TAIPEI_TZ)
+    local_end = local_start + timedelta(days=1)
+    return local_start.astimezone(UTC), local_end.astimezone(UTC)
+
+
+def _build_daily_usage_buckets(records: list[ProviderUsageRecord]) -> list[DailyUsageBucket]:
+    grouped: dict[date, dict[str, Decimal | int]] = {}
+    for record in records:
+        bucket_date = record.start_time.astimezone(TAIPEI_TZ).date()
+        bucket = grouped.setdefault(
+            bucket_date,
+            {
+                "spend": Decimal("0"),
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            },
+        )
+        bucket["spend"] += Decimal(str(record.spend))
+        bucket["prompt_tokens"] += record.prompt_tokens
+        bucket["completion_tokens"] += record.completion_tokens
+        bucket["total_tokens"] += record.total_tokens
+
+    buckets: list[DailyUsageBucket] = []
+    for bucket_date in sorted(grouped.keys()):
+        bucket_start_utc, bucket_end_utc = _bucket_bounds_for_taipei_day(bucket_date)
+        aggregate = grouped[bucket_date]
+        buckets.append(
+            DailyUsageBucket(
+                bucket_start_utc=bucket_start_utc,
+                bucket_end_utc=bucket_end_utc,
+                spend=_round_usage_money(float(aggregate["spend"])),
+                prompt_tokens=int(aggregate["prompt_tokens"]),
+                completion_tokens=int(aggregate["completion_tokens"]),
+                total_tokens=int(aggregate["total_tokens"]),
+            )
+        )
+    return buckets
+
+
+def _aggregate_provider_records_for_cycle(
+    records: list[ProviderUsageRecord],
+    *,
+    cycle_start_utc: datetime,
+    cycle_end_utc: datetime,
+) -> UsageCycleAggregate:
+    spend_total = Decimal("0")
+    prompt_tokens = 0
+    completion_tokens = 0
+    total_tokens = 0
+    for record in records:
+        record_time = _normalized_utc_datetime(record.start_time)
+        if record_time < cycle_start_utc or record_time >= cycle_end_utc:
+            continue
+        spend_total += Decimal(str(record.spend))
+        prompt_tokens += record.prompt_tokens
+        completion_tokens += record.completion_tokens
+        total_tokens += record.total_tokens
     return UsageCycleAggregate(
         spend=_round_money(float(spend_total)),
         prompt_tokens=prompt_tokens,
@@ -859,7 +1162,16 @@ class ApiKeysService:
         )
         limit_config = self._get_limit_strategy_config_for_issuance()
         usage_windows_by_key: dict[str, tuple[datetime, datetime]] = {}
+        stale_usage_key_ids: set[str] = set()
+        now = datetime.now(UTC)
         for item in items:
+            if _is_stale_usage_after_reset(
+                budget_reset_at=item.usage_budget_reset_at,
+                synced_at=item.usage_synced_at,
+                now=now,
+            ):
+                stale_usage_key_ids.add(item.id)
+                continue
             window = _resolve_current_cycle_window(
                 budget_duration=limit_config.budget_duration,
                 budget_reset_at=item.usage_budget_reset_at,
@@ -883,7 +1195,14 @@ class ApiKeysService:
             effective_status = _effective_status(status=item.status, expires_at=item.expires_at)
             cycle_window = usage_windows_by_key.get(item.id)
             cycle_usage = None
-            if cycle_window is not None:
+            if item.id in stale_usage_key_ids:
+                cycle_usage = UsageCycleAggregate(
+                    spend=0.0,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                )
+            elif cycle_window is not None:
                 cycle_usage = _aggregate_cycle_usage(
                     usage_buckets_by_key.get(item.id, []),
                     cycle_start_utc=cycle_window[0],
@@ -989,6 +1308,142 @@ class ApiKeysService:
             "completion_tokens": totals.completion_tokens,
             "total_tokens": totals.total_tokens,
             "key_count": totals.key_count,
+        }
+
+    def _upsert_usage_bucket(
+        self,
+        *,
+        key_id: str,
+        bucket: DailyUsageBucket,
+        budget_reset_at: datetime | None,
+        synced_at: datetime,
+    ) -> None:
+        existing = self.session.scalar(
+            select(ApiKeyUsageSnapshot).where(
+                ApiKeyUsageSnapshot.api_key_id == key_id,
+                ApiKeyUsageSnapshot.bucket_granularity == "day",
+                ApiKeyUsageSnapshot.bucket_start_utc == bucket.bucket_start_utc,
+            )
+        )
+        if existing is None:
+            existing = ApiKeyUsageSnapshot(
+                id=str(uuid4()),
+                api_key_id=key_id,
+                bucket_granularity="day",
+                bucket_start_utc=bucket.bucket_start_utc,
+                bucket_end_utc=bucket.bucket_end_utc,
+                created_at=synced_at,
+            )
+        existing.bucket_end_utc = bucket.bucket_end_utc
+        existing.spend = bucket.spend
+        existing.prompt_tokens = bucket.prompt_tokens
+        existing.completion_tokens = bucket.completion_tokens
+        existing.total_tokens = bucket.total_tokens
+        existing.budget_reset_at = budget_reset_at
+        existing.synced_at = synced_at
+        self.session.add(existing)
+
+    def sync_key_usage(self, *, current_user: CurrentUser, key_id: str) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+
+        row = self.session.execute(
+            select(ApiKey, ApiKeyApplication).join(
+                ApiKeyApplication,
+                ApiKey.application_id == ApiKeyApplication.id,
+            ).where(ApiKey.id == key_id)
+        ).first()
+        if row is None:
+            raise ApiError("VALIDATION_ERROR", "key not found", 404)
+
+        key = row.ApiKey
+        application = row.ApiKeyApplication
+        key_alias = str(key.key_alias or "").strip() or _default_alias(application.account)
+        if not key_alias:
+            raise ApiError("VALIDATION_ERROR", "key_alias is required", 422)
+
+        limit_config = self._get_limit_strategy_config_for_issuance()
+        try:
+            summary = _fetch_provider_spend_key_summary(self.provider_client, key_alias=key_alias)
+        except ProviderBadRequestError as exc:
+            raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
+        except ProviderUnavailableError as exc:
+            raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
+
+        cycle_window = _resolve_current_cycle_window(
+            budget_duration=limit_config.budget_duration,
+            budget_reset_at=summary.budget_reset_at,
+        )
+        if cycle_window is None:
+            raise ApiError("PROVIDER_SYNC_MISMATCH", "provider current cycle metadata is incomplete", 503)
+
+        cycle_start_utc, cycle_end_utc = cycle_window
+        query_start_local_date = cycle_start_utc.astimezone(TAIPEI_TZ).date()
+        query_start_utc = datetime.combine(query_start_local_date, time.min, tzinfo=TAIPEI_TZ).astimezone(UTC)
+        query_end_utc = cycle_end_utc - timedelta(seconds=1)
+        synced_at = summary.synced_at or datetime.now(UTC).replace(microsecond=0)
+
+        try:
+            records = _fetch_provider_usage_records(
+                self.provider_client,
+                key_alias=key_alias,
+                start_at=query_start_utc,
+                end_at=query_end_utc,
+            )
+        except ProviderBadRequestError as exc:
+            raise ApiError("VALIDATION_ERROR", str(exc), 422) from exc
+        except ProviderUnavailableError as exc:
+            raise ApiError("PROVIDER_UNAVAILABLE", "provider unavailable", 503) from exc
+        except ProviderPaginationMetadataError as exc:
+            raise ApiError("PROVIDER_SYNC_MISMATCH", str(exc), 503) from exc
+
+        daily_buckets = _build_daily_usage_buckets(records)
+        cycle_usage = _aggregate_provider_records_for_cycle(
+            records,
+            cycle_start_utc=cycle_start_utc,
+            cycle_end_utc=cycle_end_utc,
+        )
+        for bucket in daily_buckets:
+            self._upsert_usage_bucket(
+                key_id=key.id,
+                bucket=bucket,
+                budget_reset_at=summary.budget_reset_at,
+                synced_at=synced_at,
+            )
+        self.session.execute(
+            update(ApiKey)
+            .where(ApiKey.id == key.id)
+            .values(
+                usage_spend=cycle_usage.spend,
+                usage_prompt_tokens=cycle_usage.prompt_tokens,
+                usage_completion_tokens=cycle_usage.completion_tokens,
+                usage_total_tokens=cycle_usage.total_tokens,
+                usage_budget_reset_at=summary.budget_reset_at,
+                usage_synced_at=synced_at,
+            )
+        )
+        self.session.commit()
+
+        usage_summary = _build_usage_summary(
+            max_budget_raw=limit_config.budget_max_budget,
+            budget_duration=limit_config.budget_duration,
+            key_created_at=key.created_at,
+            config_updated_at=limit_config.updated_at,
+            tpm_limit=limit_config.rate_limit_tpm,
+            rpm_limit=limit_config.rate_limit_rpm,
+            max_parallel_requests=limit_config.max_parallel_requests,
+            spend=cycle_usage.spend,
+            prompt_tokens=cycle_usage.prompt_tokens,
+            completion_tokens=cycle_usage.completion_tokens,
+            total_tokens=cycle_usage.total_tokens,
+            budget_reset_at=summary.budget_reset_at,
+            synced_at=synced_at,
+        )
+        return {
+            "key_id": key.id,
+            "synced_at": synced_at,
+            "history_written_count": len(daily_buckets),
+            "usage_summary": usage_summary,
         }
 
     def get_key_detail(self, current_user: CurrentUser, key_id: str) -> dict:

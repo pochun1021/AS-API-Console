@@ -124,6 +124,17 @@ class ApiKeyUsageTotalResponse(BaseModel):
     key_count: int
 
 
+class ApiKeyUsageSyncResponse(BaseModel):
+    key_id: str
+    synced_at: datetime
+    history_written_count: int
+    usage_summary: ApiKeyListItemResponse.UsageSummaryResponse
+
+    @field_serializer("synced_at")
+    def serialize_synced_at(self, value: datetime) -> str:
+        return serialize_utc_datetime(value)
+
+
 class ApiKeyDetailResponse(BaseModel):
     id: str
     status: str
