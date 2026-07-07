@@ -9,7 +9,7 @@ This page explains how logged-in users can integrate with the AS API Console ser
 - Request rate: Each API key can send up to `10` API requests per minute (`10 RPM`).
 - Daily quota: Each API key can use up to `2,000,000` tokens per day.
 - Concurrent connections: Each API key is limited to `3` concurrent connections.
-- Context window: `128K`.
+- Context window: `256K`.
 
 ## What to Prepare Before Use
 
