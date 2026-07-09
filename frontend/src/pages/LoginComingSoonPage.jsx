@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Box, Button, Card, CardContent, Stack, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import {
   formatApiKeyApplicationGoLiveAt,
   getApiKeyApplicationCountdown,
@@ -140,9 +141,14 @@ export default function LoginComingSoonPage() {
               </Box>
 
               <Box>
-                <Button variant="contained" onClick={proceedToLogin}>
-                  {t("login_coming_soon_action")}
-                </Button>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                  <Button variant="contained" onClick={proceedToLogin}>
+                    {t("login_coming_soon_action")}
+                  </Button>
+                  <Button variant="outlined" component={RouterLink} to="/usage-examples">
+                    {t("login_coming_soon_service_guide")}
+                  </Button>
+                </Stack>
               </Box>
             </Stack>
           </CardContent>

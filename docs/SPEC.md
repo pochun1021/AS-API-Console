@@ -63,6 +63,8 @@
 ### 2) Service Usage Guide Page（服務使用說明頁）
 - `user` 與 `admin` 都可使用。
 - 正式路由為 `/usage-examples`。
+- 未登入使用者也可直接開啟 `/usage-examples` 查看靜態服務使用說明文件；公開模式不得呼叫 `GET /main/api/v1/users/me` 或 `GET /main/api/v1/models`。
+- 公開模式需提供 `zh-TW` / `en` 手動語言切換，切換只影響本機畫面，不寫入使用者語言偏好 API。
 - 正式入口使用既有主導覽列中的「服務使用說明」項目；第一版不另外要求在 Apply Page 提供快捷入口。
 - 主導覽列中的「服務使用說明」入口需緊接在「系統公告」右側。
 - 登入後共用主導覽列需支援 responsive 版型：
@@ -96,7 +98,8 @@
   - 使用 `Authorization: Bearer <API_KEY>`
   - payload 至少包含 `model`、`messages`
   - 由 response `choices[0].message.content` 取出回應內容
-- 頁面中的模型清單區塊需沿用 `GET /main/api/v1/models`，並與服務使用說明文件顯示於同一頁。
+- 登入後頁面中的模型清單區塊需沿用 `GET /main/api/v1/models`，並與服務使用說明文件顯示於同一頁。
+- 未登入公開模式不顯示模型清單，且第一版不新增公開模型清單 API。
 - 第一版不新增後端 API。
 - `GET /main/api/v1/models` 成功回應固定為 `{ items, total, fetched_at }`，其中 `items[*]` 僅包含 normalized `{ id, label }`。
 - `APP_ENV=dev/test` 時，`GET /main/api/v1/models` 直接回系統內建測試資料：`gpt-4o`、`gpt-4o-mini`；`APP_ENV=prod` 才讀取 provider `/models`。
@@ -124,7 +127,10 @@
   - `user` 與 `admin` 都可見
   - 連到既有 `/usage-examples`
   - 不可被 admin 直接刪除、停用或由一般公告內容覆蓋成其他連結/內容
-- `user` 與 `admin` 登入後首頁預設都需導向獨立的 `System Announcements Page`；但 API Key 正式上線前，`user` 首次進入 `/main/` 時可先導向 `coming-soon` 提示頁。
+- `user` 與 `admin` 登入成功後需導向 `/main/announcements`。
+- 未登入使用者進入 `/main/` 時，也需導向公開模式的 `/usage-examples`，不得先導向登入。
+- `login-coming-soon` 僅作為點選登入後、實際呼叫 `/main/login` 前的提示 gate；未登入瀏覽公開服務使用說明時不得自動顯示 `login-coming-soon`。
+- 使用者登出後需回到未登入公開首頁 `/main/`。
 - `System Announcements Page`：
   - `user` 與 `admin` 都可使用，且主導覽列中的「系統公告」入口需位於最左側。
   - 主導覽列中的「服務使用說明」入口需位於「系統公告」右側，作為固定相鄰入口。
@@ -1424,7 +1430,7 @@ Base path：`/main/api/v1`
 46. `admin` 可於 `/institute-view` 查看 `active` institutes 清單與 `total`，並可手動觸發同步；若 Persnl SOAP 不可用，`POST /main/api/v1/institutes/sync` 需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 46A. `POST /main/api/v1/institutes/sync` 需具備全域 single-flight 與 cooldown 保護：同時間只允許一個手動同步執行；執行中需回 `429 INSTITUTE_SYNC_IN_PROGRESS`，冷卻中需回 `429 INSTITUTE_SYNC_COOLDOWN`，且 `429` 回應至少包含 `retry_after_seconds` 與 `next_allowed_at`。成功後冷卻 `15` 分鐘，失敗後冷卻 `1` 分鐘；成功回應 shape 仍僅包含既有同步統計欄位。
 46B. `GET /main/api/v1/institutes/sync-status` 需回傳 DB 持久化的手動同步狀態，供前端重新整理頁面後立即恢復 cooldown 倒數與按鈕 disable 狀態。
-47. `user` 與 `admin` 都需可從主導覽列進入「服務使用說明」頁；正式路由為 `/usage-examples`，且頁面中的 `GET /main/api/v1/models` 需允許兩種角色成功呼叫。
+47. `user` 與 `admin` 都需可從主導覽列進入「服務使用說明」頁；正式路由為 `/usage-examples`，且登入後頁面中的 `GET /main/api/v1/models` 需允許兩種角色成功呼叫。未登入使用者直接開啟 `/usage-examples` 時，需可看到 repo 內維護的靜態服務說明文件與中英文切換，且不得呼叫 `GET /main/api/v1/users/me` 或 `GET /main/api/v1/models`。
 47A. 登入後共用主導覽列需支援 responsive 行為：桌機維持頂部 horizontal navigation；較小寬度切換為 hamburger menu + Drawer，且 `系統公告`、`服務使用說明` 仍需維持前兩個共享入口順序。
 47B. responsive 主導覽列不得在小螢幕產生導覽標籤重疊、不可讀文字或水平 overflow；active route、語言切換與登出在桌機與 Drawer 內都需可正確使用。
 48. `GET /main/api/v1/models` 遇到 provider OpenAI-style `data` 陣列時，需正規化為 `{ id, label }` 清單；provider 回傳字串陣列時也需正規化成功，並去除空值、去重與依字母排序。
@@ -1440,12 +1446,12 @@ Base path：`/main/api/v1`
 51F. `System Announcements Page` 的 `user` 與 `admin` 都需可點擊公告標題，以 modal 檢視該筆公告全文；公告 `body` 不得在列表中直接常駐展開。
 
 ### OAuth、Session 與語系
-51G. 在 API Key 正式上線前，前端於呼叫 `/main/login`（FISA/OAuth 登入入口）前，需先顯示公開的 `coming-soon` 提示頁；使用者明示點擊後才可真正前往 `/main/login`。正式上線時間到達後，此公開提示頁不得再攔截登入入口。
+51G. 在 API Key 正式上線前，前端於呼叫 `/main/login`（SSO/OAuth 登入入口）前，需先顯示公開的 `coming-soon` 提示頁；使用者明示點擊後才可真正前往 `/main/login`。正式上線時間到達後，此公開提示頁不得再攔截登入入口。
 52. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。`GET /main/auth/callback` 成功時需建立 session 並 redirect `/main/`，失敗時需回錯且寫入 failure audit。
 53. 正式環境不得接受 header auth 作為正式認證來源；僅 `dev/test` 可啟用。OAuth 成功登入寫入的角色需固定為 `user`，且流程不得落地 access token、refresh token、password 或 client secret。
 54. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。登入資格判斷需遵循 `active whitelist(sysid)` 或 `active admins(id=sysid)`，否則才比對 `LOGIN_ALLOWED_TITLE_CODES`；若同時命中 `active whitelist` 與 `active admins`，最終角色仍以 `admin` 為準。
 55. `/main/login-denied` 必須是公開頁；登入失敗導向 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 時，使用者需可直接看到拒絕說明與返回登入操作，且不依賴 `GET /main/api/v1/users/me` 成功。
-55A. API Key 正式上線前，前端在呼叫 `/main/login` 前需先顯示公開的 `/main/login-coming-soon` 提示頁；使用者明示點擊後才可真正前往 `/main/login`。登入成功後進入 `/main/` 時，`user` 與 `admin` 都需維持既有登入後首頁導向，不得再因未上線而自動跳轉至 `/main/apply/coming-soon`。
+55A. API Key 正式上線前，使用者在公開頁點選登入後，前端於呼叫 `/main/login` 前需先顯示公開的 `/main/login-coming-soon` 提示頁；使用者明示點擊後才可真正前往 `/main/login`。未登入使用者瀏覽 `/main/` 或 `/main/usage-examples` 時，不得自動顯示 `/main/login-coming-soon`。登入成功後，`user` 與 `admin` 都需導向 `/main/announcements`，不得再因未上線而自動跳轉至 `/main/apply/coming-soon`。
 56. `GET /main/api/v1/users/me` 需回傳目前使用者資料與 `csrf_token`；所有 `POST/PATCH` 端點在 session auth 模式下，缺少或錯誤 `X-CSRF-Token` 時需回傳 `403 FORBIDDEN`。
 57. 系統語言僅支援 `zh-TW`、`en`；DB 無偏好時，系統語言命中 `zh*` 顯示中文、命中 `en*` 顯示英文，其他語系 fallback 為英文，並需立即寫回 DB 作為初始偏好。
 58. `GET /main/api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 僅允許 `zh-TW|en`，成功後可立即由 `GET` 讀回。手動切換語言後，重新登入需沿用 DB 偏好，且導覽列、頁標題、按鈕、錯誤/提示訊息與 DataGrid locale 文案需隨語言切換更新。

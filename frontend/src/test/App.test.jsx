@@ -45,6 +45,7 @@ describe("App public auth pages", () => {
     provider.getApiKeyUsageTotal.mockReset();
     provider.listModels.mockReset();
     provider.logout.mockReset();
+    window.sessionStorage.clear();
     vi.restoreAllMocks();
     setApiProvider(provider);
     vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(true);
@@ -63,6 +64,7 @@ describe("App public auth pages", () => {
     renderApp("/login-coming-soon");
 
     expect(await screen.findByRole("heading", { name: "API Key Applications Open on June 30" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View Service Guide" })).toHaveAttribute("href", "/usage-examples");
     expect(provider.getCurrentUser).not.toHaveBeenCalled();
   });
 
@@ -72,7 +74,7 @@ describe("App public auth pages", () => {
     vi.spyOn(navigation, "proceedToLogin").mockImplementation(() => {});
     renderApp("/login-coming-soon");
 
-    await user.click(await screen.findByRole("button", { name: "Continue to FISA Sign-In" }));
+    await user.click(await screen.findByRole("button", { name: "Continue to SSO Sign-In" }));
     expect(navigation.proceedToLogin).toHaveBeenCalledTimes(1);
   });
 
@@ -83,7 +85,31 @@ describe("App public auth pages", () => {
 
     await user.click(await screen.findByRole("button", { name: "中文" }));
     expect(await screen.findByRole("heading", { name: "API Key 申請即將於 6 月 30 日上線" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "前往 FISA 登入" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "前往 SSO 登入" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "查看服務使用說明" })).toHaveAttribute("href", "/usage-examples");
+  });
+
+  test("public /usage-examples renders guide without restoring auth or loading models", async () => {
+    renderApp("/usage-examples");
+
+    expect(await screen.findByRole("heading", { name: "Service Usage Guide" })).toBeInTheDocument();
+    expect(await screen.findByText("The example below is a version prepared for documentation display and user reference:")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign In" })).toBeInTheDocument();
+    expect(provider.getCurrentUser).not.toHaveBeenCalled();
+    expect(provider.listModels).not.toHaveBeenCalled();
+  });
+
+  test("public /usage-examples supports locale switching", async () => {
+    const user = userEvent.setup();
+    renderApp("/usage-examples");
+
+    await user.click(await screen.findByRole("button", { name: "中文" }));
+
+    expect(await screen.findByRole("heading", { name: "服務使用說明" })).toBeInTheDocument();
+    expect(await screen.findByText("以下範本為適合文件顯示與使用者參考的版本：")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "登入" })).toBeInTheDocument();
+    expect(provider.getCurrentUser).not.toHaveBeenCalled();
+    expect(provider.listModels).not.toHaveBeenCalled();
   });
 
   test("retry button on denied page redirects to /main/login", async () => {
@@ -145,8 +171,9 @@ describe("App public auth pages", () => {
     expect(navigation.redirectToLogin).not.toHaveBeenCalled();
   });
 
-  test("shared /usage-examples route renders for non-admin user", async () => {
-    provider.getCurrentUser.mockResolvedValueOnce({
+  test("shared /usage-examples route renders for non-admin user from authenticated navigation", async () => {
+    const user = userEvent.setup();
+    provider.getCurrentUser.mockResolvedValue({
       account: "user1",
       name: "User One",
       email: "user1@example.com",
@@ -155,13 +182,21 @@ describe("App public auth pages", () => {
       role: "user"
     });
     provider.getLocalePreference.mockResolvedValueOnce({ preferred_locale: "zh-TW" });
+    provider.listAnnouncements.mockResolvedValue({
+      items: [{ id: "ann_1", title: "首頁公告", body: "公告內容", updated_at: "2026-06-15T08:00:00Z" }],
+      total: 1,
+      page: 1,
+      page_size: 20
+    });
     provider.listModels.mockResolvedValueOnce({
       items: [{ id: "gpt-4o-mini", label: "gpt-4o-mini" }],
       total: 1,
       fetched_at: "2026-06-05T12:00:00Z"
     });
 
-    renderApp("/usage-examples");
+    renderApp("/announcements");
+
+    await user.click(await screen.findByRole("link", { name: "服務使用說明" }));
 
     expect((await screen.findAllByRole("heading", { name: "服務使用說明" })).length).toBeGreaterThan(0);
     expect(await screen.findByText("gpt-4o-mini")).toBeInTheDocument();
@@ -169,7 +204,7 @@ describe("App public auth pages", () => {
   });
 
   test("shared /usage route renders for non-admin user", async () => {
-    provider.getCurrentUser.mockResolvedValueOnce({
+    provider.getCurrentUser.mockResolvedValue({
       account: "user1",
       name: "User One",
       email: "user1@example.com",
@@ -188,8 +223,17 @@ describe("App public auth pages", () => {
     expect(await screen.findByLabelText("API Key", {}, { timeout: 3000 })).toBeInTheDocument();
   });
 
-  test("root route still redirects user to /announcements before go-live", async () => {
-    provider.getCurrentUser.mockResolvedValueOnce({
+  test("root route redirects unauthenticated visitors to the public service guide", async () => {
+    renderApp("/");
+
+    expect(await screen.findByRole("heading", { name: "Service Usage Guide" })).toBeInTheDocument();
+    expect(provider.getCurrentUser).not.toHaveBeenCalled();
+    expect(provider.listModels).not.toHaveBeenCalled();
+    expect(provider.listAnnouncements).not.toHaveBeenCalled();
+  });
+
+  test("authenticated root route redirects to announcements", async () => {
+    provider.getCurrentUser.mockResolvedValue({
       account: "user1",
       name: "User One",
       email: "user1@example.com",
@@ -199,70 +243,17 @@ describe("App public auth pages", () => {
     });
     provider.getLocalePreference.mockResolvedValueOnce({ preferred_locale: "zh-TW" });
     provider.listAnnouncements.mockResolvedValue({
-      items: [{ id: "ann_1", title: "首頁公告", body: "公告內容", updated_at: "2026-06-15T08:00:00Z" }],
+      items: [{ id: "ann_1", title: "登入後公告", body: "公告內容", updated_at: "2026-06-15T08:00:00Z" }],
       total: 1,
       page: 1,
       page_size: 20
     });
+    window.sessionStorage.setItem("as-api-console-service-guide-auth-hint", "1");
 
     renderApp("/");
 
-    await waitFor(() => {
-      expect(provider.listAnnouncements).toHaveBeenCalled();
-    });
-    expect(provider.listAnnouncements.mock.calls.some(([params]) => params?.scope === "all")).toBe(false);
-  });
-
-  test("root route redirects user to /announcements after go-live", async () => {
-    vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(true);
-    provider.getCurrentUser.mockResolvedValueOnce({
-      account: "user1",
-      name: "User One",
-      email: "user1@example.com",
-      department: "IT",
-      sysid: 2001,
-      role: "user"
-    });
-    provider.getLocalePreference.mockResolvedValueOnce({ preferred_locale: "zh-TW" });
-    provider.listAnnouncements.mockResolvedValue({
-      items: [{ id: "ann_1", title: "首頁公告", body: "公告內容", updated_at: "2026-06-15T08:00:00Z" }],
-      total: 1,
-      page: 1,
-      page_size: 20
-    });
-
-    renderApp("/");
-
-    await waitFor(() => {
-      expect(provider.listAnnouncements).toHaveBeenCalled();
-    });
-    expect(provider.listAnnouncements.mock.calls.some(([params]) => params?.scope === "all")).toBe(false);
-    expect(screen.queryByRole("button", { name: "新增" })).not.toBeInTheDocument();
-  });
-
-  test("root route redirects admin to /announcements", async () => {
-    vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(false);
-    provider.getCurrentUser.mockResolvedValueOnce({
-      account: "admin1",
-      name: "Admin One",
-      email: "admin1@example.com",
-      department: "IT",
-      sysid: 1001,
-      role: "admin"
-    });
-    provider.getLocalePreference.mockResolvedValueOnce({ preferred_locale: "zh-TW" });
-    provider.listAnnouncements.mockResolvedValue({
-      items: [{ id: "ann_1", title: "首頁公告", body: "公告內容" }],
-      total: 1,
-      page: 1,
-      page_size: 20
-    });
-
-    renderApp("/");
-
-    await waitFor(() => {
-      expect(provider.listAnnouncements).toHaveBeenCalled();
-      expect(provider.listAnnouncements.mock.calls.some(([params]) => params?.scope === "all")).toBe(true);
-    });
+    expect(await screen.findByText("登入後公告")).toBeInTheDocument();
+    expect(provider.listAnnouncements).toHaveBeenCalled();
+    expect(provider.listModels).not.toHaveBeenCalled();
   });
 });

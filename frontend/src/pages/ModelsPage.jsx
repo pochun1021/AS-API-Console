@@ -1,18 +1,15 @@
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Box, Button, Card, CardContent, Stack, Typography } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid/DataGrid";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StateBlocks";
+import ServiceUsageGuide from "../components/ServiceUsageGuide";
 import { useLocale } from "../i18n/locale";
 import { COMPACT_LOCAL_PAGE_SIZE_OPTIONS, compactGridProps, compactGridSx } from "../utils/compactDataGrid";
 import { getGridLocaleText } from "../utils/gridLocaleText";
-import { lazyWithReload } from "../utils/lazyWithReload";
-import guideEn from "../../../docs/service-usage-guide.en.md?raw";
-import guideZhTw from "../../../docs/service-usage-guide.zh-TW.md?raw";
 
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
-const MarkdownRenderer = lazyWithReload("MarkdownRenderer", () => import("../components/MarkdownRenderer"));
 
 export default function ModelsPage({ auth }) {
   const { locale, t } = useLocale();
@@ -21,7 +18,6 @@ export default function ModelsPage({ auth }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const guideMarkdown = locale === "zh-TW" ? guideZhTw : guideEn;
 
   async function load({ background = false } = {}) {
     if (background) {
@@ -79,9 +75,7 @@ export default function ModelsPage({ auth }) {
                 {t("models_guide_section")}
               </Typography>
             </Stack>
-            <Suspense fallback={<LoadingBlock text={t("common_loading")} />}>
-              <MarkdownRenderer markdown={guideMarkdown} />
-            </Suspense>
+            <ServiceUsageGuide />
           </CardContent>
         </Card>
         <Card sx={{ display: "flex", flexDirection: "column", minHeight: 0 }}>

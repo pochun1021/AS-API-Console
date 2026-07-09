@@ -114,6 +114,18 @@ export default defineConfig({
       "/main/api": {
         target: "http://127.0.0.1:8000",
         changeOrigin: true
+      },
+      "/main/login": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true
+      },
+      "/main/auth": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true
+      },
+      "/main/logout": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true
       }
     }
   },

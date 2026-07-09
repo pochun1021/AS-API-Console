@@ -18,6 +18,7 @@ from db.session import get_db
 
 router = APIRouter()
 settings = get_settings()
+LOGIN_SUCCESS_REDIRECT = "/main/announcements"
 
 
 def _clear_login_session(request: Request) -> None:
@@ -102,7 +103,7 @@ def login(
             db.commit()
         request.session.pop("oauth_request_id", None)
         ensure_csrf_token(request)
-        return RedirectResponse("/main/", status_code=302)
+        return RedirectResponse(LOGIN_SUCCESS_REDIRECT, status_code=302)
 
     try:
         ensure_csrf_token(request)
@@ -247,7 +248,7 @@ def oauth_callback(
     )
     if redirect is not None:
         return redirect
-    return RedirectResponse("/main/", status_code=302)
+    return RedirectResponse(LOGIN_SUCCESS_REDIRECT, status_code=302)
 
 
 @router.post("/logout", dependencies=[Depends(csrf_protected), enforce_rate_limit("logout", settings.login_rate_limit)])

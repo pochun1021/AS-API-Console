@@ -8,6 +8,11 @@ import { detectSystemLocale, useLocale } from "./i18n/locale";
 import { lazyWithReload } from "./utils/lazyWithReload";
 import { redirectToLogin } from "./utils/navigation";
 
+function redirectToPublicHome() {
+  if (typeof window === "undefined") return;
+  window.location.assign("/main/");
+}
+
 const ApplyPage = lazyWithReload("ApplyPage", () => import("./pages/ApplyPage"));
 const ApplyComingSoonPage = lazyWithReload("ApplyComingSoonPage", () => import("./pages/ApplyComingSoonPage"));
 const LoginComingSoonPage = lazyWithReload("LoginComingSoonPage", () => import("./pages/LoginComingSoonPage"));
@@ -20,9 +25,26 @@ const LimitStrategiesPage = lazyWithReload("LimitStrategiesPage", () => import("
 const InstituteViewPage = lazyWithReload("InstituteViewPage", () => import("./pages/InstituteViewPage"));
 const ModelsPage = lazyWithReload("ModelsPage", () => import("./pages/ModelsPage"));
 const OperationAuditLogsPage = lazyWithReload("OperationAuditLogsPage", () => import("./pages/OperationAuditLogsPage"));
+const PublicServiceGuidePage = lazyWithReload("PublicServiceGuidePage", () => import("./pages/PublicServiceGuidePage"));
 const SystemAnnouncementsPage = lazyWithReload("SystemAnnouncementsPage", () => import("./pages/SystemAnnouncementsPage"));
 const UsagePage = lazyWithReload("UsagePage", () => import("./pages/UsagePage"));
 const WhitelistAdminPage = lazyWithReload("WhitelistAdminPage", () => import("./pages/WhitelistAdminPage"));
+const SERVICE_GUIDE_AUTH_HINT_KEY = "as-api-console-service-guide-auth-hint";
+
+function hasServiceGuideAuthHint() {
+  if (typeof window === "undefined") return false;
+  return window.sessionStorage.getItem(SERVICE_GUIDE_AUTH_HINT_KEY) === "1";
+}
+
+function setServiceGuideAuthHint() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(SERVICE_GUIDE_AUTH_HINT_KEY, "1");
+}
+
+function clearServiceGuideAuthHint() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(SERVICE_GUIDE_AUTH_HINT_KEY);
+}
 
 export default function App() {
   const location = useLocation();
@@ -35,6 +57,9 @@ export default function App() {
   const isLoginDeniedRoute = location.pathname === "/login-denied";
   const isLoginErrorRoute = location.pathname === "/login-error";
   const isLoginComingSoonRoute = location.pathname === "/login-coming-soon";
+  const isPublicRootRoute = location.pathname === "/" && !auth && !hasServiceGuideAuthHint();
+  const isServiceGuideRoute = location.pathname === "/usage-examples";
+  const isPublicServiceGuideRoute = isServiceGuideRoute && !auth && !hasServiceGuideAuthHint();
 
   function navigateToLoginError(error) {
     const route = error?.payload?.route || "users_me";
@@ -61,16 +86,17 @@ export default function App() {
       // Best effort logout: clear local auth state and force re-login.
     } finally {
       clearOAuthAuthContext();
+      clearServiceGuideAuthHint();
       setAuth(null);
       setLogoutInProgress(false);
-      redirectToLogin();
+      redirectToPublicHome();
     }
   }
 
   useEffect(() => {
     let canceled = false;
     async function bootstrapAuth() {
-      if (isLoginDeniedRoute || isLoginErrorRoute || isLoginComingSoonRoute) {
+      if (isLoginDeniedRoute || isLoginErrorRoute || isLoginComingSoonRoute || isPublicRootRoute || isPublicServiceGuideRoute) {
         if (!canceled) {
           setAuthReady(true);
           setLocale(detectSystemLocale());
@@ -82,10 +108,17 @@ export default function App() {
         const devAuth = readOAuthAuthContext();
         const currentUser = await apiClient.getCurrentUser(devAuth);
         if (!canceled) {
+          setServiceGuideAuthHint();
           setAuth(currentUser);
         }
       } catch (error) {
         if (canceled) return;
+        if (isServiceGuideRoute && !(error?.status >= 500)) {
+          clearServiceGuideAuthHint();
+          setLocale(detectSystemLocale());
+          setLocaleReady(true);
+          return;
+        }
         if (error?.status >= 500) {
           navigateToLoginError(error);
         } else {
@@ -101,7 +134,7 @@ export default function App() {
     return () => {
       canceled = true;
     };
-  }, [isLoginDeniedRoute, isLoginErrorRoute, isLoginComingSoonRoute, navigate, setLocale]);
+  }, [isLoginDeniedRoute, isLoginErrorRoute, isLoginComingSoonRoute, isPublicRootRoute, isPublicServiceGuideRoute, isServiceGuideRoute, navigate, setLocale]);
 
   useEffect(() => {
     if (!auth) return;
@@ -141,6 +174,26 @@ export default function App() {
           <Route path="/login-denied" element={<LoginDeniedPage />} />
           <Route path="/login-error" element={<LoginErrorPage />} />
           <Route path="*" element={<Navigate to="/login-denied" replace />} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
+  if (isPublicRootRoute) {
+    return (
+      <Suspense fallback={<LoadingBlock text={t("common_loading")} />}>
+        <Routes>
+          <Route path="/" element={<PublicServiceGuidePage />} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
+  if (isPublicServiceGuideRoute) {
+    return (
+      <Suspense fallback={<LoadingBlock text={t("common_loading")} />}>
+        <Routes>
+          <Route path="/usage-examples" element={<PublicServiceGuidePage />} />
         </Routes>
       </Suspense>
     );

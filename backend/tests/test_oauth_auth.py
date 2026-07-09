@@ -95,7 +95,7 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
 
     callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
     assert callback.status_code == 302
-    assert callback.headers["location"] == "/main/"
+    assert callback.headers["location"] == "/main/announcements"
 
     # verify session auth context can be used without headers
     locale_resp = client.get("/main/api/v1/users/preferences/locale")
@@ -268,7 +268,7 @@ def test_callback_allows_missing_state(client, monkeypatch):
     )
     callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
     assert callback.status_code == 302
-    assert callback.headers["location"] == "/main/"
+    assert callback.headers["location"] == "/main/announcements"
 
 
 def test_callback_allows_any_valid_oauth_identity(client, monkeypatch):
@@ -377,7 +377,7 @@ def test_callback_allows_when_sysid_in_active_whitelist(client, monkeypatch):
     )
     callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
     assert callback.status_code == 302
-    assert callback.headers["location"] == "/main/"
+    assert callback.headers["location"] == "/main/announcements"
 
 
 def test_callback_allows_when_sysid_matches_active_admin_id(client, monkeypatch):
@@ -398,7 +398,7 @@ def test_callback_allows_when_sysid_matches_active_admin_id(client, monkeypatch)
     )
     callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
     assert callback.status_code == 302
-    assert callback.headers["location"] == "/main/"
+    assert callback.headers["location"] == "/main/announcements"
 
 
 def test_login_bypasses_oauth_in_dev(client, monkeypatch):
@@ -414,7 +414,7 @@ def test_login_bypasses_oauth_in_dev(client, monkeypatch):
 
     resp = client.get("/main/login", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/main/"
+    assert resp.headers["location"] == "/main/announcements"
 
     me_resp = client.get("/main/api/v1/users/me")
     assert me_resp.status_code == 200
@@ -438,7 +438,7 @@ def test_login_bypasses_oauth_in_test(client, monkeypatch):
 
     resp = client.get("/main/login", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/main/"
+    assert resp.headers["location"] == "/main/announcements"
 
     me_resp = client.get("/main/api/v1/users/me")
     assert me_resp.status_code == 200
