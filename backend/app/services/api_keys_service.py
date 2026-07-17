@@ -172,6 +172,11 @@ def _to_provider_budget_duration(duration: str) -> str:
     return normalized
 
 
+def _to_provider_update_max_budget(value: str) -> float | None:
+    max_budget = float(value)
+    return None if max_budget == 0 else max_budget
+
+
 def _normalize_provider_budget_duration(duration: object) -> str | None:
     normalized = str(duration or "").strip().lower()
     if normalized in {"daily", "1d"}:
@@ -1063,7 +1068,7 @@ class ApiKeysService:
                         "team_id": self._require_provider_team_id(),
                         "all_keys_in_team": True,
                         "update_fields": {
-                            "max_budget": float(config.budget_max_budget),
+                            "max_budget": _to_provider_update_max_budget(config.budget_max_budget),
                             "budget_duration": _to_provider_budget_duration(config.budget_duration),
                             "tpm_limit": _to_provider_rate_limit(config.rate_limit_tpm),
                             "rpm_limit": _to_provider_rate_limit(config.rate_limit_rpm),

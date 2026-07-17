@@ -566,6 +566,37 @@ def test_limit_strategy_patch_syncs_provider_team_update(client, admin_headers, 
         get_settings.cache_clear()
 
 
+def test_limit_strategy_patch_sends_null_provider_max_budget_for_unlimited(client, admin_headers, monkeypatch):
+    payload = {
+        "budget_max_budget": "0",
+        "budget_duration": "weekly",
+        "rate_limit_tpm": 13000,
+        "rate_limit_rpm": 700,
+        "max_parallel_requests": 0,
+    }
+    captured_payload: dict = {}
+
+    monkeypatch.setenv("ISSUANCE_PROVIDER_MODE", "external")
+    monkeypatch.setenv("PROVIDER_TEAM_ID", "team-001")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.is_configured", lambda self: True)
+
+    def _capture_team_update(self, provider_payload):
+        captured_payload.update(provider_payload)
+        return SimpleNamespace(request_id="req-team", operation_id="op-team")
+
+    monkeypatch.setattr("app.services.provider_client.ProviderClient.update_team_limits", _capture_team_update)
+
+    try:
+        resp = client.patch(api_path("/limit-strategy-config"), headers=admin_headers, json=payload)
+        assert resp.status_code == 200
+        assert captured_payload["update_fields"]["max_budget"] is None
+    finally:
+        monkeypatch.delenv("ISSUANCE_PROVIDER_MODE", raising=False)
+        monkeypatch.delenv("PROVIDER_TEAM_ID", raising=False)
+        get_settings.cache_clear()
+
+
 def test_limit_strategy_patch_fails_when_provider_sync_verification_mismatches(
     client, admin_headers, user_headers, monkeypatch
 ):

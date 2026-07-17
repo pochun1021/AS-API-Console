@@ -298,7 +298,7 @@
   - `budget`（額度；必填：`max_budget`、`budget_duration`）
   - `rate_limit`（速度；必填：`tpm_limit`、`rpm_limit`）
 - 欄位語意：
-  - `max_budget`：總金額額度（USD）。
+  - `max_budget`：總金額額度（USD）；允許 `0`，表示送往 provider 更新現有 keys 時轉為 `null`（不限制），本地設定維持 `0`。
   - `budget_duration`：重置週期（僅允許 `daily|weekly|monthly`）。
   - `tpm_limit`：每分鐘 Token 數限制。
   - `rpm_limit`：每分鐘請求數限制。
@@ -715,6 +715,7 @@ Base path：`/main/api/v1`
 }
 ```
 - `PATCH /main/api/v1/limit-strategy-config` 在 provider `bulk_update` 成功後，需立即回讀 provider `/spend/keys` 驗證目前 `active` keys 的 `budget_duration` 已與本地新設定一致；若回讀失敗、資料無法辨識、缺少對應 key，或任一 key 的 `budget_duration` 仍不一致，整次更新需視為失敗並回傳錯誤，不得只更新本地設定後靜默放行。
+- `PATCH /main/api/v1/limit-strategy-config` 同步 `/team/key/bulk_update` 時，若本地 `budget_max_budget=0`，`update_fields.max_budget` 需送 `null`。
 - `PATCH /main/api/v1/limit-strategy-config` 在 session auth 模式下，若 `X-CSRF-Token` 缺失或不正確需回 `403 FORBIDDEN`。
 - `PATCH /main/api/v1/limit-strategy-config` 的 `budget_max_budget`、`rate_limit_tpm`、`rate_limit_rpm`、`max_parallel_requests` 僅接受 ASCII `0-9`；若為空字串、科學記號、小數、負號、全形數字、空白或混合字串，回 `422 VALIDATION_ERROR`。
 - 同步 `/team/key/bulk_update` 時，external provider mode 下缺少 `PROVIDER_TEAM_ID` 必須 fail fast，且不得送 request 給 provider。
