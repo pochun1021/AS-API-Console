@@ -810,7 +810,7 @@ class ApiKeysService:
         key_alias: str,
     ) -> dict:
         return {
-            "max_budget": float(config.max_budget),
+            "max_budget": _to_provider_update_max_budget(config.max_budget),
             "budget_duration": _to_provider_budget_duration(config.budget_duration),
             "duration": _to_provider_duration(duration_days),
             "tpm_limit": _to_provider_rate_limit(config.tpm_limit),
@@ -833,7 +833,7 @@ class ApiKeysService:
             raise ValueError("duration_days is required")
         payload = {
             "key": plaintext,
-            "max_budget": float(config.max_budget),
+            "max_budget": _to_provider_update_max_budget(config.max_budget),
             "budget_duration": _to_provider_budget_duration(config.budget_duration),
             "duration": _to_provider_duration_days(duration_days),
             "tpm_limit": _to_provider_rate_limit(config.tpm_limit),

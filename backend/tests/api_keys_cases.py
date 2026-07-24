@@ -1352,7 +1352,7 @@ def test_provider_payload_builder_uses_external_contract():
     }
 
 
-def test_provider_payload_builder_converts_zero_rate_limits_to_null():
+def test_provider_payload_builder_converts_zero_limits_to_null():
     from app.services.api_keys_service import ApiKeysService, IssuanceConfigValues
     from types import SimpleNamespace
 
@@ -1363,7 +1363,7 @@ def test_provider_payload_builder_converts_zero_rate_limits_to_null():
         key_alias="for_user1",
         duration_days=30,
         config=IssuanceConfigValues(
-            max_budget="1000",
+            max_budget="0",
             budget_duration="monthly",
             tpm_limit=0,
             rpm_limit=0,
@@ -1371,13 +1371,14 @@ def test_provider_payload_builder_converts_zero_rate_limits_to_null():
         ),
     )
 
+    assert payload["max_budget"] is None
     assert payload["tpm_limit"] is None
     assert payload["rpm_limit"] is None
     assert payload["max_parallel_requests"] is None
     assert payload["team_id"] == "team-001"
 
 
-def test_provider_update_payload_builder_converts_zero_parallel_limit_to_null():
+def test_provider_update_payload_builder_converts_zero_limits_to_null():
     from app.services.api_keys_service import ApiKeysService, IssuanceConfigValues
     from types import SimpleNamespace
 
@@ -1388,15 +1389,18 @@ def test_provider_update_payload_builder_converts_zero_parallel_limit_to_null():
         plaintext="AS-old",
         duration_days=30,
         config=IssuanceConfigValues(
-            max_budget="1000",
+            max_budget="0",
             budget_duration="monthly",
-            tpm_limit=10000,
-            rpm_limit=500,
+            tpm_limit=0,
+            rpm_limit=0,
             max_parallel_requests=0,
         ),
         key_alias="for_user1",
     )
 
+    assert payload["max_budget"] is None
+    assert payload["tpm_limit"] is None
+    assert payload["rpm_limit"] is None
     assert payload["max_parallel_requests"] is None
     assert payload["team_id"] == "team-001"
 

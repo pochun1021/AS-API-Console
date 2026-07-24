@@ -674,7 +674,7 @@ Base path：`/main/api/v1`
   - `budget_duration` 由系統設定映射：`daily->1d`、`weekly->7d`、`monthly->30d`
   - `duration` 由 `duration_days` 映射：`30->30d`、`180->180d`、`360->360d`
   - 本地 `expires_at` 也需沿用同一 fixed-day 規則，不得再使用曆月位移算法
-  - 若全域設定中的 `tpm_limit` 或 `rpm_limit` 為 `0`，送往 provider 時需轉為 `null`，表示不限制
+  - 若全域設定中的 `max_budget`、`tpm_limit` 或 `rpm_limit` 為 `0`，送往 provider 時需轉為 `null`，表示不限制；本地設定維持 `0`
   - `max_parallel_requests` 預設為 `0`，表示不限制；本地設定維持 `0`，送往 provider 時需轉為 `null`
   - `team_id` 固定使用 `PROVIDER_TEAM_ID`
   - `key_alias` 預設先送 `for_{owner_account}`；若 provider 回 `400`，系統需自動依序重試 `for_{owner_account}_v2`、`_v3` ...，成功後將最終 alias 寫回本地 `api_keys.key_alias`
