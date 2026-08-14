@@ -133,9 +133,10 @@ export ENV_FILE=/home/app/config/.env
 - `SESSION_MAX_AGE_SECONDS`：可選；session 有效秒數
 - `OAUTH_PROVIDER`：可選，OAuth provider 名稱（寫入 auth audit，Google 環境建議設為 `google`）
 - `GOOGLE_CLIENT_SECRETS_FILE`：Google OAuth client secrets JSON 路徑；預設為 `backend/client_secret.json`，正式部署可設為 `/home/app/config/client_secret.json`
-- `OAUTH_REDIRECT_URI`：目前環境的 Google callback URI（明確覆寫 client secrets JSON 內的 redirect URI）
+- OAuth callback URI：由 `APP_ENV` 與 `APP_DOMAIN` 自動產生，例如 test 為 `http://localhost:8000/test/auth/callback`，prod 為 `https://api.ascs.sinica.edu.tw/main/auth/callback`
 - `GOOGLE_ALLOWED_HOSTED_DOMAIN`：限制 Google Workspace 網域
 - `OAUTH_SCOPE`：Google OIDC scope，預設為 `openid email profile`
+- `TEST_OAUTH_ACCOUNT` / `TEST_OAUTH_NAME` / `TEST_OAUTH_EMAIL` / `TEST_OAUTH_DEPARTMENT` / `TEST_OAUTH_SYSID` / `TEST_OAUTH_TCODE`：僅 `APP_ENV=test` 且 Persnl SOAP unavailable 時使用的完整本機 OAuth identity fallback；email 必須與 Google verified email 一致，production 永不啟用
 - `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：僅 `APP_ENV=dev` 使用 `/dev/login` bypass 時建立 session 身分所需欄位
 - `DEV_LOGIN_ROLE`：可選，僅 `dev` bypass 身分角色（僅允許 `user` 或 `admin`，預設 `user`）
 - `SCHEDULER_LOG_ROOT`：可選，排程腳本日誌根目錄（預設 `/home/app/log`，實際會寫入子目錄如 `sync_api_key_usage/`、`sync_expired_api_keys/`、`send_expiration_reminders/`）
@@ -176,7 +177,7 @@ npm run build
 ## 開發備註
 - 後端登入入口：
 - `APP_ENV=prod`：`GET /main/login` 走 Google OIDC；callback 以 Google email local-part 查詢人員目錄，再依序檢查 `active whitelist(sysid)`、`active admins(id=sysid)`、`LOGIN_ALLOWED_TITLE_CODES`。
-  - `APP_ENV=test`：路徑為 `/test`，同樣走 Google OIDC。
+  - `APP_ENV=test`：路徑為 `/test`，同樣走 Google OIDC；若 Persnl SOAP unavailable，只有在六個 `TEST_OAUTH_*` 欄位完整且 email 與 Google verified email 一致時，才使用本機 fallback，仍執行 whitelist/admin/title-code eligibility check。
   - `APP_ENV=dev`：路徑為 `/dev`，`GET /dev/login` 使用 `DEV_LOGIN_*` 直接建立 session auth context（`role` 由 `DEV_LOGIN_ROLE` 控制，僅 `user|admin`）。
 - 前端公開拒絕頁：各環境的 `{path_base}/login-denied` 為不符登入資格時的公開頁，不需 session 即可顯示。
 - 前端公開錯誤頁：各環境的 `{path_base}/login-error` 用於登入流程非預期失敗，顯示失敗路由、簡短原因與 `request_id`。

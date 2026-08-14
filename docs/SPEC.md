@@ -574,10 +574,12 @@ Base path：`/main/api/v1`
   - 用途：接收 Google callback，以官方 `google-auth-oauthlib` 完成 authorization-code token exchange，驗證 OIDC identity claims，建立本機 session auth context。
   - 規則：
     - callback 必須驗證 `code`、session `state` 與 Google OIDC `id_token` 的 `issuer`、`audience`、`nonce`、`exp`、Google signature、`email_verified`；OAuth protocol 與 token exchange 使用官方 `google-auth-oauthlib` / `google-auth` library
-    - Google client secrets 從 `GOOGLE_CLIENT_SECRETS_FILE` 載入（預設 `backend/client_secret.json`）；`flow.redirect_uri` 必須由 `OAUTH_REDIRECT_URI` 明確覆寫，系統不得依賴 JSON 內第一個 redirect URI
+    - Google client secrets 從 `GOOGLE_CLIENT_SECRETS_FILE` 載入（預設 `backend/client_secret.json`）；`flow.redirect_uri` 由 `APP_ENV` 與 `APP_DOMAIN` 自動產生，系統不得依賴 JSON 內第一個 redirect URI，也不接受 `OAUTH_REDIRECT_URI` 覆寫
     - 不儲存 access token、refresh token 或 client secret；session 僅保存 OAuth `state` 與自訂 `nonce`
     - Google email 的 `@` 前 local-part 對應人員目錄 `cn`，且必須唯一；目錄回傳 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
     - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
+    - `APP_ENV=test` 且 Persnl SOAP unavailable 時，僅允許使用完整 `TEST_OAUTH_ACCOUNT`、`TEST_OAUTH_NAME`、`TEST_OAUTH_EMAIL`、`TEST_OAUTH_DEPARTMENT`、`TEST_OAUTH_SYSID`、`TEST_OAUTH_TCODE` 本機 fallback；fallback email 必須與 Google verified email 完全一致，且仍執行 whitelist/admin/title-code eligibility check。欄位缺失回 `503 SOAP_SERVICE_UNAVAILABLE`，email 不一致回 `422 OAUTH_IDENTITY_INVALID`。
+    - `APP_ENV=prod` 不允許 OAuth identity fallback；Persnl SOAP unavailable 仍回 `503 SOAP_SERVICE_UNAVAILABLE`。fallback 不得使用 `sysid=0` 或任意 Google claim 偽造 `sysid`。
     - 登入資格檢查順序：`active whitelist(sysid)` -> `active admins(id=sysid)` -> `tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES`
     - `LOGIN_ALLOWED_TITLE_CODES` 以逗號分隔字串表示（例如 `A01,A02,...`），解析需 `split(',')` 後做 `trim + upper`，空值略過且重複值去重；`tCode` 比對時同樣 `trim + upper`
     - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `{path_base}/announcements`
@@ -1329,7 +1331,7 @@ Base path：`/main/api/v1`
 - 回應結果：
   - 命中：可直接通過資格檢查（不需再檢查特殊人員名單）。
   - 未命中：需再檢查特殊人員名單是否為 `active`。
-  - timeout/5xx：允許進入系統，但阻擋申請 API（`503 SOAP_SERVICE_UNAVAILABLE`）。
+  - timeout/5xx：`APP_ENV=test` 僅在完整且 email 相符的 `TEST_OAUTH_*` fallback 設定存在時允許進入系統；`APP_ENV=prod` 不允許 fallback，登入回 `503 SOAP_SERVICE_UNAVAILABLE`。申請 API 仍回 `503 SOAP_SERVICE_UNAVAILABLE`。
 
 ### 錯誤回應格式（建議）
 ```json
@@ -1370,7 +1372,7 @@ Base path：`/main/api/v1`
 ## 驗收標準
 ### 申請與資格
 1. 研究人員名單職稱代碼命中者，或研究名單未命中但特殊人員名單 `active` 命中者，可成功核發 API Key；兩者皆未命中時不得允許進入系統，且申請 API 回傳 `403 APPLICANT_NOT_ELIGIBLE`。
-2. 當資格判斷需查詢 `tCode` 且 Persnl SOAP 服務 timeout/5xx 時，登入流程可放行，但申請 API 必須回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
+2. 當資格判斷需查詢 `tCode` 且 Persnl SOAP 服務 timeout/5xx 時，`APP_ENV=test` 的完整 `TEST_OAUTH_*` fallback 可讓登入流程繼續，但 `APP_ENV=prod` 不得繞過 SOAP；申請 API 必須回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
 3. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`；若 auth context 缺少必要欄位、`sysid` 非數字或非正整數，申請 API 需回傳 `422 VALIDATION_ERROR`，且不得建立申請或 key 紀錄。
 4. `duration_days` 僅允許 `30|180|360`，`application_date` 需為合法日期且不得晚於申請當日；非法值需回傳對應驗證錯誤。
 5. `admin` 可透過 `target_identity.account` 代他人送出申請；若目錄服務查無帳號、結果不唯一或 Persnl SOAP timeout/5xx，API 需回傳對應 `422 VALIDATION_ERROR` 或 `503 SOAP_SERVICE_UNAVAILABLE`。

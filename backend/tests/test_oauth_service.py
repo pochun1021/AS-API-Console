@@ -17,7 +17,7 @@ def oauth_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     )
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("GOOGLE_CLIENT_SECRETS_FILE", str(secrets_file))
-    monkeypatch.setenv("OAUTH_REDIRECT_URI", "https://console.example/main/auth/callback")
+    monkeypatch.setenv("APP_DOMAIN", "https://console.example/main")
     monkeypatch.setenv("GOOGLE_ALLOWED_HOSTED_DOMAIN", "example.com")
     get_settings.cache_clear()
 
@@ -32,30 +32,115 @@ def test_client_secrets_builds_google_authorization_url(oauth_env) -> None:
     assert "redirect_uri=https%3A%2F%2Fconsole.example%2Fmain%2Fauth%2Fcallback" in url
     assert request.session["oauth_state"]
     assert request.session["oauth_nonce"]
+    assert request.session["oauth_code_verifier"]
     assert f"state={request.session['oauth_state']}" in url
     assert f"nonce={request.session['oauth_nonce']}" in url
 
 
-def test_redirect_uri_is_overridden_for_current_environment(oauth_env) -> None:
+def test_flow_uses_non_persisting_token_updater(oauth_env, monkeypatch) -> None:
+    captured = {}
+
+    class FakeFlow:
+        redirect_uri = None
+
+    def fake_from_client_secrets_file(filename, scopes, token_updater):  # noqa: ARG001
+        captured["token_updater"] = token_updater
+        return FakeFlow()
+
+    monkeypatch.setattr(
+        "app.services.oauth_service.Flow.from_client_secrets_file",
+        fake_from_client_secrets_file,
+    )
+
     service = OAuthService()
-    service.settings.oauth_redirect_uri = "http://localhost:8000/test/auth/callback"
+    service._new_flow()
+    captured["token_updater"]({"access_token": "not persisted"})
+
+    assert callable(captured["token_updater"])
+
+
+def test_redirect_uri_is_derived_for_current_environment(oauth_env) -> None:
+    service = OAuthService()
+    service.settings.app_env = "test"
+    service.settings.app_domain = "http://localhost:8000/main"
 
     url = service.build_login_url()
 
     assert "redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Ftest%2Fauth%2Fcallback" in url
 
 
-def test_exchange_code_failure_is_wrapped(oauth_env, monkeypatch) -> None:
+def test_exchange_code_failure_is_wrapped(oauth_env, monkeypatch, caplog) -> None:
+    class ProviderError(Exception):
+        error = "invalid_grant"
+        description = "invalid authorization code"
+
     class FailingFlow:
         credentials = SimpleNamespace(id_token=None)
 
         def fetch_token(self, **kwargs):  # noqa: ARG002
-            raise RuntimeError("provider rejected code")
+            raise ProviderError("provider rejected code")
+
+    monkeypatch.setattr(OAuthService, "_new_flow", lambda self: FailingFlow())
+
+    with caplog.at_level("WARNING", logger="app.services.oauth_service"):
+        with pytest.raises(ApiError) as exc_info:
+            OAuthService().exchange_code_for_token("bad-code", code_verifier="verifier")
+
+    assert exc_info.value.code == "OAUTH_TOKEN_EXCHANGE_FAILED"
+    assert "invalid_grant" in caplog.text
+    assert "invalid authorization code" in caplog.text
+
+
+def test_exchange_code_requires_pkce_verifier(oauth_env) -> None:
+    with pytest.raises(ApiError, match="code verifier missing"):
+        OAuthService().exchange_code_for_token("bad-code")
+
+
+def test_exchange_code_accepts_google_scope_normalization_warning(oauth_env, monkeypatch, caplog) -> None:
+    warning = Warning('Scope has changed from "openid email profile"')
+    warning.token = {
+        "access_token": "access-token",
+        "id_token": "id-token",
+        "scope": "openid https://www.googleapis.com/auth/userinfo.email",
+        "token_type": "Bearer",
+    }
+    warning.old_scope = ["openid", "email", "profile"]
+    warning.new_scope = ["openid", "https://www.googleapis.com/auth/userinfo.email"]
+
+    class FlowWithScopeWarning:
+        code_verifier = None
+
+        class OAuthSession:
+            token = {}
+
+        oauth2session = OAuthSession()
+        credentials = SimpleNamespace(id_token="id-token")
+
+        def fetch_token(self, **kwargs):  # noqa: ARG002
+            raise warning
+
+    monkeypatch.setattr(OAuthService, "_new_flow", lambda self: FlowWithScopeWarning())
+
+    with caplog.at_level("INFO", logger="app.services.oauth_service"):
+        token = OAuthService().exchange_code_for_token("code", code_verifier="verifier")
+
+    assert token == "id-token"
+    assert "accepted normalized scopes" in caplog.text
+    assert "access-token" not in caplog.text
+
+
+def test_exchange_code_rejects_scope_warning_without_id_token(oauth_env, monkeypatch) -> None:
+    warning = Warning("Scope has changed")
+    warning.token = {"access_token": "access-token"}
+
+    class FailingFlow:
+        def fetch_token(self, **kwargs):  # noqa: ARG002
+            raise warning
 
     monkeypatch.setattr(OAuthService, "_new_flow", lambda self: FailingFlow())
 
     with pytest.raises(ApiError) as exc_info:
-        OAuthService().exchange_code_for_token("bad-code")
+        OAuthService().exchange_code_for_token("code", code_verifier="verifier")
 
     assert exc_info.value.code == "OAUTH_TOKEN_EXCHANGE_FAILED"
 

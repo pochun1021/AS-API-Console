@@ -32,11 +32,40 @@ def _clear_login_session(request: Request) -> None:
     request.session.pop("oauth_request_id", None)
     request.session.pop("oauth_state", None)
     request.session.pop("oauth_nonce", None)
+    request.session.pop("oauth_code_verifier", None)
 
 
 def _build_login_error_redirect(*, route: str, reason: str, request_id: str) -> RedirectResponse:
     query = urlencode({"route": route, "reason": reason, "request_id": request_id})
     return RedirectResponse(f"{get_settings().path_base}/login-error?{query}", status_code=302)
+
+
+def _test_oauth_fallback_identity(settings, google_identity):
+    if settings.app_env.lower() != "test":
+        return None
+    required = {
+        "TEST_OAUTH_ACCOUNT": settings.test_oauth_account,
+        "TEST_OAUTH_NAME": settings.test_oauth_name,
+        "TEST_OAUTH_EMAIL": settings.test_oauth_email,
+        "TEST_OAUTH_DEPARTMENT": settings.test_oauth_department,
+        "TEST_OAUTH_SYSID": settings.test_oauth_sysid,
+        "TEST_OAUTH_TCODE": settings.test_oauth_tcode,
+    }
+    if any(value is None or (isinstance(value, str) and not value.strip()) for value in required.values()):
+        raise ApiError("SOAP_SERVICE_UNAVAILABLE", "personnel directory unavailable", 503)
+    if settings.test_oauth_sysid <= 0:
+        raise ApiError("SOAP_SERVICE_UNAVAILABLE", "personnel directory unavailable", 503)
+    if settings.test_oauth_email.strip().lower() != google_identity.email.lower():
+        raise ApiError("OAUTH_IDENTITY_INVALID", "test oauth identity email does not match Google email", 422)
+    return type(google_identity)(
+        account=settings.test_oauth_account.strip(),
+        name=settings.test_oauth_name.strip(),
+        email=settings.test_oauth_email.strip().lower(),
+        department=settings.test_oauth_department.strip(),
+        sysid=settings.test_oauth_sysid,
+        tcode=settings.test_oauth_tcode.strip(),
+        role="user",
+    )
 
 
 def _log_auth_audit_or_redirect(
@@ -147,6 +176,7 @@ def oauth_callback(
 
     expected_state = request.session.pop("oauth_state", None)
     expected_nonce = request.session.pop("oauth_nonce", None)
+    code_verifier = request.session.pop("oauth_code_verifier", None)
     if not state or not expected_state or state != expected_state or not expected_nonce:
         redirect = _log_auth_audit_or_redirect(
             request=request,
@@ -185,24 +215,33 @@ def oauth_callback(
 
     oauth = OAuthService()
     try:
-        token = oauth.exchange_code_for_token(code)
+        token = oauth.exchange_code_for_token(code, code_verifier=code_verifier)
         identity = oauth.fetch_identity(token, expected_nonce=expected_nonce)
         if identity.sysid == 0:
+            fallback_used = False
             try:
                 person = request.app.state.persnl_soap_service.find_unique_person_by_account(identity.account)
             except PersnlSoapUnavailableError as exc:
-                raise ApiError("SOAP_SERVICE_UNAVAILABLE", "personnel directory unavailable", 503) from exc
-            if person is None or person.get("email", "").lower() != identity.email.lower():
+                fallback = _test_oauth_fallback_identity(current_settings, identity)
+                if fallback is None:
+                    raise ApiError("SOAP_SERVICE_UNAVAILABLE", "personnel directory unavailable", 503) from exc
+                identity = fallback
+                fallback_used = True
+                person = None
+            if person is None and not fallback_used:
                 raise ApiError("OAUTH_IDENTITY_INVALID", "google account not found in personnel directory", 422)
-            identity = type(identity)(
-                account=person["cn"],
-                name=person["chName"],
-                email=person["email"].lower(),
-                department=person["instCode"],
-                sysid=int(person["sysId"]),
-                tcode=person["tCode"],
-                role="user",
-            )
+            if person is not None and person.get("email", "").lower() != identity.email.lower():
+                raise ApiError("OAUTH_IDENTITY_INVALID", "google account not found in personnel directory", 422)
+            if person is not None:
+                identity = type(identity)(
+                    account=person["cn"],
+                    name=person["chName"],
+                    email=person["email"].lower(),
+                    department=person["instCode"],
+                    sysid=int(person["sysId"]),
+                    tcode=person["tCode"],
+                    role="user",
+                )
     except ApiError as exc:
         redirect = _log_auth_audit_or_redirect(
             request=request,

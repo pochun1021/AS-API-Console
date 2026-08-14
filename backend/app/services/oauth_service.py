@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import logging
 import secrets
 
 from google.auth.transport.requests import Request as GoogleRequest
@@ -7,6 +8,8 @@ from google_auth_oauthlib.flow import Flow
 
 from app.core.config import get_settings
 from app.core.errors import ApiError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -35,10 +38,11 @@ class OAuthService:
             flow = Flow.from_client_secrets_file(
                 filename,
                 scopes=self.settings.oauth_scope.split(),
+                token_updater=self._discard_token_update,
             )
         except (OSError, ValueError, KeyError) as exc:
             raise ApiError("INTERNAL_ERROR", "invalid Google client secrets configuration", 500) from exc
-        flow.redirect_uri = self._required(self.settings.oauth_redirect_uri, "OAUTH_REDIRECT_URI")
+        flow.redirect_uri = self.settings.oauth_redirect_uri
         return flow
 
     def build_login_url(self, request=None) -> str:
@@ -54,18 +58,57 @@ class OAuthService:
             state=state,
             nonce=nonce,
         )
+        if request is not None and flow.code_verifier:
+            request.session["oauth_code_verifier"] = flow.code_verifier
         return authorization_url
 
-    def exchange_code_for_token(self, code: str) -> str:
+    def exchange_code_for_token(self, code: str, code_verifier: str | None = None) -> str:
+        if not code_verifier:
+            raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth code verifier missing", 401)
         flow = self._new_flow()
+        flow.code_verifier = code_verifier
         try:
             flow.fetch_token(code=code)
             token = flow.credentials.id_token
+        except Warning as exc:
+            warning_token = getattr(exc, "token", None)
+            token_keys = sorted(warning_token) if isinstance(warning_token, dict) else []
+            token = warning_token.get("id_token") if isinstance(warning_token, dict) else None
+            if isinstance(warning_token, dict) and isinstance(token, str) and token:
+                flow.oauth2session.token = warning_token
+                logger.info(
+                    "google oauth token exchange accepted normalized scopes old_scopes=%s new_scopes=%s token_keys=%s",
+                    getattr(exc, "old_scope", "unknown"),
+                    getattr(exc, "new_scope", "unknown"),
+                    token_keys,
+                )
+            else:
+                logger.exception(
+                    "google oauth token exchange warning did not contain usable id token token_keys=%s",
+                    token_keys,
+                )
+                raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed", 401) from exc
         except Exception as exc:
+            provider_error = getattr(exc, "error", None)
+            provider_description = getattr(exc, "description", None)
+            updated_token = getattr(exc, "token", None)
+            updated_token_keys = sorted(updated_token) if isinstance(updated_token, dict) else []
+            logger.exception(
+                "google oauth token exchange failed exception_type=%s provider_error=%s provider_description=%s token_keys=%s",
+                type(exc).__name__,
+                provider_error if isinstance(provider_error, str) else "unknown",
+                provider_description if isinstance(provider_description, str) else "unknown",
+                updated_token_keys,
+            )
             raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed", 401) from exc
         if not isinstance(token, str) or not token:
             raise ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "google id token missing", 401)
         return token
+
+    @staticmethod
+    def _discard_token_update(token: dict) -> None:
+        """Prevent requests-oauthlib TokenUpdated warnings without persisting tokens."""
+        logger.debug("google oauth token update received keys=%s", sorted(token))
 
     def fetch_identity(self, id_token_value: str, expected_nonce: str | None = None) -> OAuthIdentity:
         client_id = self._client_id()

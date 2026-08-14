@@ -4,6 +4,7 @@ from urllib.parse import parse_qs, urlparse
 from app.core.errors import ApiError
 from app.main import app
 from app.services.oauth_service import OAuthIdentity
+from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from app.core.config import get_settings
 from db.models.admins import Admin
 from db.models.auth_audit_logs import AuthAuditLog
@@ -19,6 +20,45 @@ def _set_prod_oauth_env(monkeypatch) -> None:
         "A01,A02,A03,A06,A11,A15,A1A,A1I,B01,B02,B03,B03,B04,B11,B12,B13,B14,B21",
     )
     get_settings.cache_clear()
+
+
+def _set_test_oauth_fallback_env(monkeypatch, *, email="oauth.user@example.com", complete=True) -> None:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("LOGIN_ALLOWED_TITLE_CODES", "A01")
+    for key in (
+        "TEST_OAUTH_ACCOUNT",
+        "TEST_OAUTH_NAME",
+        "TEST_OAUTH_EMAIL",
+        "TEST_OAUTH_DEPARTMENT",
+        "TEST_OAUTH_SYSID",
+        "TEST_OAUTH_TCODE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    values = {
+        "TEST_OAUTH_ACCOUNT": "test.oauth",
+        "TEST_OAUTH_NAME": "Test OAuth User",
+        "TEST_OAUTH_EMAIL": email,
+        "TEST_OAUTH_DEPARTMENT": "IT",
+        "TEST_OAUTH_SYSID": "3888",
+        "TEST_OAUTH_TCODE": "A01",
+    }
+    if not complete:
+        values["TEST_OAUTH_TCODE"] = ""
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    get_settings.cache_clear()
+
+
+def _mock_google_identity(email="oauth.user@example.com") -> OAuthIdentity:
+    return OAuthIdentity(
+        account=email.split("@", 1)[0],
+        name="Google Name",
+        email=email,
+        department="",
+        sysid=0,
+        tcode="",
+        role="user",
+    )
 
 
 def _callback(client, code: str | None = "ok-code"):
@@ -93,7 +133,7 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
-        lambda self, code: "token-1",
+        lambda self, code, code_verifier=None: "token-1",
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
@@ -130,6 +170,100 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
     assert latest.error_code is None
 
 
+def test_test_callback_uses_complete_fallback_when_soap_unavailable(client, monkeypatch):
+    _set_test_oauth_fallback_env(monkeypatch)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.build_login_url", _mock_login)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code, code_verifier=None: "token-1")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.fetch_identity", lambda self, token, expected_nonce=None: _mock_google_identity())
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.find_unique_person_by_account",
+        lambda self, account: (_ for _ in ()).throw(PersnlSoapUnavailableError("down")),
+    )
+
+    callback = _callback(client)
+    assert callback.status_code == 302
+    assert callback.headers["location"] == "/test/announcements"
+    me = client.get("/main/api/v1/users/me")
+    assert me.status_code == 200
+    assert me.json()["account"] == "test.oauth"
+    assert me.json()["name"] == "Test OAuth User"
+    assert me.json()["email"] == "oauth.user@example.com"
+    assert me.json()["department"] == "IT"
+    assert me.json()["sysid"] == 3888
+    assert me.json()["role"] == "user"
+
+
+def test_test_callback_rejects_fallback_email_mismatch(client, monkeypatch):
+    _set_test_oauth_fallback_env(monkeypatch, email="other@example.com")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.build_login_url", _mock_login)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code, code_verifier=None: "token-1")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.fetch_identity", lambda self, token, expected_nonce=None: _mock_google_identity())
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.find_unique_person_by_account",
+        lambda self, account: (_ for _ in ()).throw(PersnlSoapUnavailableError("down")),
+    )
+
+    response = _callback(client)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "OAUTH_IDENTITY_INVALID"
+
+
+def test_test_callback_rejects_incomplete_fallback(client, monkeypatch):
+    _set_test_oauth_fallback_env(monkeypatch, complete=False)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.build_login_url", _mock_login)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code, code_verifier=None: "token-1")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.fetch_identity", lambda self, token, expected_nonce=None: _mock_google_identity())
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.find_unique_person_by_account",
+        lambda self, account: (_ for _ in ()).throw(PersnlSoapUnavailableError("down")),
+    )
+
+    response = _callback(client)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
+
+
+def test_prod_callback_does_not_use_fallback_when_soap_unavailable(client, monkeypatch):
+    _set_prod_oauth_env(monkeypatch)
+    for key, value in {
+        "TEST_OAUTH_ACCOUNT": "test.oauth",
+        "TEST_OAUTH_NAME": "Test OAuth User",
+        "TEST_OAUTH_EMAIL": "oauth.user@example.com",
+        "TEST_OAUTH_DEPARTMENT": "IT",
+        "TEST_OAUTH_SYSID": "3888",
+        "TEST_OAUTH_TCODE": "A01",
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.build_login_url", _mock_login)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code, code_verifier=None: "token-1")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.fetch_identity", lambda self, token, expected_nonce=None: _mock_google_identity())
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.find_unique_person_by_account",
+        lambda self, account: (_ for _ in ()).throw(PersnlSoapUnavailableError("down")),
+    )
+
+    response = _callback(client)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "SOAP_SERVICE_UNAVAILABLE"
+
+
+def test_callback_prefers_soap_identity_over_test_fallback(client, monkeypatch):
+    _set_test_oauth_fallback_env(monkeypatch)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.build_login_url", _mock_login)
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code, code_verifier=None: "token-1")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.fetch_identity", lambda self, token, expected_nonce=None: _mock_google_identity())
+    monkeypatch.setattr(
+        "app.services.persnl_soap_service.PersnlSoapService.find_unique_person_by_account",
+        lambda self, account: {"cn": "soap.user", "chName": "SOAP User", "email": "oauth.user@example.com", "instCode": "HR", "sysId": "3999", "tCode": "A01"},
+    )
+
+    callback = _callback(client)
+    assert callback.status_code == 302
+    me = client.get("/main/api/v1/users/me")
+    assert me.json()["account"] == "soap.user"
+    assert me.json()["sysid"] == 3999
+
+
 def test_callback_missing_code_returns_error_and_audits(client):
     resp = _callback(client, code=None)
     assert resp.status_code == 422
@@ -144,7 +278,7 @@ def test_callback_logs_failure_when_token_exchange_fails(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
-        lambda self, code: (_ for _ in ()).throw(ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed", 401)),
+        lambda self, code, code_verifier=None: (_ for _ in ()).throw(ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed", 401)),
     )
     resp = _callback(client, code="bad-code")
     assert resp.status_code == 401
@@ -158,7 +292,7 @@ def test_callback_logs_failure_when_token_exchange_fails(client, monkeypatch):
 
 def test_callback_logs_failure_when_basic_fetch_fails(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
-    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code, code_verifier=None: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
         lambda self, token, expected_nonce=None: (_ for _ in ()).throw(ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed", 401)),
@@ -177,7 +311,7 @@ def test_callback_unexpected_error_returns_controlled_401_and_audits(client, mon
     _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
-        lambda self, code: (_ for _ in ()).throw(RuntimeError("boom")),
+        lambda self, code, code_verifier=None: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     resp = _callback(client, code="bad-code")
     assert resp.status_code == 302
@@ -193,7 +327,7 @@ def test_callback_unexpected_error_returns_controlled_401_and_audits(client, mon
 
 def test_callback_unexpected_eligibility_error_redirects_to_login_error(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
-    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code, code_verifier=None: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
         lambda self, token, expected_nonce=None: OAuthIdentity(
@@ -272,7 +406,7 @@ def test_callback_allows_any_valid_oauth_identity(client, monkeypatch):
         "app.services.oauth_service.OAuthService.build_login_url",
         _mock_login,
     )
-    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code, code_verifier=None: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
         lambda self, token, expected_nonce=None: OAuthIdentity(
@@ -298,7 +432,7 @@ def test_session_mutation_requires_csrf_token(client, monkeypatch):
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
-        lambda self, code: "token-1",
+        lambda self, code, code_verifier=None: "token-1",
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
@@ -357,7 +491,7 @@ def test_test_session_login_bootstraps_session_and_csrf(client):
 def test_callback_allows_when_sysid_in_active_whitelist(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     _insert_whitelist(3888)
-    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code, code_verifier=None: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
         lambda self, token, expected_nonce=None: OAuthIdentity(
@@ -378,7 +512,7 @@ def test_callback_allows_when_sysid_in_active_whitelist(client, monkeypatch):
 def test_callback_allows_when_sysid_matches_active_admin_id(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     _insert_admin(3999)
-    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
+    monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code, code_verifier=None: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
         lambda self, token, expected_nonce=None: OAuthIdentity(

@@ -2,7 +2,7 @@ from datetime import datetime
 from functools import lru_cache
 import os
 from pathlib import Path
-from urllib.parse import quote_plus, urlsplit
+from urllib.parse import quote_plus, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from pydantic import field_validator, model_validator
@@ -70,9 +70,14 @@ class Settings(BaseSettings):
     mail_validate_certs: bool = True
     session_secret_key: str = "dev-session-secret-change-me"
     oauth_provider: str = "google"
-    oauth_redirect_uri: str | None = None
     oauth_scope: str = "openid email profile"
     login_allowed_title_codes: str = ""
+    test_oauth_account: str | None = None
+    test_oauth_name: str | None = None
+    test_oauth_email: str | None = None
+    test_oauth_department: str | None = None
+    test_oauth_sysid: int | None = None
+    test_oauth_tcode: str | None = None
     dev_login_account: str | None = None
     dev_login_name: str | None = None
     dev_login_email: str | None = None
@@ -112,7 +117,6 @@ class Settings(BaseSettings):
     @field_validator(
         "persnl_soap_url",
         "persnl_soap_wsdl_url",
-        "oauth_redirect_uri",
     )
     @classmethod
     def validate_optional_urls(cls, value: str | None) -> str | None:
@@ -142,6 +146,16 @@ class Settings(BaseSettings):
     @property
     def path_base(self) -> str:
         return {"dev": "/dev", "test": "/test", "prod": "/main"}.get(self.app_env.lower(), "/dev")
+
+    @property
+    def oauth_redirect_uri(self) -> str:
+        parsed = urlsplit(self.app_domain.rstrip("/"))
+        path = parsed.path.rstrip("/")
+        if path in {"/dev", "/test", "/main"}:
+            path = self.path_base
+        elif path != self.path_base:
+            path = f"{path}{self.path_base}" if path else self.path_base
+        return urlunsplit((parsed.scheme, parsed.netloc, f"{path}/auth/callback", "", ""))
 
     @property
     def session_https_only(self) -> bool:

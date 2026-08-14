@@ -134,7 +134,7 @@ chmod 600 /home/app/config/.env
 - Google OIDC 必填欄位：
   - `GOOGLE_CLIENT_SECRETS_FILE=/home/app/config/client_secret.json`
   - `GOOGLE_ALLOWED_HOSTED_DOMAIN`
-  - `OAUTH_REDIRECT_URI=https://api.ascs.sinica.edu.tw/main/auth/callback`
+  - `APP_DOMAIN=https://api.ascs.sinica.edu.tw/main`（OAuth callback 會自動產生為 `/main/auth/callback`）
 
 如果你改用 `DATABASE_URL`，它會覆蓋 `DB_*` 組合結果。
 本部署文件為正式環境流程，`TEST_DB_*` / `TEST_DATABASE_URL` 僅供測試使用，正式部署不需要設定。

@@ -29,13 +29,18 @@ def test_dev_login_uses_dev_identity_and_dev_path(client, monkeypatch):
     assert response.headers["location"] == "/dev/announcements"
 
 
-def test_test_login_redirects_to_google_and_stores_state(client, monkeypatch):
+def test_test_login_redirects_to_google_and_stores_state(client, monkeypatch, tmp_path):
+    secrets_file = tmp_path / "client_secret.json"
+    secrets_file.write_text(
+        '{"web":{"client_id":"google-client-id","client_secret":"google-client-secret",'
+        '"auth_uri":"https://accounts.google.com/o/oauth2/auth",'
+        '"token_uri":"https://oauth2.googleapis.com/token"}}'
+    )
     _reload_settings(
         monkeypatch,
         APP_ENV="test",
-        GOOGLE_CLIENT_ID="google-client-id",
-        GOOGLE_CLIENT_SECRET="google-client-secret",
-        OAUTH_REDIRECT_URI="http://localhost:8000/test/auth/callback",
+        GOOGLE_CLIENT_SECRETS_FILE=str(secrets_file),
+        APP_DOMAIN="http://localhost:8000/test",
     )
 
     response = client.get("/test/login", follow_redirects=False)
