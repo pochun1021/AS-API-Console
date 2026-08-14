@@ -13,13 +13,27 @@ from tests.db_runtime import session_scope
 
 
 def _set_prod_oauth_env(monkeypatch) -> None:
-    get_settings.cache_clear()
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv(
         "LOGIN_ALLOWED_TITLE_CODES",
         "A01,A02,A03,A06,A11,A15,A1A,A1I,B01,B02,B03,B03,B04,B11,B12,B13,B14,B21",
     )
     get_settings.cache_clear()
+
+
+def _callback(client, code: str | None = "ok-code"):
+    login = client.get("/main/login", follow_redirects=False)
+    state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
+    query = f"state={state}"
+    if code is not None:
+        query = f"code={code}&{query}"
+    return client.get(f"/main/auth/callback?{query}", follow_redirects=False)
+
+
+def _mock_login(self, request=None):  # noqa: ARG001
+    request.session["oauth_state"] = "test-state"
+    request.session["oauth_nonce"] = "test-nonce"
+    return "https://oauth.example/auth?state=test-state&nonce=test-nonce"
 
 
 def _latest_auth_audit() -> AuthAuditLog | None:
@@ -67,14 +81,15 @@ def test_login_redirects_to_provider(client, monkeypatch):
     location = resp.headers["location"]
     parsed = urlparse(location)
     query = parse_qs(parsed.query)
-    assert "state" not in query
+    assert query["state"]
+    assert query["nonce"]
 
 
 def test_callback_success_sets_session_and_audits(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
-        lambda self: "https://oauth.example/auth",
+        _mock_login,
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
@@ -82,7 +97,7 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
-        lambda self, token: OAuthIdentity(
+        lambda self, token, expected_nonce=None: OAuthIdentity(
             account="oauth.user",
             name="OAuth User",
             email="oauth.user@example.com",
@@ -93,7 +108,7 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
         ),
     )
 
-    callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
+    callback = _callback(client)
     assert callback.status_code == 302
     assert callback.headers["location"] == "/main/announcements"
 
@@ -116,7 +131,7 @@ def test_callback_success_sets_session_and_audits(client, monkeypatch):
 
 
 def test_callback_missing_code_returns_error_and_audits(client):
-    resp = client.get("/main/auth/callback", follow_redirects=False)
+    resp = _callback(client, code=None)
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "OAUTH_CODE_MISSING"
     latest = _latest_auth_audit()
@@ -131,7 +146,7 @@ def test_callback_logs_failure_when_token_exchange_fails(client, monkeypatch):
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
         lambda self, code: (_ for _ in ()).throw(ApiError("OAUTH_TOKEN_EXCHANGE_FAILED", "oauth token exchange failed", 401)),
     )
-    resp = client.get("/main/auth/callback?code=bad-code", follow_redirects=False)
+    resp = _callback(client, code="bad-code")
     assert resp.status_code == 401
     assert resp.json()["error"]["code"] == "OAUTH_TOKEN_EXCHANGE_FAILED"
     assert "request_id=" in resp.json()["error"]["message"]
@@ -146,9 +161,9 @@ def test_callback_logs_failure_when_basic_fetch_fails(client, monkeypatch):
     monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
-        lambda self, token: (_ for _ in ()).throw(ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed", 401)),
+        lambda self, token, expected_nonce=None: (_ for _ in ()).throw(ApiError("OAUTH_BASIC_FETCH_FAILED", "oauth basic profile fetch failed", 401)),
     )
-    resp = client.get("/main/auth/callback?code=bad-code", follow_redirects=False)
+    resp = _callback(client, code="bad-code")
     assert resp.status_code == 401
     assert resp.json()["error"]["code"] == "OAUTH_BASIC_FETCH_FAILED"
     assert "request_id=" in resp.json()["error"]["message"]
@@ -164,7 +179,7 @@ def test_callback_unexpected_error_returns_controlled_401_and_audits(client, mon
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
         lambda self, code: (_ for _ in ()).throw(RuntimeError("boom")),
     )
-    resp = client.get("/main/auth/callback?code=bad-code", follow_redirects=False)
+    resp = _callback(client, code="bad-code")
     assert resp.status_code == 302
     parsed = urlparse(resp.headers["location"])
     assert parsed.path == "/main/login-error"
@@ -181,7 +196,7 @@ def test_callback_unexpected_eligibility_error_redirects_to_login_error(client, 
     monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
-        lambda self, token: OAuthIdentity(
+        lambda self, token, expected_nonce=None: OAuthIdentity(
             account="oauth.user5",
             name="OAuth User5",
             email="oauth.user5@example.com",
@@ -195,7 +210,7 @@ def test_callback_unexpected_eligibility_error_redirects_to_login_error(client, 
         "app.services.login_eligibility_service.LoginEligibilityService.is_eligible",
         lambda self, sysid, tcode: (_ for _ in ()).throw(RuntimeError("db stale connection")),
     )
-    resp = client.get("/main/auth/callback?code=bad-code", follow_redirects=False)
+    resp = _callback(client, code="bad-code")
     assert resp.status_code == 302
     parsed = urlparse(resp.headers["location"])
     assert parsed.path == "/main/login-error"
@@ -244,43 +259,23 @@ def test_users_me_unexpected_error_returns_structured_500(client, monkeypatch):
     assert body["reason"] == "unexpected_internal_error"
 
 
-def test_callback_allows_missing_state(client, monkeypatch):
+def test_callback_rejects_missing_state(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
-    monkeypatch.setattr(
-        "app.services.oauth_service.OAuthService.build_login_url",
-        lambda self: "https://oauth.example/auth",
-    )
-    monkeypatch.setattr(
-        "app.services.oauth_service.OAuthService.exchange_code_for_token",
-        lambda self, code: "token-1",
-    )
-    monkeypatch.setattr(
-        "app.services.oauth_service.OAuthService.fetch_identity",
-        lambda self, token: OAuthIdentity(
-            account="oauth.user.statefree",
-            name="OAuth User Statefree",
-            email="oauth.user.statefree@example.com",
-            department="IT",
-            sysid=3301,
-            tcode="A02",
-            role="user",
-        ),
-    )
     callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
-    assert callback.status_code == 302
-    assert callback.headers["location"] == "/main/announcements"
+    assert callback.status_code == 422
+    assert callback.json()["error"]["code"] == "OAUTH_STATE_INVALID"
 
 
 def test_callback_allows_any_valid_oauth_identity(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
-        lambda self: "https://oauth.example/auth",
+        _mock_login,
     )
     monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
-        lambda self, token: OAuthIdentity(
+        lambda self, token, expected_nonce=None: OAuthIdentity(
             account="oauth.user2",
             name="OAuth User2",
             email="oauth.user2@example.com",
@@ -290,7 +285,7 @@ def test_callback_allows_any_valid_oauth_identity(client, monkeypatch):
             role="user",
         ),
     )
-    callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
+    callback = _callback(client)
     assert callback.status_code == 302
     assert callback.headers["location"] == "/main/login-denied?error=LOGIN_NOT_ELIGIBLE"
 
@@ -299,7 +294,7 @@ def test_session_mutation_requires_csrf_token(client, monkeypatch):
     _set_prod_oauth_env(monkeypatch)
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.build_login_url",
-        lambda self: "https://oauth.example/auth",
+        _mock_login,
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.exchange_code_for_token",
@@ -307,7 +302,7 @@ def test_session_mutation_requires_csrf_token(client, monkeypatch):
     )
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
-        lambda self, token: OAuthIdentity(
+        lambda self, token, expected_nonce=None: OAuthIdentity(
             account="oauth.user4",
             name="OAuth User4",
             email="oauth.user4@example.com",
@@ -317,7 +312,7 @@ def test_session_mutation_requires_csrf_token(client, monkeypatch):
             role="user",
         ),
     )
-    callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
+    callback = _callback(client)
     assert callback.status_code == 302
 
     no_csrf = client.patch("/main/api/v1/users/preferences/locale", json={"preferred_locale": "en"})
@@ -365,7 +360,7 @@ def test_callback_allows_when_sysid_in_active_whitelist(client, monkeypatch):
     monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
-        lambda self, token: OAuthIdentity(
+        lambda self, token, expected_nonce=None: OAuthIdentity(
             account="oauth.wl",
             name="OAuth WL",
             email="oauth.wl@example.com",
@@ -375,7 +370,7 @@ def test_callback_allows_when_sysid_in_active_whitelist(client, monkeypatch):
             role="user",
         ),
     )
-    callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
+    callback = _callback(client)
     assert callback.status_code == 302
     assert callback.headers["location"] == "/main/announcements"
 
@@ -386,7 +381,7 @@ def test_callback_allows_when_sysid_matches_active_admin_id(client, monkeypatch)
     monkeypatch.setattr("app.services.oauth_service.OAuthService.exchange_code_for_token", lambda self, code: "token-1")
     monkeypatch.setattr(
         "app.services.oauth_service.OAuthService.fetch_identity",
-        lambda self, token: OAuthIdentity(
+        lambda self, token, expected_nonce=None: OAuthIdentity(
             account="oauth.admin-id",
             name="OAuth AdminId",
             email="oauth.admin-id@example.com",
@@ -396,7 +391,7 @@ def test_callback_allows_when_sysid_matches_active_admin_id(client, monkeypatch)
             role="user",
         ),
     )
-    callback = client.get("/main/auth/callback?code=ok-code", follow_redirects=False)
+    callback = _callback(client)
     assert callback.status_code == 302
     assert callback.headers["location"] == "/main/announcements"
 

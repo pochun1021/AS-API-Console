@@ -1,6 +1,7 @@
 from datetime import datetime
 from functools import lru_cache
 import os
+from pathlib import Path
 from urllib.parse import quote_plus, urlsplit
 from zoneinfo import ZoneInfo
 
@@ -31,8 +32,7 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     app_domain: str = "http://localhost:8000"
     google_allowed_hosted_domain: str | None = None
-    google_client_id: str | None = None
-    google_client_secret: str | None = None
+    google_client_secrets_file: str = str(Path(__file__).resolve().parents[2] / "client_secret.json")
     database_url: str | None = None
     db_user: str = "as_api_console"
     db_password: str | None = None
@@ -69,12 +69,7 @@ class Settings(BaseSettings):
     mail_ssl_tls: bool = False
     mail_validate_certs: bool = True
     session_secret_key: str = "dev-session-secret-change-me"
-    oauth_provider: str = "fisa"
-    oauth_auth_uri: str | None = None
-    oauth_token_uri: str | None = None
-    oauth_basic_uri: str | None = None
-    oauth_client_id: str | None = None
-    oauth_client_secret: str | None = None
+    oauth_provider: str = "google"
     oauth_redirect_uri: str | None = None
     oauth_scope: str = "openid email profile"
     login_allowed_title_codes: str = ""
@@ -117,9 +112,6 @@ class Settings(BaseSettings):
     @field_validator(
         "persnl_soap_url",
         "persnl_soap_wsdl_url",
-        "oauth_auth_uri",
-        "oauth_token_uri",
-        "oauth_basic_uri",
         "oauth_redirect_uri",
     )
     @classmethod

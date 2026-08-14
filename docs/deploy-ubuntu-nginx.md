@@ -132,8 +132,7 @@ chmod 600 /home/app/config/.env
   - `PERSNL_SOAP_PASSWORD`（建議必填）
   - `PERSNL_SOAP_TIMEOUT_SECONDS=3.0`（可選）
 - Google OIDC 必填欄位：
-  - `GOOGLE_CLIENT_ID`
-  - `GOOGLE_CLIENT_SECRET`
+  - `GOOGLE_CLIENT_SECRETS_FILE=/home/app/config/client_secret.json`
   - `GOOGLE_ALLOWED_HOSTED_DOMAIN`
   - `OAUTH_REDIRECT_URI=https://api.ascs.sinica.edu.tw/main/auth/callback`
 

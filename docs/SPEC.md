@@ -571,9 +571,11 @@ Base path：`/main/api/v1`
     - `prod` 若 OAuth 設定缺失或不合法，回 `500 INTERNAL_ERROR`
     - `dev` 若 bypass 設定缺失或不合法，回 `500 INTERNAL_ERROR`
 - `GET {path_base}/auth/callback`
-  - 用途：接收 provider callback，交換 access token，取得 basic identity claims，建立本機 session auth context。
+  - 用途：接收 Google callback，以官方 `google-auth-oauthlib` 完成 authorization-code token exchange，驗證 OIDC identity claims，建立本機 session auth context。
   - 規則：
-    - callback 必須驗證 `code`、session `state` 與 Google OIDC `id_token` 的 `issuer`、`audience`、`nonce`、`exp`、RSA signature、`email_verified`
+    - callback 必須驗證 `code`、session `state` 與 Google OIDC `id_token` 的 `issuer`、`audience`、`nonce`、`exp`、Google signature、`email_verified`；OAuth protocol 與 token exchange 使用官方 `google-auth-oauthlib` / `google-auth` library
+    - Google client secrets 從 `GOOGLE_CLIENT_SECRETS_FILE` 載入（預設 `backend/client_secret.json`）；`flow.redirect_uri` 必須由 `OAUTH_REDIRECT_URI` 明確覆寫，系統不得依賴 JSON 內第一個 redirect URI
+    - 不儲存 access token、refresh token 或 client secret；session 僅保存 OAuth `state` 與自訂 `nonce`
     - Google email 的 `@` 前 local-part 對應人員目錄 `cn`，且必須唯一；目錄回傳 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
     - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
     - 登入資格檢查順序：`active whitelist(sysid)` -> `active admins(id=sysid)` -> `tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES`

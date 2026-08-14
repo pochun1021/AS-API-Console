@@ -132,9 +132,10 @@ export ENV_FILE=/home/app/config/.env
 - `ALLOWED_HOSTS`：可選；允許的 Host 清單（逗號分隔）。部署 `api.ascs.sinica.edu.tw` 時建議設為 `api.ascs.sinica.edu.tw,localhost,127.0.0.1`
 - `SESSION_MAX_AGE_SECONDS`：可選；session 有效秒數
 - `OAUTH_PROVIDER`：可選，OAuth provider 名稱（寫入 auth audit，Google 環境建議設為 `google`）
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `OAUTH_REDIRECT_URI`：test/prod Google OIDC client 設定
+- `GOOGLE_CLIENT_SECRETS_FILE`：Google OAuth client secrets JSON 路徑；預設為 `backend/client_secret.json`，正式部署可設為 `/home/app/config/client_secret.json`
+- `OAUTH_REDIRECT_URI`：目前環境的 Google callback URI（明確覆寫 client secrets JSON 內的 redirect URI）
 - `GOOGLE_ALLOWED_HOSTED_DOMAIN`：限制 Google Workspace 網域
-- `OAUTH_SCOPE`：相容保留；Google OIDC 實際 scope 預設為 `openid email profile`
+- `OAUTH_SCOPE`：Google OIDC scope，預設為 `openid email profile`
 - `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：僅 `APP_ENV=dev` 使用 `/dev/login` bypass 時建立 session 身分所需欄位
 - `DEV_LOGIN_ROLE`：可選，僅 `dev` bypass 身分角色（僅允許 `user` 或 `admin`，預設 `user`）
 - `SCHEDULER_LOG_ROOT`：可選，排程腳本日誌根目錄（預設 `/home/app/log`，實際會寫入子目錄如 `sync_api_key_usage/`、`sync_expired_api_keys/`、`send_expiration_reminders/`）
