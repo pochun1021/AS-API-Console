@@ -357,8 +357,8 @@ jobs:
     env:
       APP_ENV: test
       ALLOW_HEADER_AUTH: "false"
-      DAST_BASE_URL: http://127.0.0.1:8000/main
-      DAST_OPENAPI_URL: http://127.0.0.1:8000/main/openapi.json
+      DAST_BASE_URL: http://127.0.0.1:8000/test
+      DAST_OPENAPI_URL: http://127.0.0.1:8000/test/openapi.json
       DB_USER: root
       DB_PASSWORD: root
       DB_HOST: 127.0.0.1
@@ -452,7 +452,7 @@ jobs:
           st run "${DAST_OPENAPI_URL}" \
             --url "${DAST_BASE_URL}" \
             --include-method GET \
-            --include-path-regex "^/main/api/v1/(users/me|api-keys|api-keys/statistics/users|whitelists|operation-audit-logs|auth-audit-logs|limit-strategy-config)$" \
+            --include-path-regex "^/test/api/v1/(users/me|api-keys|api-keys/statistics/users|whitelists|operation-audit-logs|auth-audit-logs|limit-strategy-config)$" \
             --header "Cookie: ${ADMIN_COOKIE}" \
             --checks not_a_server_error,status_code_conformance,content_type_conformance,response_headers_conformance,response_schema_conformance \
             --mode positive \
