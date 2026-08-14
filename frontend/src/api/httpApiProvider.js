@@ -1,3 +1,5 @@
+import { APP_BASE } from "../runtimePath";
+
 function buildHeaders(auth, method) {
   const headers = {
     "Content-Type": "application/json"
@@ -35,7 +37,6 @@ function mapErrorPayload(status, body) {
   };
 }
 
-const APP_BASE = "/main";
 const API_BASE = `${APP_BASE}/api/v1`;
 
 function apiPath(path = "") {

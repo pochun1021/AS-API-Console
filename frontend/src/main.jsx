@@ -10,6 +10,7 @@ import "dayjs/locale/zh-tw";
 import App from "./App";
 import { appTheme } from "./theme";
 import { LocaleProvider, useLocale } from "./i18n/locale";
+import { APP_BASE } from "./runtimePath";
 
 function DateLocalizationBridge({ children }) {
   const { locale } = useLocale();
@@ -31,7 +32,7 @@ createRoot(document.getElementById("root")).render(
       <CssBaseline />
       <LocaleProvider>
         <DateLocalizationBridge>
-          <BrowserRouter basename="/main">
+          <BrowserRouter basename={APP_BASE}>
             <App />
           </BrowserRouter>
         </DateLocalizationBridge>

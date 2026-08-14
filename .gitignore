@@ -8,6 +8,7 @@ __pycache__/
 *.db
 backend/*.db
 backend/.env
+backend/client_secret.json
 
 # Frontend build/deps
 frontend/node_modules/

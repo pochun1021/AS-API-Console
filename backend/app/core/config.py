@@ -30,6 +30,9 @@ class Settings(BaseSettings):
 
     app_env: str = "dev"
     app_domain: str = "http://localhost:8000"
+    google_allowed_hosted_domain: str | None = None
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
     database_url: str | None = None
     db_user: str = "as_api_console"
     db_password: str | None = None
@@ -73,7 +76,7 @@ class Settings(BaseSettings):
     oauth_client_id: str | None = None
     oauth_client_secret: str | None = None
     oauth_redirect_uri: str | None = None
-    oauth_scope: str = "basic"
+    oauth_scope: str = "openid email profile"
     login_allowed_title_codes: str = ""
     dev_login_account: str | None = None
     dev_login_name: str | None = None
@@ -142,7 +145,11 @@ class Settings(BaseSettings):
     def header_auth_enabled(self) -> bool:
         if self.allow_header_auth is not None:
             return self.allow_header_auth
-        return self.app_env.lower() in {"dev", "test"}
+        return self.app_env.lower() == "dev"
+
+    @property
+    def path_base(self) -> str:
+        return {"dev": "/dev", "test": "/test", "prod": "/main"}.get(self.app_env.lower(), "/dev")
 
     @property
     def session_https_only(self) -> bool:

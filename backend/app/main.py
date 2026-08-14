@@ -20,7 +20,7 @@ from app.services.persnl_soap_service import PersnlSoapService
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 FRONTEND_ASSETS = FRONTEND_DIST / "assets"
-PATH_BASE = "/main"
+PATH_BASE = get_settings().path_base
 
 
 def create_app() -> FastAPI:
@@ -56,6 +56,13 @@ def create_app() -> FastAPI:
     if settings.app_env.lower() == "test":
         app.include_router(test_auth_router, prefix=PATH_BASE)
     app.include_router(api_router, prefix=f"{PATH_BASE}/api/v1")
+    # Keep the historical /main API alias for local test fixtures while the
+    # environment-specific path is the documented public route.
+    if PATH_BASE != "/main":
+        app.include_router(auth_router, prefix="/main")
+        if settings.app_env.lower() == "test":
+            app.include_router(test_auth_router, prefix="/main")
+        app.include_router(api_router, prefix="/main/api/v1")
 
     @app.middleware("http")
     async def request_id_middleware(request, call_next):

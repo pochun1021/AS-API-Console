@@ -343,8 +343,8 @@
 ### Must Have（MVP）
 - 權限模型僅區分 `user` 與 `admin`
 - `whitelist` 僅影響登入/申請資格，不影響角色；若同一身份同時命中 `active whitelist` 與 `active admins`，有效角色仍為 `admin`
-- 提供 OAuth/SSO 登入入口（`GET /main/login`、`GET /main/auth/callback`）並建立 session auth context
-- 正式環境僅允許以 session auth context 驗證；header auth 僅限 `dev/test`
+- 提供環境化登入入口：`dev` 使用 `/dev`、`test` 使用 `/test`、`prod` 使用 `/main`，並建立 session auth context
+- `dev` 使用 `DEV_LOGIN_*` bypass；`test/prod` 使用 Google OIDC；header auth 僅限 `dev`
 - 環境設定檔載入需支援 `ENV_FILE`（正式部署建議 `/home/app/config/.env`）；未設定時可回退 `backend/.env`
 - frontend build 環境判定固定依序讀取 `/home/app/config/.env`、`backend/.env` 的 `APP_ENV`；當 `/home/app/config/.env` 存在且 `APP_ENV=prod` 時，正式 bundle 不得包含 `src/mocks` 或 `src/test` 模組
 - 所有會變更資料的 API 皆需通過 CSRF 驗證
@@ -357,7 +357,7 @@
 - 申請成功時立即核發 API Key；provider timeout/5xx 時直接回傳 `503 PROVIDER_UNAVAILABLE`
 - 需提供 API Key 到期前 `30|14|7|3|1` 天多段式提醒信機制，通知申請者本人可進行展延
   - 主旨固定為 `[AS-ITS] API Key 將於 {days_before} 天後到期 / API Key Expiration Notice ({days_before} Days Remaining)`，其中 `{days_before}` 僅允許 `30|14|7|3|1`
-  - 信件需提供中文與英文雙語內容，並固定包含服務申請／展延網址 `https://api.ascs.sinica.edu.tw/main/`
+- 信件需提供中文與英文雙語內容，並包含目前環境的 `APP_DOMAIN`
   - 信件中的到期時間需顯示為 `Asia/Taipei` 對應的 `UTC+8` 在地時間；中文格式為 `YYYY 年 M 月 D 日 HH:MM（UTC+8）`，英文格式為 `Month D, YYYY, HH:MM (UTC+8)`
 - API 生效時長固定天數選單（`30|180|360`）
 - API Key 對外前綴依環境決定：`APP_ENV=prod` 為 `sk-` + 30 碼隨機字元，`dev/test` 為 `AS-` + 30 碼隨機字元（總長皆為 33）
@@ -546,55 +546,57 @@ Base path：`/main/api/v1`
 
 ### OWASP API Security Baseline
 - 正式環境僅接受 session 作為瀏覽器認證來源；不得信任前端自行送出的身分欄位。
-- `dev/test` 可透過 `ALLOW_HEADER_AUTH=true` 啟用 header auth 供開發與測試使用。
+- 僅 `dev` 可透過 `ALLOW_HEADER_AUTH=true` 啟用 header auth 供開發使用。
 - 所有 `POST`、`PATCH` 端點需驗證 `X-CSRF-Token` 與 session 內 token 一致；header auth 模式除外。
 - 所有清單查詢 `page_size` 上限為 `100`。
-- `GET /main/api/v1/users?q=...` 查詢字串上限為 `100` 字元。
+- `GET {path_base}/api/v1/users?q=...` 查詢字串上限為 `100` 字元。
 - `POST /main/api/v1/api-keys/{id}/reveal` 回應需帶 `Cache-Control: no-store`。
 - 非 `dev/test` 環境之外部整合 URL 必須為 `https`，且不得解析到 loopback / private / link-local 位址。
 
 ### Auth Login Entry
-- `GET /main/login`
+- 路徑前綴依 `APP_ENV` 決定：`dev=/dev`、`test=/test`、`prod=/main`。
+- `GET {path_base}/login`
   - 用途：
-    - `prod`：導向 OAuth provider auth endpoint
-    - `dev/test`：直接建立 session auth context（OAuth bypass）
+    - `test/prod`：導向 Google OIDC auth endpoint
+    - `dev`：直接建立 session auth context（`DEV_LOGIN_*` bypass）
+    - `test/prod`：導向 Google OIDC
   - 規則：
-    - `dev/test`：以 `DEV_LOGIN_ACCOUNT`、`DEV_LOGIN_NAME`、`DEV_LOGIN_EMAIL`、`DEV_LOGIN_DEPARTMENT`、`DEV_LOGIN_SYSID`、`DEV_LOGIN_ROLE` 建立 `auth_context`；`DEV_LOGIN_ROLE` 僅允許 `user|admin`
-    - `prod`：導向 OAuth provider 時不傳送 `state` 參數
+    - `dev`：以 `DEV_LOGIN_ACCOUNT`、`DEV_LOGIN_NAME`、`DEV_LOGIN_EMAIL`、`DEV_LOGIN_DEPARTMENT`、`DEV_LOGIN_SYSID`、`DEV_LOGIN_ROLE` 建立 `auth_context`；`DEV_LOGIN_ROLE` 僅允許 `user|admin`
+    - `test/prod`：使用 authorization code flow，並以 session 保存及驗證 `state`、`nonce`
     - 登入相關未預期錯誤不得直接回框架預設純文字 `Internal Server Error`；需提供可追蹤的 `request_id`
   - Response：
     - 成功回 `302`
-      - `prod`：redirect 至 OAuth provider
-      - `dev/test`：redirect `/main/`
+      - `dev`：redirect `/dev/announcements`
+      - `test/prod`：redirect 至 Google
     - `prod` 若 OAuth 設定缺失或不合法，回 `500 INTERNAL_ERROR`
-    - `dev/test` 若 bypass 設定缺失或不合法，回 `500 INTERNAL_ERROR`
-- `GET /main/auth/callback`
+    - `dev` 若 bypass 設定缺失或不合法，回 `500 INTERNAL_ERROR`
+- `GET {path_base}/auth/callback`
   - 用途：接收 provider callback，交換 access token，取得 basic identity claims，建立本機 session auth context。
   - 規則：
-    - callback 僅以 `code` 驅動 token/identity 流程；不做 `state` 比對
-    - OAuth claims 來源：`sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
+    - callback 必須驗證 `code`、session `state` 與 Google OIDC `id_token` 的 `issuer`、`audience`、`nonce`、`exp`、RSA signature、`email_verified`
+    - Google email 的 `@` 前 local-part 對應人員目錄 `cn`，且必須唯一；目錄回傳 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
     - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
     - 登入資格檢查順序：`active whitelist(sysid)` -> `active admins(id=sysid)` -> `tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES`
     - `LOGIN_ALLOWED_TITLE_CODES` 以逗號分隔字串表示（例如 `A01,A02,...`），解析需 `split(',')` 後做 `trim + upper`，空值略過且重複值去重；`tCode` 比對時同樣 `trim + upper`
-    - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `/`
+    - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `{path_base}/announcements`
     - 若同一身份同時命中 `active whitelist(sysid)` 與 `active admins(id=sysid)`，登入資格仍視為通過；session 可先以 `role=user` 建立，但對外有效角色必須由 `active admins` 覆蓋為 `admin`
-    - 若未通過登入資格檢查，回 `302` redirect `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 且不得建立 session
-    - 前端在 `/main/login-denied` 需可直接顯示公開拒絕頁，不得發生自動導回 `/main/login` 的重導循環
-    - 若登入流程發生未預期錯誤，需導向公開頁 `/main/login-error`，並以 query string 提供 `route`、`reason`、`request_id`，其中 `route` 至少可區分 `login`、`auth_callback`、`users_me`，`reason` 需為簡短可理解的失敗階段說明（例如 `eligibility_check_failed`）
+    - 若未通過登入資格檢查，回 `302` redirect `{path_base}/login-denied?error=LOGIN_NOT_ELIGIBLE` 且不得建立 session
+    - 前端在 `{path_base}/login-denied` 需可直接顯示公開拒絕頁，不得發生自動導回登入入口的重導循環
+    - 若登入流程發生未預期錯誤，需導向公開頁 `{path_base}/login-error`，並以 query string 提供 `route`、`reason`、`request_id`，其中 `route` 至少可區分 `login`、`auth_callback`、`users_me`，`reason` 需為簡短可理解的失敗階段說明（例如 `eligibility_check_failed`）
     - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
     - 成功與失敗皆需寫入 `auth_audit_logs`
   - Response：
-    - 成功回 `302` redirect `/`
+    - 成功回 `302` redirect `{path_base}/announcements`
     - `401`：`OAUTH_TOKEN_EXCHANGE_FAILED`、`OAUTH_BASIC_FETCH_FAILED`
     - `422`：`OAUTH_CODE_MISSING`、`OAUTH_IDENTITY_INVALID`
-    - 非預期 `500` 需提供結構化錯誤內容或 redirect 至 `/main/login-error`，不得只回傳純文字 `Internal Server Error`
-- `GET /main/api/v1/users/me`
+    - 非預期 `500` 需提供結構化錯誤內容或 redirect 至 `{path_base}/login-error`，不得只回傳純文字 `Internal Server Error`
+- `GET {path_base}/api/v1/users/me`
   - 用途：回傳目前 session 使用者資訊與 CSRF token。
   - 規則：
     - 回傳欄位：`account`、`name`、`email`、`department`、`sysid`、`role`、`csrf_token`
     - 若目前帳號命中 `active admins`，`role` 需回傳 `admin`
     - 若目前帳號同時命中 `active whitelist` 與 `active admins`，`role` 仍需回傳 `admin`
-    - 可在 `dev/test` 透過 header auth bootstrap session
+    - 可在 `dev` 透過 header auth bootstrap session
 
 ### 1) 申請並核發 API Key
 - `POST /main/api/v1/api-keys/applications`
@@ -1447,13 +1449,13 @@ Base path：`/main/api/v1`
 51F. `System Announcements Page` 的 `user` 與 `admin` 都需可點擊公告標題，以 modal 檢視該筆公告全文；公告 `body` 不得在列表中直接常駐展開。
 
 ### OAuth、Session 與語系
-51G. 在 API Key 正式上線前，前端於呼叫 `/main/login`（SSO/OAuth 登入入口）前，需先顯示公開的 `coming-soon` 提示頁；使用者明示點擊後才可真正前往 `/main/login`。正式上線時間到達後，此公開提示頁不得再攔截登入入口。
-52. `GET /main/login` 在 `prod` 需導向 OAuth provider；在 `dev/test` 需可直接建立 session auth context 並 redirect `/main/`。`GET /main/auth/callback` 成功時需建立 session 並 redirect `/main/`，失敗時需回錯且寫入 failure audit。
-53. 正式環境不得接受 header auth 作為正式認證來源；僅 `dev/test` 可啟用。OAuth 成功登入寫入的角色需固定為 `user`，且流程不得落地 access token、refresh token、password 或 client secret。
-54. OAuth callback 需以 claims `sysId/cn/chName/email/instCode/tCode` 建立身份；任一缺漏需拒絕登入。登入資格判斷需遵循 `active whitelist(sysid)` 或 `active admins(id=sysid)`，否則才比對 `LOGIN_ALLOWED_TITLE_CODES`；若同時命中 `active whitelist` 與 `active admins`，最終角色仍以 `admin` 為準。
-55. `/main/login-denied` 必須是公開頁；登入失敗導向 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE` 時，使用者需可直接看到拒絕說明與返回登入操作，且不依賴 `GET /main/api/v1/users/me` 成功。
-55A. API Key 正式上線前，使用者在公開頁點選登入後，前端於呼叫 `/main/login` 前需先顯示公開的 `/main/login-coming-soon` 提示頁；使用者明示點擊後才可真正前往 `/main/login`。未登入使用者瀏覽 `/main/` 或 `/main/usage-examples` 時，不得自動顯示 `/main/login-coming-soon`。登入成功後，`user` 與 `admin` 都需導向 `/main/announcements`，不得再因未上線而自動跳轉至 `/main/apply/coming-soon`。
-56. `GET /main/api/v1/users/me` 需回傳目前使用者資料與 `csrf_token`；所有 `POST/PATCH` 端點在 session auth 模式下，缺少或錯誤 `X-CSRF-Token` 時需回傳 `403 FORBIDDEN`。
+51G. 在 API Key 正式上線前，前端於呼叫 `{path_base}/login`（SSO/OAuth 登入入口）前，需先顯示公開的 `coming-soon` 提示頁；使用者明示點擊後才可真正前往登入入口。正式上線時間到達後，此公開提示頁不得再攔截登入入口。
+52. `dev/test/prod` 的 path base 分別為 `/dev`、`/test`、`/main`。`dev` 登入使用 `DEV_LOGIN_*` 建立 session；`test/prod` 使用 Google OIDC，callback 成功後導向各自的 `{path_base}/announcements`。
+53. 僅 `dev` 可接受 header auth；`test/prod` 僅允許 session auth。OAuth 成功登入寫入的角色需固定為 `user`，且流程不得落地 access token、refresh token、password 或 client secret。
+54. Google OIDC callback 需以 verified email 的 local-part 查詢人員目錄，取得 `sysId/cn/chName/email/instCode/tCode`；查詢結果必須唯一且 email 一致。登入資格判斷需遵循 `active whitelist(sysid)` 或 `active admins(id=sysid)`，否則才比對 `LOGIN_ALLOWED_TITLE_CODES`；若同時命中 `active whitelist` 與 `active admins`，最終角色仍以 `admin` 為準。
+55. `{path_base}/login-denied` 必須是公開頁；登入失敗導向 `{path_base}/login-denied?error=LOGIN_NOT_ELIGIBLE` 時，使用者需可直接看到拒絕說明與返回登入操作，且不依賴 `GET {path_base}/api/v1/users/me` 成功。
+55A. API Key 正式上線前，使用者在公開頁點選登入後，前端於呼叫 `{path_base}/login` 前需先顯示公開的 `{path_base}/login-coming-soon` 提示頁；使用者明示點擊後才可真正前往登入入口。未登入使用者瀏覽 `{path_base}/` 或 `{path_base}/usage-examples` 時，不得自動顯示提示頁。登入成功後，`user` 與 `admin` 都需導向 `{path_base}/announcements`。
+56. `GET {path_base}/api/v1/users/me` 需回傳目前使用者資料與 `csrf_token`；所有 `POST/PATCH` 端點在 session auth 模式下，缺少或錯誤 `X-CSRF-Token` 時需回傳 `403 FORBIDDEN`。
 57. 系統語言僅支援 `zh-TW`、`en`；DB 無偏好時，系統語言命中 `zh*` 顯示中文、命中 `en*` 顯示英文，其他語系 fallback 為英文，並需立即寫回 DB 作為初始偏好。
 58. `GET /main/api/v1/users/preferences/locale` 需回傳目前偏好（`zh-TW|en|null`）；`PATCH` 僅允許 `zh-TW|en`，成功後可立即由 `GET` 讀回。手動切換語言後，重新登入需沿用 DB 偏好，且導覽列、頁標題、按鈕、錯誤/提示訊息與 DataGrid locale 文案需隨語言切換更新。
 

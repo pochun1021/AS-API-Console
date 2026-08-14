@@ -5,6 +5,7 @@ import { createSensitiveBundleGuardPlugin } from "./build/sensitiveBundleGuard.j
 
 const { appEnv } = resolveFrontendBuildEnvironment();
 const isProdAppEnv = appEnv === "prod";
+const appBase = { dev: "/dev/", test: "/test/", prod: "/main/" }[appEnv] || "/dev/";
 
 function isRouterVendor(id) {
   return (
@@ -76,7 +77,7 @@ function isDateUiVendor(id) {
 }
 
 export default defineConfig({
-  base: "/main/",
+  base: appBase,
   plugins: [react(), createSensitiveBundleGuardPlugin({ enabled: isProdAppEnv })],
   build: {
     chunkSizeWarningLimit: 600,
@@ -111,19 +112,19 @@ export default defineConfig({
       allow: [".."]
     },
     proxy: {
-      "/main/api": {
+      [`${appBase.slice(0, -1)}/api`]: {
         target: "http://127.0.0.1:8000",
         changeOrigin: true
       },
-      "/main/login": {
+      [`${appBase.slice(0, -1)}/login`]: {
         target: "http://127.0.0.1:8000",
         changeOrigin: true
       },
-      "/main/auth": {
+      [`${appBase.slice(0, -1)}/auth`]: {
         target: "http://127.0.0.1:8000",
         changeOrigin: true
       },
-      "/main/logout": {
+      [`${appBase.slice(0, -1)}/logout`]: {
         target: "http://127.0.0.1:8000",
         changeOrigin: true
       }

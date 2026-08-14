@@ -101,7 +101,7 @@ cp -n backend/.env.example /home/app/config/.env
 export ENV_FILE=/home/app/config/.env
 ```
 - 環境檔載入順序：`ENV_FILE`（若有設定）→ `/home/app/config/.env`（若存在）→ `backend/.env`（開發預設）
-- `APP_DOMAIN`：後端對外基底網址（預設 `http://localhost:8000`，方便後續部署調整）
+- `APP_DOMAIN`：目前環境對外基底網址；dev/test/prod 建議分別為 `http://localhost:8000/dev`、`http://localhost:8000/test`、`https://api.ascs.sinica.edu.tw/main`
 - `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME`：MariaDB 連線組件（程式會自動組成 `DATABASE_URL`）
 - 建議命名規則：`DB_USER` 與 `DB_NAME` 使用相同名稱（例如都用 `as_api_console`），方便權限管理與維運
 - `DATABASE_URL`：可選，若提供會覆蓋 `DB_*` 組合結果
@@ -128,15 +128,15 @@ export ENV_FILE=/home/app/config/.env
 - `extend` 呼叫 `POST /key/update` 時，`duration` 一律直接送該 key 的 `original_duration_days` 對應值（`30d|180d|360d`），不再依 `api_keys.created_at` 累算總天數
 - `APP_ENV`：`prod` 時新配發 key 與對外 `masked_key` 使用 `sk-` / `sk-...XXXX`；`dev/test` 維持既有 `AS-` / `AS-...XXXX`
 - `SESSION_SECRET_KEY`：必填（正式環境），FastAPI session 簽章密鑰
-- `ALLOW_HEADER_AUTH`：可選；僅供 `dev/test` 使用的 header auth bootstrap，正式環境應為 `false`
+- `ALLOW_HEADER_AUTH`：可選；僅供 `dev` 使用的 header auth bootstrap，test/prod 應為 `false`
 - `ALLOWED_HOSTS`：可選；允許的 Host 清單（逗號分隔）。部署 `api.ascs.sinica.edu.tw` 時建議設為 `api.ascs.sinica.edu.tw,localhost,127.0.0.1`
 - `SESSION_MAX_AGE_SECONDS`：可選；session 有效秒數
-- `OAUTH_PROVIDER`：可選，OAuth provider 名稱（寫入 auth audit）
-- `OAUTH_AUTH_URI` / `OAUTH_TOKEN_URI` / `OAUTH_BASIC_URI`：OAuth auth/token/basic 端點
-- `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` / `OAUTH_REDIRECT_URI`：OAuth client 設定
-- `OAUTH_SCOPE`：可選，OAuth scope（預設 `basic`）
-- `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：`APP_ENV=dev/test` 使用 `/main/login` bypass 時建立 session 身分所需欄位
-- `DEV_LOGIN_ROLE`：可選，`APP_ENV=dev/test` bypass 身分角色（僅允許 `user` 或 `admin`，預設 `user`）
+- `OAUTH_PROVIDER`：可選，OAuth provider 名稱（寫入 auth audit，Google 環境建議設為 `google`）
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `OAUTH_REDIRECT_URI`：test/prod Google OIDC client 設定
+- `GOOGLE_ALLOWED_HOSTED_DOMAIN`：限制 Google Workspace 網域
+- `OAUTH_SCOPE`：相容保留；Google OIDC 實際 scope 預設為 `openid email profile`
+- `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：僅 `APP_ENV=dev` 使用 `/dev/login` bypass 時建立 session 身分所需欄位
+- `DEV_LOGIN_ROLE`：可選，僅 `dev` bypass 身分角色（僅允許 `user` 或 `admin`，預設 `user`）
 - `SCHEDULER_LOG_ROOT`：可選，排程腳本日誌根目錄（預設 `/home/app/log`，實際會寫入子目錄如 `sync_api_key_usage/`、`sync_expired_api_keys/`、`send_expiration_reminders/`）
 - `MAIL_ENABLED`：可選，是否啟用 Email 發送（預設 `false`）
 - `MAIL_SERVER` / `MAIL_PORT`：可選，SMTP 主機與連接埠
@@ -162,7 +162,7 @@ python -m uvicorn app.main:app --reload
 5. 開啟系統
 - 前端頁面：`http://127.0.0.1:8000/main/`
 - API 文件：`http://127.0.0.1:8000/main/docs`
-- OAuth 登入入口：`http://127.0.0.1:8000/main/login`
+- OAuth 登入入口：test 使用 `http://localhost:8000/test/login`；prod 使用 `https://api.ascs.sinica.edu.tw/main/login`
 
 ## 前端更新流程
 - 修改前端後重新執行：
@@ -174,16 +174,17 @@ npm run build
 
 ## 開發備註
 - 後端登入入口：
-- `APP_ENV=prod`：`GET /main/login` 走 OAuth，callback `GET /main/auth/callback` 於必要 claims 驗證後，依序檢查 `active whitelist(sysid)`、`active admins(id=sysid)`、`LOGIN_ALLOWED_TITLE_CODES`；通過才建立 session，否則導向 `/main/login-denied?error=LOGIN_NOT_ELIGIBLE`。`whitelist` 僅代表登入資格放行，不是角色來源；若同時命中 `active admins`，對外有效角色仍為 `admin`。
-  - `APP_ENV=dev/test`：`GET /main/login` 直接 bypass OAuth，使用 `DEV_LOGIN_*` 建立 session auth context（`role` 由 `DEV_LOGIN_ROLE` 控制，僅 `user|admin`）。
-- 前端公開拒絕頁：`/main/login-denied` 為不符登入資格時的公開頁，不需 session 即可顯示，並提供返回 `/main/login` 重新登入。
-- 前端公開錯誤頁：`/main/login-error` 用於登入流程非預期失敗，顯示失敗路由、簡短原因與 `request_id`，並提供返回 `/main/login` 重新登入。
-- 前端啟動時會呼叫 `GET /main/api/v1/users/me` 取得目前 session 使用者資訊與 `csrf_token`。
+- `APP_ENV=prod`：`GET /main/login` 走 Google OIDC；callback 以 Google email local-part 查詢人員目錄，再依序檢查 `active whitelist(sysid)`、`active admins(id=sysid)`、`LOGIN_ALLOWED_TITLE_CODES`。
+  - `APP_ENV=test`：路徑為 `/test`，同樣走 Google OIDC。
+  - `APP_ENV=dev`：路徑為 `/dev`，`GET /dev/login` 使用 `DEV_LOGIN_*` 直接建立 session auth context（`role` 由 `DEV_LOGIN_ROLE` 控制，僅 `user|admin`）。
+- 前端公開拒絕頁：各環境的 `{path_base}/login-denied` 為不符登入資格時的公開頁，不需 session 即可顯示。
+- 前端公開錯誤頁：各環境的 `{path_base}/login-error` 用於登入流程非預期失敗，顯示失敗路由、簡短原因與 `request_id`。
+- 前端啟動時會呼叫 `GET {path_base}/api/v1/users/me` 取得目前 session 使用者資訊與 `csrf_token`。
 - `POST/PATCH` API 會以 `X-CSRF-Token` 搭配 session 驗證；正式環境不得以前端自送 header 當作正式認證來源。
-- 若在 `dev/test` 啟用 `ALLOW_HEADER_AUTH=true`，前端可用開發身分 bootstrap session（需包含 `account`、`name`、`email`、`department`、`sysid`、`role`）：
+- 若在 `dev` 啟用 `ALLOW_HEADER_AUTH=true`，前端可用開發身分 bootstrap session（需包含 `account`、`name`、`email`、`department`、`sysid`、`role`）：
   - `window.__AS_AUTH_CONTEXT__ = { ... }`，或
   - `sessionStorage["as-api-console-auth-context"] = JSON.stringify({ ... })`
-- Vite dev server 已設定 `/main/api` 與登入相關路徑（`/main/login`、`/main/auth`、`/main/logout`）proxy 到 `http://127.0.0.1:8000`（若需 `npm run dev` 分離開發可直接使用）。
+- Vite dev server 會依 `APP_ENV` 將 `{path_base}/api` 與登入相關路徑 proxy 到 `http://127.0.0.1:8000`（若需 `npm run dev` 分離開發可直接使用）。
 - 前端預設使用 real API（HTTP provider）；建議搭配本機 DB seed 資料進行整合開發。
 
 ## 測試資料生成（本機 DB）

@@ -115,6 +115,7 @@ chmod 600 /home/app/config/.env
 編輯 `/home/app/config/.env`，至少確認以下欄位：
 
 - `APP_DOMAIN=https://api.ascs.sinica.edu.tw/main`
+- `APP_ENV=prod`
 - `DB_USER=as_api_console`
 - `DB_PASSWORD=CHANGE_ME_STRONG_PASSWORD`
 - `DB_HOST=localhost`
@@ -130,12 +131,10 @@ chmod 600 /home/app/config/.env
   - `PERSNL_SOAP_USER`（建議必填）
   - `PERSNL_SOAP_PASSWORD`（建議必填）
   - `PERSNL_SOAP_TIMEOUT_SECONDS=3.0`（可選）
-- OAuth 必填欄位（依你環境提供）：
-  - `OAUTH_AUTH_URI`
-  - `OAUTH_TOKEN_URI`
-  - `OAUTH_BASIC_URI`
-  - `OAUTH_CLIENT_ID`
-  - `OAUTH_CLIENT_SECRET`
+- Google OIDC 必填欄位：
+  - `GOOGLE_CLIENT_ID`
+  - `GOOGLE_CLIENT_SECRET`
+  - `GOOGLE_ALLOWED_HOSTED_DOMAIN`
   - `OAUTH_REDIRECT_URI=https://api.ascs.sinica.edu.tw/main/auth/callback`
 
 如果你改用 `DATABASE_URL`，它會覆蓋 `DB_*` 組合結果。

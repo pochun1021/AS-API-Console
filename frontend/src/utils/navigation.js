@@ -1,8 +1,9 @@
 import { isApiKeyApplicationLive, parseApiKeyApplicationGoLiveAt } from "./apiKeyGoLive";
+import { appPath } from "../runtimePath";
 
 export function proceedToLogin() {
   if (typeof window !== "undefined") {
-    window.location.assign("/main/login");
+    window.location.assign(appPath("/login"));
   }
 }
 
@@ -12,6 +13,6 @@ export function redirectToLogin() {
   }
 
   const goLiveAt = parseApiKeyApplicationGoLiveAt();
-  const nextPath = isApiKeyApplicationLive(goLiveAt) ? "/main/login" : "/main/login-coming-soon";
+  const nextPath = isApiKeyApplicationLive(goLiveAt) ? appPath("/login") : appPath("/login-coming-soon");
   window.location.assign(nextPath);
 }

@@ -7,10 +7,11 @@ import { clearOAuthAuthContext, readOAuthAuthContext } from "./authContext";
 import { detectSystemLocale, useLocale } from "./i18n/locale";
 import { lazyWithReload } from "./utils/lazyWithReload";
 import { redirectToLogin } from "./utils/navigation";
+import { appPath } from "./runtimePath";
 
 function redirectToPublicHome() {
   if (typeof window === "undefined") return;
-  window.location.assign("/main/");
+  window.location.assign(`${appPath()}/`);
 }
 
 const ApplyPage = lazyWithReload("ApplyPage", () => import("./pages/ApplyPage"));

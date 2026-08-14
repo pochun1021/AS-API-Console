@@ -12,24 +12,31 @@ from app.schemas.common import ErrorResponse
 from app.services.auth_audit_service import AuthAuditService
 from app.services.login_eligibility_service import LoginEligibilityService
 from app.services.oauth_service import OAuthService
+from app.services.persnl_soap_service import PersnlSoapUnavailableError
 from db.repositories.types import AuthIdentity
 from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyWhitelistRepository
 from db.session import get_db
 
 router = APIRouter()
 settings = get_settings()
-LOGIN_SUCCESS_REDIRECT = "/main/announcements"
+LOGIN_SUCCESS_REDIRECT = "/announcements"
+
+
+def _path(request: Request, suffix: str = "") -> str:
+    return f"{get_settings().path_base}{suffix}"
 
 
 def _clear_login_session(request: Request) -> None:
     request.session.pop("auth_context", None)
     request.session.pop("csrf_token", None)
     request.session.pop("oauth_request_id", None)
+    request.session.pop("oauth_state", None)
+    request.session.pop("oauth_nonce", None)
 
 
 def _build_login_error_redirect(*, route: str, reason: str, request_id: str) -> RedirectResponse:
     query = urlencode({"route": route, "reason": reason, "request_id": request_id})
-    return RedirectResponse(f"/main/login-error?{query}", status_code=302)
+    return RedirectResponse(f"{get_settings().path_base}/login-error?{query}", status_code=302)
 
 
 def _log_auth_audit_or_redirect(
@@ -66,7 +73,7 @@ def login(
     request_id = getattr(request.state, "request_id", str(uuid4()))
     current_settings = get_settings()
     env = current_settings.app_env.lower()
-    if env in {"dev", "test"}:
+    if env == "dev":
         dev_role = (current_settings.dev_login_role or "user").strip().lower()
         if dev_role not in {"user", "admin"}:
             raise ApiError("INTERNAL_ERROR", "invalid DEV_LOGIN_ROLE: must be user or admin", 500)
@@ -103,12 +110,12 @@ def login(
             db.commit()
         request.session.pop("oauth_request_id", None)
         ensure_csrf_token(request)
-        return RedirectResponse(LOGIN_SUCCESS_REDIRECT, status_code=302)
+        return RedirectResponse(_path(request, LOGIN_SUCCESS_REDIRECT), status_code=302)
 
     try:
         ensure_csrf_token(request)
         service = OAuthService()
-        return RedirectResponse(service.build_login_url(), status_code=302)
+        return RedirectResponse(service.build_login_url(request), status_code=302)
     except ApiError:
         raise
     except Exception:
@@ -133,9 +140,30 @@ def oauth_callback(
     state: str | None = None,
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    provider = get_settings().oauth_provider
+    current_settings = get_settings()
+    provider = current_settings.oauth_provider
     request_id = state or str(uuid4())
     audit = AuthAuditService(db)
+
+    expected_state = request.session.pop("oauth_state", None)
+    expected_nonce = request.session.pop("oauth_nonce", None)
+    if not state or not expected_state or state != expected_state or not expected_nonce:
+        redirect = _log_auth_audit_or_redirect(
+            request=request,
+            audit=audit,
+            route="auth_callback",
+            reason="audit_log_failed",
+            request_id=request_id,
+            payload={
+                "provider": provider,
+                "request_id": request_id,
+                "result": "failure",
+                "error_code": "OAUTH_STATE_INVALID",
+            },
+        )
+        if redirect is not None:
+            return redirect
+        raise ApiError("OAUTH_STATE_INVALID", "oauth state invalid", 422)
 
     if not code:
         redirect = _log_auth_audit_or_redirect(
@@ -158,7 +186,23 @@ def oauth_callback(
     oauth = OAuthService()
     try:
         token = oauth.exchange_code_for_token(code)
-        identity = oauth.fetch_identity(token)
+        identity = oauth.fetch_identity(token, expected_nonce=expected_nonce)
+        if identity.sysid == 0:
+            try:
+                person = request.app.state.persnl_soap_service.find_unique_person_by_account(identity.account)
+            except PersnlSoapUnavailableError as exc:
+                raise ApiError("SOAP_SERVICE_UNAVAILABLE", "personnel directory unavailable", 503) from exc
+            if person is None or person.get("email", "").lower() != identity.email.lower():
+                raise ApiError("OAUTH_IDENTITY_INVALID", "google account not found in personnel directory", 422)
+            identity = type(identity)(
+                account=person["cn"],
+                name=person["chName"],
+                email=person["email"].lower(),
+                department=person["instCode"],
+                sysid=int(person["sysId"]),
+                tcode=person["tCode"],
+                role="user",
+            )
     except ApiError as exc:
         redirect = _log_auth_audit_or_redirect(
             request=request,
@@ -212,7 +256,7 @@ def oauth_callback(
         )
         if redirect is not None:
             return redirect
-        return RedirectResponse("/main/login-denied?error=LOGIN_NOT_ELIGIBLE", status_code=302)
+        return RedirectResponse(_path(request, "/login-denied") + "?error=LOGIN_NOT_ELIGIBLE", status_code=302)
 
     try:
         request.session["auth_context"] = {
@@ -248,7 +292,7 @@ def oauth_callback(
     )
     if redirect is not None:
         return redirect
-    return RedirectResponse(LOGIN_SUCCESS_REDIRECT, status_code=302)
+    return RedirectResponse(_path(request, LOGIN_SUCCESS_REDIRECT), status_code=302)
 
 
 @router.post("/logout", dependencies=[Depends(csrf_protected), enforce_rate_limit("logout", settings.login_rate_limit)])

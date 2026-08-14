@@ -80,6 +80,7 @@ class MailService:
             f"{calendar.month_name[expires_at_taipei.month]} {expires_at_taipei.day}, "
             f"{expires_at_taipei.year}, {expires_at_taipei.strftime('%H:%M')} (UTC+8)"
         )
+        service_url = (app_domain or "https://api.ascs.sinica.edu.tw/main").rstrip("/")
         await self._send_html(
             subject=(
                 f"[AS-ITS] API Key 將於 {days_before} 天後到期 / "
@@ -91,7 +92,7 @@ class MailService:
                 f"<p>提醒您，您的 API Key 將於 {days_before} 天後到期。</p>"
                 f"<p>到期時間：{expires_text_zh}</p>"
                 "<p>如需持續使用，請於到期前或到期後至系統進行展延（Extend）作業。</p>"
-                "<p>服務申請／展延網址：https://api.ascs.sinica.edu.tw/main/</p>"
+                f"<p>服務申請／展延網址：{service_url}/</p>"
                 "<p>若您未曾申請或使用此 API Key，請與資訊服務處服務台聯繫。</p>"
                 "<p>如有其他相關問題，歡迎與我們聯絡。</p>"
                 "<p>聯絡資訊：<br/>"
@@ -105,7 +106,7 @@ class MailService:
                 f"<p>Expiration Date and Time: {expires_text_en}</p>"
                 "<p>If you wish to continue using this API Key, please extend it through the system "
                 "either before or after its expiration.</p>"
-                "<p>Application / Extension URL: https://api.ascs.sinica.edu.tw/main/</p>"
+                f"<p>Application / Extension URL: {service_url}/</p>"
                 "<p>If you did not apply for or use this API Key, please contact the IT Service Desk.</p>"
                 "<p>For any questions, please feel free to contact us.</p>"
                 "<p>Contact Information:<br/>"

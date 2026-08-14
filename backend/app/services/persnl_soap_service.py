@@ -73,6 +73,13 @@ class PersnlSoapService:
     def search_person_by_account(self, account: str, on_job: str = "1") -> list[dict]:
         return self._query_users({"cn": account, "onJob": on_job})
 
+    def find_unique_person_by_account(self, account: str) -> dict | None:
+        matches = [
+            item for item in self.search_person_by_account(account)
+            if item.get("cn", "").lower() == account.lower()
+        ]
+        return matches[0] if len(matches) == 1 else None
+
     def search_person_by_sysid(self, sysid: int, on_job: str = "1") -> list[dict]:
         return self._query_users({"sysId": str(sysid), "onJob": on_job})
 
