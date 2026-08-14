@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.config import get_settings
+from app.core.config import _resolve_google_client_secrets_file
 from app.core.errors import ApiError
 from app.services.oauth_service import OAuthService
 
@@ -35,6 +36,15 @@ def test_client_secrets_builds_google_authorization_url(oauth_env) -> None:
     assert request.session["oauth_code_verifier"]
     assert f"state={request.session['oauth_state']}" in url
     assert f"nonce={request.session['oauth_nonce']}" in url
+
+
+def test_client_secret_defaults_to_env_file_directory(monkeypatch, tmp_path) -> None:
+    env_file = tmp_path / "config" / ".env"
+    env_file.parent.mkdir()
+    (env_file.parent / "client_secret.json").write_text("{}")
+    monkeypatch.setattr("app.core.config._resolve_env_file", lambda: str(env_file))
+
+    assert _resolve_google_client_secrets_file() == str(env_file.parent / "client_secret.json")
 
 
 def test_flow_uses_non_persisting_token_updater(oauth_env, monkeypatch) -> None:

@@ -23,6 +23,20 @@ def _resolve_env_file() -> str:
     return os.path.abspath(local_env_file)
 
 
+def _resolve_google_client_secrets_file() -> str:
+    """Find the Google client secret beside the active env file or deployment config."""
+    env_file_path = Path(_resolve_env_file()).expanduser()
+    candidates = [
+        env_file_path.parent / "client_secret.json",
+        Path("/home/app/config/client_secret.json"),
+        Path(__file__).resolve().parents[2] / "client_secret.json",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return str(candidates[-1])
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=_resolve_env_file(),
@@ -32,7 +46,7 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     app_domain: str = "http://localhost:8000"
     google_allowed_hosted_domain: str | None = None
-    google_client_secrets_file: str = str(Path(__file__).resolve().parents[2] / "client_secret.json")
+    google_client_secrets_file: str | None = None
     database_url: str | None = None
     db_user: str = "as_api_console"
     db_password: str | None = None
@@ -163,6 +177,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":
+        if not self.google_client_secrets_file:
+            self.google_client_secrets_file = _resolve_google_client_secrets_file()
         if not self.database_url:
             if not self.db_password:
                 raise ValueError("Set DATABASE_URL or DB_PASSWORD in environment config")

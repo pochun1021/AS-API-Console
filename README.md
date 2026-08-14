@@ -132,7 +132,7 @@ export ENV_FILE=/home/app/config/.env
 - `ALLOWED_HOSTS`：可選；允許的 Host 清單（逗號分隔）。部署 `api.ascs.sinica.edu.tw` 時建議設為 `api.ascs.sinica.edu.tw,localhost,127.0.0.1`
 - `SESSION_MAX_AGE_SECONDS`：可選；session 有效秒數
 - `OAUTH_PROVIDER`：可選，OAuth provider 名稱（寫入 auth audit，Google 環境建議設為 `google`）
-- `GOOGLE_CLIENT_SECRETS_FILE`：Google OAuth client secrets JSON 路徑；預設為 `backend/client_secret.json`，正式部署可設為 `/home/app/config/client_secret.json`
+- `GOOGLE_CLIENT_SECRETS_FILE`：可選的 Google OAuth client secrets JSON 路徑；未設定時依 `${ENV_FILE}` 同目錄、`/home/app/config/client_secret.json`、`backend/client_secret.json` 順序自動尋找
 - OAuth callback URI：由 `APP_ENV` 與 `APP_DOMAIN` 自動產生，例如 test 為 `http://localhost:8000/test/auth/callback`，prod 為 `https://api.ascs.sinica.edu.tw/main/auth/callback`
 - `GOOGLE_ALLOWED_HOSTED_DOMAIN`：限制 Google Workspace 網域
 - `OAUTH_SCOPE`：Google OIDC scope，預設為 `openid email profile`

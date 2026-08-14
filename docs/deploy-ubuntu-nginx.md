@@ -132,9 +132,11 @@ chmod 600 /home/app/config/.env
   - `PERSNL_SOAP_PASSWORD`（建議必填）
   - `PERSNL_SOAP_TIMEOUT_SECONDS=3.0`（可選）
 - Google OIDC 必填欄位：
-  - `GOOGLE_CLIENT_SECRETS_FILE=/home/app/config/client_secret.json`
-  - `GOOGLE_ALLOWED_HOSTED_DOMAIN`
   - `APP_DOMAIN=https://api.ascs.sinica.edu.tw/main`（OAuth callback 會自動產生為 `/main/auth/callback`）
+- Google OIDC 可選限制：
+  - `GOOGLE_ALLOWED_HOSTED_DOMAIN=as.edu.tw`（只允許指定 Workspace domain 時設定）
+
+Google client secret 預設會自動尋找 `/home/app/config/client_secret.json`；也可在 `/home/app/config/.env` 明確設定 `GOOGLE_CLIENT_SECRETS_FILE` 覆寫路徑。
 
 如果你改用 `DATABASE_URL`，它會覆蓋 `DB_*` 組合結果。
 本部署文件為正式環境流程，`TEST_DB_*` / `TEST_DATABASE_URL` 僅供測試使用，正式部署不需要設定。
