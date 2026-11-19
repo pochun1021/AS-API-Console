@@ -1,177 +1,96 @@
-from types import SimpleNamespace
+"""Mock FISA authorization-code and identity endpoint tests."""
 
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
+
+import httpx
 import pytest
 
-from app.core.config import get_settings
-from app.core.config import _resolve_google_client_secrets_file
+from app.core.config import Settings
 from app.core.errors import ApiError
 from app.services.oauth_service import OAuthService
 
 
-@pytest.fixture()
-def oauth_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    secrets_file = tmp_path / "client_secret.json"
-    secrets_file.write_text(
-        '{"web":{"client_id":"test-client","client_secret":"test-secret",'
-        '"auth_uri":"https://accounts.google.com/o/oauth2/auth",'
-        '"token_uri":"https://oauth2.googleapis.com/token"}}'
-    )
-    monkeypatch.setenv("APP_ENV", "prod")
-    monkeypatch.setenv("GOOGLE_CLIENT_SECRETS_FILE", str(secrets_file))
-    monkeypatch.setenv("APP_DOMAIN", "https://console.example/main")
-    monkeypatch.setenv("GOOGLE_ALLOWED_HOSTED_DOMAIN", "example.com")
-    get_settings.cache_clear()
+@pytest.fixture(autouse=True)
+def allow_mock_fisa_urls(monkeypatch):
+    monkeypatch.setattr("app.services.oauth_service.validate_outbound_url", lambda value, **_: value)
 
 
-def test_client_secrets_builds_google_authorization_url(oauth_env) -> None:
-    service = OAuthService()
-    request = SimpleNamespace(session={})
-
-    url = service.build_login_url(request)
-
-    assert "accounts.google.com" in url
-    assert "redirect_uri=https%3A%2F%2Fconsole.example%2Fmain%2Fauth%2Fcallback" in url
-    assert request.session["oauth_state"]
-    assert request.session["oauth_nonce"]
-    assert request.session["oauth_code_verifier"]
-    assert f"state={request.session['oauth_state']}" in url
-    assert f"nonce={request.session['oauth_nonce']}" in url
-
-
-def test_client_secret_defaults_to_env_file_directory(monkeypatch, tmp_path) -> None:
-    env_file = tmp_path / "config" / ".env"
-    env_file.parent.mkdir()
-    (env_file.parent / "client_secret.json").write_text("{}")
-    monkeypatch.setattr("app.core.config._resolve_env_file", lambda: str(env_file))
-
-    assert _resolve_google_client_secrets_file() == str(env_file.parent / "client_secret.json")
-
-
-def test_flow_uses_non_persisting_token_updater(oauth_env, monkeypatch) -> None:
-    captured = {}
-
-    class FakeFlow:
-        redirect_uri = None
-
-    def fake_from_client_secrets_file(filename, scopes, token_updater):  # noqa: ARG001
-        captured["token_updater"] = token_updater
-        return FakeFlow()
-
-    monkeypatch.setattr(
-        "app.services.oauth_service.Flow.from_client_secrets_file",
-        fake_from_client_secrets_file,
+def settings() -> Settings:
+    return Settings.model_construct(
+        app_env="prod", app_domain="https://console.example/main",
+        oauth_auth_uri="https://fisa.example/authorize",
+        oauth_token_uri="https://fisa.example/token",
+        oauth_basic_uri="https://fisa.example/basic",
+        oauth_client_id="fixture-client", oauth_client_secret="fixture-secret",
+        oauth_scope="basic", oauth_timeout_seconds=0.5,
+        require_https_outbound=True, allow_private_outbound_hosts=False,
     )
 
-    service = OAuthService()
-    service._new_flow()
-    captured["token_updater"]({"access_token": "not persisted"})
 
-    assert callable(captured["token_updater"])
-
-
-def test_redirect_uri_is_derived_for_current_environment(oauth_env) -> None:
-    service = OAuthService()
-    service.settings.app_env = "test"
-    service.settings.app_domain = "http://localhost:8000/main"
-
-    url = service.build_login_url()
-
-    assert "redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Ftest%2Fauth%2Fcallback" in url
-
-
-def test_exchange_code_failure_is_wrapped(oauth_env, monkeypatch, caplog) -> None:
-    class ProviderError(Exception):
-        error = "invalid_grant"
-        description = "invalid authorization code"
-
-    class FailingFlow:
-        credentials = SimpleNamespace(id_token=None)
-
-        def fetch_token(self, **kwargs):  # noqa: ARG002
-            raise ProviderError("provider rejected code")
-
-    monkeypatch.setattr(OAuthService, "_new_flow", lambda self: FailingFlow())
-
-    with caplog.at_level("WARNING", logger="app.services.oauth_service"):
-        with pytest.raises(ApiError) as exc_info:
-            OAuthService().exchange_code_for_token("bad-code", code_verifier="verifier")
-
-    assert exc_info.value.code == "OAUTH_TOKEN_EXCHANGE_FAILED"
-    assert "invalid_grant" in caplog.text
-    assert "invalid authorization code" in caplog.text
-
-
-def test_exchange_code_requires_pkce_verifier(oauth_env) -> None:
-    with pytest.raises(ApiError, match="code verifier missing"):
-        OAuthService().exchange_code_for_token("bad-code")
-
-
-def test_exchange_code_accepts_google_scope_normalization_warning(oauth_env, monkeypatch, caplog) -> None:
-    warning = Warning('Scope has changed from "openid email profile"')
-    warning.token = {
-        "access_token": "access-token",
-        "id_token": "id-token",
-        "scope": "openid https://www.googleapis.com/auth/userinfo.email",
-        "token_type": "Bearer",
+def identity(raw_sysid="00123"):
+    return {
+        "cn": "test.user", "chName": "測試使用者", "email": "test@example.com",
+        "instCode": "IT", "sysid": raw_sysid, "tCode": "RS01",
     }
-    warning.old_scope = ["openid", "email", "profile"]
-    warning.new_scope = ["openid", "https://www.googleapis.com/auth/userinfo.email"]
-
-    class FlowWithScopeWarning:
-        code_verifier = None
-
-        class OAuthSession:
-            token = {}
-
-        oauth2session = OAuthSession()
-        credentials = SimpleNamespace(id_token="id-token")
-
-        def fetch_token(self, **kwargs):  # noqa: ARG002
-            raise warning
-
-    monkeypatch.setattr(OAuthService, "_new_flow", lambda self: FlowWithScopeWarning())
-
-    with caplog.at_level("INFO", logger="app.services.oauth_service"):
-        token = OAuthService().exchange_code_for_token("code", code_verifier="verifier")
-
-    assert token == "id-token"
-    assert "accepted normalized scopes" in caplog.text
-    assert "access-token" not in caplog.text
 
 
-def test_exchange_code_rejects_scope_warning_without_id_token(oauth_env, monkeypatch) -> None:
-    warning = Warning("Scope has changed")
-    warning.token = {"access_token": "access-token"}
-
-    class FailingFlow:
-        def fetch_token(self, **kwargs):  # noqa: ARG002
-            raise warning
-
-    monkeypatch.setattr(OAuthService, "_new_flow", lambda self: FailingFlow())
-
-    with pytest.raises(ApiError) as exc_info:
-        OAuthService().exchange_code_for_token("code", code_verifier="verifier")
-
-    assert exc_info.value.code == "OAUTH_TOKEN_EXCHANGE_FAILED"
+def test_authorization_url_has_state_and_deployment_redirect():
+    request = SimpleNamespace(session={}, state=SimpleNamespace(request_id="request-1"))
+    url = OAuthService(settings()).build_login_url(request)
+    query = parse_qs(urlparse(url).query)
+    assert query["response_type"] == ["code"]
+    assert query["redirect_uri"] == ["https://console.example/main/auth/callback"]
+    assert query["state"][0] == request.session["oauth_state"]
+    assert len(query["state"][0]) >= 32
 
 
-def test_identity_requires_verified_allowed_workspace_and_nonce(oauth_env, monkeypatch) -> None:
-    claims = {
-        "email": "user@example.com",
-        "email_verified": True,
-        "hd": "example.com",
-        "name": "Example User",
-        "nonce": "expected",
-    }
-    monkeypatch.setattr(
-        "app.services.oauth_service.id_token.verify_oauth2_token",
-        lambda token, request, audience: claims,  # noqa: ARG005
-    )
+def test_token_and_identity_use_backend_only_and_preserve_raw_sysid():
+    seen = []
 
-    identity = OAuthService().fetch_identity("id-token", expected_nonce="expected")
+    def handler(request):
+        seen.append((request.url.path, request.content))
+        if request.url.path == "/token":
+            return httpx.Response(200, json={"access_token": "fixture-token"})
+        return httpx.Response(200, json=identity())
 
-    assert identity.account == "user"
-    assert identity.email == "user@example.com"
+    service = OAuthService(settings(), transport=httpx.MockTransport(handler))
+    token = service.exchange_code_for_token("fixture-code")
+    person = service.fetch_identity(token)
+    assert person.sysid == 123
+    assert person.raw_sysid == "00123"
+    assert person.account == "test.user"
+    assert b"client_secret=fixture-secret" in seen[0][1]
+    assert b"access_token=fixture-token" in seen[1][1]
 
-    with pytest.raises(ApiError, match="nonce"):
-        OAuthService().fetch_identity("id-token", expected_nonce="wrong")
+
+@pytest.mark.parametrize("token_response", [
+    httpx.Response(401, json={"errMsg": "failure"}),
+    httpx.Response(200, json={"access_token": ""}),
+    httpx.Response(200, text="invalid"),
+])
+def test_token_exchange_failure(token_response):
+    service = OAuthService(settings(), transport=httpx.MockTransport(lambda _: token_response))
+    with pytest.raises(ApiError, match="oauth token exchange failed"):
+        service.exchange_code_for_token("bad-code")
+
+
+def test_token_timeout():
+    def timeout(_):
+        raise httpx.ReadTimeout("timeout")
+
+    service = OAuthService(settings(), transport=httpx.MockTransport(timeout))
+    with pytest.raises(ApiError) as caught:
+        service.exchange_code_for_token("code")
+    assert caught.value.code == "OAUTH_TOKEN_EXCHANGE_FAILED"
+
+
+@pytest.mark.parametrize("claims", [
+    [], {"cn": "x"}, {**identity(), "sysid": 123},
+    identity("0"), identity("１２３"), {**identity(), "tCode": ""},
+])
+def test_invalid_fisa_identity(claims):
+    service = OAuthService(settings(), transport=httpx.MockTransport(lambda _: httpx.Response(200, json=claims)))
+    with pytest.raises(ApiError) as caught:
+        service.fetch_identity("token")
+    assert caught.value.code == "OAUTH_IDENTITY_INVALID"

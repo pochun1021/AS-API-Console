@@ -29,30 +29,23 @@ def test_dev_login_uses_dev_identity_and_dev_path(client, monkeypatch):
     assert response.headers["location"] == "/dev/announcements"
 
 
-def test_test_login_redirects_to_google_and_stores_state(client, monkeypatch, tmp_path):
-    secrets_file = tmp_path / "client_secret.json"
-    secrets_file.write_text(
-        '{"web":{"client_id":"google-client-id","client_secret":"google-client-secret",'
-        '"auth_uri":"https://accounts.google.com/o/oauth2/auth",'
-        '"token_uri":"https://oauth2.googleapis.com/token"}}'
-    )
+def test_test_login_redirects_to_fisa_and_stores_state(client, monkeypatch):
     _reload_settings(
         monkeypatch,
         APP_ENV="test",
-        GOOGLE_CLIENT_SECRETS_FILE=str(secrets_file),
         APP_DOMAIN="http://localhost:8000/test",
+        OAUTH_AUTH_URI="https://fisa.example/authorize",
+        OAUTH_CLIENT_ID="fixture-client",
     )
-
+    monkeypatch.setattr("app.services.oauth_service.validate_outbound_url", lambda value, **_: value)
     response = client.get("/test/login", follow_redirects=False)
-
     assert response.status_code == 302
     parsed = urlparse(response.headers["location"])
     query = parse_qs(parsed.query)
-    assert parsed.netloc == "accounts.google.com"
-    assert query["client_id"] == ["google-client-id"]
+    assert parsed.netloc == "fisa.example"
+    assert query["client_id"] == ["fixture-client"]
     assert query["redirect_uri"] == ["http://localhost:8000/test/auth/callback"]
     assert query["state"]
-    assert query["nonce"]
 
 
 def test_test_api_does_not_accept_header_auth_by_default(client, monkeypatch):
