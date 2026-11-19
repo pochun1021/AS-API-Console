@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# Local code navigation
+.serena/
+
 # Python
 .venv/
 __pycache__/
