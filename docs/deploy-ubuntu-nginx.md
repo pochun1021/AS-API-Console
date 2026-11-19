@@ -131,12 +131,11 @@ chmod 600 /home/app/config/.env
   - `PERSNL_SOAP_USER`（建議必填）
   - `PERSNL_SOAP_PASSWORD`（建議必填）
   - `PERSNL_SOAP_TIMEOUT_SECONDS=3.0`（可選）
-- Google OIDC 必填欄位：
-  - `APP_DOMAIN=https://api.ascs.sinica.edu.tw/main`（OAuth callback 會自動產生為 `/main/auth/callback`）
-- Google OIDC 可選限制：
-  - `GOOGLE_ALLOWED_HOSTED_DOMAIN=as.edu.tw`（只允許指定 Workspace domain 時設定）
-
-Google client secret 預設會自動尋找 `/home/app/config/client_secret.json`；也可在 `/home/app/config/.env` 明確設定 `GOOGLE_CLIENT_SECRETS_FILE` 覆寫路徑。
+- FISA SSO 必填設定：`APP_DOMAIN=https://api.ascs.sinica.edu.tw/main`、`OAUTH_AUTH_URI`、`OAUTH_TOKEN_URI`、`OAUTH_BASIC_URI`、`OAUTH_CLIENT_ID`、`OAUTH_CLIENT_SECRET`。FISA 註冊的 callback 必須為 `https://api.ascs.sinica.edu.tw/main/auth/callback`。
+- DataHub 未完訓檢查必填設定：`DATAHUB_TOKEN_URL`、`DATAHUB_LIST_URL`、`DATAHUB_CLIENT_SECRET`、`DATAHUB_LIST_METHOD`。`DATAHUB_CLIENT_ID` 可使用預設值。需求方已確認原始 FISA `sysid` 對應 DataHub `sso`；部署時明確設定 `FISA_SYSID_IS_DATAHUB_SSO_CONFIRMED=true`。缺少必要設定會 fail-closed。
+- `DATAHUB_CLIENT_ID` 預設 `learnpoints`，部署時可明確填入；`DATAHUB_CLIENT_SECRET` 無預設憑證，必須由部署環境安全提供。DataHub Token API 以 JSON `clientId`、`clientSecret` 傳送這兩項值，與 FISA SSO 的 `OAUTH_CLIENT_ID`、`OAUTH_CLIENT_SECRET` 分開管理，不能互用。缺少必要 DataHub 設定時登入 fail-closed，不會略過未完訓檢查。
+- 可設定 `OAUTH_TIMEOUT_SECONDS=10.0` 與 `DATAHUB_TIMEOUT_SECONDS=3.0`；所有 Secret 僅放在後端環境設定，勿提交至版本庫。
+- `APP_ENV=prod` 須設定非範例值、至少 32 字元的隨機 `SESSION_SECRET_KEY`；使用開發預設值或範例占位值會在啟動時失敗。
 
 如果你改用 `DATABASE_URL`，它會覆蓋 `DB_*` 組合結果。
 本部署文件為正式環境流程，`TEST_DB_*` / `TEST_DATABASE_URL` 僅供測試使用，正式部署不需要設定。
@@ -175,7 +174,7 @@ export ENV_FILE=/home/app/config/.env
 set -a
 source "$ENV_FILE"
 set +a
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 '
 ```
 
@@ -202,7 +201,7 @@ User=asapic
 Group=asapic
 WorkingDirectory=/home/app/AS-API-Console/backend
 Environment=ENV_FILE=/home/app/config/.env
-ExecStart=/home/app/AS-API-Console/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+ExecStart=/home/app/AS-API-Console/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 Restart=always
 RestartSec=5
 
@@ -245,6 +244,16 @@ server {
     client_max_body_size 20m;
     include /etc/nginx/snippets/as-api-console-security-headers.conf;
 
+    # Authorization code 位於 query；callback 不可寫入預設 request URI access log。
+    location = /main/auth/callback {
+        access_log off;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location /main/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
@@ -256,6 +265,8 @@ server {
     }
 }
 ```
+
+若由 Certbot 產生獨立的 443 `server` 區塊，也須在該區塊加入相同的 callback `location`；上線前檢查實際 `nginx -T` 輸出，確認 callback query 不進入 Nginx/Uvicorn access log。
 
 啟用站台：
 ```bash

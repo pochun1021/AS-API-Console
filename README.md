@@ -46,7 +46,7 @@ AS API Console 是一套 API Key 申請與管理系統，提供從申請、核�
 ## 契約重點
 - 產品/API/data 行為以 `docs/SPEC.md` 為唯一契約來源。
 - Auth identity source of truth：`account`、`name`、`email`、`department`、`sysid`（由 auth context 提供；`sysid` 為純數字）。
-- OAuth claims 映射：`account<-cn`、`name<-chName`、`email<-email`、`department<-instCode`、`sysid<-sysId`。
+- FISA claims 映射：`account<-cn`、`name<-chName`、`email<-email`、`department<-instCode`、整數 `sysid<-sysid`；另保留原始 `sysid` 字串供 DataHub 精確比對。
 - 角色模型僅 `user` 與 `admin`。
 - `admin` 可在申請 API 時代他人送件（`target_identity.account`）；姓名、Email、單位、sysid 由後端查詢目錄服務補齊，並保留操作者稽核欄位。
 - 系統公告由 `admin` 管理；`user` 與 `admin` 都可從主導覽列進入系統公告頁查看目前有效公告。
@@ -127,16 +127,17 @@ export ENV_FILE=/home/app/config/.env
 - application create 與 renew 的 generate-based flow 成功時，後端會自 provider response `key` 讀取新明文 key，再轉成對外 API 的一次性 `api_key_plaintext`
 - `extend` 呼叫 `POST /key/update` 時，`duration` 一律直接送該 key 的 `original_duration_days` 對應值（`30d|180d|360d`），不再依 `api_keys.created_at` 累算總天數
 - `APP_ENV`：`prod` 時新配發 key 與對外 `masked_key` 使用 `sk-` / `sk-...XXXX`；`dev/test` 維持既有 `AS-` / `AS-...XXXX`
-- `SESSION_SECRET_KEY`：必填（正式環境），FastAPI session 簽章密鑰
+- `SESSION_SECRET_KEY`：正式環境必填非占位且至少 32 字元的隨機 Session 簽章密鑰；缺少或使用範例值會拒絕啟動。
 - `ALLOW_HEADER_AUTH`：可選；僅供 `dev` 使用的 header auth bootstrap，test/prod 應為 `false`
 - `ALLOWED_HOSTS`：可選；允許的 Host 清單（逗號分隔）。部署 `api.ascs.sinica.edu.tw` 時建議設為 `api.ascs.sinica.edu.tw,localhost,127.0.0.1`
 - `SESSION_MAX_AGE_SECONDS`：可選；session 有效秒數
-- `OAUTH_PROVIDER`：可選，OAuth provider 名稱（寫入 auth audit，Google 環境建議設為 `google`）
-- `GOOGLE_CLIENT_SECRETS_FILE`：可選的 Google OAuth client secrets JSON 路徑；未設定時依 `${ENV_FILE}` 同目錄、`/home/app/config/client_secret.json`、`backend/client_secret.json` 順序自動尋找
-- OAuth callback URI：由 `APP_ENV` 與 `APP_DOMAIN` 自動產生，例如 test 為 `http://localhost:8000/test/auth/callback`，prod 為 `https://api.ascs.sinica.edu.tw/main/auth/callback`
-- `GOOGLE_ALLOWED_HOSTED_DOMAIN`：限制 Google Workspace 網域
-- `OAUTH_SCOPE`：Google OIDC scope，預設為 `openid email profile`
-- `TEST_OAUTH_ACCOUNT` / `TEST_OAUTH_NAME` / `TEST_OAUTH_EMAIL` / `TEST_OAUTH_DEPARTMENT` / `TEST_OAUTH_SYSID` / `TEST_OAUTH_TCODE`：僅 `APP_ENV=test` 且 Persnl SOAP unavailable 時使用的完整本機 OAuth identity fallback；email 必須與 Google verified email 一致，production 永不啟用
+- `OAUTH_AUTH_URI` / `OAUTH_TOKEN_URI` / `OAUTH_BASIC_URI` / `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET`：FISA Authorization Code Flow 後端設定，不得放入前端。
+- `OAUTH_SCOPE`：FISA scope，預設 `basic`；`OAUTH_TIMEOUT_SECONDS`：外部請求 timeout，預設 `10` 秒。
+- FISA callback URI 由 `APP_ENV` 與 `APP_DOMAIN` 產生；test 為 `https://api.ascs.sinica.edu.tw/test/auth/callback`，prod 為 `https://api.ascs.sinica.edu.tw/main/auth/callback`（依實際部署網域調整），須與 FISA 註冊值一致。
+- `FISA_SYSID_IS_DATAHUB_SSO_CONFIRMED`：需求方已確認 FISA 原始 `sysid` 精確對應 DataHub `sso`；部署時須明確設為 `true`，預設 `false` 以 fail-closed。
+- `DATAHUB_CLIENT_ID` 預設 `learnpoints`；`DATAHUB_CLIENT_SECRET` 無預設值，部署 `test/prod` 時必須提供。DataHub Token API 的 JSON `clientId`、`clientSecret` 分別使用這兩項設定，與 FISA SSO 的 `OAUTH_CLIENT_ID`、`OAUTH_CLIENT_SECRET` 完全獨立。缺少必要設定時登入會 fail-closed，不會略過未完訓檢查。
+- `DATAHUB_TOKEN_URL` / `DATAHUB_LIST_URL` / `DATAHUB_CLIENT_ID` / `DATAHUB_CLIENT_SECRET` / `DATAHUB_LIST_METHOD`：未完訓查詢後端設定；`DATAHUB_TIMEOUT_SECONDS` 預設 `3` 秒。正式端點與方法需由 API 提供方確認。
+
 - `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：僅 `APP_ENV=dev` 使用 `/dev/login` bypass 時建立 session 身分所需欄位
 - `DEV_LOGIN_ROLE`：可選，僅 `dev` bypass 身分角色（僅允許 `user` 或 `admin`，預設 `user`）
 - `SCHEDULER_LOG_ROOT`：可選，排程腳本日誌根目錄（預設 `/home/app/log`，實際會寫入子目錄如 `sync_api_key_usage/`、`sync_expired_api_keys/`、`send_expiration_reminders/`）
@@ -175,9 +176,12 @@ npm run build
 - 回到瀏覽器重新整理 `http://127.0.0.1:8000/main/` 即可看到更新。
 
 ## 開發備註
+
+Issue #57 已將 `test/prod` 登入接回 FISA SSO，並在建立 session 前查詢 DataHub 未完訓名單。FISA 原始 `sysid` 字串精確比對 DataHub `sso`，保留前導零；資料庫與既有准入仍使用整數 `sysid`。未完訓命中時所有身分拒絕，服務故障 fail-closed。正式啟用須配置已確認的 FISA/DataHub 端點與映射旗標，詳見 `backend/.env.example` 與 `docs/SPEC.md`。
+
 - 後端登入入口：
-- `APP_ENV=prod`：`GET /main/login` 走 Google OIDC；callback 以 Google email local-part 查詢人員目錄，再依序檢查 `active whitelist(sysid)`、`active admins(id=sysid)`、`LOGIN_ALLOWED_TITLE_CODES`。
-  - `APP_ENV=test`：路徑為 `/test`，同樣走 Google OIDC；若 Persnl SOAP unavailable，只有在六個 `TEST_OAUTH_*` 欄位完整且 email 與 Google verified email 一致時，才使用本機 fallback，仍執行 whitelist/admin/title-code eligibility check。
+  - `APP_ENV=prod`：`GET /main/login` 走 FISA；callback 依序執行 DataHub 未完訓及 whitelist/admin/title-code 准入檢查。
+  - `APP_ENV=test`：路徑為 `/test`，同樣走 FISA 與 DataHub；沒有本機 OAuth 身分 fallback。
   - `APP_ENV=dev`：路徑為 `/dev`，`GET /dev/login` 使用 `DEV_LOGIN_*` 直接建立 session auth context（`role` 由 `DEV_LOGIN_ROLE` 控制，僅 `user|admin`）。
 - 前端公開拒絕頁：各環境的 `{path_base}/login-denied` 為不符登入資格時的公開頁，不需 session 即可顯示。
 - 前端公開錯誤頁：各環境的 `{path_base}/login-error` 用於登入流程非預期失敗，顯示失敗路由、簡短原因與 `request_id`。

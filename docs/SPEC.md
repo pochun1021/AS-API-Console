@@ -344,7 +344,7 @@
 - 權限模型僅區分 `user` 與 `admin`
 - `whitelist` 僅影響登入/申請資格，不影響角色；若同一身份同時命中 `active whitelist` 與 `active admins`，有效角色仍為 `admin`
 - 提供環境化登入入口：`dev` 使用 `/dev`、`test` 使用 `/test`、`prod` 使用 `/main`，並建立 session auth context
-- `dev` 使用 `DEV_LOGIN_*` bypass；`test/prod` 使用 Google OIDC；header auth 僅限 `dev`
+- `test/prod` 使用 FISA SSO；未完訓及准入檢查通過後才建立 session。Header auth 即使誤設 `ALLOW_HEADER_AUTH=true`，也僅可在 `dev` 啟用。
 - 環境設定檔載入需支援 `ENV_FILE`（正式部署建議 `/home/app/config/.env`）；未設定時可回退 `backend/.env`
 - frontend build 環境判定固定依序讀取 `/home/app/config/.env`、`backend/.env` 的 `APP_ENV`；當 `/home/app/config/.env` 存在且 `APP_ENV=prod` 時，正式 bundle 不得包含 `src/mocks` 或 `src/test` 模組
 - 所有會變更資料的 API 皆需通過 CSRF 驗證
@@ -553,54 +553,27 @@ Base path：`/main/api/v1`
 - `POST /main/api/v1/api-keys/{id}/reveal` 回應需帶 `Cache-Control: no-store`。
 - 非 `dev/test` 環境之外部整合 URL 必須為 `https`，且不得解析到 loopback / private / link-local 位址。
 
+### Issue #57 FISA SSO 與未完訓登入資格
+
+- DataHub Token API 使用 JSON `clientId`、`clientSecret`，分別取自 `DATAHUB_CLIENT_ID`、`DATAHUB_CLIENT_SECRET`。`DATAHUB_CLIENT_ID` 預設 `learnpoints`；`DATAHUB_CLIENT_SECRET` 沒有預設憑證，部署時必須提供。這兩項與 FISA SSO 的 `OAUTH_CLIENT_ID`、`OAUTH_CLIENT_SECRET` 完全獨立，不得互用。`prod` 缺少 DataHub Secret 或其他必要設定時，未完訓檢查與登入必須 fail-closed，不得建立 session。
+
+- `test/prod` 使用 FISA SSO；未完訓及准入檢查通過後才建立 session。
+- `GET {path_base}/login` 產生一次性、高熵 OAuth `state` 並存於簽章 session；導向 FISA Authorization Endpoint。callback 必須比對並消耗 `state`，驗證 `code`，後端交換 token 並向 FISA Identity Endpoint 取得身分。錯誤、拒絕及新登入開始時清除舊 `auth_context` 與 CSRF token。
+- FISA identity 必須包含非空字串 `cn`、`chName`、`email`、`instCode`、`sysid`、`tCode`；`sysid` 必須是正整數的 ASCII 十進位字串。auth context 額外保存原始 `raw_sysid` 字串（包含前導零），既有資料庫及准入規則繼續使用整數 `sysid`。
+- 已由需求方確認：FISA 原始 `sysid` 字串精確對應 DataHub `sso`。部署時仍須明確設定 `FISA_SYSID_IS_DATAHUB_SSO_CONFIRMED=true`；未設定時 fail-closed，不能建立 session。比對採字串精確相等，不能轉整數、去前導零或用姓名/email 比對。
+- 登入順序：FISA 驗證 → 可信原始識別字串 → DataHub 未完訓查詢 → 既有 active whitelist(`sysid`)／active admin(`id=sysid`)／`LOGIN_ALLOWED_TITLE_CODES` → auth context、CSRF 與成功稽核 → `{path_base}/announcements`。DataHub 命中時 admin、whitelist 均不得放行；顯示完全一致的「未完成時數訓練，請確認完成後方可登入系統」。空名單只表示未命中，仍須執行既有准入。
+- DataHub token 由後端 `clientId`／`clientSecret` 取得；名單必須為 JSON array，每筆至少有字串 `sso`、`name`、`phone`、`email`、`instName`，且 `sso` 不得為空。HTTP 錯誤、timeout、網路錯誤、無效 JSON、`errMsg`、缺欄或型別錯誤均 fail-closed，顯示「暫時無法驗證未完訓資格，請稍後再試」，不得當成未完訓或空名單。
+- FISA `OAUTH_AUTH_URI`、`OAUTH_TOKEN_URI`、`OAUTH_BASIC_URI`、`OAUTH_CLIENT_ID`、`OAUTH_CLIENT_SECRET`、`OAUTH_SCOPE` 與 `OAUTH_TIMEOUT_SECONDS` 僅在後端設定。callback URI 由 `APP_DOMAIN` 與 `APP_ENV` 產生，需與 FISA 註冊值一致。DataHub `DATAHUB_TOKEN_URL`、`DATAHUB_LIST_URL`、`DATAHUB_CLIENT_ID`、`DATAHUB_CLIENT_SECRET`、`DATAHUB_LIST_METHOD`、`DATAHUB_TIMEOUT_SECONDS` 亦僅在後端設定。缺少必要設定時 fail-closed。
+- 所有外部 HTTP 請求須設 timeout；不得記錄 access token、client secret、cookie、外部回應本文、未完訓名單或敏感個資。FISA 登入稽核僅記錄 provider、request ID、結果及固定錯誤分類；`account`、`name`、`email`、`department`、`sysid`、`role` 欄位維持 null。FISA 是否支援 PKCE 尚無可靠契約，確認前不假設可用；後續若支援須加入。
+
 ### Auth Login Entry
-- 路徑前綴依 `APP_ENV` 決定：`dev=/dev`、`test=/test`、`prod=/main`。
-- `GET {path_base}/login`
-  - 用途：
-    - `test/prod`：導向 Google OIDC auth endpoint
-    - `dev`：直接建立 session auth context（`DEV_LOGIN_*` bypass）
-    - `test/prod`：導向 Google OIDC
-  - 規則：
-    - `dev`：以 `DEV_LOGIN_ACCOUNT`、`DEV_LOGIN_NAME`、`DEV_LOGIN_EMAIL`、`DEV_LOGIN_DEPARTMENT`、`DEV_LOGIN_SYSID`、`DEV_LOGIN_ROLE` 建立 `auth_context`；`DEV_LOGIN_ROLE` 僅允許 `user|admin`
-    - `test/prod`：使用 authorization code flow，並以 session 保存及驗證 `state`、`nonce`
-    - 登入相關未預期錯誤不得直接回框架預設純文字 `Internal Server Error`；需提供可追蹤的 `request_id`
-  - Response：
-    - 成功回 `302`
-      - `dev`：redirect `/dev/announcements`
-      - `test/prod`：redirect 至 Google
-    - `prod` 若 OAuth 設定缺失或不合法，回 `500 INTERNAL_ERROR`
-    - `dev` 若 bypass 設定缺失或不合法，回 `500 INTERNAL_ERROR`
-- `GET {path_base}/auth/callback`
-  - 用途：接收 Google callback，以官方 `google-auth-oauthlib` 完成 authorization-code token exchange，驗證 OIDC identity claims，建立本機 session auth context。
-  - 規則：
-    - callback 必須驗證 `code`、session `state` 與 Google OIDC `id_token` 的 `issuer`、`audience`、`nonce`、`exp`、Google signature、`email_verified`；OAuth protocol 與 token exchange 使用官方 `google-auth-oauthlib` / `google-auth` library
-    - Google client secrets 從 `GOOGLE_CLIENT_SECRETS_FILE` 載入（預設 `backend/client_secret.json`）；`flow.redirect_uri` 由 `APP_ENV` 與 `APP_DOMAIN` 自動產生，系統不得依賴 JSON 內第一個 redirect URI，也不接受 `OAUTH_REDIRECT_URI` 覆寫
-    - 不儲存 access token、refresh token 或 client secret；session 僅保存 OAuth `state` 與自訂 `nonce`
-    - Google email 的 `@` 前 local-part 對應人員目錄 `cn`，且必須唯一；目錄回傳 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`
-    - 映射：`account<-cn`、`name<-chName`、`department<-instCode`、`sysid<-sysId`
-    - `APP_ENV=test` 且 Persnl SOAP unavailable 時，僅允許使用完整 `TEST_OAUTH_ACCOUNT`、`TEST_OAUTH_NAME`、`TEST_OAUTH_EMAIL`、`TEST_OAUTH_DEPARTMENT`、`TEST_OAUTH_SYSID`、`TEST_OAUTH_TCODE` 本機 fallback；fallback email 必須與 Google verified email 完全一致，且仍執行 whitelist/admin/title-code eligibility check。欄位缺失回 `503 SOAP_SERVICE_UNAVAILABLE`，email 不一致回 `422 OAUTH_IDENTITY_INVALID`。
-    - `APP_ENV=prod` 不允許 OAuth identity fallback；Persnl SOAP unavailable 仍回 `503 SOAP_SERVICE_UNAVAILABLE`。fallback 不得使用 `sysid=0` 或任意 Google claim 偽造 `sysid`。
-    - 登入資格檢查順序：`active whitelist(sysid)` -> `active admins(id=sysid)` -> `tCode` 命中 `LOGIN_ALLOWED_TITLE_CODES`
-    - `LOGIN_ALLOWED_TITLE_CODES` 以逗號分隔字串表示（例如 `A01,A02,...`），解析需 `split(',')` 後做 `trim + upper`，空值略過且重複值去重；`tCode` 比對時同樣 `trim + upper`
-    - 成功時寫入 session `auth_context`（`account`、`name`、`email`、`department`、`sysid`、`role=user`）並 redirect `{path_base}/announcements`
-    - 若同一身份同時命中 `active whitelist(sysid)` 與 `active admins(id=sysid)`，登入資格仍視為通過；session 可先以 `role=user` 建立，但對外有效角色必須由 `active admins` 覆蓋為 `admin`
-    - 若未通過登入資格檢查，回 `302` redirect `{path_base}/login-denied?error=LOGIN_NOT_ELIGIBLE` 且不得建立 session
-    - 前端在 `{path_base}/login-denied` 需可直接顯示公開拒絕頁，不得發生自動導回登入入口的重導循環
-    - 若登入流程發生未預期錯誤，需導向公開頁 `{path_base}/login-error`，並以 query string 提供 `route`、`reason`、`request_id`，其中 `route` 至少可區分 `login`、`auth_callback`、`users_me`，`reason` 需為簡短可理解的失敗階段說明（例如 `eligibility_check_failed`）
-    - 若缺少必要欄位（任一 `sysId`、`cn`、`chName`、`email`、`instCode`、`tCode`）需拒絕登入
-    - 成功與失敗皆需寫入 `auth_audit_logs`
-  - Response：
-    - 成功回 `302` redirect `{path_base}/announcements`
-    - `401`：`OAUTH_TOKEN_EXCHANGE_FAILED`、`OAUTH_BASIC_FETCH_FAILED`
-    - `422`：`OAUTH_CODE_MISSING`、`OAUTH_IDENTITY_INVALID`
-    - 非預期 `500` 需提供結構化錯誤內容或 redirect 至 `{path_base}/login-error`，不得只回傳純文字 `Internal Server Error`
-- `GET {path_base}/api/v1/users/me`
-  - 用途：回傳目前 session 使用者資訊與 CSRF token。
-  - 規則：
-    - 回傳欄位：`account`、`name`、`email`、`department`、`sysid`、`role`、`csrf_token`
-    - 若目前帳號命中 `active admins`，`role` 需回傳 `admin`
-    - 若目前帳號同時命中 `active whitelist` 與 `active admins`，`role` 仍需回傳 `admin`
-    - 可在 `dev` 透過 header auth bootstrap session
+
+- 路徑前綴依 `APP_ENV`：`dev=/dev`、`test=/test`、`prod=/main`。
+- `GET {path_base}/login`：`dev` 使用本機 `DEV_LOGIN_*`；`test/prod` 導向 FISA。redirect URI 分別為 `{APP_DOMAIN}/test/auth/callback` 或 `{APP_DOMAIN}/main/auth/callback`（若 `APP_DOMAIN` 已含 path base，不重複加入）。
+- `GET {path_base}/auth/callback`：無效 state 回 `422 OAUTH_STATE_INVALID`，缺 code 回 `422 OAUTH_CODE_MISSING`，token/identity 失敗回獨立 OAuth 錯誤；未完訓導向 `{path_base}/login-denied?error=TRAINING_INCOMPLETE`，服務故障或映射未確認導向 `?error=TRAINING_SERVICE_UNAVAILABLE`，不符既有准入導向 `?error=LOGIN_NOT_ELIGIBLE`。成功才建立 session。
+- `GET {path_base}/api/v1/users/me` 依有效 auth context 提供身分；`POST {path_base}/logout` 清除 auth context 與 CSRF token。
+- `APP_ENV=prod` 必須使用非預設、非範例占位且至少 32 字元的 `SESSION_SECRET_KEY`；缺少或使用開發預設值時應在設定載入階段拒絕啟動，避免簽章 Session 被偽造。
+- FISA callback 的 `code` 位於 URL query；部署時 Uvicorn 與 Nginx access log 不得記錄該 callback 的完整 request URI（包含 query）。正式反向代理與程序管理設定須驗證此項後才能上線。
 
 ### 1) 申請並核發 API Key
 - `POST /main/api/v1/api-keys/applications`
@@ -1331,7 +1304,7 @@ Base path：`/main/api/v1`
 - 回應結果：
   - 命中：可直接通過資格檢查（不需再檢查特殊人員名單）。
   - 未命中：需再檢查特殊人員名單是否為 `active`。
-  - timeout/5xx：`APP_ENV=test` 僅在完整且 email 相符的 `TEST_OAUTH_*` fallback 設定存在時允許進入系統；`APP_ENV=prod` 不允許 fallback，登入回 `503 SOAP_SERVICE_UNAVAILABLE`。申請 API 仍回 `503 SOAP_SERVICE_UNAVAILABLE`。
+  - timeout/5xx：`test/prod` 登入不得繞過 FISA 或 DataHub；申請 API 查詢 Persnl SOAP 失敗時仍回 `503 SOAP_SERVICE_UNAVAILABLE`。
 
 ### 錯誤回應格式（建議）
 ```json
@@ -1372,7 +1345,7 @@ Base path：`/main/api/v1`
 ## 驗收標準
 ### 申請與資格
 1. 研究人員名單職稱代碼命中者，或研究名單未命中但特殊人員名單 `active` 命中者，可成功核發 API Key；兩者皆未命中時不得允許進入系統，且申請 API 回傳 `403 APPLICANT_NOT_ELIGIBLE`。
-2. 當資格判斷需查詢 `tCode` 且 Persnl SOAP 服務 timeout/5xx 時，`APP_ENV=test` 的完整 `TEST_OAUTH_*` fallback 可讓登入流程繼續，但 `APP_ENV=prod` 不得繞過 SOAP；申請 API 必須回傳 `503 SOAP_SERVICE_UNAVAILABLE`。
+2. `test/prod` 登入必須通過 FISA 與 DataHub；任一服務失敗不得放行。申請 API 需查詢 Persnl SOAP 而服務 timeout/5xx 時回 `503 SOAP_SERVICE_UNAVAILABLE`。
 3. 使用者透過 SSO/OAuth 登入後，申請頁需自動帶入 `account`、`name`、`email`、`department`、`sysid`；若 auth context 缺少必要欄位、`sysid` 非數字或非正整數，申請 API 需回傳 `422 VALIDATION_ERROR`，且不得建立申請或 key 紀錄。
 4. `duration_days` 僅允許 `30|180|360`，`application_date` 需為合法日期且不得晚於申請當日；非法值需回傳對應驗證錯誤。
 5. `admin` 可透過 `target_identity.account` 代他人送出申請；若目錄服務查無帳號、結果不唯一或 Persnl SOAP timeout/5xx，API 需回傳對應 `422 VALIDATION_ERROR` 或 `503 SOAP_SERVICE_UNAVAILABLE`。
@@ -1454,9 +1427,9 @@ Base path：`/main/api/v1`
 
 ### OAuth、Session 與語系
 51G. 在 API Key 正式上線前，前端於呼叫 `{path_base}/login`（SSO/OAuth 登入入口）前，需先顯示公開的 `coming-soon` 提示頁；使用者明示點擊後才可真正前往登入入口。正式上線時間到達後，此公開提示頁不得再攔截登入入口。
-52. `dev/test/prod` 的 path base 分別為 `/dev`、`/test`、`/main`。`dev` 登入使用 `DEV_LOGIN_*` 建立 session；`test/prod` 使用 Google OIDC，callback 成功後導向各自的 `{path_base}/announcements`。
+52. `dev/test/prod` 路徑分別為 `/dev`、`/test`、`/main`；`dev` 使用 `DEV_LOGIN_*`，`test/prod` 使用 FISA SSO，callback 成功後導向各自的 `{path_base}/announcements`。
 53. 僅 `dev` 可接受 header auth；`test/prod` 僅允許 session auth。OAuth 成功登入寫入的角色需固定為 `user`，且流程不得落地 access token、refresh token、password 或 client secret。
-54. Google OIDC callback 需以 verified email 的 local-part 查詢人員目錄，取得 `sysId/cn/chName/email/instCode/tCode`；查詢結果必須唯一且 email 一致。登入資格判斷需遵循 `active whitelist(sysid)` 或 `active admins(id=sysid)`，否則才比對 `LOGIN_ALLOWED_TITLE_CODES`；若同時命中 `active whitelist` 與 `active admins`，最終角色仍以 `admin` 為準。
+54. FISA identity 使用 `cn/chName/email/instCode/sysid/tCode`，保留原始 `sysid` 字串供 DataHub 精確比對；既有 whitelist/admin/title-code 准入不變，且未完訓命中優先拒絕所有身分。
 55. `{path_base}/login-denied` 必須是公開頁；登入失敗導向 `{path_base}/login-denied?error=LOGIN_NOT_ELIGIBLE` 時，使用者需可直接看到拒絕說明與返回登入操作，且不依賴 `GET {path_base}/api/v1/users/me` 成功。
 55A. API Key 正式上線前，使用者在公開頁點選登入後，前端於呼叫 `{path_base}/login` 前需先顯示公開的 `{path_base}/login-coming-soon` 提示頁；使用者明示點擊後才可真正前往登入入口。未登入使用者瀏覽 `{path_base}/` 或 `{path_base}/usage-examples` 時，不得自動顯示提示頁。登入成功後，`user` 與 `admin` 都需導向 `{path_base}/announcements`。
 56. `GET {path_base}/api/v1/users/me` 需回傳目前使用者資料與 `csrf_token`；所有 `POST/PATCH` 端點在 session auth 模式下，缺少或錯誤 `X-CSRF-Token` 時需回傳 `403 FORBIDDEN`。
