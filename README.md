@@ -136,7 +136,7 @@ export ENV_FILE=/home/app/config/.env
 - FISA callback URI 由 `APP_ENV` 與 `APP_DOMAIN` 產生；test 為 `https://api.ascs.sinica.edu.tw/test/auth/callback`，prod 為 `https://api.ascs.sinica.edu.tw/main/auth/callback`（依實際部署網域調整），須與 FISA 註冊值一致。
 - `FISA_SYSID_IS_DATAHUB_SSO_CONFIRMED`：需求方已確認 FISA 原始 `sysid` 精確對應 DataHub `sso`；部署時須明確設為 `true`，預設 `false` 以 fail-closed。
 - `DATAHUB_CLIENT_ID` 預設 `learnpoints`；`DATAHUB_CLIENT_SECRET` 無預設值，部署 `test/prod` 時必須提供。DataHub Token API 的 JSON `clientId`、`clientSecret` 分別使用這兩項設定，與 FISA SSO 的 `OAUTH_CLIENT_ID`、`OAUTH_CLIENT_SECRET` 完全獨立。缺少必要設定時登入會 fail-closed，不會略過未完訓檢查。
-- `DATAHUB_TOKEN_URL` / `DATAHUB_LIST_URL` / `DATAHUB_CLIENT_ID` / `DATAHUB_CLIENT_SECRET` / `DATAHUB_LIST_METHOD`：未完訓查詢後端設定；`DATAHUB_TIMEOUT_SECONDS` 預設 `3` 秒。正式端點與方法需由 API 提供方確認。
+- `DATAHUB_TOKEN_URL` / `DATAHUB_LIST_URL` / `DATAHUB_CLIENT_ID` / `DATAHUB_CLIENT_SECRET` / `DATAHUB_LIST_METHOD`：未完訓查詢後端設定；`DATAHUB_TIMEOUT_SECONDS` 預設 `3` 秒。正式端點與方法需由 API 提供方確認。設定完成後可執行 `./scripts/test_datahub_connectivity.sh`，驗證 Token 與名單查詢並只輸出不重複 SSO 數量；可用 `ENV_FILE=/path/to/.env` 指定設定檔。
 
 - `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：僅 `APP_ENV=dev` 使用 `/dev/login` bypass 時建立 session 身分所需欄位
 - `DEV_LOGIN_ROLE`：可選，僅 `dev` bypass 身分角色（僅允許 `user` 或 `admin`，預設 `user`）
