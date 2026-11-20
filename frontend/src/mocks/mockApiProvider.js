@@ -1,8 +1,11 @@
+import dayjs from "dayjs";
 import { containsOnlyAllowedPersistedTextCharacters, containsUnsafePersistedText, isAsciiDigits } from "../utils/inputValidation";
 
 const today = new Date().toISOString().slice(0, 10);
 const daysFromNow = (days) => new Date(Date.now() + 1000 * 60 * 60 * 24 * days).toISOString();
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+const schedulerLogToday = dayjs().format("YYYY-MM-DD");
+const schedulerLogYesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
 
 function startOfUtcDay(value) {
   const dt = value instanceof Date ? new Date(value) : new Date(value);
@@ -452,32 +455,32 @@ let schedulerLogs = [
   {
     id: "schedlog_001",
     job: "sync_api_key_usage",
-    log_date: "2026-06-17",
-    source_file: "2026-06-17.log",
-    timestamp: "2026-06-17T00:15:01+08:00",
+    log_date: schedulerLogToday,
+    source_file: `${schedulerLogToday}.log`,
+    timestamp: `${schedulerLogToday}T00:15:01+08:00`,
     level: "ERROR",
     message: "event=usage_sync mode=sync processed_keys=10 success=8 failed=2",
-    raw_line: "[2026-06-17T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2"
+    raw_line: `[${schedulerLogToday}T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2`
   },
   {
     id: "schedlog_002",
     job: "sync_api_key_usage",
-    log_date: "2026-06-17",
-    source_file: "2026-06-17.log",
-    timestamp: "2026-06-17T00:05:01+08:00",
+    log_date: schedulerLogToday,
+    source_file: `${schedulerLogToday}.log`,
+    timestamp: `${schedulerLogToday}T00:05:01+08:00`,
     level: "INFO",
     message: "event=usage_sync mode=sync processed_keys=10 success=9 failed=1",
-    raw_line: "[2026-06-17T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1"
+    raw_line: `[${schedulerLogToday}T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1`
   },
   {
     id: "schedlog_003",
     job: "send_expiration_reminders",
-    log_date: "2026-06-16",
-    source_file: "2026-06-16.log",
-    timestamp: "2026-06-16T08:00:00+08:00",
+    log_date: schedulerLogYesterday,
+    source_file: `${schedulerLogYesterday}.log`,
+    timestamp: `${schedulerLogYesterday}T08:00:00+08:00`,
     level: "WARNING",
     message: "event=expiration_notice sent=0 failed=1",
-    raw_line: "[2026-06-16T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1"
+    raw_line: `[${schedulerLogYesterday}T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1`
   }
 ];
 let authAuditLogs = [
@@ -1799,32 +1802,32 @@ export const mockApiProvider = {
       {
         id: "schedlog_001",
         job: "sync_api_key_usage",
-        log_date: "2026-06-17",
-        source_file: "2026-06-17.log",
-        timestamp: "2026-06-17T00:15:01+08:00",
+        log_date: schedulerLogToday,
+        source_file: `${schedulerLogToday}.log`,
+        timestamp: `${schedulerLogToday}T00:15:01+08:00`,
         level: "ERROR",
         message: "event=usage_sync mode=sync processed_keys=10 success=8 failed=2",
-        raw_line: "[2026-06-17T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2"
+        raw_line: `[${schedulerLogToday}T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2`
       },
       {
         id: "schedlog_002",
         job: "sync_api_key_usage",
-        log_date: "2026-06-17",
-        source_file: "2026-06-17.log",
-        timestamp: "2026-06-17T00:05:01+08:00",
+        log_date: schedulerLogToday,
+        source_file: `${schedulerLogToday}.log`,
+        timestamp: `${schedulerLogToday}T00:05:01+08:00`,
         level: "INFO",
         message: "event=usage_sync mode=sync processed_keys=10 success=9 failed=1",
-        raw_line: "[2026-06-17T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1"
+        raw_line: `[${schedulerLogToday}T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1`
       },
       {
         id: "schedlog_003",
         job: "send_expiration_reminders",
-        log_date: "2026-06-16",
-        source_file: "2026-06-16.log",
-        timestamp: "2026-06-16T08:00:00+08:00",
+        log_date: schedulerLogYesterday,
+        source_file: `${schedulerLogYesterday}.log`,
+        timestamp: `${schedulerLogYesterday}T08:00:00+08:00`,
         level: "WARNING",
         message: "event=expiration_notice sent=0 failed=1",
-        raw_line: "[2026-06-16T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1"
+        raw_line: `[${schedulerLogYesterday}T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1`
       }
     ];
     authAuditLogs = [

@@ -1,9 +1,12 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import dayjs from "dayjs";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import OperationAuditLogsPage from "../pages/OperationAuditLogsPage";
 import { mockApiProvider } from "../mocks/mockApiProvider";
+
+const schedulerLogToday = dayjs().format("YYYY-MM-DD");
 
 const adminAuth = {
   account: "john.admin",
@@ -162,7 +165,7 @@ test("scheduler audit filters send full server-side query params and open raw li
   await user.click(screen.getByLabelText("Job"));
   await user.click(await screen.findByRole("option", { name: "sync_api_key_usage" }));
   await waitFor(() => {
-    expect(screen.getByLabelText("檔案日期")).toHaveTextContent("2026-06-17.log");
+    expect(screen.getByLabelText("檔案日期")).toHaveTextContent(`${schedulerLogToday}.log`);
   });
   await user.click(screen.getByLabelText("Level"));
   await user.click(await screen.findByRole("option", { name: "ERROR" }));
@@ -170,15 +173,15 @@ test("scheduler audit filters send full server-side query params and open raw li
   await user.click(await screen.findByRole("button", { name: "查看原始行" }));
 
   expect(await screen.findByRole("dialog", { name: "排程器 Log 詳情" })).toBeInTheDocument();
-  expect(screen.getByDisplayValue("[2026-06-17T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2")).toBeInTheDocument();
-  expect(screen.getAllByDisplayValue("2026-06-17.log").length).toBeGreaterThan(0);
+  expect(screen.getByDisplayValue(`[${schedulerLogToday}T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2`)).toBeInTheDocument();
+  expect(screen.getAllByDisplayValue(`${schedulerLogToday}.log`).length).toBeGreaterThan(0);
 
   await waitFor(() => {
     expect(spy).toHaveBeenLastCalledWith(
       expect.objectContaining({
         file_mode: "date",
-        from: "2026-06-17",
-        to: "2026-06-17",
+        from: schedulerLogToday,
+        to: schedulerLogToday,
         job: "sync_api_key_usage",
         level: "ERROR",
         q: "failed=2",
