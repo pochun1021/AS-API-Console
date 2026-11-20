@@ -1025,6 +1025,27 @@ export const mockApiProvider = {
     };
   },
 
+  async getApiKeyStatisticsChart(params, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const stats = buildUserStatistics(apiKeys, params);
+    const metric = params.y_axis || "total_applications";
+    const byLabel = new Map();
+    for (const stat of stats) {
+      const label = params.x_axis === "department" ? stat.owner_department : stat.owner_account;
+      byLabel.set(label, (byLabel.get(label) || 0) + stat[metric]);
+    }
+    const sorted = [...byLabel].map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+    const items = sorted.slice(0, params.top_n || 10);
+    return {
+      items, x_axis: params.x_axis || "account", y_axis: metric, top_n: params.top_n || 10,
+      total_value: sorted.reduce((sum, item) => sum + item.value, 0),
+      displayed_value: items.reduce((sum, item) => sum + item.value, 0),
+      group_count: sorted.length
+    };
+  },
+
   async listOperationAuditLogs(params, auth) {
     await delay();
     ensureAdmin(auth);

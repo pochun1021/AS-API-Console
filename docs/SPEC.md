@@ -263,7 +263,9 @@
 - 以 Data Table 呈現每位申請人的統計資料，欄位至少包含：`account`、`name`、`email`、`total_applications`、`active_count`、`revoked_count`、`expired_count`、`last_applied_at`。
 - 表格查詢模式屬於 `server-side table`：分頁、排序、欄位篩選皆需由後端處理；欄位 filter 不得退化成單純前端本頁比對。
 - 提供「圖表 / 表格」視圖切換；圖表以長條圖呈現。
-- 篩選欄位（`scope`、日期區間、欄位篩選）僅於表格視圖顯示；切換到圖表視圖時不顯示篩選列，但圖表仍沿用目前查詢口徑。
+- 圖表與表格各自保存篩選與查詢狀態；切換視圖需保留兩邊設定，不清除或隱性同步篩選。各視圖只載入自己的資料，並各自提供重設篩選按鈕；快速修改條件時，較舊的 API 回應不得覆蓋最新結果。
+- 圖表控制區顯示獨立的 `scope`、日期區間、`owner_department`、X 軸、Y 軸、Top N；表格獨立保留 `scope`、日期區間、帳號、姓名、Email、單位、排序及分頁。圖表只使用 `statistics/chart` 回應，表格只使用 `statistics/users` 回應；不得從表格當頁資料計算圖表 Top N。
+- 圖表需顯示 API 回傳的 `total_value`（完整符合條件的所選指標總量）、`displayed_value`（Top N 柱狀圖小計）、`group_count`（完整分組數）。數值標籤隨 Y 軸指標變化；零值照實顯示，不自行放寬 `scope`。表格明細 Dialog 使用表格日期條件。
 - 圖表支援 X 軸切換：`account|department`，Y 軸切換：`total_applications|active_count|revoked_count|expired_count`，與 Top N（`5|10|20`）切換。
 - 圖表 X 軸分類文字需直接顯示在圖下方，不可僅依賴滑鼠 hover tooltip 才能辨識帳號/單位。
 - X 軸刻度文字在圖表視圖中不得被自動省略為僅部分可見（需可直接辨識每個可見柱狀分類）。
@@ -274,9 +276,9 @@
 - `owner_department` 篩選 UI 需使用下拉選單；選項值以單位代碼送出，顯示文字需為「單位代碼 + 單位名稱」。
 - 表格視圖的篩選列需提供「清除篩選」按鈕，可一次重置目前所有篩選欄位並回到第一頁。
 - 預設排序為 `total_applications desc`。
-- 圖表聚合口徑需與目前篩選條件一致（`scope`、`from`、`to`、欄位篩選），並依所選 Y 指標排序；資料來源為獨立的 server-side 圖表聚合 API。
+- 圖表聚合口徑需與圖表自身條件一致（`scope`、`from`、`to`、`owner_department`），並依所選 Y 指標排序；資料來源為獨立的 server-side 圖表聚合 API。
 - 表格中的 `total_applications` 與 `active_count` 需可點擊，並以 Dialog 顯示該申請人的 API Key 明細（僅遮罩 key，不得回傳明文）。
-- Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨目前統計頁日期篩選（`from`、`to`）。
+- Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨表格自身日期篩選（`from`、`to`）。
 
 ### 7-1) Institute View Page（單位代碼資料檢視頁）
 - 僅 `admin` 可使用。
