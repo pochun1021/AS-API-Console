@@ -231,6 +231,21 @@ class ApiKeyUserStatisticsResponse(BaseModel):
     total: int
 
 
+class ApiKeyChartItemResponse(BaseModel):
+    label: str
+    value: int
+
+
+class ApiKeyChartResponse(BaseModel):
+    items: list[ApiKeyChartItemResponse]
+    x_axis: str
+    y_axis: str
+    top_n: int
+    total_value: int
+    displayed_value: int
+    group_count: int
+
+
 class LimitStrategyConfigResponse(BaseModel):
     budget_max_budget: str
     budget_duration: str

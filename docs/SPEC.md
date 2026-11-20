@@ -274,7 +274,7 @@
 - `owner_department` 篩選 UI 需使用下拉選單；選項值以單位代碼送出，顯示文字需為「單位代碼 + 單位名稱」。
 - 表格視圖的篩選列需提供「清除篩選」按鈕，可一次重置目前所有篩選欄位並回到第一頁。
 - 預設排序為 `total_applications desc`。
-- 圖表口徑需與目前篩選條件一致（`scope`、`from`、`to`、欄位篩選、`sort`）。
+- 圖表聚合口徑需與目前篩選條件一致（`scope`、`from`、`to`、欄位篩選），並依所選 Y 指標排序；資料來源為獨立的 server-side 圖表聚合 API。
 - 表格中的 `total_applications` 與 `active_count` 需可點擊，並以 Dialog 顯示該申請人的 API Key 明細（僅遮罩 key，不得回傳明文）。
 - Dialog 明細預設欄位為 `key_alias`、`masked_key`、`status`；且需跟隨目前統計頁日期篩選（`from`、`to`）。
 
@@ -884,7 +884,7 @@ Base path：`/main/api/v1`
 ### 2-2) 查詢每位使用者 API Key 申請統計（Admin Dashboard）
 - `GET /main/api/v1/api-keys/statistics/users`
 - 規則：僅 `admin` 可使用；回傳為申請人維度聚合結果，不得包含明文 key。
-- 查詢模式：此端點為 `server-side table` contract；表格分頁、排序、欄位篩選與圖表口徑都必須以此端點回傳為準。
+- 查詢模式：此端點為 `server-side table` contract；表格分頁、排序與欄位篩選由此端點處理。圖表使用獨立的 server-side 聚合端點，不得以表格當前頁資料計算。
 - 統計口徑：`active/revoked/expired` 與 `scope` 篩選需採相同到期口徑（`expires_at` 已過且原始 `active` 視為 `expired`）。
 - Query：`page`, `page_size`, `q`, `scope`, `from`, `to`, `owner_account`, `owner_name`, `owner_email`, `owner_department`, `sort_by`, `sort_dir`
   - `scope` allowed: `all|active|revoked|expired`（預設 `all`）
@@ -913,6 +913,15 @@ Base path：`/main/api/v1`
   "total": 1
 }
 ```
+
+### 2-3) 管理者圖表聚合（Admin Dashboard，Phase 1 API）
+- `GET /main/api/v1/api-keys/statistics/chart`
+- 僅 `admin` 可使用；不回傳明文 key，也不改變 `statistics/users` 表格端點的回應。
+- 計數單位為有對應 `api_keys` 的 `api_key_applications` 紀錄；`api_keys.application_id` 唯一，因此一筆已發 key 的申請只計一次。續期產生的新 application/key 另計一次。狀態以 `api_keys.status` 為準，原始 `active` 且 `expires_at` 已過者以 `expired` 統計；日期以 `application_date` 為準。
+- Query：`x_axis=account|department`（預設 `account`）、`y_axis=total_applications|active_count|revoked_count|expired_count`（預設 `total_applications`）、`top_n=5|10|20`（預設 `10`）、`scope=all|active|revoked|expired`（預設 `all`）、`from`、`to`（`YYYY-MM-DD`）、`q`、`owner_account`、`owner_name`、`owner_email`、`owner_department`。搜尋及日期篩選語意與 `statistics/users` 相同；`owner_department` 為不分大小寫的 contains 篩選。
+- 先在所有符合篩選的申請與 key 上聚合，`account` 以帳號分組，`department` 以單位代碼分組並合併該單位所有帳號；依所選 Y 指標由大到小排序，同值按 X 軸值升序，再取 Top N。不得先依表格頁碼截斷。
+- Response（200）：`items` 為 Top N 的 `{label, value}`；`total_value` 是所有分組的所選 Y 指標總和，`displayed_value` 是 `items` 的小計，`group_count` 是截斷前的分組數；另回傳 `x_axis`、`y_axis`、`top_n`。無符合資料時三個總量皆為 `0`、`items` 為空陣列。
+- 不合法的軸、Top N、scope 或反向日期區間回傳 `422`；非管理者回傳 `403`。
 
 ### 3) 查詢單筆 API Key 紀錄
 - `GET /main/api/v1/api-keys/{id}`
@@ -1432,6 +1441,7 @@ Base path：`/main/api/v1`
 41. 前端需阻擋管理者停用自己的管理者權限；管理者新增查詢結果中，對已存在於 `admins` 的人員（包含 `active`、`inactive`）不得顯示新增按鈕。
 42. `GET /main/api/v1/api-keys/statistics/users` 僅 `admin` 可用，預設依 `total_applications desc` 排序；`sort_by` 僅允許既定欄位，`scope`、`from`、`to` 與 `application_date` 篩選需生效，且統計結果不得包含 `api_key_plaintext`。
 43. 統計 API 每筆資料需包含 `owner_department`；管理者統計表格中的 `total_applications` 與 `active_count` 需可點擊開啟 API Key 明細 Dialog，且明細查詢口徑需跟隨當前 `from`、`to` 篩選；點擊 `active_count` 時僅顯示 `status=active`。
+43A. `GET /main/api/v1/api-keys/statistics/chart` 僅 `admin` 可用；對完整符合條件資料依 account 或 department 聚合後，按所選指標排序並取 Top 5/10/20。`total_value`、`displayed_value`、`group_count` 必須分別反映完整指標總量、Top N 小計及完整分組數；單位聚合須合併所有相關帳號，且不得依賴 `statistics/users` 的當前頁。
 44. `GET /main/api/v1/api-keys` 與 `GET /main/api/v1/api-keys/{id}` 回傳需包含 `key_alias`；未設定時回傳系統產生 alias。`admin` 可透過 `PATCH /main/api/v1/api-keys/{id}` 更新 alias，`user` 呼叫需回傳 `403`，重複 alias 需回傳 `409 KEY_ALIAS_DUPLICATE`；external provider mode 下 alias 更新需同步 provider 狀態。
 45. 限制策略設定僅 `admin` 可讀取與更新；`budget_duration` 僅允許 `daily|weekly|monthly`，管理端顯示映射需為 `1天|7天|30天`，且每把 API Key 的限制策略需同時包含 `budget`、`rate_limit` 與 `max_parallel_requests`，其中 `max_parallel_requests` 預設 `0` 代表不限制；不得提供 pending 補發端點或 `issuance_mode` 二選一模式。
 46. `admin` 可於 `/institute-view` 查看 `active` institutes 清單與 `total`，並可手動觸發同步；若 Persnl SOAP 不可用，`POST /main/api/v1/institutes/sync` 需回傳 `503 SOAP_SERVICE_UNAVAILABLE`。

@@ -27,6 +27,7 @@ from db.repositories.types import (
     ApiKeyUsageBucketItem,
     ApiKeyUsageSeriesItem,
     ApiKeyUsageTotal,
+    ApiKeyChartItem,
     ApiKeyUserStatisticsFilter,
     ApiKeyUserStatisticsItem,
     ApplicationCreateInput,
@@ -809,6 +810,61 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             expires_at=row.ApiKeyApplication.expires_at,
             expiration_notice_sent_at=row.ApiKey.expiration_notice_sent_at,
         )
+
+    def get_statistics_chart(
+        self,
+        *,
+        x_axis: str,
+        y_axis: str,
+        top_n: int,
+        scope: str,
+        filters: ApiKeyUserStatisticsFilter,
+    ) -> tuple[list[ApiKeyChartItem], int, int]:
+        now_utc = datetime.now(timezone.utc)
+        effective_status = case(
+            ((ApiKey.status == "active") & (ApiKeyApplication.expires_at < now_utc), "expired"),
+            else_=ApiKey.status,
+        )
+        metrics = {
+            "total_applications": func.count(ApiKeyApplication.id),
+            "active_count": func.sum(case((effective_status == "active", 1), else_=0)),
+            "revoked_count": func.sum(case((effective_status == "revoked", 1), else_=0)),
+            "expired_count": func.sum(case((effective_status == "expired", 1), else_=0)),
+        }
+        group_column = ApiKeyApplication.account if x_axis == "account" else ApiKeyApplication.department
+        stmt = select(group_column.label("label"), metrics[y_axis].label("value")).join(
+            ApiKey, ApiKey.application_id == ApiKeyApplication.id
+        )
+        if scope != "all":
+            stmt = stmt.where(effective_status == scope)
+        if filters.from_date is not None:
+            stmt = stmt.where(ApiKeyApplication.application_date >= filters.from_date)
+        if filters.to_date is not None:
+            stmt = stmt.where(ApiKeyApplication.application_date <= filters.to_date)
+        if filters.q:
+            stmt = stmt.where(
+                _contains_ci(ApiKeyApplication.account, filters.q)
+                | _contains_ci(ApiKeyApplication.name, filters.q)
+                | _contains_ci(ApiKeyApplication.email, filters.q)
+            )
+        for column, value in (
+            (ApiKeyApplication.account, filters.owner_account),
+            (ApiKeyApplication.name, filters.owner_name),
+            (ApiKeyApplication.email, filters.owner_email),
+            (ApiKeyApplication.department, filters.owner_department),
+        ):
+            if value:
+                stmt = stmt.where(_contains_ci(column, value))
+        grouped = stmt.group_by(group_column).subquery()
+        group_count, total_value = self.session.execute(
+            select(func.count(), func.coalesce(func.sum(grouped.c.value), 0)).select_from(grouped)
+        ).one()
+        rows = self.session.execute(
+            select(grouped.c.label, grouped.c.value)
+            .order_by(grouped.c.value.desc(), grouped.c.label.asc())
+            .limit(top_n)
+        ).all()
+        return [ApiKeyChartItem(label=row.label, value=int(row.value or 0)) for row in rows], int(total_value), int(group_count)
 
     def list_user_statistics(
         self,

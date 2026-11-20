@@ -144,6 +144,12 @@ class ApiKeyUserStatisticsItem:
 
 
 @dataclass(slots=True)
+class ApiKeyChartItem:
+    label: str
+    value: int
+
+
+@dataclass(slots=True)
 class ApiKeyUserStatisticsFilter:
     q: str | None = None
     owner_account: str | None = None

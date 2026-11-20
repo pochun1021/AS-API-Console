@@ -1783,6 +1783,63 @@ class ApiKeysService:
             "key_kek_version": material.key_kek_version,
         }
 
+    def get_statistics_chart(
+        self,
+        *,
+        current_user: CurrentUser,
+        x_axis: str = "account",
+        y_axis: str = "total_applications",
+        top_n: int = 10,
+        scope: str = "all",
+        from_date: date | None = None,
+        to_date: date | None = None,
+        q: str | None = None,
+        owner_account: str | None = None,
+        owner_name: str | None = None,
+        owner_email: str | None = None,
+        owner_department: str | None = None,
+    ) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+        if x_axis not in {"account", "department"}:
+            raise ApiError("VALIDATION_ERROR", "x_axis invalid", 422)
+        if y_axis not in {"total_applications", "active_count", "revoked_count", "expired_count"}:
+            raise ApiError("VALIDATION_ERROR", "y_axis invalid", 422)
+        if top_n not in {5, 10, 20}:
+            raise ApiError("VALIDATION_ERROR", "top_n invalid", 422)
+        if scope not in {"all", "active", "revoked", "expired"}:
+            raise ApiError("VALIDATION_ERROR", "scope invalid", 422)
+        if from_date is not None and to_date is not None and from_date > to_date:
+            raise ApiError("VALIDATION_ERROR", "from cannot greater to", 422)
+
+        def clean(value: str | None) -> str | None:
+            return value.strip() if value else None
+
+        items, total_value, group_count = self.key_repo.get_statistics_chart(
+            x_axis=x_axis,
+            y_axis=y_axis,
+            top_n=top_n,
+            scope=scope,
+            filters=ApiKeyUserStatisticsFilter(
+                q=clean(q),
+                owner_account=clean(owner_account),
+                owner_name=clean(owner_name),
+                owner_email=clean(owner_email),
+                owner_department=clean(owner_department),
+                from_date=from_date,
+                to_date=to_date,
+            ),
+        )
+        return {
+            "items": [{"label": item.label, "value": item.value} for item in items],
+            "x_axis": x_axis,
+            "y_axis": y_axis,
+            "top_n": top_n,
+            "total_value": total_value,
+            "displayed_value": sum(item.value for item in items),
+            "group_count": group_count,
+        }
+
     def list_user_statistics(
         self,
         *,
