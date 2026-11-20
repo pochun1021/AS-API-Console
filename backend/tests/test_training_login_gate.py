@@ -208,6 +208,17 @@ def test_datahub_rejects_malformed_json(monkeypatch):
     assert raised.value.kind == DataHubErrorKind.SCHEMA
 
 
+@pytest.mark.parametrize(
+    ("configured_method", "expected_method"),
+    [(None, "GET"), ("", "GET"), ("  ", "GET"), ("post", "POST")],
+)
+def test_datahub_list_method_defaults_to_get_and_allows_override(monkeypatch, configured_method, expected_method):
+    client, seen = _client(monkeypatch)
+    client.settings.datahub_list_method = configured_method
+    assert client.fetch_incomplete_sso() == frozenset()
+    assert seen[1].method == expected_method
+
+
 def test_datahub_timeout_and_missing_contract_fail_closed(monkeypatch):
     client, _ = _client(monkeypatch, error=httpx.ReadTimeout("timed out"))
     with pytest.raises(DataHubError) as raised:
@@ -215,7 +226,13 @@ def test_datahub_timeout_and_missing_contract_fail_closed(monkeypatch):
     assert raised.value.kind == DataHubErrorKind.TIMEOUT
 
     settings = _settings()
-    settings.datahub_list_method = None
+    settings.datahub_client_secret = None
+    with pytest.raises(DataHubError) as raised:
+        DataHubClient(settings).fetch_incomplete_sso()
+    assert raised.value.kind == DataHubErrorKind.CONFIGURATION
+
+    settings.datahub_client_secret = "fixture-secret"
+    settings.datahub_list_method = "DELETE"
     with pytest.raises(DataHubError) as raised:
         DataHubClient(settings).fetch_incomplete_sso()
     assert raised.value.kind == DataHubErrorKind.CONFIGURATION

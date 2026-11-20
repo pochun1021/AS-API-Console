@@ -81,6 +81,14 @@ function mapWhitelistItem(item) {
 }
 
 export const httpApiProvider = {
+  getLocalLoginDefaults() {
+    return request(`${APP_BASE}/auth/local-login`);
+  },
+
+  createLocalLoginSession(payload) {
+    return request(`${APP_BASE}/auth/local-login`, { method: "POST", body: payload });
+  },
+
   getCurrentUser(auth) {
     return request(apiPath("/users/me"), { auth });
   },

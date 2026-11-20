@@ -132,7 +132,7 @@ chmod 600 /home/app/config/.env
   - `PERSNL_SOAP_PASSWORD`（建議必填）
   - `PERSNL_SOAP_TIMEOUT_SECONDS=3.0`（可選）
 - FISA SSO 必填設定：`APP_DOMAIN=https://api.ascs.sinica.edu.tw/main`、`OAUTH_AUTH_URI`、`OAUTH_TOKEN_URI`、`OAUTH_BASIC_URI`、`OAUTH_CLIENT_ID`、`OAUTH_CLIENT_SECRET`。FISA 註冊的 callback 必須為 `https://api.ascs.sinica.edu.tw/main/auth/callback`。
-- DataHub 未完訓檢查必填設定：`DATAHUB_TOKEN_URL`、`DATAHUB_LIST_URL`、`DATAHUB_CLIENT_SECRET`、`DATAHUB_LIST_METHOD`。`DATAHUB_CLIENT_ID` 可使用預設值。需求方已確認原始 FISA `sysid` 對應 DataHub `sso`；部署時明確設定 `FISA_SYSID_IS_DATAHUB_SSO_CONFIRMED=true`。缺少必要設定會 fail-closed。
+- DataHub 未完訓檢查需設定 `DATAHUB_TOKEN_URL`、`DATAHUB_LIST_URL`、`DATAHUB_CLIENT_ID`、`DATAHUB_CLIENT_SECRET`；`DATAHUB_CLIENT_ID` 可沿用預設值 `learnpoints`。`DATAHUB_LIST_METHOD` 留空時預設 `GET`，名單 API 要求 `POST` 時才需填入。需求方已確認原始 FISA `sysid` 對應 DataHub `sso`；部署時明確設定 `FISA_SYSID_IS_DATAHUB_SSO_CONFIRMED=true`。缺少必要設定會 fail-closed。
 - `DATAHUB_CLIENT_ID` 預設 `learnpoints`，部署時可明確填入；`DATAHUB_CLIENT_SECRET` 無預設憑證，必須由部署環境安全提供。DataHub Token API 以 JSON `clientId`、`clientSecret` 傳送這兩項值，與 FISA SSO 的 `OAUTH_CLIENT_ID`、`OAUTH_CLIENT_SECRET` 分開管理，不能互用。缺少必要 DataHub 設定時登入 fail-closed，不會略過未完訓檢查。
 - 可設定 `OAUTH_TIMEOUT_SECONDS=10.0` 與 `DATAHUB_TIMEOUT_SECONDS=3.0`；所有 Secret 僅放在後端環境設定，勿提交至版本庫。
 - `APP_ENV=prod` 須設定非範例值、至少 32 字元的隨機 `SESSION_SECRET_KEY`；使用開發預設值或範例占位值會在啟動時失敗。

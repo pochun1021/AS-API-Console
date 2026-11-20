@@ -1,9 +1,11 @@
 from uuid import uuid4
 import secrets
+from typing import Literal
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -11,9 +13,15 @@ from app.core.errors import ApiError
 from app.core.security import csrf_protected, enforce_rate_limit, ensure_csrf_token
 from app.schemas.common import ErrorResponse
 from app.services.auth_audit_service import AuthAuditService
+from app.services.datahub_client import DataHubError, DataHubErrorKind
 from app.services.login_eligibility_service import LoginEligibilityService
 from app.services.oauth_service import OAuthService
-from app.services.login_qualification_gate import GateStatus, LoginQualificationGate
+from app.services.login_qualification_gate import (
+    GateStatus,
+    LoginQualificationGate,
+    TRAINING_INCOMPLETE_MESSAGE,
+    TRAINING_UNAVAILABLE_MESSAGE,
+)
 from app.services.training_eligibility_service import TrainingEligibilityService
 from db.repositories.types import AuthIdentity
 from db.repositories import SQLAlchemyAdminRepository, SQLAlchemyWhitelistRepository
@@ -22,6 +30,88 @@ from db.session import get_db
 router = APIRouter()
 settings = get_settings()
 LOGIN_SUCCESS_REDIRECT = "/announcements"
+
+
+class LocalLoginPayload(BaseModel):
+    account: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=100)
+    email: EmailStr = Field(max_length=255)
+    department: str = Field(min_length=1, max_length=100)
+    sysid: int = Field(gt=0, le=9223372036854775807)
+    role: Literal["user", "admin"] = "user"
+
+
+def _require_local_login() -> None:
+    if get_settings().app_env.lower() not in {"dev", "test"}:
+        raise HTTPException(status_code=404)
+
+
+@router.get("/auth/local-login", include_in_schema=False)
+def local_login_defaults() -> dict[str, str | int | None]:
+    _require_local_login()
+    current_settings = get_settings()
+    role = current_settings.dev_login_role.strip().lower()
+    if role not in {"user", "admin"}:
+        raise ApiError("INTERNAL_ERROR", "invalid DEV_LOGIN_ROLE: must be user or admin", 500)
+    return {
+        "account": current_settings.dev_login_account or "",
+        "name": current_settings.dev_login_name or "",
+        "email": current_settings.dev_login_email or "",
+        "department": current_settings.dev_login_department or "",
+        "sysid": current_settings.dev_login_sysid,
+        "role": role,
+    }
+
+
+@router.post(
+    "/auth/local-login",
+    include_in_schema=False,
+    dependencies=[Depends(_require_local_login), enforce_rate_limit("local_login", settings.login_rate_limit)],
+)
+def create_local_login_session(
+    payload: LocalLoginPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    _require_local_login()
+    identity = payload.model_dump()
+    for field in ("account", "name", "department"):
+        identity[field] = identity[field].strip()
+        if not identity[field]:
+            raise ApiError("VALIDATION_ERROR", f"{field} is required", 422)
+    identity["email"] = str(payload.email).lower()
+    _clear_login_session(request)
+    warning = None
+    try:
+        incomplete = TrainingEligibilityService().is_incomplete(trusted_sso=str(payload.sysid))
+    except DataHubError as exc:
+        if exc.kind not in {DataHubErrorKind.NETWORK, DataHubErrorKind.TIMEOUT}:
+            raise ApiError("TRAINING_SERVICE_UNAVAILABLE", TRAINING_UNAVAILABLE_MESSAGE, 503) from None
+        warning = "DATAHUB_CONNECTION_FAILED"
+        incomplete = False
+    except Exception:
+        raise ApiError("TRAINING_SERVICE_UNAVAILABLE", TRAINING_UNAVAILABLE_MESSAGE, 503) from None
+    if incomplete:
+        raise ApiError("TRAINING_INCOMPLETE", TRAINING_INCOMPLETE_MESSAGE, 403)
+    if payload.role == "admin":
+        SQLAlchemyAdminRepository(db).upsert_from_auth(
+            AuthIdentity(
+                account=identity["account"],
+                name=identity["name"],
+                email=identity["email"],
+                department=identity["department"],
+                sysid=payload.sysid,
+            ),
+            created_by=identity["account"],
+        )
+        db.commit()
+    identity["auth_source"] = "local_login"
+    request.session["auth_context"] = identity
+    ensure_csrf_token(request)
+    response = {"redirect": _path(request, LOGIN_SUCCESS_REDIRECT)}
+    if warning:
+        response["warning"] = warning
+    return response
 
 
 def _path(request: Request, suffix: str = "") -> str:
@@ -63,55 +153,21 @@ def _log_auth_audit_or_redirect(
     response_class=RedirectResponse,
     dependencies=[enforce_rate_limit("login", settings.login_rate_limit)],
     responses={
-        302: {"description": "Redirect to OAuth provider"},
+        302: {"description": "Redirect to local sign-in page or OAuth provider"},
         500: {"model": ErrorResponse, "description": "OAuth configuration is invalid or incomplete"},
     },
 )
 def login(
     request: Request,
-    db: Session = Depends(get_db),
 ) -> RedirectResponse:
     request_id = getattr(request.state, "request_id", str(uuid4()))
     current_settings = get_settings()
     env = current_settings.app_env.lower()
-    if env == "dev":
-        dev_role = (current_settings.dev_login_role or "user").strip().lower()
-        if dev_role not in {"user", "admin"}:
-            raise ApiError("INTERNAL_ERROR", "invalid DEV_LOGIN_ROLE: must be user or admin", 500)
-        required = {
-            "DEV_LOGIN_ACCOUNT": current_settings.dev_login_account,
-            "DEV_LOGIN_NAME": current_settings.dev_login_name,
-            "DEV_LOGIN_EMAIL": current_settings.dev_login_email,
-            "DEV_LOGIN_DEPARTMENT": current_settings.dev_login_department,
-            "DEV_LOGIN_SYSID": current_settings.dev_login_sysid,
-        }
-        missing = [key for key, value in required.items() if value in {None, ""}]
-        if missing:
-            raise ApiError("INTERNAL_ERROR", f"missing dev login config: {', '.join(missing)}", 500)
-        assert current_settings.dev_login_sysid is not None
-        request.session["auth_context"] = {
-            "account": current_settings.dev_login_account,
-            "name": current_settings.dev_login_name,
-            "email": current_settings.dev_login_email.lower(),
-            "department": current_settings.dev_login_department,
-            "sysid": current_settings.dev_login_sysid,
-            "role": dev_role,
-        }
-        if dev_role == "admin":
-            SQLAlchemyAdminRepository(db).upsert_from_auth(
-                AuthIdentity(
-                    account=current_settings.dev_login_account or "",
-                    name=current_settings.dev_login_name or "",
-                    email=(current_settings.dev_login_email or "").lower(),
-                    department=current_settings.dev_login_department or "",
-                    sysid=current_settings.dev_login_sysid,
-                ),
-                created_by=current_settings.dev_login_account or "dev-login",
-            )
-            db.commit()
-        request.session.pop("oauth_request_id", None)
-        ensure_csrf_token(request)
-        return RedirectResponse(_path(request, LOGIN_SUCCESS_REDIRECT), status_code=302)
+    if env in {"dev", "test"}:
+        _clear_login_session(request)
+        return RedirectResponse(_path(request, "/local-login"), status_code=302)
+    if env != "prod":
+        raise ApiError("INTERNAL_ERROR", "unsupported APP_ENV", 500)
 
     _clear_login_session(request)
     try:
@@ -142,6 +198,8 @@ def oauth_callback(
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     current_settings = get_settings()
+    if current_settings.app_env.lower() != "prod":
+        raise HTTPException(status_code=404)
     provider = "fisa"
     request_id = getattr(request.state, "request_id", str(uuid4()))
     audit = AuthAuditService(db)

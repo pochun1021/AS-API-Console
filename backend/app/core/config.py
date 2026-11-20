@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     datahub_list_url: str | None = None
     datahub_client_id: str = "learnpoints"
     datahub_client_secret: str | None = None
-    datahub_list_method: str | None = None
+    datahub_list_method: str | None = "GET"
     datahub_timeout_seconds: float = 3.0
     login_allowed_title_codes: str = ""
     dev_login_account: str | None = None
