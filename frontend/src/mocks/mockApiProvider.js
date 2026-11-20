@@ -740,7 +740,6 @@ function buildUserStatistics(
     if (owner_account && !containsCI(item.owner_account, owner_account)) return false;
     if (owner_name && !containsCI(item.owner_name, owner_name)) return false;
     if (owner_email && !containsCI(`${item.owner_account}@example.com`, owner_email)) return false;
-    if (owner_department && !containsCI(item.department || "", owner_department)) return false;
     if (!keyword) return true;
     return [item.owner_account, item.owner_name, `${item.owner_account}@example.com`]
       .join(" ")
@@ -764,6 +763,9 @@ function buildUserStatistics(
       });
     }
     const stat = byOwner.get(item.owner_account);
+    if ((item.department || "") > stat.owner_department) {
+      stat.owner_department = item.department;
+    }
     stat.total_applications += 1;
     if (item.status === "active") stat.active_count += 1;
     if (item.status === "revoked") stat.revoked_count += 1;
@@ -772,7 +774,9 @@ function buildUserStatistics(
       stat.last_applied_at = item.application_date;
     }
   }
-  return Array.from(byOwner.values());
+  return Array.from(byOwner.values()).filter(
+    (stat) => !owner_department || containsCI(stat.owner_department, owner_department)
+  );
 }
 
 function ensureUsageAccess(item, auth) {
@@ -1025,6 +1029,15 @@ export const mockApiProvider = {
     };
   },
 
+  async listApiKeyStatisticsDepartments(auth) {
+    await delay();
+    ensureAdmin(auth);
+    return {
+      items: [...new Set(buildUserStatistics(apiKeys, {}).map((item) => item.owner_department))]
+        .filter(Boolean)
+        .sort()
+    };
+  },
   async getApiKeyStatisticsChart(params, auth) {
     await delay();
     ensureAdmin(auth);

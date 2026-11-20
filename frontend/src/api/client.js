@@ -131,6 +131,7 @@ export const apiClient = {
   renewApiKey: (id, auth) => provider.renewApiKey(id, auth),
   extendApiKey: (id, auth) => provider.extendApiKey(id, auth),
   listApiKeyUserStatistics: (params, auth) => provider.listApiKeyUserStatistics(params, auth),
+  listApiKeyStatisticsDepartments: (auth) => provider.listApiKeyStatisticsDepartments(auth),
   getApiKeyStatisticsChart: (params, auth) => provider.getApiKeyStatisticsChart(params, auth),
   listOperationAuditLogs: (params, auth) => provider.listOperationAuditLogs(params, auth),
   listAuthAuditLogs: (params, auth) => provider.listAuthAuditLogs(params, auth),

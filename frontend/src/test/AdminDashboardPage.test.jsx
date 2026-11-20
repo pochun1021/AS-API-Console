@@ -41,15 +41,15 @@ test("admin can load and filter statistics", async () => {
   expect(screen.getByLabelText("日期區間")).toBeInTheDocument();
   expect(await screen.findByText("jane.doe")).toBeInTheDocument();
 
-  await user.click(screen.getByLabelText("口徑"));
-  await user.click(screen.getByRole("option", { name: "revoked" }));
+  await user.click(screen.getByLabelText("狀態"));
+  await user.click(screen.getByRole("option", { name: "已停用" }));
 
   await waitFor(() => {
     expect(screen.getByText("sam.chen")).toBeInTheDocument();
   });
 
-  await user.click(screen.getByLabelText("口徑"));
-  await user.click(screen.getByRole("option", { name: "all" }));
+  await user.click(screen.getByLabelText("狀態"));
+  await user.click(screen.getByRole("option", { name: "全部" }));
 
   await user.type(screen.getAllByLabelText("帳號")[0], "alice");
 
@@ -91,6 +91,7 @@ test("table pagination sends the next page to the server", async () => {
 test("admin dashboard sends custom owner filters without DataGrid filter model", async () => {
   const user = userEvent.setup();
   const spy = vi.spyOn(mockApiProvider, "listApiKeyUserStatistics");
+  const chartSpy = vi.spyOn(mockApiProvider, "getApiKeyStatisticsChart");
   renderPage(<AdminDashboardPage auth={adminAuth} />);
 
   expect(await screen.findByText("管理者統計")).toBeInTheDocument();
@@ -111,6 +112,34 @@ test("admin dashboard sends custom owner filters without DataGrid filter model",
       adminAuth
     );
   });
+
+  await user.click(screen.getByRole("tab", { name: "圖表" }));
+  await waitFor(() => expect(chartSpy).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      scope: "all", from: undefined, to: undefined, owner_department: undefined,
+    }),
+    adminAuth
+  ));
+  const chartQuery = chartSpy.mock.lastCall[0];
+  expect(chartQuery).not.toHaveProperty("owner_account");
+  expect(chartQuery).not.toHaveProperty("owner_name");
+  expect(chartQuery).not.toHaveProperty("owner_email");
+});
+
+test("department filter lists statistics departments without institute master data", async () => {
+  const user = userEvent.setup();
+  vi.spyOn(mockApiProvider, "listInstitutes").mockResolvedValue({ items: [] });
+  vi.spyOn(mockApiProvider, "listApiKeyStatisticsDepartments").mockResolvedValue({ items: ["IT", "R&D"] });
+  const usersSpy = vi.spyOn(mockApiProvider, "listApiKeyUserStatistics");
+  renderPage(<AdminDashboardPage auth={adminAuth} />);
+
+  await screen.findByText("jane.doe");
+  await user.click(screen.getAllByLabelText("單位")[0]);
+  await user.click(await screen.findByRole("option", { name: "IT" }));
+
+  await waitFor(() => expect(usersSpy).toHaveBeenLastCalledWith(
+    expect.objectContaining({ owner_department: "IT" }), adminAuth
+  ));
 });
 
 test("admin dashboard can clear table filters", async () => {
@@ -168,7 +197,7 @@ test("admin can switch to chart view and change axes", async () => {
   expect(screen.getByLabelText("Y 軸")).toBeInTheDocument();
   expect(screen.getByLabelText("Top N")).toBeInTheDocument();
   expect(screen.getByLabelText("日期區間")).toBeInTheDocument();
-  expect(screen.getByLabelText("口徑")).toBeInTheDocument();
+  expect(screen.getByLabelText("狀態")).toBeInTheDocument();
 
   await user.click(screen.getByLabelText("X 軸"));
   await user.click(screen.getByRole("option", { name: "單位" }));
@@ -185,7 +214,7 @@ test("admin can switch to chart view and change axes", async () => {
   expect(screen.getByRole("tab", { name: "圖表", selected: true })).toBeInTheDocument();
 });
 
-test("chart uses its aggregate response instead of the table page, including totals and zero values", async () => {
+test("chart uses its aggregate response instead of the table page without summary text", async () => {
   const user = userEvent.setup();
   const tableSpy = vi.spyOn(mockApiProvider, "listApiKeyUserStatistics");
   const chartSpy = vi.spyOn(mockApiProvider, "getApiKeyStatisticsChart").mockResolvedValue({
@@ -198,22 +227,19 @@ test("chart uses its aggregate response instead of the table page, including tot
   await waitFor(() => expect(chartSpy).toHaveBeenCalledWith(
     expect.objectContaining({ x_axis: "account", y_axis: "total_applications", top_n: 10, scope: "all" }), adminAuth
   ));
-  expect(await screen.findByText(/符合條件的指標總量: 31/)).toBeInTheDocument();
-  expect(screen.getByText(/Top N 顯示小計: 7/)).toBeInTheDocument();
-  expect(screen.getByText(/完整分組數: 12/)).toBeInTheDocument();
+  expect(screen.queryByText(/符合條件的指標總量|Top N 顯示小計|完整分組數/)).not.toBeInTheDocument();
   expect(tableSpy).toHaveBeenCalledTimes(1);
 
   chartSpy.mockResolvedValue({ items: [], x_axis: "account", y_axis: "active_count", top_n: 10,
     total_value: 0, displayed_value: 0, group_count: 0 });
-  await user.click(screen.getByLabelText("口徑"));
-  await user.click(screen.getByRole("option", { name: "revoked" }));
+  await user.click(screen.getByLabelText("狀態"));
+  await user.click(screen.getByRole("option", { name: "已停用" }));
   await user.click(screen.getByLabelText("Y 軸"));
   await user.click(screen.getByRole("option", { name: "啟用中" }));
   await waitFor(() => expect(chartSpy).toHaveBeenLastCalledWith(
     expect.objectContaining({ scope: "revoked", y_axis: "active_count" }), adminAuth
   ));
-  expect(await screen.findByText(/符合條件的指標總量: 0 啟用中/)).toBeInTheDocument();
-  expect(screen.getByText(/Top N 顯示小計: 0 啟用中/)).toBeInTheDocument();
+  expect(await screen.findByText("目前沒有統計資料")).toBeInTheDocument();
 });
 
 test("table and chart keep independent scope, dates and department across tabs and resets", async () => {
@@ -222,8 +248,8 @@ test("table and chart keep independent scope, dates and department across tabs a
   const chartSpy = vi.spyOn(mockApiProvider, "getApiKeyStatisticsChart");
   renderPage(<AdminDashboardPage auth={adminAuth} />);
   await screen.findByText("jane.doe");
-  await user.click(screen.getByLabelText("口徑"));
-  await user.click(screen.getByRole("option", { name: "active" }));
+  await user.click(screen.getByLabelText("狀態"));
+  await user.click(screen.getByRole("option", { name: "啟用中" }));
   await user.click(screen.getByRole("button", { name: "日期區間 picker" }));
   fireEvent.change(await screen.findByLabelText("起始日期"), { target: { value: "2026-01-01" } });
   fireEvent.change(screen.getByLabelText("結束日期"), { target: { value: "2026-01-31" } });
@@ -236,8 +262,8 @@ test("table and chart keep independent scope, dates and department across tabs a
   await waitFor(() => expect(chartSpy).toHaveBeenLastCalledWith(
     expect.objectContaining({ scope: "all", from: undefined, owner_department: undefined }), adminAuth
   ));
-  await user.click(screen.getByLabelText("口徑"));
-  await user.click(screen.getByRole("option", { name: "revoked" }));
+  await user.click(screen.getByLabelText("狀態"));
+  await user.click(screen.getByRole("option", { name: "已停用" }));
   await user.click(screen.getByRole("button", { name: "日期區間 picker" }));
   fireEvent.change(await screen.findByLabelText("起始日期"), { target: { value: "2026-02-01" } });
   fireEvent.change(screen.getByLabelText("結束日期"), { target: { value: "2026-02-28" } });
@@ -250,14 +276,14 @@ test("table and chart keep independent scope, dates and department across tabs a
   expect(tableSpy).toHaveBeenCalledTimes(tableCalls);
   await user.click(screen.getByRole("tab", { name: "表格" }));
   expect(screen.getByLabelText("日期區間")).toHaveValue("2026-01-01 - 2026-01-31");
-  expect(screen.getByLabelText("口徑")).toHaveTextContent("active");
+  expect(screen.getByLabelText("狀態")).toHaveTextContent("啟用中");
   await user.click(screen.getByRole("button", { name: "清除篩選" }));
   await waitFor(() => expect(tableSpy).toHaveBeenLastCalledWith(
     expect.objectContaining({ scope: "all", from: undefined, page: 1 }), adminAuth
   ));
   await user.click(screen.getByRole("tab", { name: "圖表" }));
   expect(screen.getByLabelText("日期區間")).toHaveValue("2026-02-01 - 2026-02-28");
-  expect(screen.getByLabelText("口徑")).toHaveTextContent("revoked");
+  expect(screen.getByLabelText("狀態")).toHaveTextContent("已停用");
   await user.click(screen.getByRole("button", { name: "清除篩選" }));
   await waitFor(() => expect(chartSpy).toHaveBeenLastCalledWith(
     expect.objectContaining({ scope: "all", from: undefined, owner_department: undefined, x_axis: "account", top_n: 10 }), adminAuth
@@ -273,14 +299,14 @@ test("late chart response cannot replace a newer filter result", async () => {
   renderPage(<AdminDashboardPage auth={adminAuth} />);
   await user.click(screen.getByRole("tab", { name: "圖表" }));
   await waitFor(() => expect(chartSpy).toHaveBeenCalledTimes(1));
-  await user.click(screen.getByLabelText("口徑"));
-  await user.click(screen.getByRole("option", { name: "revoked" }));
+  await user.click(screen.getByLabelText("狀態"));
+  await user.click(screen.getByRole("option", { name: "已停用" }));
   await waitFor(() => expect(chartSpy).toHaveBeenCalledTimes(2));
   await act(async () => pending[1]({ items: [], total_value: 2, displayed_value: 2, group_count: 1 }));
-  expect(await screen.findByText(/符合條件的指標總量: 2/)).toBeInTheDocument();
-  await act(async () => pending[0]({ items: [], total_value: 99, displayed_value: 99, group_count: 99 }));
-  expect(screen.getByText(/符合條件的指標總量: 2/)).toBeInTheDocument();
-  expect(screen.queryByText(/符合條件的指標總量: 99/)).not.toBeInTheDocument();
+  expect(await screen.findByText("目前沒有統計資料")).toBeInTheDocument();
+  await act(async () => pending[0]({ items: [{ label: "stale.department", value: 99 }], total_value: 99, displayed_value: 99, group_count: 99 }));
+  expect(screen.getByText("目前沒有統計資料")).toBeInTheDocument();
+  expect(screen.queryByText("stale.department")).not.toBeInTheDocument();
 });
 
 test("late table response cannot replace newer filter results", async () => {

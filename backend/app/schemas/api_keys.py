@@ -231,6 +231,10 @@ class ApiKeyUserStatisticsResponse(BaseModel):
     total: int
 
 
+class ApiKeyStatisticsDepartmentsResponse(BaseModel):
+    items: list[str]
+
+
 class ApiKeyChartItemResponse(BaseModel):
     label: str
     value: int

@@ -167,6 +167,10 @@ export const httpApiProvider = {
     return request(`${apiPath("/api-keys/statistics/users")}?${query.toString()}`, { auth });
   },
 
+  listApiKeyStatisticsDepartments(auth) {
+    return request(apiPath("/api-keys/statistics/departments"), { auth });
+  },
+
   getApiKeyStatisticsChart(params, auth) {
     const query = new URLSearchParams();
     for (const key of ["x_axis", "y_axis", "top_n", "scope", "from", "to", "owner_department"]) {

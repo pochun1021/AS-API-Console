@@ -811,6 +811,24 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             expiration_notice_sent_at=row.ApiKey.expiration_notice_sent_at,
         )
 
+    def list_statistics_departments(self) -> list[str]:
+        by_owner = (
+            select(func.max(ApiKeyApplication.department).label("owner_department"))
+            .join(ApiKey, ApiKey.application_id == ApiKeyApplication.id)
+            .group_by(
+                ApiKeyApplication.account,
+                ApiKeyApplication.name,
+                ApiKeyApplication.email,
+            )
+            .subquery()
+        )
+        return list(self.session.scalars(
+            select(by_owner.c.owner_department)
+            .where(by_owner.c.owner_department.is_not(None), by_owner.c.owner_department != "")
+            .distinct()
+            .order_by(by_owner.c.owner_department)
+        ))
+
     def get_statistics_chart(
         self,
         *,
@@ -831,8 +849,11 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             "revoked_count": func.sum(case((effective_status == "revoked", 1), else_=0)),
             "expired_count": func.sum(case((effective_status == "expired", 1), else_=0)),
         }
-        group_column = ApiKeyApplication.account if x_axis == "account" else ApiKeyApplication.department
-        stmt = select(group_column.label("label"), metrics[y_axis].label("value")).join(
+        stmt = select(
+            ApiKeyApplication.account.label("label"),
+            func.max(ApiKeyApplication.department).label("owner_department"),
+            metrics[y_axis].label("value"),
+        ).join(
             ApiKey, ApiKey.application_id == ApiKeyApplication.id
         )
         if scope != "all":
@@ -851,11 +872,33 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             (ApiKeyApplication.account, filters.owner_account),
             (ApiKeyApplication.name, filters.owner_name),
             (ApiKeyApplication.email, filters.owner_email),
-            (ApiKeyApplication.department, filters.owner_department),
         ):
             if value:
                 stmt = stmt.where(_contains_ci(column, value))
-        grouped = stmt.group_by(group_column).subquery()
+        if x_axis == "department":
+            by_owner = stmt.group_by(
+                ApiKeyApplication.account,
+                ApiKeyApplication.name,
+                ApiKeyApplication.email,
+            )
+            if filters.owner_department:
+                by_owner = by_owner.having(
+                    _contains_ci(func.max(ApiKeyApplication.department), filters.owner_department)
+                )
+            by_owner = by_owner.subquery()
+            grouped = (
+                select(
+                    by_owner.c.owner_department.label("label"),
+                    func.sum(by_owner.c.value).label("value"),
+                )
+                .group_by(by_owner.c.owner_department)
+                .subquery()
+            )
+        else:
+            stmt = stmt.group_by(ApiKeyApplication.account)
+            if filters.owner_department:
+                stmt = stmt.having(_contains_ci(func.max(ApiKeyApplication.department), filters.owner_department))
+            grouped = stmt.subquery()
         group_count, total_value = self.session.execute(
             select(func.count(), func.coalesce(func.sum(grouped.c.value), 0)).select_from(grouped)
         ).one()
@@ -923,10 +966,9 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             stmt = stmt.where(_contains_ci(ApiKeyApplication.name, filters.owner_name))
         if filters.owner_email:
             stmt = stmt.where(_contains_ci(ApiKeyApplication.email, filters.owner_email))
-        if filters.owner_department:
-            stmt = stmt.where(_contains_ci(ApiKeyApplication.department, filters.owner_department))
-
         stmt = stmt.group_by(ApiKeyApplication.account, ApiKeyApplication.name, ApiKeyApplication.email)
+        if filters.owner_department:
+            stmt = stmt.having(_contains_ci(func.max(ApiKeyApplication.department), filters.owner_department))
 
         sort_expressions = {
             "owner_account": ApiKeyApplication.account,

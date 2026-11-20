@@ -1783,6 +1783,11 @@ class ApiKeysService:
             "key_kek_version": material.key_kek_version,
         }
 
+    def list_statistics_departments(self, *, current_user: CurrentUser) -> dict:
+        if current_user.role != "admin":
+            raise ApiError("FORBIDDEN", "admin role required", 403)
+        return {"items": self.key_repo.list_statistics_departments()}
+
     def get_statistics_chart(
         self,
         *,

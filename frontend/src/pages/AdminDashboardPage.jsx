@@ -61,7 +61,11 @@ const defaultChartQuery = {
 export default function AdminDashboardPage({ auth }) {
   const { locale, t } = useLocale();
   const gridLocaleText = getGridLocaleText(locale);
-  const { departmentOptions, formatDepartment } = useDepartmentDisplay(auth);
+  const { departmentOptions: instituteDepartmentOptions, formatDepartment, formatDepartmentOption } = useDepartmentDisplay(auth);
+  const [statisticsDepartments, setStatisticsDepartments] = useState([]);
+  const departmentOptions = statisticsDepartments.length > 0
+    ? statisticsDepartments.map((value) => ({ value, label: formatDepartmentOption(value, locale) }))
+    : instituteDepartmentOptions;
   const scopeOptions = ["all", "active", "revoked", "expired"];
   const topNOptions = [5, 10, 20];
   const xAxisOptions = [
@@ -90,7 +94,6 @@ export default function AdminDashboardPage({ auth }) {
   const [tableItems, setTableItems] = useState([]);
   const [chartItems, setChartItems] = useState([]);
   const [tableTotal, setTableTotal] = useState(0);
-  const [chartTotals, setChartTotals] = useState({ total_value: 0, displayed_value: 0, group_count: 0 });
   const [view, setView] = useState("table");
   const [tableLoading, setTableLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
@@ -98,6 +101,18 @@ export default function AdminDashboardPage({ auth }) {
   const [chartError, setChartError] = useState("");
   const tableRequest = useRef(0);
   const chartRequest = useRef(0);
+  useEffect(() => {
+    if (auth.role !== "admin") return undefined;
+    let canceled = false;
+    apiClient.listApiKeyStatisticsDepartments(auth)
+      .then((response) => {
+        if (!canceled) setStatisticsDepartments(response.items || []);
+      })
+      .catch(() => {
+        if (!canceled) setStatisticsDepartments([]);
+      });
+    return () => { canceled = true; };
+  }, [auth.account, auth.role]);
   const [detailDialog, setDetailDialog] = useState({ open: false, title: "", ownerAccount: "", status: undefined });
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -272,7 +287,6 @@ export default function AdminDashboardPage({ auth }) {
       }, auth);
       if (requestId !== chartRequest.current) return;
       setChartItems(response.items);
-      setChartTotals({ total_value: response.total_value, displayed_value: response.displayed_value, group_count: response.group_count });
     } catch (e) {
       if (requestId === chartRequest.current) setChartError(normalizeApiError(e, t("dashboard_load_failed")));
     } finally {
@@ -486,13 +500,6 @@ export default function AdminDashboardPage({ auth }) {
               </Stack>
             {chartLoading ? <LoadingBlock text={t("dashboard_loading")} /> : null}
             {!chartLoading && chartError ? <ErrorBlock message={chartError} onRetry={() => loadChart()} /> : null}
-            {!chartLoading && !chartError ? (
-              <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-                <Typography>{t("dashboard_chart_total_value")}: {chartTotals.total_value} {yAxisOptions.find((o) => o.value === chartQuery.yAxis)?.label}</Typography>
-                <Typography>{t("dashboard_chart_displayed_value")}: {chartTotals.displayed_value} {yAxisOptions.find((o) => o.value === chartQuery.yAxis)?.label}</Typography>
-                <Typography>{t("dashboard_chart_group_count")}: {chartTotals.group_count}</Typography>
-              </Stack>
-            ) : null}
             {!chartLoading && !chartError && chartItems.length === 0 ? <EmptyBlock text={t("dashboard_no_data")} /> : null}
             {!chartLoading && !chartError && chartItems.length > 0 ? (
               <BarChart
