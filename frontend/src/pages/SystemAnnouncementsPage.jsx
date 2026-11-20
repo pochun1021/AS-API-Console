@@ -25,7 +25,7 @@ import {
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid/DataGrid";
 import { useTheme } from "@mui/material/styles";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink, useLocation } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { normalizeApiError } from "../api/errors";
 import DateRangeFilterField from "../components/DateRangeFilterField";
@@ -75,6 +75,7 @@ function buildDefaultForm() {
 
 export default function SystemAnnouncementsPage({ auth }) {
   const { locale, t } = useLocale();
+  const location = useLocation();
   const gridLocaleText = getGridLocaleText(locale);
   const isAdmin = auth.role === "admin";
   const shouldShowComingSoonLink = auth.role === "user" && !isApiKeyApplicationLive(parseApiKeyApplicationGoLiveAt());
@@ -391,6 +392,7 @@ export default function SystemAnnouncementsPage({ auth }) {
         ) : null}
       </Stack>
 
+      {location.state?.datahubWarning ? <Alert severity="warning">{t("local_login_datahub_connection_failed")}</Alert> : null}
       {banner ? <Alert severity="info">{banner}</Alert> : null}
 
       <Card variant="outlined">

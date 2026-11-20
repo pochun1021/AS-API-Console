@@ -133,13 +133,13 @@ export ENV_FILE=/home/app/config/.env
 - `SESSION_MAX_AGE_SECONDS`：可選；session 有效秒數
 - `OAUTH_AUTH_URI` / `OAUTH_TOKEN_URI` / `OAUTH_BASIC_URI` / `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET`：FISA Authorization Code Flow 後端設定，不得放入前端。
 - `OAUTH_SCOPE`：FISA scope，預設 `basic`；`OAUTH_TIMEOUT_SECONDS`：外部請求 timeout，預設 `10` 秒。
-- FISA callback URI 由 `APP_ENV` 與 `APP_DOMAIN` 產生；test 為 `https://api.ascs.sinica.edu.tw/test/auth/callback`，prod 為 `https://api.ascs.sinica.edu.tw/main/auth/callback`（依實際部署網域調整），須與 FISA 註冊值一致。
+- FISA callback URI 僅供 `prod` 使用，由 `APP_DOMAIN` 產生，預設路徑為 `/main/auth/callback`，須與 FISA 註冊值一致。
 - `FISA_SYSID_IS_DATAHUB_SSO_CONFIRMED`：需求方已確認 FISA 原始 `sysid` 精確對應 DataHub `sso`；部署時須明確設為 `true`，預設 `false` 以 fail-closed。
-- `DATAHUB_CLIENT_ID` 預設 `learnpoints`；`DATAHUB_CLIENT_SECRET` 無預設值，部署 `test/prod` 時必須提供。DataHub Token API 的 JSON `clientId`、`clientSecret` 分別使用這兩項設定，與 FISA SSO 的 `OAUTH_CLIENT_ID`、`OAUTH_CLIENT_SECRET` 完全獨立。缺少必要設定時登入會 fail-closed，不會略過未完訓檢查。
-- `DATAHUB_TOKEN_URL` / `DATAHUB_LIST_URL` / `DATAHUB_CLIENT_ID` / `DATAHUB_CLIENT_SECRET` / `DATAHUB_LIST_METHOD`：未完訓查詢後端設定；`DATAHUB_TIMEOUT_SECONDS` 預設 `3` 秒。正式端點與方法需由 API 提供方確認。設定完成後可執行 `./scripts/test_datahub_connectivity.sh`，驗證 Token 與名單查詢並只輸出不重複 SSO 數量；可用 `ENV_FILE=/path/to/.env` 指定設定檔。
+- `DATAHUB_CLIENT_ID` 預設 `learnpoints`；`DATAHUB_CLIENT_SECRET` 無預設值，部署 `prod/dev/test` 時都必須提供。DataHub Token API 的 JSON `clientId`、`clientSecret` 分別使用這兩項設定，與 FISA SSO 的 `OAUTH_CLIENT_ID`、`OAUTH_CLIENT_SECRET` 完全獨立。缺少必要設定時登入會 fail-closed，不會略過未完訓檢查。
+- `DATAHUB_TOKEN_URL` / `DATAHUB_LIST_URL` / `DATAHUB_CLIENT_ID` / `DATAHUB_CLIENT_SECRET`：未完訓查詢需填的四項設定。`DATAHUB_LIST_METHOD` 可留空，預設 `GET`；若名單 API 要求 `POST` 才需填入。`DATAHUB_TIMEOUT_SECONDS` 預設 `3` 秒。正式端點與方法需由 API 提供方確認。設定完成後可執行 `./scripts/test_datahub_connectivity.sh`，驗證 Token 與名單查詢並只輸出不重複 SSO 數量；可用 `ENV_FILE=/path/to/.env` 指定設定檔。
 
-- `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：僅 `APP_ENV=dev` 使用 `/dev/login` bypass 時建立 session 身分所需欄位
-- `DEV_LOGIN_ROLE`：可選，僅 `dev` bypass 身分角色（僅允許 `user` 或 `admin`，預設 `user`）
+- `DEV_LOGIN_ACCOUNT` / `DEV_LOGIN_NAME` / `DEV_LOGIN_EMAIL` / `DEV_LOGIN_DEPARTMENT` / `DEV_LOGIN_SYSID`：`APP_ENV=dev/test` 本機登入表單的可編輯預設值；未設定可在表單中輸入
+- `DEV_LOGIN_ROLE`：可選，`dev/test` 本機登入表單預選角色（僅允許 `user` 或 `admin`，預設 `user`）
 - `SCHEDULER_LOG_ROOT`：可選，排程腳本日誌根目錄（預設 `/home/app/log`，實際會寫入子目錄如 `sync_api_key_usage/`、`sync_expired_api_keys/`、`send_expiration_reminders/`）
 - `MAIL_ENABLED`：可選，是否啟用 Email 發送（預設 `false`）
 - `MAIL_SERVER` / `MAIL_PORT`：可選，SMTP 主機與連接埠
@@ -165,7 +165,7 @@ python -m uvicorn app.main:app --reload
 5. 開啟系統
 - 前端頁面：`http://127.0.0.1:8000/main/`
 - API 文件：`http://127.0.0.1:8000/main/docs`
-- OAuth 登入入口：test 使用 `http://localhost:8000/test/login`；prod 使用 `https://api.ascs.sinica.edu.tw/main/login`
+- 登入入口：test 使用本機身分 `http://localhost:8000/test/login`；prod 使用 FISA SSO `https://api.ascs.sinica.edu.tw/main/login`
 
 ## 前端更新流程
 - 修改前端後重新執行：
@@ -177,12 +177,13 @@ npm run build
 
 ## 開發備註
 
-Issue #57 已將 `test/prod` 登入接回 FISA SSO，並在建立 session 前查詢 DataHub 未完訓名單。FISA 原始 `sysid` 字串精確比對 DataHub `sso`，保留前導零；資料庫與既有准入仍使用整數 `sysid`。未完訓命中時所有身分拒絕，服務故障 fail-closed。正式啟用須配置已確認的 FISA/DataHub 端點與映射旗標，詳見 `backend/.env.example` 與 `docs/SPEC.md`。
+`prod` 登入使用 FISA SSO，並在建立 session 前查詢 DataHub 未完訓名單。FISA 原始 `sysid` 字串精確比對 DataHub `sso`，保留前導零；資料庫與既有准入仍使用整數 `sysid`。未完訓命中時所有身分拒絕，服務故障 fail-closed。正式啟用須配置已確認的 FISA/DataHub 端點與映射旗標，詳見 `backend/.env.example` 與 `docs/SPEC.md`。
 
 - 後端登入入口：
   - `APP_ENV=prod`：`GET /main/login` 走 FISA；callback 依序執行 DataHub 未完訓及 whitelist/admin/title-code 准入檢查。
-  - `APP_ENV=test`：路徑為 `/test`，同樣走 FISA 與 DataHub；沒有本機 OAuth 身分 fallback。
-  - `APP_ENV=dev`：路徑為 `/dev`，`GET /dev/login` 使用 `DEV_LOGIN_*` 直接建立 session auth context（`role` 由 `DEV_LOGIN_ROLE` 控制，僅 `user|admin`）。
+- `APP_ENV=test`：`GET /test/login` 開啟本機登入表單；以 `DEV_LOGIN_*` 預填帳號、姓名、Email、單位、SysID 及角色。不呼叫 FISA；每次送出表單都查詢 DataHub 未完訓名單，網路連線失敗或逾時時顯示警示並繼續登入，未完訓命中或其他 DataHub 錯誤時拒絕登入。
+- `APP_ENV=dev`：`GET /dev/login` 開啟相同表單，沿用 test 的 DataHub 檢查與警示規則。角色可用單選切換 `user` 或 `admin`。
+  - `GET/POST {path_base}/auth/local-login` 僅供 `dev/test` 取得預設值與建立本機 session；`prod` 回 `404`。
 - 前端公開拒絕頁：各環境的 `{path_base}/login-denied` 為不符登入資格時的公開頁，不需 session 即可顯示。
 - 前端公開錯誤頁：各環境的 `{path_base}/login-error` 用於登入流程非預期失敗，顯示失敗路由、簡短原因與 `request_id`。
 - 前端啟動時會呼叫 `GET {path_base}/api/v1/users/me` 取得目前 session 使用者資訊與 `csrf_token`。

@@ -43,7 +43,7 @@ class DataHubClient:
         list_url = self._url(settings.datahub_list_url, "DATAHUB_LIST_URL")
         client_id = self._required(settings.datahub_client_id)
         client_secret = self._required(settings.datahub_client_secret)
-        method = (settings.datahub_list_method or "").upper()
+        method = (settings.datahub_list_method or "").strip().upper() or "GET"
         if method not in {"GET", "POST"} or settings.datahub_timeout_seconds <= 0:
             raise DataHubError(DataHubErrorKind.CONFIGURATION)
 
