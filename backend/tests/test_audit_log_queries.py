@@ -216,11 +216,12 @@ def test_audit_logs_reject_invalid_sort_fields(client, admin_headers):
 
 def test_scheduler_logs_admin_only(client, admin_headers, user_headers, tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.scheduler_log_query_service.get_settings", lambda: type("S", (), {"scheduler_log_root": str(tmp_path)})())
+    today = datetime.now(TAIPEI_TZ).date().isoformat()
     _write_scheduler_log(
         tmp_path,
         "sync_expired_api_keys",
-        "2026-06-17",
-        ["[2026-06-17T00:05:01+08:00] level=INFO event=expired_key_sync updated_count=3 status=success"],
+        today,
+        [f"[{today}T00:05:01+08:00] level=INFO event=expired_key_sync updated_count=3 status=success"],
     )
 
     denied = client.get(api_path("/scheduler-logs"), headers=user_headers)

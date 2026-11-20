@@ -541,9 +541,10 @@ def test_login_bypasses_oauth_in_dev(client, monkeypatch):
     monkeypatch.setenv("DEV_LOGIN_ROLE", "admin")
     get_settings.cache_clear()
 
+    # The shared test app exposes /main as an alias; this handler uses APP_ENV=dev.
     resp = client.get("/main/login", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/main/announcements"
+    assert resp.headers["location"] == "/dev/announcements"
 
     me_resp = client.get("/main/api/v1/users/me")
     assert me_resp.status_code == 200
@@ -554,9 +555,10 @@ def test_login_bypasses_oauth_in_dev(client, monkeypatch):
     assert body["csrf_token"]
 
 
-def test_login_bypasses_oauth_in_test(client, monkeypatch):
+def test_login_uses_oauth_in_test_even_with_dev_login_config(client, monkeypatch):
     get_settings.cache_clear()
     monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("ALLOW_HEADER_AUTH", "false")
     monkeypatch.setenv("DEV_LOGIN_ACCOUNT", "test.user")
     monkeypatch.setenv("DEV_LOGIN_NAME", "Test User")
     monkeypatch.setenv("DEV_LOGIN_EMAIL", "test.user@example.com")
@@ -565,16 +567,15 @@ def test_login_bypasses_oauth_in_test(client, monkeypatch):
     monkeypatch.setenv("DEV_LOGIN_ROLE", "user")
     get_settings.cache_clear()
 
-    resp = client.get("/main/login", follow_redirects=False)
+    resp = client.get("/test/login", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/main/announcements"
+    oauth_url = urlparse(resp.headers["location"])
+    assert oauth_url.netloc == "accounts.google.com"
+    redirect_uri = parse_qs(oauth_url.query)["redirect_uri"][0]
+    assert urlparse(redirect_uri).path == "/test/auth/callback"
 
-    me_resp = client.get("/main/api/v1/users/me")
-    assert me_resp.status_code == 200
-    body = me_resp.json()
-    assert body["account"] == "test.user"
-    assert body["sysid"] == 990002
-    assert body["role"] == "user"
+    me_resp = client.get("/test/api/v1/users/me")
+    assert me_resp.status_code == 401
 
 
 def test_login_returns_500_when_dev_login_config_missing(client, monkeypatch):

@@ -18,6 +18,7 @@ from db.repositories.types import (
     ApiKeyUsageBucketItem,
     ApiKeyUsageSeriesItem,
     ApiKeyUsageTotal,
+    ApiKeyChartItem,
     ApiKeyUserStatisticsFilter,
     ApiKeyUserStatisticsItem,
     ApplicationCreateInput,
@@ -134,3 +135,9 @@ class ApiKeyRepository(Protocol):
         limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[ApiKeyUserStatisticsItem], int]: ...
+
+    def get_statistics_chart(
+        self, *, x_axis: str, y_axis: str, top_n: int, scope: str, filters: ApiKeyUserStatisticsFilter
+    ) -> tuple[list[ApiKeyChartItem], int, int]: ...
+
+    def list_statistics_departments(self) -> list[str]: ...

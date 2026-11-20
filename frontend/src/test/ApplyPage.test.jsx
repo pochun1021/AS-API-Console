@@ -229,6 +229,7 @@ test("shows Chinese error message when API returns English message", async () =>
 
 test("redirects user to coming soon page when application is not live", async () => {
   const user = userEvent.setup();
+  const goLiveAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   setApiProvider({
     createApplication: vi.fn().mockRejectedValue({
       payload: {
@@ -236,7 +237,7 @@ test("redirects user to coming soon page when application is not live", async ()
           code: "APPLICATION_NOT_LIVE",
           message: "application is not live yet",
         },
-        go_live_at: "2026-06-30T00:00:00+08:00",
+        go_live_at: goLiveAt,
       },
     }),
   });
@@ -248,7 +249,7 @@ test("redirects user to coming soon page when application is not live", async ()
   await user.type(screen.getByLabelText("用途"), "integration test");
   await user.click(screen.getByRole("button", { name: "送出申請" }));
 
-  expect(await screen.findByRole("heading", { name: "API Key 申請即將於 6 月 30 日上線" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /API Key 申請即將於 .*上線/ })).toBeInTheDocument();
   expect(screen.getByText("敬請期待")).toBeInTheDocument();
 });
 

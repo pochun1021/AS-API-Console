@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -48,10 +48,24 @@ function formatMaskedKey(value) {
   return String(value);
 }
 
+const defaultTableQuery = {
+  page: 0, pageSize: 10, scope: "all", from: "", to: "",
+  ownerAccount: "", ownerName: "", ownerEmail: "", ownerDepartment: "",
+  sortModel: [{ field: "total_applications", sort: "desc" }]
+};
+const defaultChartQuery = {
+  scope: "all", from: "", to: "", ownerDepartment: "",
+  xAxis: "account", yAxis: "total_applications", topN: 10
+};
+
 export default function AdminDashboardPage({ auth }) {
   const { locale, t } = useLocale();
   const gridLocaleText = getGridLocaleText(locale);
-  const { departmentOptions, formatDepartment } = useDepartmentDisplay(auth);
+  const { departmentOptions: instituteDepartmentOptions, formatDepartment, formatDepartmentOption } = useDepartmentDisplay(auth);
+  const [statisticsDepartments, setStatisticsDepartments] = useState([]);
+  const departmentOptions = statisticsDepartments.length > 0
+    ? statisticsDepartments.map((value) => ({ value, label: formatDepartmentOption(value, locale) }))
+    : instituteDepartmentOptions;
   const scopeOptions = ["all", "active", "revoked", "expired"];
   const topNOptions = [5, 10, 20];
   const xAxisOptions = [
@@ -75,38 +89,49 @@ export default function AdminDashboardPage({ auth }) {
     "expired_count",
     "last_applied_at"
   ]);
-  const [items, setItems] = useState([]);
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(10);
-  const [total, setTotal] = useState(0);
-  const [scope, setScope] = useState("all");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [sortModel, setSortModel] = useState([{ field: "total_applications", sort: "desc" }]);
-  const [ownerAccountFilter, setOwnerAccountFilter] = useState("");
-  const [ownerNameFilter, setOwnerNameFilter] = useState("");
-  const [ownerEmailFilter, setOwnerEmailFilter] = useState("");
-  const [ownerDepartmentFilter, setOwnerDepartmentFilter] = useState("");
+  const [tableQuery, setTableQuery] = useState(defaultTableQuery);
+  const [chartQuery, setChartQuery] = useState(defaultChartQuery);
+  const [tableItems, setTableItems] = useState([]);
+  const [chartItems, setChartItems] = useState([]);
+  const [tableTotal, setTableTotal] = useState(0);
   const [view, setView] = useState("table");
-  const [topN, setTopN] = useState(10);
-  const [xAxisField, setXAxisField] = useState("account");
-  const [yAxisField, setYAxisField] = useState("total_applications");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [banner, setBanner] = useState("");
+  const [tableLoading, setTableLoading] = useState(true);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [tableError, setTableError] = useState("");
+  const [chartError, setChartError] = useState("");
+  const tableRequest = useRef(0);
+  const chartRequest = useRef(0);
+  useEffect(() => {
+    if (auth.role !== "admin") return undefined;
+    let canceled = false;
+    apiClient.listApiKeyStatisticsDepartments(auth)
+      .then((response) => {
+        if (!canceled) setStatisticsDepartments(response.items || []);
+      })
+      .catch(() => {
+        if (!canceled) setStatisticsDepartments([]);
+      });
+    return () => { canceled = true; };
+  }, [auth.account, auth.role]);
   const [detailDialog, setDetailDialog] = useState({ open: false, title: "", ownerAccount: "", status: undefined });
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [detailItems, setDetailItems] = useState([]);
   const hasActiveFilters = Boolean(
-    scope !== "all" ||
-    fromDate ||
-    toDate ||
-    ownerAccountFilter.trim() ||
-    ownerNameFilter.trim() ||
-    ownerEmailFilter.trim() ||
-    ownerDepartmentFilter
+    tableQuery.scope !== "all" ||
+    tableQuery.from ||
+    tableQuery.to ||
+    tableQuery.ownerAccount.trim() ||
+    tableQuery.ownerName.trim() ||
+    tableQuery.ownerEmail.trim() ||
+    tableQuery.ownerDepartment ||
+    tableQuery.sortModel[0]?.field !== "total_applications" ||
+    tableQuery.sortModel[0]?.sort !== "desc" ||
+    tableQuery.page !== 0 || tableQuery.pageSize !== 10
   );
+  const hasActiveChartFilters = Object.keys(defaultChartQuery).some((key) => chartQuery[key] !== defaultChartQuery[key]);
+  const setTableFilter = (changes) => setTableQuery((query) => ({ ...query, ...changes, page: 0 }));
+  const setChartFilter = (changes) => setChartQuery((query) => ({ ...query, ...changes }));
 
   async function openDetailDialog(row, metric) {
     const status = metric === "active_count" ? "active" : undefined;
@@ -126,8 +151,8 @@ export default function AdminDashboardPage({ auth }) {
           page_size: 100,
           owner_account: row.owner_account,
           status,
-          from: fromDate || undefined,
-          to: toDate || undefined
+          from: tableQuery.from || undefined,
+          to: tableQuery.to || undefined
         },
         auth
       );
@@ -148,14 +173,7 @@ export default function AdminDashboardPage({ auth }) {
   }
 
   function clearFilters() {
-    setScope("all");
-    setFromDate("");
-    setToDate("");
-    setOwnerAccountFilter("");
-    setOwnerNameFilter("");
-    setOwnerEmailFilter("");
-    setOwnerDepartmentFilter("");
-    setPage(0);
+    setTableQuery(defaultTableQuery);
   }
 
   const columns = useMemo(
@@ -217,65 +235,74 @@ export default function AdminDashboardPage({ auth }) {
       { field: "expired_count", headerName: t("dashboard_col_expired_count"), type: "number", flex: 0.8, minWidth: 120 },
       { field: "last_applied_at", headerName: t("dashboard_col_last_applied_at"), flex: 1, minWidth: 140, filterable: false }
     ],
-    [t, fromDate, toDate, auth, formatDepartment, locale]
+    [t, tableQuery.from, tableQuery.to, auth, formatDepartment, locale]
   );
 
-  const chartItems = useMemo(() => {
-    const sorted = [...items].sort((a, b) => {
-      const av = Number(a[yAxisField] || 0);
-      const bv = Number(b[yAxisField] || 0);
-      if (av === bv) return a.owner_account.localeCompare(b.owner_account);
-      return bv - av;
-    });
-    return sorted.slice(0, topN).map((item) => ({
-      label: xAxisField === "department" ? formatDepartment(item.owner_department, locale) : item.owner_account,
-      value: Number(item[yAxisField] || 0)
-    }));
-  }, [items, topN, xAxisField, yAxisField, formatDepartment, locale]);
-
-  async function load() {
+  async function loadTable(query = tableQuery) {
     if (auth.role !== "admin") return;
-    setLoading(true);
-    setError("");
+    const requestId = ++tableRequest.current;
+    setTableLoading(true);
+    setTableError("");
     try {
-      const requestedSort = sortModel[0] || { field: "total_applications", sort: "desc" };
+      const requestedSort = query.sortModel[0] || { field: "total_applications", sort: "desc" };
       const sort = allowedSortFields.has(requestedSort.field)
         ? requestedSort
         : { field: "total_applications", sort: "desc" };
       const response = await apiClient.listApiKeyUserStatistics(
         {
-          page: page + 1,
-          page_size: pageSize,
-          scope,
-          from: fromDate || undefined,
-          to: toDate || undefined,
-          owner_account: ownerAccountFilter.trim() || undefined,
-          owner_name: ownerNameFilter.trim() || undefined,
-          owner_email: ownerEmailFilter.trim() || undefined,
-          owner_department: ownerDepartmentFilter.trim() || undefined,
+          page: query.page + 1,
+          page_size: query.pageSize,
+          scope: query.scope,
+          from: query.from || undefined,
+          to: query.to || undefined,
+          owner_account: query.ownerAccount.trim() || undefined,
+          owner_name: query.ownerName.trim() || undefined,
+          owner_email: query.ownerEmail.trim() || undefined,
+          owner_department: query.ownerDepartment.trim() || undefined,
           sort_by: sort.field,
           sort_dir: sort.sort || "desc"
         },
         auth
       );
-      setItems(response.items.map((item) => ({ ...item, id: item.owner_account })));
-      setTotal(response.total);
-      if (response.total === 0) {
-        setBanner(t("dashboard_empty_filtered"));
-      } else {
-        setBanner("");
-      }
+      if (requestId !== tableRequest.current) return;
+      setTableItems(response.items.map((item) => ({ ...item, id: item.owner_account })));
+      setTableTotal(response.total);
     } catch (e) {
-      setError(normalizeApiError(e, t("dashboard_load_failed")));
-      setBanner("");
+      if (requestId === tableRequest.current) setTableError(normalizeApiError(e, t("dashboard_load_failed")));
     } finally {
-      setLoading(false);
+      if (requestId === tableRequest.current) setTableLoading(false);
+    }
+  }
+
+  async function loadChart(query = chartQuery) {
+    if (auth.role !== "admin") return;
+    const requestId = ++chartRequest.current;
+    setChartLoading(true);
+    setChartError("");
+    try {
+      const response = await apiClient.getApiKeyStatisticsChart({
+        x_axis: query.xAxis, y_axis: query.yAxis, top_n: query.topN,
+        scope: query.scope, from: query.from || undefined, to: query.to || undefined,
+        owner_department: query.ownerDepartment.trim() || undefined
+      }, auth);
+      if (requestId !== chartRequest.current) return;
+      setChartItems(response.items);
+    } catch (e) {
+      if (requestId === chartRequest.current) setChartError(normalizeApiError(e, t("dashboard_load_failed")));
+    } finally {
+      if (requestId === chartRequest.current) setChartLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
-  }, [fromDate, ownerAccountFilter, ownerDepartmentFilter, ownerEmailFilter, ownerNameFilter, page, pageSize, scope, sortModel, toDate]);
+    if (view === "table") loadTable(tableQuery);
+    return () => { tableRequest.current += 1; };
+  }, [view, tableQuery]);
+
+  useEffect(() => {
+    if (view === "chart") loadChart(chartQuery);
+    return () => { chartRequest.current += 1; };
+  }, [view, chartQuery]);
 
   if (auth.role !== "admin") {
     return (
@@ -289,7 +316,7 @@ export default function AdminDashboardPage({ auth }) {
   return (
     <Stack spacing={2} sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Typography variant="h4">{t("dashboard_title")}</Typography>
-      {banner ? <Alert severity="info">{banner}</Alert> : null}
+      {view === "table" && !tableLoading && !tableError && tableTotal === 0 ? <Alert severity="info">{t("dashboard_empty_filtered")}</Alert> : null}
 
       <Tabs value={view} onChange={(_, value) => setView(value)} aria-label={t("dashboard_view_toggle")}>
         <Tab value="table" label={t("dashboard_tab_table")} />
@@ -301,10 +328,9 @@ export default function AdminDashboardPage({ auth }) {
           <TextField
             select
             label={t("dashboard_scope")}
-            value={scope}
+            value={tableQuery.scope}
             onChange={(event) => {
-              setScope(event.target.value);
-              setPage(0);
+              setTableFilter({ scope: event.target.value });
             }}
             sx={{ minWidth: 180 }}
           >
@@ -316,53 +342,47 @@ export default function AdminDashboardPage({ auth }) {
           </TextField>
           <DateRangeFilterField
             label={t("dashboard_date_range")}
-            fromValue={fromDate}
-            toValue={toDate}
+            fromValue={tableQuery.from}
+            toValue={tableQuery.to}
             startLabel={t("dashboard_from")}
             endLabel={t("dashboard_to")}
             clearLabel={t("common_clear")}
             closeLabel={t("common_close")}
             minWidth={260}
             onChange={({ from, to }) => {
-              setFromDate(from);
-              setToDate(to);
-              setPage(0);
+              setTableFilter({ from, to });
             }}
           />
           <TextField
             label={t("dashboard_col_owner_account")}
-            value={ownerAccountFilter}
+            value={tableQuery.ownerAccount}
             onChange={(event) => {
-              setOwnerAccountFilter(event.target.value);
-              setPage(0);
+              setTableFilter({ ownerAccount: event.target.value });
             }}
             sx={{ minWidth: 180 }}
           />
           <TextField
             label={t("dashboard_col_owner_name")}
-            value={ownerNameFilter}
+            value={tableQuery.ownerName}
             onChange={(event) => {
-              setOwnerNameFilter(event.target.value);
-              setPage(0);
+              setTableFilter({ ownerName: event.target.value });
             }}
             sx={{ minWidth: 180 }}
           />
           <TextField
             label={t("dashboard_col_owner_email")}
-            value={ownerEmailFilter}
+            value={tableQuery.ownerEmail}
             onChange={(event) => {
-              setOwnerEmailFilter(event.target.value);
-              setPage(0);
+              setTableFilter({ ownerEmail: event.target.value });
             }}
             sx={{ minWidth: 220 }}
           />
           <TextField
             select
             label={t("dashboard_col_owner_department")}
-            value={ownerDepartmentFilter}
+            value={tableQuery.ownerDepartment}
             onChange={(event) => {
-              setOwnerDepartmentFilter(event.target.value);
-              setPage(0);
+              setTableFilter({ ownerDepartment: event.target.value });
             }}
             sx={{ minWidth: 220 }}
           >
@@ -379,33 +399,31 @@ export default function AdminDashboardPage({ auth }) {
         </Stack>
       ) : null}
 
-      {loading ? <LoadingBlock text={t("dashboard_loading")} /> : null}
-      {!loading && error ? <ErrorBlock message={error} onRetry={load} /> : null}
-      {!loading && !error && items.length === 0 ? <EmptyBlock text={t("dashboard_no_data")} /> : null}
+      {view === "table" && tableLoading ? <LoadingBlock text={t("dashboard_loading")} /> : null}
+      {view === "table" && !tableLoading && tableError ? <ErrorBlock message={tableError} onRetry={() => loadTable()} /> : null}
+      {view === "table" && !tableLoading && !tableError && tableItems.length === 0 ? <EmptyBlock text={t("dashboard_no_data")} /> : null}
 
-      {!loading && !error && items.length > 0 && view === "table" ? (
+      {!tableLoading && !tableError && tableItems.length > 0 && view === "table" ? (
         <Box sx={{ width: "100%", borderRadius: 2, p: 0.5, flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "white" }}>
           <DataGrid
             sx={compactGridSx}
-            rows={items}
+            rows={tableItems}
             columns={columns}
             pageSizeOptions={COMPACT_MAIN_PAGE_SIZE_OPTIONS}
             paginationMode="server"
             sortingMode="server"
-            rowCount={total}
-            paginationModel={{ page, pageSize }}
+            rowCount={tableTotal}
+            paginationModel={{ page: tableQuery.page, pageSize: tableQuery.pageSize }}
             onPaginationModelChange={(model) => {
-              setPage(model.page);
-              setPageSize(model.pageSize);
+              setTableQuery((query) => ({ ...query, page: model.page, pageSize: model.pageSize }));
             }}
-            sortModel={sortModel}
+            sortModel={tableQuery.sortModel}
             onSortModelChange={(model) => {
               if (model.length === 0) {
-                setSortModel([{ field: "total_applications", sort: "desc" }]);
+                setTableFilter({ sortModel: [{ field: "total_applications", sort: "desc" }] });
                 return;
               }
-              setSortModel(model);
-              setPage(0);
+              setTableFilter({ sortModel: model });
             }}
             disableRowSelectionOnClick
             {...compactGridProps}
@@ -414,16 +432,34 @@ export default function AdminDashboardPage({ auth }) {
         </Box>
       ) : null}
 
-      {!loading && !error && items.length > 0 && view === "chart" ? (
+      {view === "chart" ? (
         <Card>
           <CardContent>
             <Stack spacing={2}>
-              <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={2} useFlexGap flexWrap="wrap">
+                <TextField select label={t("dashboard_scope")} value={chartQuery.scope}
+                  onChange={(event) => setChartFilter({ scope: event.target.value })} sx={{ minWidth: 180 }}>
+                  {scopeOptions.map((option) => <MenuItem key={option} value={option}>{t(`dashboard_scope_${option}`)}</MenuItem>)}
+                </TextField>
+                <DateRangeFilterField
+                  label={t("dashboard_date_range")}
+                  fromValue={chartQuery.from} toValue={chartQuery.to}
+                  startLabel={t("dashboard_from")} endLabel={t("dashboard_to")}
+                  clearLabel={t("common_clear")} closeLabel={t("common_close")}
+                  minWidth={260} onChange={({ from, to }) => setChartFilter({ from, to })}
+                />
+                <TextField select label={t("dashboard_col_owner_department")}
+                  value={chartQuery.ownerDepartment}
+                  onChange={(event) => setChartFilter({ ownerDepartment: event.target.value })}
+                  sx={{ minWidth: 220 }}>
+                  <MenuItem value="">{t("dashboard_all_departments")}</MenuItem>
+                  {departmentOptions.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
+                </TextField>
                 <TextField
                   select
                   label={t("dashboard_axis_x")}
-                  value={xAxisField}
-                  onChange={(event) => setXAxisField(event.target.value)}
+                  value={chartQuery.xAxis}
+                  onChange={(event) => setChartFilter({ xAxis: event.target.value })}
                   sx={{ minWidth: 180 }}
                 >
                   {xAxisOptions.map((option) => (
@@ -435,8 +471,8 @@ export default function AdminDashboardPage({ auth }) {
                 <TextField
                   select
                   label={t("dashboard_axis_y")}
-                  value={yAxisField}
-                  onChange={(event) => setYAxisField(event.target.value)}
+                  value={chartQuery.yAxis}
+                  onChange={(event) => setChartFilter({ yAxis: event.target.value })}
                   sx={{ minWidth: 180 }}
                 >
                   {yAxisOptions.map((option) => (
@@ -448,8 +484,8 @@ export default function AdminDashboardPage({ auth }) {
                 <TextField
                   select
                   label={t("dashboard_top_n")}
-                  value={topN}
-                  onChange={(event) => setTopN(Number(event.target.value))}
+                  value={chartQuery.topN}
+                  onChange={(event) => setChartFilter({ topN: Number(event.target.value) })}
                   sx={{ minWidth: 180 }}
                 >
                   {topNOptions.map((option) => (
@@ -458,7 +494,14 @@ export default function AdminDashboardPage({ auth }) {
                     </MenuItem>
                   ))}
                 </TextField>
+                <Button variant="outlined" onClick={() => setChartQuery(defaultChartQuery)} disabled={!hasActiveChartFilters} sx={{ minHeight: 56 }}>
+                  {t("mykeys_clear_filters")}
+                </Button>
               </Stack>
+            {chartLoading ? <LoadingBlock text={t("dashboard_loading")} /> : null}
+            {!chartLoading && chartError ? <ErrorBlock message={chartError} onRetry={() => loadChart()} /> : null}
+            {!chartLoading && !chartError && chartItems.length === 0 ? <EmptyBlock text={t("dashboard_no_data")} /> : null}
+            {!chartLoading && !chartError && chartItems.length > 0 ? (
               <BarChart
                 height={420}
                 xAxis={[
@@ -466,7 +509,7 @@ export default function AdminDashboardPage({ auth }) {
                     id: "x-axis",
                     scaleType: "band",
                     position: "bottom",
-                    data: chartItems.map((item) => item.label),
+                    data: chartItems.map((item) => chartQuery.xAxis === "department" ? formatDepartment(item.label, locale) : item.label),
                     tickLabelInterval: () => true,
                     height: "auto",
                     tickLabelStyle: {
@@ -476,9 +519,10 @@ export default function AdminDashboardPage({ auth }) {
                     }
                   }
                 ]}
-                series={[{ data: chartItems.map((item) => item.value), label: yAxisOptions.find((o) => o.value === yAxisField)?.label }]}
+                series={[{ data: chartItems.map((item) => item.value), label: yAxisOptions.find((o) => o.value === chartQuery.yAxis)?.label }]}
                 margin={{ left: 60, right: 20, top: 30, bottom: 120 }}
               />
+            ) : null}
             </Stack>
           </CardContent>
         </Card>

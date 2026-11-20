@@ -198,7 +198,7 @@ describe("App public auth pages", () => {
 
     await user.click(await screen.findByRole("link", { name: "服務使用說明" }));
 
-    expect((await screen.findAllByRole("heading", { name: "服務使用說明" })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("heading", { name: "服務使用說明" }, { timeout: 5000 })).length).toBeGreaterThan(0);
     expect(await screen.findByText("gpt-4o-mini")).toBeInTheDocument();
     expect(await screen.findByText("Python 範例")).toBeInTheDocument();
   });

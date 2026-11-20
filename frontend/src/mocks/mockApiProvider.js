@@ -1,8 +1,11 @@
+import dayjs from "dayjs";
 import { containsOnlyAllowedPersistedTextCharacters, containsUnsafePersistedText, isAsciiDigits } from "../utils/inputValidation";
 
 const today = new Date().toISOString().slice(0, 10);
 const daysFromNow = (days) => new Date(Date.now() + 1000 * 60 * 60 * 24 * days).toISOString();
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+const schedulerLogToday = dayjs().format("YYYY-MM-DD");
+const schedulerLogYesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
 
 function startOfUtcDay(value) {
   const dt = value instanceof Date ? new Date(value) : new Date(value);
@@ -452,32 +455,32 @@ let schedulerLogs = [
   {
     id: "schedlog_001",
     job: "sync_api_key_usage",
-    log_date: "2026-06-17",
-    source_file: "2026-06-17.log",
-    timestamp: "2026-06-17T00:15:01+08:00",
+    log_date: schedulerLogToday,
+    source_file: `${schedulerLogToday}.log`,
+    timestamp: `${schedulerLogToday}T00:15:01+08:00`,
     level: "ERROR",
     message: "event=usage_sync mode=sync processed_keys=10 success=8 failed=2",
-    raw_line: "[2026-06-17T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2"
+    raw_line: `[${schedulerLogToday}T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2`
   },
   {
     id: "schedlog_002",
     job: "sync_api_key_usage",
-    log_date: "2026-06-17",
-    source_file: "2026-06-17.log",
-    timestamp: "2026-06-17T00:05:01+08:00",
+    log_date: schedulerLogToday,
+    source_file: `${schedulerLogToday}.log`,
+    timestamp: `${schedulerLogToday}T00:05:01+08:00`,
     level: "INFO",
     message: "event=usage_sync mode=sync processed_keys=10 success=9 failed=1",
-    raw_line: "[2026-06-17T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1"
+    raw_line: `[${schedulerLogToday}T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1`
   },
   {
     id: "schedlog_003",
     job: "send_expiration_reminders",
-    log_date: "2026-06-16",
-    source_file: "2026-06-16.log",
-    timestamp: "2026-06-16T08:00:00+08:00",
+    log_date: schedulerLogYesterday,
+    source_file: `${schedulerLogYesterday}.log`,
+    timestamp: `${schedulerLogYesterday}T08:00:00+08:00`,
     level: "WARNING",
     message: "event=expiration_notice sent=0 failed=1",
-    raw_line: "[2026-06-16T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1"
+    raw_line: `[${schedulerLogYesterday}T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1`
   }
 ];
 let authAuditLogs = [
@@ -740,7 +743,6 @@ function buildUserStatistics(
     if (owner_account && !containsCI(item.owner_account, owner_account)) return false;
     if (owner_name && !containsCI(item.owner_name, owner_name)) return false;
     if (owner_email && !containsCI(`${item.owner_account}@example.com`, owner_email)) return false;
-    if (owner_department && !containsCI(item.department || "", owner_department)) return false;
     if (!keyword) return true;
     return [item.owner_account, item.owner_name, `${item.owner_account}@example.com`]
       .join(" ")
@@ -764,6 +766,9 @@ function buildUserStatistics(
       });
     }
     const stat = byOwner.get(item.owner_account);
+    if ((item.department || "") > stat.owner_department) {
+      stat.owner_department = item.department;
+    }
     stat.total_applications += 1;
     if (item.status === "active") stat.active_count += 1;
     if (item.status === "revoked") stat.revoked_count += 1;
@@ -772,7 +777,9 @@ function buildUserStatistics(
       stat.last_applied_at = item.application_date;
     }
   }
-  return Array.from(byOwner.values());
+  return Array.from(byOwner.values()).filter(
+    (stat) => !owner_department || containsCI(stat.owner_department, owner_department)
+  );
 }
 
 function ensureUsageAccess(item, auth) {
@@ -1022,6 +1029,36 @@ export const mockApiProvider = {
       page,
       page_size: pageSize,
       total: sorted.length
+    };
+  },
+
+  async listApiKeyStatisticsDepartments(auth) {
+    await delay();
+    ensureAdmin(auth);
+    return {
+      items: [...new Set(buildUserStatistics(apiKeys, {}).map((item) => item.owner_department))]
+        .filter(Boolean)
+        .sort()
+    };
+  },
+  async getApiKeyStatisticsChart(params, auth) {
+    await delay();
+    ensureAdmin(auth);
+    const stats = buildUserStatistics(apiKeys, params);
+    const metric = params.y_axis || "total_applications";
+    const byLabel = new Map();
+    for (const stat of stats) {
+      const label = params.x_axis === "department" ? stat.owner_department : stat.owner_account;
+      byLabel.set(label, (byLabel.get(label) || 0) + stat[metric]);
+    }
+    const sorted = [...byLabel].map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+    const items = sorted.slice(0, params.top_n || 10);
+    return {
+      items, x_axis: params.x_axis || "account", y_axis: metric, top_n: params.top_n || 10,
+      total_value: sorted.reduce((sum, item) => sum + item.value, 0),
+      displayed_value: items.reduce((sum, item) => sum + item.value, 0),
+      group_count: sorted.length
     };
   },
 
@@ -1765,32 +1802,32 @@ export const mockApiProvider = {
       {
         id: "schedlog_001",
         job: "sync_api_key_usage",
-        log_date: "2026-06-17",
-        source_file: "2026-06-17.log",
-        timestamp: "2026-06-17T00:15:01+08:00",
+        log_date: schedulerLogToday,
+        source_file: `${schedulerLogToday}.log`,
+        timestamp: `${schedulerLogToday}T00:15:01+08:00`,
         level: "ERROR",
         message: "event=usage_sync mode=sync processed_keys=10 success=8 failed=2",
-        raw_line: "[2026-06-17T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2"
+        raw_line: `[${schedulerLogToday}T00:15:01+08:00] level=ERROR event=usage_sync mode=sync processed_keys=10 success=8 failed=2`
       },
       {
         id: "schedlog_002",
         job: "sync_api_key_usage",
-        log_date: "2026-06-17",
-        source_file: "2026-06-17.log",
-        timestamp: "2026-06-17T00:05:01+08:00",
+        log_date: schedulerLogToday,
+        source_file: `${schedulerLogToday}.log`,
+        timestamp: `${schedulerLogToday}T00:05:01+08:00`,
         level: "INFO",
         message: "event=usage_sync mode=sync processed_keys=10 success=9 failed=1",
-        raw_line: "[2026-06-17T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1"
+        raw_line: `[${schedulerLogToday}T00:05:01+08:00] level=INFO event=usage_sync mode=sync processed_keys=10 success=9 failed=1`
       },
       {
         id: "schedlog_003",
         job: "send_expiration_reminders",
-        log_date: "2026-06-16",
-        source_file: "2026-06-16.log",
-        timestamp: "2026-06-16T08:00:00+08:00",
+        log_date: schedulerLogYesterday,
+        source_file: `${schedulerLogYesterday}.log`,
+        timestamp: `${schedulerLogYesterday}T08:00:00+08:00`,
         level: "WARNING",
         message: "event=expiration_notice sent=0 failed=1",
-        raw_line: "[2026-06-16T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1"
+        raw_line: `[${schedulerLogYesterday}T08:00:00+08:00] level=WARNING event=expiration_notice sent=0 failed=1`
       }
     ];
     authAuditLogs = [
