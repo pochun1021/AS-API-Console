@@ -1715,7 +1715,7 @@ def test_pending_endpoints_removed(client, admin_headers, user_headers):
 
 def test_issue_pending_endpoint_removed(client, admin_headers):
     resp = client.post(_api("/api-keys/applications/dummy-id/issue"), headers=admin_headers)
-    assert resp.status_code == 405
+    assert resp.status_code == 404
 
 
 def test_issue_pending_application_does_not_send_issued_email(client, admin_headers, user_headers, monkeypatch):
@@ -2866,7 +2866,9 @@ def test_error_response_shape_consistency(client, admin_headers, user_headers):
         assert ":" in body["error"]["details"]
 
 
-def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin_headers):
+def test_admin_user_statistics_default_sort_scope_and_no_plaintext(client, admin_headers, monkeypatch):
+    monkeypatch.setenv("ALLOW_HEADER_AUTH", "true")
+    get_settings.cache_clear()
     user1 = build_headers(
         role="user", account="alice", email="alice@example.com", sysid=8101, name="Alice", department="R&D"
     )

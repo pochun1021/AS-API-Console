@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import dayjs from "dayjs";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { MemoryRouter } from "react-router-dom";
@@ -144,7 +145,7 @@ test("announcement page lets user filter by publish-from date range", async () =
 
   await screen.findByText("系統公告");
   await user.click(screen.getByRole("button", { name: "上架時間 picker" }));
-  await user.click(await screen.findByRole("button", { name: /2026年6月15日|今天，2026年6月15日/i }));
+  await user.click(await screen.findByRole("button", { name: new RegExp(dayjs().format("YYYY年M月D日")) }));
   await user.click(screen.getByRole("button", { name: "關閉" }));
 
   await waitFor(() => {

@@ -167,6 +167,18 @@ export const httpApiProvider = {
     return request(`${apiPath("/api-keys/statistics/users")}?${query.toString()}`, { auth });
   },
 
+  listApiKeyStatisticsDepartments(auth) {
+    return request(apiPath("/api-keys/statistics/departments"), { auth });
+  },
+
+  getApiKeyStatisticsChart(params, auth) {
+    const query = new URLSearchParams();
+    for (const key of ["x_axis", "y_axis", "top_n", "scope", "from", "to", "owner_department"]) {
+      if (params[key] !== undefined && params[key] !== "") query.set(key, String(params[key]));
+    }
+    return request(`${apiPath("/api-keys/statistics/chart")}?${query.toString()}`, { auth });
+  },
+
   listOperationAuditLogs(params, auth) {
     const query = new URLSearchParams();
     if (params?.page) query.set("page", String(params.page));

@@ -16,6 +16,35 @@ def _payload(*, title: str, status: str = "active", publish_from=None, publish_t
     }
 
 
+def test_announcements_session_mutation_requires_csrf_token(client):
+    login = client.post(
+        "/main/test/session-login",
+        json={
+            "account": "announcements.admin",
+            "name": "Announcements Admin",
+            "email": "announcements.admin@example.com",
+            "department": "IT",
+            "sysid": 930058,
+            "role": "admin",
+        },
+    )
+    assert login.status_code == 200
+    token = login.json()["csrf_token"]
+    assert token
+
+    payload = _payload(title="CSRF protected")
+    missing = client.post(api_path("/announcements"), json=payload)
+    assert missing.status_code == 403
+    assert missing.json()["error"]["message"] == "csrf token invalid"
+
+    invalid = client.post(api_path("/announcements"), headers={"X-CSRF-Token": "invalid"}, json=payload)
+    assert invalid.status_code == 403
+    assert invalid.json()["error"]["message"] == "csrf token invalid"
+
+    valid = client.post(api_path("/announcements"), headers={"X-CSRF-Token": token}, json=payload)
+    assert valid.status_code == 201
+
+
 def test_announcements_user_and_admin_only_see_active_window_items(client, admin_headers, user_headers):
     now = datetime.now(UTC)
     payloads = [

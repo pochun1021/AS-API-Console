@@ -275,8 +275,8 @@ def test_usage_sync_script_fetches_multiple_provider_pages(client, admin_headers
     key_alias = item["key_alias"]
     key_hash = _fetch_key_row(key_id)["key_hash"]
     sync_now = datetime.now(UTC).replace(microsecond=0)
-    first_page_log_time = datetime(2026, 6, 8, 2, 0, 0, tzinfo=UTC)
-    second_page_log_time = datetime(2026, 6, 8, 3, 0, 0, tzinfo=UTC)
+    first_page_log_time = sync_now - timedelta(hours=2)
+    second_page_log_time = sync_now - timedelta(hours=1)
     budget_reset_at = sync_now + timedelta(days=1)
 
     class _FakeProviderClient:

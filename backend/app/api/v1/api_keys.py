@@ -17,6 +17,8 @@ from app.schemas.api_keys import (
     ApiKeyUsageSeriesResponse,
     ApiKeyUsageSyncResponse,
     ApiKeyUsageTotalResponse,
+    ApiKeyChartResponse,
+    ApiKeyStatisticsDepartmentsResponse,
     ApiKeyUserStatisticsResponse,
     LimitStrategyConfigResponse,
     LimitStrategyConfigUpdateRequest,
@@ -199,6 +201,49 @@ def get_api_key_usage_total(
 ) -> dict:
     service = ApiKeysService(db)
     return service.get_usage_total(current_user=current_user)
+
+
+@router.get("/api-keys/statistics/departments", response_model=ApiKeyStatisticsDepartmentsResponse)
+def list_api_key_statistics_departments(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    return ApiKeysService(db).list_statistics_departments(current_user=current_user)
+
+
+@router.get("/api-keys/statistics/chart", response_model=ApiKeyChartResponse)
+def get_api_key_statistics_chart(
+    x_axis: str = Query(default="account"),
+    y_axis: str = Query(default="total_applications"),
+    top_n: int = Query(default=10),
+    scope: str = Query(default="all"),
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
+    q: str | None = Query(default=None),
+    owner_account: str | None = Query(default=None),
+    owner_name: str | None = Query(default=None),
+    owner_email: str | None = Query(default=None),
+    owner_department: str | None = Query(default=None),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    validate_date_window(from_date, to_date)
+    for keyword in (q, owner_account, owner_name, owner_email, owner_department):
+        validate_search_keyword(keyword)
+    return ApiKeysService(db).get_statistics_chart(
+        current_user=current_user,
+        x_axis=x_axis,
+        y_axis=y_axis,
+        top_n=top_n,
+        scope=scope,
+        from_date=from_date,
+        to_date=to_date,
+        q=q,
+        owner_account=owner_account,
+        owner_name=owner_name,
+        owner_email=owner_email,
+        owner_department=owner_department,
+    )
 
 
 @router.get("/api-keys/statistics/users", response_model=ApiKeyUserStatisticsResponse)
