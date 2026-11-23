@@ -67,6 +67,14 @@ AS API Console 是一套 API Key 申請與管理系統，提供從申請、核�
 - 不提供 pending 補發端點；前端不提供待審申請頁面入口。
 
 ## 啟動方式
+
+前端開發與建置建議使用 Node.js 20.x（與 CI 設定一致）及 npm 10.x。安裝依賴前先確認版本：
+
+```bash
+node --version
+npm --version
+```
+
 1. 安裝依賴
 ```bash
 brew install mariadb-connector-c
@@ -166,6 +174,8 @@ python -m uvicorn app.main:app --reload
 - 前端頁面：`http://127.0.0.1:8000/main/`
 - API 文件：`http://127.0.0.1:8000/main/docs`
 - 登入入口：test 使用本機身分 `http://localhost:8000/test/login`；prod 使用 FISA SSO `https://api.ascs.sinica.edu.tw/main/login`
+
+若 server 無法從本機直連，請依 [Ubuntu 部署指南的 SSH 本機轉發快速測試](docs/deploy-ubuntu-nginx.md#81-無法直連-server-時快速測試) 操作。
 
 ## 前端更新流程
 - 修改前端後重新執行：

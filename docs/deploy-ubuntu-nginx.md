@@ -15,6 +15,7 @@
 - 已準備網域，例如 `api.ascs.sinica.edu.tw`
 - DNS A record 已指向此 Ubuntu 主機公網 IP
 - 防火牆已開放 `80`、`443`
+- 已安裝 Node.js 20.x（與 CI 設定一致）及 npm 10.x，供 frontend 建置使用；部署前以 `node --version`、`npm --version` 確認。
 
 建議先確認 DNS：
 ```bash
@@ -178,13 +179,45 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 '
 ```
 
-另一個 terminal 測試：
+在 server 的另一個 terminal 測試：
+
 ```bash
 curl -I http://127.0.0.1:8000/main/
 curl -I http://127.0.0.1:8000/main/docs
 ```
 
 確認正常後，用 `Ctrl+C` 停掉手動服務。
+
+### 8.1 無法直連 server 時快速測試
+
+以下為上方手動啟動的替代方式。先確認 8000 port 沒有其他 Uvicorn 程序佔用，再於 server 啟動：
+
+```bash
+sudo -u asapic -H bash -lc '
+cd /home/app/AS-API-Console/backend
+. .venv/bin/activate
+export ENV_FILE=/home/app/config/.env
+set -a
+source "$ENV_FILE"
+set +a
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log
+'
+```
+
+在**本機另一個 terminal** 建立 SSH 本機轉發（將 `<user>`、`<server>` 換成實際 SSH 帳號與主機）：
+
+```bash
+ssh -N -L 8000:127.0.0.1:8000 <user>@<server>
+```
+
+保持 SSH 連線開啟，再於本機瀏覽 `http://127.0.0.1:8000/main/`，或在本機執行：
+
+```bash
+curl -I http://127.0.0.1:8000/main/
+curl -I http://127.0.0.1:8000/main/docs
+```
+
+確認正常後，用 `Ctrl+C` 停掉 SSH 轉發與快速測試服務。快速測試的 `0.0.0.0` 會綁定所有網路介面；不要對外開放 8000 port。一般手動驗證與下方 systemd 服務仍使用 `127.0.0.1`。
 
 ## 9. 建立 systemd 服務
 
