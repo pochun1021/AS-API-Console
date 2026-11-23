@@ -1,5 +1,5 @@
 def test_openapi_documents_security_scan_response_codes(client):
-    resp = client.get("/main/openapi.json")
+    resp = client.get(client.app.openapi_url)
     assert resp.status_code == 200
 
     paths = resp.json()["paths"]

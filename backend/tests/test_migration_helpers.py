@@ -72,6 +72,11 @@ def test_safe_drop_index_only_drops_existing_index(monkeypatch):
 
 def test_safe_drop_constraint_only_drops_existing_named_constraint(monkeypatch):
     monkeypatch.setattr(
+        helpers.op,
+        "get_bind",
+        lambda: SimpleNamespace(dialect=SimpleNamespace(name="sqlite")),
+    )
+    monkeypatch.setattr(
         helpers,
         "get_inspector",
         lambda: _FakeInspector(
