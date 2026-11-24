@@ -3,6 +3,7 @@
 
 # Local code navigation
 .serena/
+.playwright-cli/
 
 # Python
 .venv/
