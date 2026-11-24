@@ -42,17 +42,18 @@ def test_session_login(
 
     if role == "admin":
         repo = SQLAlchemyAdminRepository(db)
-        repo.upsert_from_auth(
-            AuthIdentity(
-                account=payload.account,
-                name=payload.name,
-                email=payload.email.lower(),
-                department=payload.department,
-                sysid=payload.sysid,
-            ),
-            created_by="test-session-login",
-        )
-        db.commit()
+        if repo.get_by_id(payload.sysid) is None and repo.get_by_account(payload.account) is None:
+            repo.upsert_from_auth(
+                AuthIdentity(
+                    account=payload.account,
+                    name=payload.name,
+                    email=payload.email.lower(),
+                    department=payload.department,
+                    sysid=payload.sysid,
+                ),
+                created_by="test-session-login",
+            )
+            db.commit()
 
     return {
         "account": payload.account,

@@ -1069,7 +1069,9 @@ def test_application_rejects_non_whitelisted(client, user_headers):
     assert resp.json()["error"]["code"] == "APPLICANT_NOT_ELIGIBLE"
 
 
-def test_application_rejects_missing_auth_headers_with_field_details(client, user_headers):
+def test_application_rejects_missing_auth_headers_with_field_details(client, user_headers, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "dev")
+    get_settings.cache_clear()
     _create_whitelist(client, admin_headers=build_headers(role="admin", account="admin", email="admin@example.com", sysid="1001"), sysid=user_headers["x-sysid"])
     invalid_headers = dict(user_headers)
     invalid_headers.pop("x-name")
@@ -1085,7 +1087,9 @@ def test_application_rejects_missing_auth_headers_with_field_details(client, use
     assert "x-name" in resp.json()["error"]["message"]
 
 
-def test_application_rejects_non_numeric_sysid(client, user_headers):
+def test_application_rejects_non_numeric_sysid(client, user_headers, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "dev")
+    get_settings.cache_clear()
     invalid_headers = build_headers(role="user", account="user1", email="user1@example.com", sysid="not-a-number")
 
     resp = client.post(
@@ -1406,22 +1410,35 @@ def test_provider_update_payload_builder_converts_zero_limits_to_null():
 
 
 def test_prod_env_masks_and_stores_sk_prefix(client, admin_headers, user_headers, monkeypatch):
+    _create_whitelist(client, admin_headers, user_headers["x-sysid"])
+    login = client.post(
+        "/main/test/session-login",
+        json={
+            "account": user_headers["x-account"],
+            "name": user_headers["x-name"],
+            "email": user_headers["x-email"],
+            "department": user_headers["x-department"],
+            "sysid": int(user_headers["x-sysid"]),
+            "role": "user",
+        },
+    )
+    assert login.status_code == 200
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("ALLOW_HEADER_AUTH", "true")
+    monkeypatch.setenv("SESSION_SECRET_KEY", "test-only-production-session-secret-32-chars")
     get_settings.cache_clear()
 
     try:
-        _create_whitelist(client, admin_headers, user_headers["x-sysid"])
         create_resp = client.post(
             _api("/api-keys/applications"),
-            headers=user_headers,
+            headers={get_settings().csrf_header_name: login.json()["csrf_token"]},
             json={"application_date": str(date.today()), "duration_days": 30, "purpose": "prod prefix"},
         )
         assert create_resp.status_code == 201
         assert create_resp.json()["api_key_plaintext"].startswith("sk-")
 
-        key_id = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]["id"]
-        listed = client.get(_api("/api-keys"), headers=user_headers).json()["items"][0]
+        key_id = client.get(_api("/api-keys")).json()["items"][0]["id"]
+        listed = client.get(_api("/api-keys")).json()["items"][0]
         assert listed["masked_key"].startswith("sk-...")
 
         settings = get_settings()
@@ -1433,6 +1450,7 @@ def test_prod_env_masks_and_stores_sk_prefix(client, admin_headers, user_headers
         assert row[0] == "sk-"
     finally:
         monkeypatch.delenv("ALLOW_HEADER_AUTH", raising=False)
+        monkeypatch.delenv("SESSION_SECRET_KEY", raising=False)
         monkeypatch.setenv("APP_ENV", "test")
         get_settings.cache_clear()
 
@@ -2826,7 +2844,9 @@ def test_admin_update_key_alias_allows_ideographic_comma(client, admin_headers):
     assert updated.json()["key_alias"] == "平台、批次_key"
 
 
-def test_missing_sysid_rejected_and_no_records_created(client, admin_headers):
+def test_missing_sysid_rejected_and_no_records_created(client, admin_headers, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "dev")
+    get_settings.cache_clear()
     _create_whitelist(client, admin_headers, 8100)
     bad_headers = {
         "x-account": "nosys",

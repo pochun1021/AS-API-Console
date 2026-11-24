@@ -187,9 +187,12 @@ def test_users_admin_role_endpoints(client, admin_headers, monkeypatch):
     assert disable.json()["role"] == "admin"
     assert disable.json()["status"] == "inactive"
 
-    disabled_list = client.get(api_path("/api-keys"), headers=target_admin_headers)
-    assert disabled_list.status_code == 403
-    assert disabled_list.json()["error"]["code"] == "FORBIDDEN"
+    disabled_identity = client.get(api_path("/users/me"), headers=target_admin_headers)
+    assert disabled_identity.status_code == 200
+    assert disabled_identity.json()["role"] == "user"
+    disabled_admins = client.get(api_path("/admins"), headers=target_admin_headers)
+    assert disabled_admins.status_code == 403
+    assert disabled_admins.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_user_not_found_for_role_mutation(client, admin_headers):
