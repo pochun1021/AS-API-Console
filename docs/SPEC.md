@@ -572,7 +572,7 @@ Base path：`/main/api/v1`
 
 - 路徑前綴依 `APP_ENV`：`dev=/dev`、`test=/test`、`prod=/main`。
 - `GET {path_base}/login`：`dev/test` 導向公開的 `{path_base}/local-login` 表單；僅 `prod` 導向 FISA。`GET {path_base}/auth/local-login` 僅在 `dev/test` 回傳 `DEV_LOGIN_*` 預設值；`POST {path_base}/auth/local-login` 僅在 `dev/test` 接受表單身分與 `user|admin` 角色並建立 session，成功後前端導向 `{path_base}/announcements`。正式環境 redirect URI 為 `{APP_DOMAIN}/main/auth/callback`（若 `APP_DOMAIN` 已含 path base，不重複加入）。
-- `GET {path_base}/auth/callback`：僅 `prod` 接受 FISA callback；`dev/test` 回 `404`，不呼叫 FISA。正式環境無效 state 回 `422 OAUTH_STATE_INVALID`，缺 code 回 `422 OAUTH_CODE_MISSING`，token/identity 失敗回獨立 OAuth 錯誤；未完訓導向 `{path_base}/login-denied?error=TRAINING_INCOMPLETE`，服務故障或映射未確認導向 `?error=TRAINING_SERVICE_UNAVAILABLE`，不符既有准入導向 `?error=LOGIN_NOT_ELIGIBLE`。成功才建立 session。
+- `GET {path_base}/auth/callback`：僅 `prod` 接受 FISA callback；`dev/test` 回 `404`，不呼叫 FISA。FISA 不回傳 `state`；登入入口先在 session 建立一次性登入標記，callback 缺少該標記回 `422 OAUTH_LOGIN_NOT_STARTED`，缺 code 回 `422 OAUTH_CODE_MISSING`，token/identity 失敗回獨立 OAuth 錯誤；未完訓導向 `{path_base}/login-denied?error=TRAINING_INCOMPLETE`，服務故障或映射未確認導向 `?error=TRAINING_SERVICE_UNAVAILABLE`，不符既有准入導向 `?error=LOGIN_NOT_ELIGIBLE`。成功才建立 session。
 - `GET {path_base}/api/v1/users/me` 依有效 auth context 提供身分；`POST {path_base}/logout` 清除 auth context 與 CSRF token。
 - `APP_ENV=prod` 必須使用非預設、非範例占位且至少 32 字元的 `SESSION_SECRET_KEY`；缺少或使用開發預設值時應在設定載入階段拒絕啟動，避免簽章 Session 被偽造。
 - FISA callback 的 `code` 位於 URL query；部署時 Uvicorn 與 Nginx access log 不得記錄該 callback 的完整 request URI（包含 query）。正式反向代理與程序管理設定須驗證此項後才能上線。

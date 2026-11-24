@@ -3,7 +3,7 @@
 import base64
 import json
 from types import SimpleNamespace
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import urlencode
 
 import httpx
 import pytest
@@ -120,11 +120,10 @@ def _env(monkeypatch, *, confirmed=True, allowed_titles="RS01"):
     get_settings.cache_clear()
 
 
-def _callback(client, *, code="fixture-code", state=None):
+def _callback(client, *, code="fixture-code"):
     login = client.get("/main/login", follow_redirects=False)
     assert login.status_code == 302
-    issued_state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
-    query = urlencode({"code": code, "state": issued_state if state is None else state})
+    query = urlencode({"code": code})
     return client.get(f"/main/auth/callback?{query}", follow_redirects=False)
 
 
@@ -169,12 +168,12 @@ def test_relogin_training_denial_invalidates_previous_auth(client, monkeypatch):
     _assert_no_auth(client)
 
 
-@pytest.mark.parametrize("state", ["wrong", ""])
-def test_state_mismatch_or_missing_clears_session(client, monkeypatch, state):
+def test_callback_without_started_login_clears_session(client, monkeypatch):
     _env(monkeypatch)
     calls = _mock_services(monkeypatch)
-    response = _callback(client, state=state)
+    response = client.get("/main/auth/callback?code=fixture-code", follow_redirects=False)
     assert response.status_code == 422
+    assert response.json()["error"]["code"] == "OAUTH_LOGIN_NOT_STARTED"
     assert calls == []
     _assert_no_auth(client)
 

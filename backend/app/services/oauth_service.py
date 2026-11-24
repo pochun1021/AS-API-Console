@@ -43,9 +43,7 @@ class OAuthService:
     def build_login_url(self, request) -> str:
         auth_uri = self._url(self.settings.oauth_auth_uri, "OAUTH_AUTH_URI")
         client_id = self._required(self.settings.oauth_client_id, "OAUTH_CLIENT_ID")
-        state = secrets.token_urlsafe(32)
-        request.session["oauth_state"] = state
-        request.session["oauth_request_id"] = getattr(request.state, "request_id", state)
+        request.session["oauth_request_id"] = getattr(request.state, "request_id", None) or secrets.token_urlsafe(32)
         parts = urlsplit(auth_uri)
         query = parse_qsl(parts.query, keep_blank_values=True)
         query.extend((
@@ -53,7 +51,6 @@ class OAuthService:
             ("redirect_uri", self.settings.oauth_redirect_uri),
             ("response_type", "code"),
             ("scope", self.settings.oauth_scope),
-            ("state", state),
         ))
         return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
 

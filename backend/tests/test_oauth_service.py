@@ -35,14 +35,14 @@ def identity(raw_sysid="00123"):
     }
 
 
-def test_authorization_url_has_state_and_deployment_redirect():
+def test_authorization_url_has_login_marker_and_deployment_redirect():
     request = SimpleNamespace(session={}, state=SimpleNamespace(request_id="request-1"))
     url = OAuthService(settings()).build_login_url(request)
     query = parse_qs(urlparse(url).query)
     assert query["response_type"] == ["code"]
     assert query["redirect_uri"] == ["https://console.example/main/auth/callback"]
-    assert query["state"][0] == request.session["oauth_state"]
-    assert len(query["state"][0]) >= 32
+    assert "state" not in query
+    assert request.session["oauth_request_id"] == "request-1"
 
 
 def test_token_and_identity_use_backend_only_and_preserve_raw_sysid():

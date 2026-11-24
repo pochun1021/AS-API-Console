@@ -15,7 +15,8 @@ def main() -> int:
     try:
         identifiers = DataHubClient().fetch_incomplete_sso()
     except DataHubError as exc:
-        print(f"[FAIL] DataHub request failed: {exc.kind.value}")
+        stage = f" ({exc.stage})" if exc.stage else ""
+        print(f"[FAIL] DataHub request failed: {exc.kind.value}{stage}")
         return 1
     except Exception as exc:
         # Do not print exception details: HTTP and settings errors may contain secrets.

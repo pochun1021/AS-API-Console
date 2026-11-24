@@ -20,8 +20,9 @@ class DataHubErrorKind(StrEnum):
 
 
 class DataHubError(RuntimeError):
-    def __init__(self, kind: DataHubErrorKind) -> None:
+    def __init__(self, kind: DataHubErrorKind, *, stage: str | None = None) -> None:
         self.kind = kind
+        self.stage = stage
         super().__init__(kind.value)
 
 
@@ -62,6 +63,7 @@ class DataHubClient:
                 client,
                 "POST",
                 token_url,
+                stage="token",
                 json={"clientId": client_id, "clientSecret": client_secret},
             )
             token_payload = self._json(token_response)
@@ -76,6 +78,7 @@ class DataHubClient:
                 client,
                 method,
                 list_url,
+                stage="list",
                 headers={"Authorization": f"Bearer {token}"},
                 data=form,
             )
@@ -109,11 +112,11 @@ class DataHubClient:
             raise DataHubError(DataHubErrorKind.CONFIGURATION) from exc
 
     @staticmethod
-    def _request(client: httpx.Client, method: str, url: str, **kwargs) -> httpx.Response:
+    def _request(client: httpx.Client, method: str, url: str, *, stage: str, **kwargs) -> httpx.Response:
         try:
             response = client.request(method, url, **kwargs)
         except httpx.TimeoutException as exc:
-            raise DataHubError(DataHubErrorKind.TIMEOUT) from exc
+            raise DataHubError(DataHubErrorKind.TIMEOUT, stage=stage) from exc
         except httpx.RequestError as exc:
             raise DataHubError(DataHubErrorKind.NETWORK) from exc
         if response.status_code in {401, 403}:

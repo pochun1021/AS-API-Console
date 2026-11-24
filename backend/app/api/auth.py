@@ -1,5 +1,4 @@
 from uuid import uuid4
-import secrets
 from typing import Literal
 from urllib.parse import urlencode
 
@@ -194,7 +193,6 @@ def login(
 def oauth_callback(
     request: Request,
     code: str | None = None,
-    state: str | None = None,
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     current_settings = get_settings()
@@ -203,19 +201,18 @@ def oauth_callback(
     provider = "fisa"
     request_id = getattr(request.state, "request_id", str(uuid4()))
     audit = AuthAuditService(db)
-    expected_state = request.session.pop("oauth_state", None)
-    request.session.pop("oauth_request_id", None)
-    # State is single-use. Every invalid callback clears any previous login.
-    if not state or not expected_state or not secrets.compare_digest(state, expected_state):
+    login_request_id = request.session.pop("oauth_request_id", None)
+    # The FISA callback has no state parameter; only a started login may finish.
+    if not login_request_id:
         _clear_login_session(request)
         redirect = _log_auth_audit_or_redirect(
             request=request, audit=audit, route="auth_callback", reason="audit_log_failed",
             request_id=request_id,
-            payload={"provider": provider, "request_id": request_id, "result": "failure", "error_code": "OAUTH_STATE_INVALID"},
+            payload={"provider": provider, "request_id": request_id, "result": "failure", "error_code": "OAUTH_LOGIN_NOT_STARTED"},
         )
         if redirect is not None:
             return redirect
-        raise ApiError("OAUTH_STATE_INVALID", "oauth state invalid", 422)
+        raise ApiError("OAUTH_LOGIN_NOT_STARTED", "oauth login not started", 422)
     if not code:
         _clear_login_session(request)
         redirect = _log_auth_audit_or_redirect(
