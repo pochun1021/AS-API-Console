@@ -210,6 +210,48 @@ def reset_test_database(test_db_engine, testing_session_local) -> Generator[None
     yield
 
 
+class SessionAuthTestClient(TestClient):
+    """Turn legacy test identities into real test sessions, without enabling header auth."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._legacy_session = False
+
+    def request(self, method, url, **kwargs):
+        headers = dict(kwargs.get("headers") or {})
+        identity = {key.lower(): value for key, value in headers.items()}
+        required = ("x-account", "x-name", "x-email", "x-department", "x-sysid")
+        if (
+            identity.get("x-test-session-login") == "true"
+            and get_settings().app_env.lower() == "test"
+            and all(identity.get(key) for key in required)
+            and str(identity["x-sysid"]).isdigit()
+        ):
+            login = super().request(
+                "POST",
+                "/test/test/session-login",
+                json={
+                    "account": identity["x-account"],
+                    "name": identity["x-name"],
+                    "email": identity["x-email"],
+                    "department": identity["x-department"],
+                    "sysid": identity["x-sysid"],
+                    "role": identity.get("x-role", "user"),
+                },
+            )
+            assert login.status_code == 200, login.text
+            auth_headers = {"x-test-session-login", "x-account", "x-name", "x-email", "x-department", "x-sysid", "x-role"}
+            headers = {key: value for key, value in headers.items() if key.lower() not in auth_headers}
+            if method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+                headers.setdefault(get_settings().csrf_header_name, login.json()["csrf_token"])
+            kwargs["headers"] = headers
+            self._legacy_session = True
+        elif self._legacy_session:
+            self.cookies.clear()
+            self._legacy_session = False
+        return super().request(method, url, **kwargs)
+
+
 @pytest.fixture()
 def client(testing_session_local) -> Generator[TestClient, None, None]:
     reset_session_state()
@@ -223,7 +265,7 @@ def client(testing_session_local) -> Generator[TestClient, None, None]:
 
     try:
         app.dependency_overrides[get_db] = override_get_db
-        with TestClient(app) as test_client:
+        with SessionAuthTestClient(app) as test_client:
             yield test_client
     except Exception as exc:
         diagnostics = _build_test_db_diagnostics(testing_session_local.kw["bind"])
@@ -240,6 +282,7 @@ def build_headers(
     *, role: str, account: str, email: str, sysid: int | str, name: str = "Tester", department: str = "IT"
 ) -> dict[str, str]:
     return {
+        "x-test-session-login": "true",
         "x-account": account,
         "x-name": name,
         "x-email": email,

@@ -1,6 +1,10 @@
 # macOS
 .DS_Store
 
+# Local code navigation
+.serena/
+.playwright-cli/
+
 # Python
 .venv/
 __pycache__/

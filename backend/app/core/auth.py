@@ -105,16 +105,23 @@ def get_current_user(
     if normalized_sysid <= 0:
         raise ApiError("VALIDATION_ERROR", "x-sysid must be positive integer", 422)
 
-    resolved_role = _resolve_admin_role(
-        db=db,
-        account=x_account or "",
-        name=x_name or "",
-        email=(x_email or "").lower(),
-        department=x_department or "",
-        sysid=normalized_sysid,
-        requested_role=role,
-        allow_header_auth=used_header_auth,
-    )
+    if (
+        settings.app_env.lower() in {"dev", "test"}
+        and isinstance(session_auth, dict)
+        and session_auth.get("auth_source") == "local_login"
+    ):
+        resolved_role = role
+    else:
+        resolved_role = _resolve_admin_role(
+            db=db,
+            account=x_account or "",
+            name=x_name or "",
+            email=(x_email or "").lower(),
+            department=x_department or "",
+            sysid=normalized_sysid,
+            requested_role=role,
+            allow_header_auth=used_header_auth,
+        )
 
     return CurrentUser(
         account=x_account or "",

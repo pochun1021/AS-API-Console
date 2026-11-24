@@ -119,6 +119,8 @@ export function setApiProvider(nextProvider) {
 }
 
 export const apiClient = {
+  getLocalLoginDefaults: () => provider.getLocalLoginDefaults(),
+  createLocalLoginSession: (payload) => provider.createLocalLoginSession(payload),
   getCurrentUser: (auth) => provider.getCurrentUser(auth),
   createApplication: (payload, auth) => provider.createApplication(payload, auth),
   listApiKeys: (paramsOrAuth, maybeAuth) => provider.listApiKeys(paramsOrAuth, maybeAuth),

@@ -7,6 +7,11 @@ const errorMessageKeyMap = {
   LOGIN_NOT_ELIGIBLE: "login_denied_reason_not_eligible"
 };
 
+const trainingMessages = {
+  TRAINING_INCOMPLETE: "未完成時數訓練，請確認完成後方可登入系統",
+  TRAINING_SERVICE_UNAVAILABLE: "暫時無法驗證未完訓資格，請稍後再試"
+};
+
 export default function LoginDeniedPage() {
   const { t } = useLocale();
   const [searchParams] = useSearchParams();
@@ -29,7 +34,7 @@ export default function LoginDeniedPage() {
           {t("login_denied_title")}
         </Typography>
         <Typography variant="body1">{t("login_denied_message")}</Typography>
-        <Alert severity="warning">{t(reasonKey)}</Alert>
+        <Alert severity="warning">{trainingMessages[errorCode] || t(reasonKey)}</Alert>
         <Button
           variant="contained"
           onClick={redirectToLogin}

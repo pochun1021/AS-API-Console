@@ -19,6 +19,7 @@ const ApplyComingSoonPage = lazyWithReload("ApplyComingSoonPage", () => import("
 const LoginComingSoonPage = lazyWithReload("LoginComingSoonPage", () => import("./pages/LoginComingSoonPage"));
 const LoginDeniedPage = lazyWithReload("LoginDeniedPage", () => import("./pages/LoginDeniedPage"));
 const LoginErrorPage = lazyWithReload("LoginErrorPage", () => import("./pages/LoginErrorPage"));
+const LocalLoginPage = lazyWithReload("LocalLoginPage", () => import("./pages/LocalLoginPage"));
 const MyApiKeysPage = lazyWithReload("MyApiKeysPage", () => import("./pages/MyApiKeysPage"));
 const AdminPage = lazyWithReload("AdminPage", () => import("./pages/AdminPage"));
 const AdminDashboardPage = lazyWithReload("AdminDashboardPage", () => import("./pages/AdminDashboardPage"));
@@ -58,6 +59,7 @@ export default function App() {
   const isLoginDeniedRoute = location.pathname === "/login-denied";
   const isLoginErrorRoute = location.pathname === "/login-error";
   const isLoginComingSoonRoute = location.pathname === "/login-coming-soon";
+  const isLocalLoginRoute = location.pathname === "/local-login";
   const isPublicRootRoute = location.pathname === "/" && !auth && !hasServiceGuideAuthHint();
   const isServiceGuideRoute = location.pathname === "/usage-examples";
   const isPublicServiceGuideRoute = isServiceGuideRoute && !auth && !hasServiceGuideAuthHint();
@@ -97,7 +99,7 @@ export default function App() {
   useEffect(() => {
     let canceled = false;
     async function bootstrapAuth() {
-      if (isLoginDeniedRoute || isLoginErrorRoute || isLoginComingSoonRoute || isPublicRootRoute || isPublicServiceGuideRoute) {
+      if (isLoginDeniedRoute || isLoginErrorRoute || isLoginComingSoonRoute || isLocalLoginRoute || isPublicRootRoute || isPublicServiceGuideRoute) {
         if (!canceled) {
           setAuthReady(true);
           setLocale(detectSystemLocale());
@@ -135,7 +137,7 @@ export default function App() {
     return () => {
       canceled = true;
     };
-  }, [isLoginDeniedRoute, isLoginErrorRoute, isLoginComingSoonRoute, isPublicRootRoute, isPublicServiceGuideRoute, isServiceGuideRoute, navigate, setLocale]);
+  }, [isLoginDeniedRoute, isLoginErrorRoute, isLoginComingSoonRoute, isLocalLoginRoute, isPublicRootRoute, isPublicServiceGuideRoute, isServiceGuideRoute, navigate, setLocale]);
 
   useEffect(() => {
     if (!auth) return;
@@ -167,13 +169,14 @@ export default function App() {
     };
   }, [auth, setLocale]);
 
-  if (isLoginDeniedRoute || isLoginErrorRoute || isLoginComingSoonRoute) {
+  if (isLoginDeniedRoute || isLoginErrorRoute || isLoginComingSoonRoute || isLocalLoginRoute) {
     return (
       <Suspense fallback={<LoadingBlock text={t("common_loading")} />}>
         <Routes>
           <Route path="/login-coming-soon" element={<LoginComingSoonPage />} />
           <Route path="/login-denied" element={<LoginDeniedPage />} />
           <Route path="/login-error" element={<LoginErrorPage />} />
+          <Route path="/local-login" element={<LocalLoginPage />} />
           <Route path="*" element={<Navigate to="/login-denied" replace />} />
         </Routes>
       </Suspense>

@@ -1,7 +1,6 @@
 from datetime import datetime
 from functools import lru_cache
 import os
-from pathlib import Path
 from urllib.parse import quote_plus, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
@@ -23,20 +22,6 @@ def _resolve_env_file() -> str:
     return os.path.abspath(local_env_file)
 
 
-def _resolve_google_client_secrets_file() -> str:
-    """Find the Google client secret beside the active env file or deployment config."""
-    env_file_path = Path(_resolve_env_file()).expanduser()
-    candidates = [
-        env_file_path.parent / "client_secret.json",
-        Path("/home/app/config/client_secret.json"),
-        Path(__file__).resolve().parents[2] / "client_secret.json",
-    ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
-    return str(candidates[-1])
-
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=_resolve_env_file(),
@@ -45,8 +30,6 @@ class Settings(BaseSettings):
 
     app_env: str = "dev"
     app_domain: str = "http://localhost:8000"
-    google_allowed_hosted_domain: str | None = None
-    google_client_secrets_file: str | None = None
     database_url: str | None = None
     db_user: str = "as_api_console"
     db_password: str | None = None
@@ -83,15 +66,21 @@ class Settings(BaseSettings):
     mail_ssl_tls: bool = False
     mail_validate_certs: bool = True
     session_secret_key: str = "dev-session-secret-change-me"
-    oauth_provider: str = "google"
-    oauth_scope: str = "openid email profile"
+    oauth_auth_uri: str | None = None
+    oauth_token_uri: str | None = None
+    oauth_basic_uri: str | None = None
+    oauth_client_id: str | None = None
+    oauth_client_secret: str | None = None
+    oauth_scope: str = "basic"
+    oauth_timeout_seconds: float = 10.0
+    fisa_sysid_is_datahub_sso_confirmed: bool = False
+    datahub_token_url: str | None = None
+    datahub_list_url: str | None = None
+    datahub_client_id: str = "learnpoints"
+    datahub_client_secret: str | None = None
+    datahub_list_method: str | None = "GET"
+    datahub_timeout_seconds: float = 3.0
     login_allowed_title_codes: str = ""
-    test_oauth_account: str | None = None
-    test_oauth_name: str | None = None
-    test_oauth_email: str | None = None
-    test_oauth_department: str | None = None
-    test_oauth_sysid: int | None = None
-    test_oauth_tcode: str | None = None
     dev_login_account: str | None = None
     dev_login_name: str | None = None
     dev_login_email: str | None = None
@@ -153,9 +142,7 @@ class Settings(BaseSettings):
 
     @property
     def header_auth_enabled(self) -> bool:
-        if self.allow_header_auth is not None:
-            return self.allow_header_auth
-        return self.app_env.lower() == "dev"
+        return self.app_env.lower() == "dev" and self.allow_header_auth is not False
 
     @property
     def path_base(self) -> str:
@@ -177,8 +164,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":
-        if not self.google_client_secrets_file:
-            self.google_client_secrets_file = _resolve_google_client_secrets_file()
+        if self.app_env.lower() == "prod" and (
+            len(self.session_secret_key) < 32
+            or self.session_secret_key == "dev-session-secret-change-me"
+            or self.session_secret_key.startswith("replace-with-")
+        ):
+            raise ValueError("SESSION_SECRET_KEY must be a non-placeholder secret of at least 32 characters in prod")
         if not self.database_url:
             if not self.db_password:
                 raise ValueError("Set DATABASE_URL or DB_PASSWORD in environment config")

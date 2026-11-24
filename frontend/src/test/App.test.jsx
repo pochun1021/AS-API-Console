@@ -24,6 +24,8 @@ function renderApp(initialPath = "/apply") {
 
 describe("App public auth pages", () => {
   const provider = {
+    getLocalLoginDefaults: vi.fn(),
+    createLocalLoginSession: vi.fn(),
     getCurrentUser: vi.fn(),
     getLocalePreference: vi.fn(),
     updateLocalePreference: vi.fn(),
@@ -36,6 +38,8 @@ describe("App public auth pages", () => {
   };
 
   beforeEach(() => {
+    provider.getLocalLoginDefaults.mockReset();
+    provider.createLocalLoginSession.mockReset();
     provider.getCurrentUser.mockReset();
     provider.getLocalePreference.mockReset();
     provider.updateLocalePreference.mockReset();
@@ -59,6 +63,32 @@ describe("App public auth pages", () => {
     expect(provider.getCurrentUser).not.toHaveBeenCalled();
   });
 
+  test("local login pre-fills identity and submits edited account and role", async () => {
+    const user = userEvent.setup();
+    provider.getLocalLoginDefaults.mockResolvedValue({
+      account: "default.user", name: "Default User", email: "default@example.com",
+      department: "QA", sysid: 990001, role: "user"
+    });
+    provider.createLocalLoginSession.mockResolvedValue({ redirect: "/test/announcements", warning: "DATAHUB_CONNECTION_FAILED" });
+    provider.getCurrentUser.mockResolvedValue({ account: "edited.user", role: "admin" });
+    provider.getLocalePreference.mockResolvedValue({ preferred_locale: "en" });
+    provider.listAnnouncements.mockResolvedValue({ items: [], total: 0 });
+    renderApp("/local-login");
+
+    expect(await screen.findByRole("heading", { name: "Test Environment Sign-In" })).toBeInTheDocument();
+    const account = await screen.findByRole("textbox", { name: "Account" });
+    expect(account).toHaveValue("default.user");
+    await user.clear(account);
+    await user.type(account, "edited.user");
+    await user.click(screen.getByRole("radio", { name: "Admin" }));
+    await user.click(screen.getByRole("button", { name: "Sign In" }));
+    await waitFor(() => expect(provider.createLocalLoginSession).toHaveBeenCalledWith({
+      account: "edited.user", name: "Default User", email: "default@example.com",
+      department: "QA", sysid: 990001, role: "admin"
+    }));
+    expect(await screen.findByText(/DataHub .*連線失敗|DataHub connection failed/, {}, { timeout: 10000 })).toBeInTheDocument();
+  });
+
   test("does not call getCurrentUser on /login-coming-soon and renders public coming soon page", async () => {
     vi.spyOn(apiKeyGoLive, "isApiKeyApplicationLive").mockReturnValue(false);
     renderApp("/login-coming-soon");
@@ -74,7 +104,7 @@ describe("App public auth pages", () => {
     vi.spyOn(navigation, "proceedToLogin").mockImplementation(() => {});
     renderApp("/login-coming-soon");
 
-    await user.click(await screen.findByRole("button", { name: "Continue to SSO Sign-In" }));
+    await user.click(await screen.findByRole("button", { name: "Continue to Sign In" }));
     expect(navigation.proceedToLogin).toHaveBeenCalledTimes(1);
   });
 
@@ -85,7 +115,7 @@ describe("App public auth pages", () => {
 
     await user.click(await screen.findByRole("button", { name: "中文" }));
     expect(await screen.findByRole("heading", { name: "API Key 申請即將於 6 月 30 日上線" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "前往 SSO 登入" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "前往登入" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看服務使用說明" })).toHaveAttribute("href", "/usage-examples");
   });
 
